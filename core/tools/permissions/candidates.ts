@@ -39,6 +39,40 @@ const MAX_DEPTH = 4;
 const MAX_CANDIDATES = 800;
 
 /** An alias's cmdlet in its usual capitalisation: `Remove-Item`, not `remove-item`. */
+/**
+ * PowerShell's `-EncodedCommand` under any spelling the host takes: `-e`,
+ * `-ec`, `-en`, `-enc` up to the whole word, with `-`, `/` or a look-alike
+ * dash, in any case. `-ex` and `-ep` are `-ExecutionPolicy`.
+ */
+function isEncodedCommandFlag(word: string): boolean {
+  const m = /^[-/–—―]([A-Za-z]+)$/.exec(word);
+  if (!m) return false;
+  const n = m[1].toLowerCase();
+  return n === "ec" || "encodedcommand".startsWith(n);
+}
+
+/** The script in an `-EncodedCommand` word: base64 of UTF-16LE. Undefined when it is not that. */
+function decodeEncodedCommand(word: string): string | undefined {
+  const b64 = word.trim();
+  if (!b64 || b64.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(b64)) {
+    return undefined;
+  }
+  let binary: string;
+  try {
+    binary = atob(b64);
+  } catch {
+    return undefined;
+  }
+  if (binary.length === 0 || binary.length % 2 !== 0) return undefined;
+  let text = "";
+  for (let i = 0; i < binary.length; i += 2) {
+    text += String.fromCharCode(
+      binary.charCodeAt(i) | (binary.charCodeAt(i + 1) << 8),
+    );
+  }
+  return text;
+}
+
 function canonicalCmdletName(alias: string): string {
   const cmdlet = canonicalCmdlet(alias) ?? alias;
   // `ise` stands for a program, not a Verb-Noun cmdlet: leave its name alone
@@ -100,6 +134,14 @@ function nested(
   } else if (PS_SHELLS.has(name)) {
     const k = tail.findIndex((w) => /^-(c|command)$/i.test(w));
     if (k >= 0) run(tail.slice(k + 1).join(" "), "powershell");
+    // -EncodedCommand hides the script from every rule: read it decoded. One
+    // that cannot be decoded is code the text does not show, so fail closed.
+    const e = tail.findIndex(isEncodedCommandFlag);
+    if (e >= 0) {
+      const decoded = decodeEncodedCommand(tail[e + 1] ?? "");
+      if (decoded === undefined) cap.truncated = true;
+      else run(decoded, "powershell");
+    }
   } else if (name === "cmd") {
     const k = tail.findIndex((w) => /^\/[ck]$/i.test(w));
     if (k >= 0) run(tail.slice(k + 1).join(" "), "cmd");
