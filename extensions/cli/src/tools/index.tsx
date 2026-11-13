@@ -199,6 +199,7 @@ export async function getAllAvailableTools(
   return applyCliToolSearch(filterCliToolsForRole(mode, tools), {
     mode: mode === "plan" ? "plan" : "agent",
     family: name,
+    history: services.chatHistory?.getHistory(),
   });
 }
 
