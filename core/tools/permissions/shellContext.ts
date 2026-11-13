@@ -297,9 +297,20 @@ export function decodeEncodedCommand(text: string): string | undefined {
   if (!b64 || b64.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(b64)) {
     return undefined;
   }
-  const bytes = Buffer.from(b64, "base64");
-  if (bytes.length === 0 || bytes.length % 2 !== 0) return undefined;
-  const decoded = bytes.toString("utf16le");
+  // atob, not Buffer: this module is also bundled into the webview
+  let binary: string;
+  try {
+    binary = atob(b64);
+  } catch {
+    return undefined;
+  }
+  if (binary.length === 0 || binary.length % 2 !== 0) return undefined;
+  let decoded = "";
+  for (let k = 0; k < binary.length; k += 2) {
+    decoded += String.fromCharCode(
+      binary.charCodeAt(k) | (binary.charCodeAt(k + 1) << 8),
+    );
+  }
   // Not text: the word was something else that happens to be base64
   if (/[\u0000-\u0008\u000E-\u001F\uFFFD]/.test(decoded)) return undefined;
   return decoded;
@@ -741,7 +752,10 @@ export function classifyInterpreter(
     i: 0,
     peel: { chain: [] },
     outer,
-    platform: opts.platform ?? process.platform,
+    // A webview has no `process`; what a file extension means is then unknown
+    platform:
+      opts.platform ??
+      (typeof process === "undefined" ? "linux" : process.platform),
     opts,
   };
   for (let peeled = 0; peeled < MAX_PEEL; peeled++) {
@@ -1106,7 +1120,10 @@ function scriptFile(
   return result(peel, outer, {
     family: hint ?? "unknown",
     via: "script",
-    label: `${word} (its first line names the interpreter)`,
+    label:
+      outer && outer !== "unknown"
+        ? `${word} (its first line names the interpreter)`
+        : `${word} (a script: its first line, or on Windows its file type, names the interpreter)`,
     script: word,
     opaque: true,
     confidence: "low",

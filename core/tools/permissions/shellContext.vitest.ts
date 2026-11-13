@@ -352,6 +352,22 @@ describe("interpretersOfCommand: a whole line and what is nested in it", () => {
   });
 });
 
+describe("with no outer shell known (a webview)", () => {
+  it("still names a launcher, and says a script's interpreter is not known", () => {
+    expect(describeInterpreters("git status", undefined)).toBeUndefined();
+    expect(
+      describeInterpreters("bash -c 'ls'", undefined, { platform: "linux" }),
+    ).toEqual({
+      text: "bash -c",
+      uncertain: false,
+    });
+    expect(describeInterpreters("./deploy.sh", undefined)).toEqual({
+      text: "./deploy.sh (a script: its first line, or on Windows its file type, names the interpreter)",
+      uncertain: true,
+    });
+  });
+});
+
 describe("describeInterpreters: the line an approval card shows", () => {
   it("is absent when the shell itself reads all of the command", () => {
     expect(
