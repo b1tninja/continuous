@@ -280,13 +280,19 @@ function splitterMisreads(command: string): boolean {
  * escapes nothing there, PowerShell runs what is inside `( )`, cmd has no
  * single quotes. For those shells the shell's own scanner must understand the
  * command too, and `commands` holds the commands it finds: each needs to be
- * covered by an allow rule. Other shells are judged by the splitter alone.
+ * covered by an allow rule. bash, zsh and sh are judged by the splitter alone,
+ * and so is a caller that names no shell. A shell named as "unknown" is never
+ * covered: an allow rule is a promise about how the command is read.
  */
 export function allowReading(
   command: string,
   shell: ShellKind | undefined,
 ): { ok: false } | { ok: true; commands?: string[] } {
   if (splitterMisreads(command)) return { ok: false };
+  // A shell this product does not parse (fish, nushell, ksh), or a terminal
+  // whose shell cannot be seen (a remote window): nothing here can say how
+  // the command will be split, so no allow rule covers it and it asks
+  if (shell === "unknown") return { ok: false };
   if (shell !== "powershell" && shell !== "cmd") return { ok: true };
   const scanned = scanCommand(command, shell);
   if (!scanned.ok) return { ok: false };
