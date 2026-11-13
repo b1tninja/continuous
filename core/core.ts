@@ -2501,6 +2501,9 @@ export class Core {
         const tool = toolForPolicy(config.tools, toolName);
         // The folder lets git be vouched as read-only after its config is checked
         const dirs = await this.ide.getWorkspaceDirs();
+        // The shell that will read a terminal command: the one started here,
+        // or unknown when it goes to a remote window's terminal
+        const shell = executionShell((await this.ide.getIdeInfo()).remoteName);
         const result = evaluateToolPolicyWithRules({
           tool,
           toolName,
@@ -2522,9 +2525,7 @@ export class Core {
           largeChangeLines: readUserLargeChangeLines(),
           ...(dirs[0] ? { cwd: uriToPath(dirs[0]) } : {}),
           ...deputyWorkspace(dirs),
-          // The shell that will read a terminal command: the one started
-          // here, or unknown when it goes to a remote window's terminal
-          shell: executionShell((await this.ide.getIdeInfo()).remoteName).kind,
+          shell: shell.kind,
           // The tainted-session rule's fact; nothing when the rule is off
           ...taintInput(sessionId, callId),
         });
@@ -2533,7 +2534,15 @@ export class Core {
         setQuestionsLevel(approval?.levels?.questions);
         recordPolicyDecision(
           getAuditTrail(),
-          { session: sessionId, callId, toolName, parsedArgs, approval, agent },
+          {
+            session: sessionId,
+            callId,
+            toolName,
+            parsedArgs,
+            approval,
+            agent,
+            shell,
+          },
           basePolicy,
           result,
         );
