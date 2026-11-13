@@ -29,7 +29,7 @@ const MAX_PASTE = 200_000;
 export function parseMcpPaste(text: string): McpPasteResult {
   const result: McpPasteResult = { candidates: [], warnings: [] };
   if (typeof text !== "string" || !text.trim()) return result;
-  let input = text.replace(/^﻿/, "");
+  let input = text.replace(/^\uFEFF/, "");
   if (input.length > MAX_PASTE) {
     result.warnings.push(
       `Only the first ${MAX_PASTE} characters of the paste were read.`,
