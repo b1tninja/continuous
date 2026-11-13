@@ -15,6 +15,7 @@ import { chat } from "./commands/chat.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { hooksCommand } from "./commands/hooks.js";
 import { listSessionsCommand } from "./commands/ls.js";
+import { mcpCommand } from "./commands/mcp.js";
 import { permissionsCommand } from "./commands/permissions.js";
 import { projectCommand } from "./commands/project.js";
 import { registerExportCommand } from "./commands/registerExportCommand.js";
@@ -477,6 +478,37 @@ program
   .action(
     async (action: string | undefined, args: string[] | undefined, options) => {
       const code = permissionsCommand(action, args ?? [], options);
+      await gracefulExit(code);
+    },
+  );
+
+// MCP servers: add one from a README snippet
+program
+  .command("mcp [action] [args...]")
+  .description(
+    "Add an MCP server from a pasted snippet, a file or - for stdin (add <paste-or-file>): shows what would run, tests it after you agree, then saves it to your config.yaml",
+  )
+  .option(
+    "--dry-run",
+    "Show the review and the entry; start nothing, write nothing",
+  )
+  .option(
+    "--name <name>",
+    "The server's name, or which one to add when the paste has several",
+  )
+  .option("--skip-test", "Save without the test connection")
+  .option(
+    "--yes-run",
+    "Run the test without asking (refused for an unpinned package)",
+  )
+  .action(
+    async (action: string | undefined, args: string[] | undefined, options) => {
+      const code = await mcpCommand(action, args ?? [], {
+        dryRun: options.dryRun,
+        name: options.name,
+        skipTest: options.skipTest,
+        yesRun: options.yesRun,
+      });
       await gracefulExit(code);
     },
   );
