@@ -92,6 +92,10 @@ const CORPUS: Row[] = [
   { outer: "cmd", command: "powershell Get-Date", expect: { family: "powershell", via: "wrapper", inner: "Get-Date", confidence: "medium" } },
   { outer: "bash", command: "pwsh ./build.ps1", expect: { family: "powershell", via: "script", script: "./build.ps1", opaque: true } },
   { outer: "cmd", command: "powershell -NoExit", expect: { family: "powershell", opaque: true, confidence: "low" } },
+  // -i is -Interactive (a switch) to pwsh and -InputFormat (takes a value) to powershell.exe
+  { outer: "bash", command: "pwsh -i -c \"Get-Date\"", expect: { family: "powershell", via: "wrapper", inner: "Get-Date" } },
+  { outer: "cmd", command: "powershell -i Text -c \"Get-Date\"", expect: { family: "powershell", via: "wrapper", inner: "Get-Date" } },
+  { outer: "bash", command: "pwsh -inp Text -o XML -wd /tmp -c \"Get-Date\"", expect: { family: "powershell", inner: "Get-Date" } },
   // an en dash is a parameter dash to PowerShell
   { outer: "cmd", command: "powershell \u2013c \"whoami\"", expect: { family: "powershell", inner: "whoami" } },
 

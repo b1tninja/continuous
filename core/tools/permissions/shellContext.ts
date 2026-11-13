@@ -262,6 +262,7 @@ function familyOfProgram(name: string): InterpreterFamily {
  */
 function powershellParameter(
   word: string,
+  host: string,
 ): "command" | "encoded" | "file" | "value" | "switch" | undefined {
   const m = /^[-/\u2013\u2014\u2015]([A-Za-z]+)$/.exec(word);
   if (!m) return undefined;
@@ -273,6 +274,11 @@ function powershellParameter(
   if (n === "ec" || "encodedcommand".startsWith(n)) return "encoded";
   if ("command".startsWith(n)) return "command";
   if ("file".startsWith(n)) return "file";
+  // pwsh has -Interactive (-i); in powershell.exe -i can only be -InputFormat
+  if ("interactive".startsWith(n) && (host === "pwsh" || n.length > 2)) {
+    if (!"inputformat".startsWith(n)) return "switch";
+    if (host === "pwsh" && n.length < 3) return "switch";
+  }
   for (const valued of [
     "windowstyle",
     "inputformat",
@@ -853,7 +859,7 @@ function powershellHost(
 ): CommandInterpreter {
   const base = { family: "powershell" as const, changes: true };
   for (let k = at + 1; k < words.length; k++) {
-    const kind = powershellParameter(words[k]);
+    const kind = powershellParameter(words[k], name);
     if (kind === "value") {
       k++;
       continue;
