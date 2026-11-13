@@ -2,6 +2,7 @@ import { isPosixShell, type ShellKind } from "../../util/shell";
 import { parseCommand } from "./command";
 import { detectCommandShell, familyOf } from "./detectShell";
 import { canonicalCmdlet, isPowerShellAlias } from "./powershell";
+import { decodeEncodedCommand } from "./shellContext";
 import {
   commandName,
   dequote,
@@ -38,7 +39,6 @@ const XARGS_OPTS_WITH_ARG = new Set(["-n", "-I", "-P", "-d", "-L", "-s", "-E"]);
 const MAX_DEPTH = 4;
 const MAX_CANDIDATES = 800;
 
-/** An alias's cmdlet in its usual capitalisation: `Remove-Item`, not `remove-item`. */
 /**
  * PowerShell's `-EncodedCommand` under any spelling the host takes: `-e`,
  * `-ec`, `-en`, `-enc` up to the whole word, with `-`, `/` or a look-alike
@@ -51,28 +51,7 @@ function isEncodedCommandFlag(word: string): boolean {
   return n === "ec" || "encodedcommand".startsWith(n);
 }
 
-/** The script in an `-EncodedCommand` word: base64 of UTF-16LE. Undefined when it is not that. */
-function decodeEncodedCommand(word: string): string | undefined {
-  const b64 = word.trim();
-  if (!b64 || b64.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(b64)) {
-    return undefined;
-  }
-  let binary: string;
-  try {
-    binary = atob(b64);
-  } catch {
-    return undefined;
-  }
-  if (binary.length === 0 || binary.length % 2 !== 0) return undefined;
-  let text = "";
-  for (let i = 0; i < binary.length; i += 2) {
-    text += String.fromCharCode(
-      binary.charCodeAt(i) | (binary.charCodeAt(i + 1) << 8),
-    );
-  }
-  return text;
-}
-
+/** An alias's cmdlet in its usual capitalisation: `Remove-Item`, not `remove-item`. */
 function canonicalCmdletName(alias: string): string {
   const cmdlet = canonicalCmdlet(alias) ?? alias;
   // `ise` stands for a program, not a Verb-Noun cmdlet: leave its name alone
