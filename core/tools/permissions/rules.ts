@@ -271,29 +271,32 @@ function splitterMisreads(command: string): boolean {
 }
 
 /**
+ * What an allow rule may rely on about a command, for every caller that lets
+ * a pattern cover one (the rules below, and the CLI's own `Bash(...)`
+ * policies). `ok: false` when the splitter and the shell would not read the
+ * same commands (splitterMisreads).
+ *
  * PowerShell and cmd do not quote the way the splitter does: a backslash
  * escapes nothing there, PowerShell runs what is inside `( )`, cmd has no
- * single quotes. For those shells an allow rule also needs the shell's own
- * scanner to understand the command, and every command it finds to be covered
- * by an allow rule. Other shells are judged by the splitter alone.
+ * single quotes. For those shells the shell's own scanner must understand the
+ * command too, and `commands` holds the commands it finds: each needs to be
+ * covered by an allow rule. Other shells are judged by the splitter alone.
  */
-function coveredInOwnGrammar(
+export function allowReading(
   command: string,
   shell: ShellKind | undefined,
-  allowRules: ParsedRule[],
-): boolean {
-  if (shell !== "powershell" && shell !== "cmd") return true;
+): { ok: false } | { ok: true; commands?: string[] } {
+  if (splitterMisreads(command)) return { ok: false };
+  if (shell !== "powershell" && shell !== "cmd") return { ok: true };
   const scanned = scanCommand(command, shell);
-  if (!scanned.ok) return false;
-  return scanned.graph.commands.every(({ words }) => {
+  if (!scanned.ok) return { ok: false };
+  return {
+    ok: true,
     // A word with a space in it was quoted; the program name never is
-    const text = words
-      .map((w, i) => (i > 0 && /\s/.test(w) ? `"${w}"` : w))
-      .join(" ");
-    return allowRules.some(
-      (r) => r.pattern === undefined || commandGlobMatch(r.pattern, text),
-    );
-  });
+    commands: scanned.graph.commands.map(({ words }) =>
+      words.map((w, i) => (i > 0 && /\s/.test(w) ? `"${w}"` : w)).join(" "),
+    ),
+  };
 }
 
 /**
@@ -342,7 +345,6 @@ export function matchTerminalCommand(
   // Allow only what is fully understood.
   if (
     hasUnsafeShellConstruct(command, shell) ||
-    splitterMisreads(command) ||
     parsed.unparsable ||
     parsed.hasFileRedirect ||
     parsed.parts.length === 0
@@ -351,12 +353,15 @@ export function matchTerminalCommand(
   }
   const allowRules = toolRules.filter((r) => r.decision === "allow");
   if (allowRules.length === 0) return undefined;
-  if (!coveredInOwnGrammar(command, shell, allowRules)) return undefined;
+  const covers = (text: string) =>
+    allowRules.find(
+      (r) => r.pattern === undefined || commandGlobMatch(r.pattern, text),
+    );
+  const reading = allowReading(command, shell);
+  if (!reading.ok || !(reading.commands ?? []).every(covers)) return undefined;
   let first: ParsedRule | undefined;
   for (const part of parsed.parts) {
-    const hit = allowRules.find(
-      (r) => r.pattern === undefined || commandGlobMatch(r.pattern, part),
-    );
+    const hit = covers(part);
     if (!hit) return undefined;
     first ??= hit;
   }
