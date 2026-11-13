@@ -1,0 +1,1331 @@
+[
+  {
+    "file": "01-archived-brave-search-66.txt",
+    "source": "https://github.com/modelcontextprotocol/servers-archived/blob/9be4674d1ddf/src/brave-search/README.md#L66",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "brave-search",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+          "env": {
+            "BRAVE_API_KEY": "placeholder"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "02-archived-brave-search-132.txt",
+    "source": "https://github.com/modelcontextprotocol/servers-archived/blob/9be4674d1ddf/src/brave-search/README.md#L132",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "brave-search",
+          "transport": "stdio",
+          "sourceFormat": "vscode-json",
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+          "env": {
+            "BRAVE_API_KEY": "ref"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "03-archived-github-322.txt",
+    "source": "https://github.com/modelcontextprotocol/servers-archived/blob/9be4674d1ddf/src/github/README.md#L322",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "github",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "docker",
+          "args": [
+            "run",
+            "-i",
+            "--rm",
+            "-e",
+            "GITHUB_PERSONAL_ACCESS_TOKEN",
+            "mcp/github"
+          ],
+          "env": {
+            "GITHUB_PERSONAL_ACCESS_TOKEN": "placeholder"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "04-archived-github-405.txt",
+    "source": "https://github.com/modelcontextprotocol/servers-archived/blob/9be4674d1ddf/src/github/README.md#L405",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "github",
+          "transport": "stdio",
+          "sourceFormat": "vscode-json",
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-github"],
+          "env": {
+            "GITHUB_PERSONAL_ACCESS_TOKEN": "ref"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "05-archived-postgres-52.txt",
+    "source": "https://github.com/modelcontextprotocol/servers-archived/blob/9be4674d1ddf/src/postgres/README.md#L52",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "postgres",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-postgres",
+            "postgresql://localhost/mydb"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "file": "06-archived-postgres-115.txt",
+    "source": "https://github.com/modelcontextprotocol/servers-archived/blob/9be4674d1ddf/src/postgres/README.md#L115",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "postgres",
+          "transport": "stdio",
+          "sourceFormat": "vscode-json",
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-postgres",
+            "${input:pg_url}"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "file": "07-archived-sentry-61.txt",
+    "source": "https://github.com/modelcontextprotocol/servers-archived/blob/9be4674d1ddf/src/sentry/README.md#L61",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "sentry",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "uvx",
+          "args": ["mcp-server-sentry", "--auth-token", "YOUR_SENTRY_TOKEN"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "08-archived-sentry-192.txt",
+    "source": "https://github.com/modelcontextprotocol/servers-archived/blob/9be4674d1ddf/src/sentry/README.md#L192",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "mcp-server-sentry",
+          "transport": "stdio",
+          "sourceFormat": "zed-json",
+          "command": "python",
+          "args": [
+            "-m",
+            "mcp_server_sentry",
+            "--auth-token",
+            "YOUR_SENTRY_TOKEN"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "file": "09-archived-slack-95.txt",
+    "source": "https://github.com/modelcontextprotocol/servers-archived/blob/9be4674d1ddf/src/slack/README.md#L95",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "slack",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-slack"],
+          "env": {
+            "SLACK_BOT_TOKEN": "placeholder",
+            "SLACK_TEAM_ID": "literal",
+            "SLACK_CHANNEL_IDS": "literal"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "10-archived-sqlite-68.txt",
+    "source": "https://github.com/modelcontextprotocol/servers-archived/blob/9be4674d1ddf/src/sqlite/README.md#L68",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "sqlite",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "uv",
+          "args": [
+            "--directory",
+            "parent_of_servers_repo/servers/src/sqlite",
+            "run",
+            "mcp-server-sqlite",
+            "--db-path",
+            "~/test.db"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "file": "11-archived-sqlite-87.txt",
+    "source": "https://github.com/modelcontextprotocol/servers-archived/blob/9be4674d1ddf/src/sqlite/README.md#L87",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "sqlite",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "docker",
+          "args": [
+            "run",
+            "--rm",
+            "-i",
+            "-v",
+            "mcp-test:/mcp",
+            "mcp/sqlite",
+            "--db-path",
+            "/mcp/test.db"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "file": "12-awslabs-492.txt",
+    "source": "https://github.com/awslabs/mcp/blob/5abaf6ad4d70/README.md#L492",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "awslabs-core-mcp-server",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "uvx",
+          "args": ["awslabs.core-mcp-server@latest"],
+          "env": {
+            "FASTMCP_LOG_LEVEL": "literal"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "13-awslabs-514.txt",
+    "source": "https://github.com/awslabs/mcp/blob/5abaf6ad4d70/README.md#L514",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "awslabs-core-mcp-server",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "uv",
+          "args": [
+            "tool",
+            "run",
+            "--from",
+            "awslabs.core-mcp-server@latest",
+            "awslabs.core-mcp-server.exe"
+          ],
+          "env": {
+            "FASTMCP_LOG_LEVEL": "literal"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "14-awslabs-1011.txt",
+    "source": "https://github.com/awslabs/mcp/blob/5abaf6ad4d70/README.md#L1011",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "awslabs.aws-iac-mcp-server",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "uvx",
+          "args": ["awslabs.aws-iac-mcp-server@latest"],
+          "env": {
+            "FASTMCP_LOG_LEVEL": "literal"
+          }
+        },
+        {
+          "name": "awslabs.aws-documentation-mcp-server",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "uvx",
+          "args": ["awslabs.aws-documentation-mcp-server@latest"],
+          "env": {
+            "FASTMCP_LOG_LEVEL": "literal",
+            "AWS_DOCUMENTATION_PARTITION": "secret"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "15-awslabs-1064.txt",
+    "source": "https://github.com/awslabs/mcp/blob/5abaf6ad4d70/README.md#L1064",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "aws-knowledge-mcp-server",
+          "transport": "http",
+          "sourceFormat": "opencode-json",
+          "url": "https://knowledge-mcp.global.api.aws"
+        },
+        {
+          "name": "awslabs.aws-iac-mcp-server",
+          "transport": "stdio",
+          "sourceFormat": "opencode-json",
+          "command": "uvx",
+          "args": ["awslabs.aws-iac-mcp-server@latest"],
+          "env": {
+            "FASTMCP_LOG_LEVEL": "literal"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "16-chrome-devtools-72.txt",
+    "source": "https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/1417f93ee3f8/README.md#L72",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "chrome-devtools",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "npx",
+          "args": ["-y", "chrome-devtools-mcp@latest"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "17-github-mcp-server-54.txt",
+    "source": "https://github.com/github/github-mcp-server/blob/6fbcd00b2034/README.md#L54",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "github",
+          "transport": "http",
+          "sourceFormat": "vscode-json",
+          "url": "https://api.githubcopilot.com/mcp/"
+        }
+      ]
+    }
+  },
+  {
+    "file": "18-github-mcp-server-68.txt",
+    "source": "https://github.com/github/github-mcp-server/blob/6fbcd00b2034/README.md#L68",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "github",
+          "transport": "http",
+          "sourceFormat": "vscode-json",
+          "url": "https://api.githubcopilot.com/mcp/",
+          "headers": {
+            "Authorization": "ref"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "19-notion-174.txt",
+    "source": "https://github.com/makenotion/notion-mcp-server/blob/cf16e5c20bfb/README.md#L174",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "some-context-server",
+          "transport": "stdio",
+          "sourceFormat": "zed-json",
+          "command": "npx",
+          "args": ["-y", "@notionhq/notion-mcp-server"],
+          "env": {
+            "OPENAPI_MCP_HEADERS": "placeholder"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "20-notion-287.txt",
+    "source": "https://github.com/makenotion/notion-mcp-server/blob/cf16e5c20bfb/README.md#L287",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "notionApi",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "docker",
+          "args": [
+            "run",
+            "--rm",
+            "-i",
+            "-e",
+            "NOTION_TOKEN=ntn_****",
+            "notion-mcp-server"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "file": "21-notion-510.txt",
+    "source": "https://github.com/makenotion/notion-mcp-server/blob/cf16e5c20bfb/README.md#L510",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "notion-local-package",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "notion-mcp-server",
+          "args": [],
+          "env": {
+            "NOTION_TOKEN": "placeholder"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "22-playwright-34.txt",
+    "source": "https://github.com/microsoft/playwright-mcp/blob/78eca85361ef/README.md#L34",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "playwright",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "npx",
+          "args": ["@playwright/mcp@latest"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "23-playwright-54.txt",
+    "source": "https://github.com/microsoft/playwright-mcp/blob/78eca85361ef/README.md#L54",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "playwright",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "npx",
+          "args": ["@playwright/mcp@latest"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "24-playwright-69.txt",
+    "source": "https://github.com/microsoft/playwright-mcp/blob/78eca85361ef/README.md#L69",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "playwright",
+          "transport": "stdio",
+          "sourceFormat": "cli-mcp-add",
+          "command": "npx",
+          "args": ["@playwright/mcp@latest"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "25-playwright-100.txt",
+    "source": "https://github.com/microsoft/playwright-mcp/blob/78eca85361ef/README.md#L100",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "playwright",
+          "transport": "stdio",
+          "sourceFormat": "claude-mcp-add",
+          "command": "npx",
+          "args": ["@playwright/mcp@latest"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "26-playwright-121.txt",
+    "source": "https://github.com/microsoft/playwright-mcp/blob/78eca85361ef/README.md#L121",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "playwright",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "npx",
+          "args": ["-y", "@playwright/mcp@latest"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "27-playwright-145.txt",
+    "source": "https://github.com/microsoft/playwright-mcp/blob/78eca85361ef/README.md#L145",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "playwright",
+          "transport": "stdio",
+          "sourceFormat": "cli-mcp-add",
+          "command": "npx",
+          "args": ["@playwright/mcp@latest"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "28-playwright-151.txt",
+    "source": "https://github.com/microsoft/playwright-mcp/blob/78eca85361ef/README.md#L151",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "playwright",
+          "transport": "stdio",
+          "sourceFormat": "codex-toml",
+          "command": "npx",
+          "args": ["@playwright/mcp@latest"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "29-playwright-211.txt",
+    "source": "https://github.com/microsoft/playwright-mcp/blob/78eca85361ef/README.md#L211",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "playwright",
+          "transport": "stdio",
+          "sourceFormat": "cli-mcp-add",
+          "command": "npx",
+          "args": ["@playwright/mcp@latest"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "30-playwright-328.txt",
+    "source": "https://github.com/microsoft/playwright-mcp/blob/78eca85361ef/README.md#L328",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "playwright",
+          "transport": "stdio",
+          "sourceFormat": "opencode-json",
+          "command": "npx",
+          "args": ["@playwright/mcp@latest"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "31-playwright-365.txt",
+    "source": "https://github.com/microsoft/playwright-mcp/blob/78eca85361ef/README.md#L365",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "playwright",
+          "transport": "stdio",
+          "sourceFormat": "code-add-mcp",
+          "command": "npx",
+          "args": ["@playwright/mcp@latest"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "32-playwright-849.txt",
+    "source": "https://github.com/microsoft/playwright-mcp/blob/78eca85361ef/README.md#L849",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "playwright",
+          "transport": "http",
+          "sourceFormat": "mcpServers-json",
+          "url": "http://localhost:8931/mcp"
+        }
+      ]
+    }
+  },
+  {
+    "file": "33-playwright-868.txt",
+    "source": "https://github.com/microsoft/playwright-mcp/blob/78eca85361ef/README.md#L868",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "playwright",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "docker",
+          "args": [
+            "run",
+            "-i",
+            "--rm",
+            "--init",
+            "--pull=always",
+            "mcr.microsoft.com/playwright/mcp"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "file": "34-sentry-mcp-64.txt",
+    "source": "https://github.com/getsentry/sentry-mcp/blob/c8447f8ae36a/README.md#L64",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "sentry",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "sentry",
+          "args": ["mcp"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "35-sentry-mcp-144.txt",
+    "source": "https://github.com/getsentry/sentry-mcp/blob/c8447f8ae36a/README.md#L144",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "sentry",
+          "transport": "http",
+          "sourceFormat": "mcpServers-json",
+          "url": "https://mcp.sentry.dev/mcp",
+          "headers": {
+            "Authorization": "ref"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "36-servers-everything-65.txt",
+    "source": "https://github.com/modelcontextprotocol/servers/blob/e1dc4b18dbb9/src/everything/README.md#L65",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "everything",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "cmd",
+          "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-everything"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "37-servers-fetch-229.txt",
+    "source": "https://github.com/modelcontextprotocol/servers/blob/e1dc4b18dbb9/src/fetch/README.md#L229",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "fetch",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "uvx",
+          "args": [
+            "mcp-server-fetch",
+            "--allowed-hosts",
+            "docs.python.org",
+            "*.wikipedia.org"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "file": "38-servers-filesystem-417.txt",
+    "source": "https://github.com/modelcontextprotocol/servers/blob/e1dc4b18dbb9/src/filesystem/README.md#L417",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "filesystem",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "docker",
+          "args": [
+            "run",
+            "-i",
+            "--rm",
+            "--mount",
+            "type=bind,src=/Users/username/Desktop,dst=/projects/Desktop",
+            "--mount",
+            "type=bind,src=/path/to/other/allowed/dir,dst=/projects/other/allowed/dir,ro",
+            "--mount",
+            "type=bind,src=/path/to/file.txt,dst=/projects/path/to/file.txt",
+            "mcp/filesystem",
+            "/projects"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "file": "39-servers-filesystem-523.txt",
+    "source": "https://github.com/modelcontextprotocol/servers/blob/e1dc4b18dbb9/src/filesystem/README.md#L523",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "filesystem",
+          "transport": "stdio",
+          "sourceFormat": "vscode-json",
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-filesystem",
+            "${workspaceFolder}"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "file": "40-servers-git-254.txt",
+    "source": "https://github.com/modelcontextprotocol/servers/blob/e1dc4b18dbb9/src/git/README.md#L254",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "git",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "docker",
+          "args": [
+            "run",
+            "--rm",
+            "-i",
+            "-e",
+            "GIT_AUTHOR_NAME=Your Name",
+            "-e",
+            "GIT_AUTHOR_EMAIL=you@example.com",
+            "-e",
+            "GIT_COMMITTER_NAME=Your Name",
+            "-e",
+            "GIT_COMMITTER_EMAIL=you@example.com",
+            "--mount",
+            "type=bind,src=/Users/username,dst=/Users/username",
+            "mcp/git"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "file": "41-servers-git-379.txt",
+    "source": "https://github.com/modelcontextprotocol/servers/blob/e1dc4b18dbb9/src/git/README.md#L379",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "git",
+          "transport": "stdio",
+          "sourceFormat": "server-json",
+          "command": "uvx",
+          "args": ["mcp-server-git", "--repository", "path/to/git/repo"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "42-servers-root-61.txt",
+    "source": "https://github.com/modelcontextprotocol/servers/blob/e1dc4b18dbb9/README.md#L61",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "memory",
+          "transport": "stdio",
+          "sourceFormat": "command-line",
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-memory"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "43-servers-root-108.txt",
+    "source": "https://github.com/modelcontextprotocol/servers/blob/e1dc4b18dbb9/README.md#L108",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "filesystem",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-filesystem",
+            "/path/to/allowed/files"
+          ]
+        },
+        {
+          "name": "git",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "uvx",
+          "args": ["mcp-server-git", "--repository", "path/to/git/repo"]
+        },
+        {
+          "name": "fetch",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "uvx",
+          "args": ["mcp-server-fetch"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "44-servers-time-52.txt",
+    "source": "https://github.com/modelcontextprotocol/servers/blob/e1dc4b18dbb9/src/time/README.md#L52",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "time",
+          "transport": "stdio",
+          "sourceFormat": "command-line",
+          "command": "uvx",
+          "args": ["mcp-server-time"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "45-supabase-26.txt",
+    "source": "https://github.com/supabase-community/supabase-mcp/blob/23f0df0ff598/README.md#L26",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "expect": {
+      "candidates": [
+        {
+          "name": "supabase",
+          "transport": "http",
+          "sourceFormat": "mcpServers-json",
+          "url": "https://mcp.supabase.com/mcp"
+        }
+      ]
+    }
+  },
+  {
+    "file": "46-archived-sentry-177.txt",
+    "source": "https://github.com/modelcontextprotocol/servers-archived/blob/9be4674d1ddf/src/sentry/README.md#L177",
+    "retrieved": "2026-11-12",
+    "kind": "false-positive",
+    "expect": {
+      "candidates": [],
+      "warningIncludes": "A block looks like JSON but does not par"
+    }
+  },
+  {
+    "file": "47-archived-sentry-206.txt",
+    "source": "https://github.com/modelcontextprotocol/servers-archived/blob/9be4674d1ddf/src/sentry/README.md#L206",
+    "retrieved": "2026-11-12",
+    "kind": "false-positive",
+    "expect": {
+      "candidates": [],
+      "warningIncludes": "A line starts the MCP Inspector, a tool "
+    }
+  },
+  {
+    "file": "48-chrome-devtools-94.txt",
+    "source": "https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/1417f93ee3f8/README.md#L94",
+    "retrieved": "2026-11-12",
+    "kind": "false-positive",
+    "expect": {
+      "candidates": [],
+      "warningIncludes": null
+    }
+  },
+  {
+    "file": "49-chrome-devtools-107.txt",
+    "source": "https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/1417f93ee3f8/README.md#L107",
+    "retrieved": "2026-11-12",
+    "kind": "false-positive",
+    "expect": {
+      "candidates": [],
+      "warningIncludes": "A line installs a package. That is a ste"
+    }
+  },
+  {
+    "file": "50-context7-51.txt",
+    "source": "https://github.com/upstash/context7/blob/c5e26f691905/README.md#L51",
+    "retrieved": "2026-11-12",
+    "kind": "false-positive",
+    "expect": {
+      "candidates": [],
+      "warningIncludes": "A line runs a package's `setup` step. Th"
+    }
+  },
+  {
+    "file": "51-github-mcp-server-167.txt",
+    "source": "https://github.com/github/github-mcp-server/blob/6fbcd00b2034/README.md#L167",
+    "retrieved": "2026-11-12",
+    "kind": "false-positive",
+    "expect": {
+      "candidates": [],
+      "warningIncludes": "A JSON block has parts left out (`...`),"
+    }
+  },
+  {
+    "file": "52-notion-349.txt",
+    "source": "https://github.com/makenotion/notion-mcp-server/blob/cf16e5c20bfb/README.md#L349",
+    "retrieved": "2026-11-12",
+    "kind": "false-positive",
+    "expect": {
+      "candidates": [],
+      "warningIncludes": "A line starts a server that listens on a"
+    }
+  },
+  {
+    "file": "53-notion-411.txt",
+    "source": "https://github.com/makenotion/notion-mcp-server/blob/cf16e5c20bfb/README.md#L411",
+    "retrieved": "2026-11-12",
+    "kind": "false-positive",
+    "expect": {
+      "candidates": [],
+      "warningIncludes": null
+    }
+  },
+  {
+    "file": "54-playwright-881.txt",
+    "source": "https://github.com/microsoft/playwright-mcp/blob/78eca85361ef/README.md#L881",
+    "retrieved": "2026-11-12",
+    "kind": "false-positive",
+    "expect": {
+      "candidates": [],
+      "warningIncludes": "A `docker run` line starts the container"
+    }
+  },
+  {
+    "file": "55-sentry-mcp-52.txt",
+    "source": "https://github.com/getsentry/sentry-mcp/blob/c8447f8ae36a/README.md#L52",
+    "retrieved": "2026-11-12",
+    "kind": "mixed",
+    "expect": {
+      "candidates": [
+        {
+          "name": "sentry",
+          "transport": "stdio",
+          "sourceFormat": "claude-mcp-add",
+          "command": "sentry",
+          "args": ["mcp"]
+        }
+      ],
+      "warningIncludes": "downloads a script and runs it"
+    }
+  },
+  {
+    "file": "56-servers-everything-201.txt",
+    "source": "https://github.com/modelcontextprotocol/servers/blob/e1dc4b18dbb9/src/everything/README.md#L201",
+    "retrieved": "2026-11-12",
+    "kind": "false-positive",
+    "expect": {
+      "candidates": [],
+      "warningIncludes": "A `docker run` line has no `-i`, so it c"
+    }
+  },
+  {
+    "file": "57-servers-fetch-244.txt",
+    "source": "https://github.com/modelcontextprotocol/servers/blob/e1dc4b18dbb9/src/fetch/README.md#L244",
+    "retrieved": "2026-11-12",
+    "kind": "false-positive",
+    "expect": {
+      "candidates": [],
+      "warningIncludes": null
+    }
+  },
+  {
+    "file": "58-servers-memory-392.txt",
+    "source": "https://github.com/modelcontextprotocol/servers/blob/e1dc4b18dbb9/src/memory/README.md#L392",
+    "retrieved": "2026-11-12",
+    "kind": "false-positive",
+    "expect": {
+      "candidates": [],
+      "warningIncludes": "A `docker run` line has no `-i`, so it c"
+    }
+  },
+  {
+    "file": "59-supabase-57.txt",
+    "source": "https://github.com/supabase-community/supabase-mcp/blob/23f0df0ff598/README.md#L57",
+    "retrieved": "2026-11-12",
+    "kind": "false-positive",
+    "expect": {
+      "candidates": [],
+      "warningIncludes": null
+    }
+  },
+  {
+    "file": "60-claude-add-http-notion.txt",
+    "source": "https://code.claude.com/docs/en/mcp",
+    "retrieved": "2026-11-12",
+    "kind": "docs",
+    "expect": {
+      "candidates": [
+        {
+          "name": "notion",
+          "transport": "http",
+          "sourceFormat": "claude-mcp-add",
+          "url": "https://mcp.notion.com/mcp"
+        }
+      ]
+    }
+  },
+  {
+    "file": "61-claude-add-http-header.txt",
+    "source": "https://code.claude.com/docs/en/mcp",
+    "retrieved": "2026-11-12",
+    "kind": "docs",
+    "expect": {
+      "candidates": [
+        {
+          "name": "secure-api",
+          "transport": "http",
+          "sourceFormat": "claude-mcp-add",
+          "url": "https://api.example.com/mcp",
+          "headers": {
+            "Authorization": "placeholder"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "62-claude-add-sse-asana.txt",
+    "source": "https://code.claude.com/docs/en/mcp",
+    "retrieved": "2026-11-12",
+    "kind": "docs",
+    "expect": {
+      "candidates": [
+        {
+          "name": "asana",
+          "transport": "sse",
+          "sourceFormat": "claude-mcp-add",
+          "url": "https://mcp.asana.com/sse"
+        }
+      ]
+    }
+  },
+  {
+    "file": "63-claude-add-stdio-env.txt",
+    "source": "https://code.claude.com/docs/en/mcp",
+    "retrieved": "2026-11-12",
+    "kind": "docs",
+    "expect": {
+      "candidates": [
+        {
+          "name": "airtable",
+          "transport": "stdio",
+          "sourceFormat": "claude-mcp-add",
+          "command": "npx",
+          "args": ["-y", "airtable-mcp-server"],
+          "env": {
+            "AIRTABLE_API_KEY": "placeholder"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "64-claude-add-json.txt",
+    "source": "https://code.claude.com/docs/en/mcp",
+    "retrieved": "2026-11-12",
+    "kind": "docs",
+    "expect": {
+      "candidates": [
+        {
+          "name": "example",
+          "transport": "stdio",
+          "sourceFormat": "claude-mcp-add-json",
+          "command": "npx",
+          "args": ["-y", "@example/mcp-server"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "65-claude-add-dbhub-dsn.txt",
+    "source": "https://code.claude.com/docs/en/mcp",
+    "retrieved": "2026-11-12",
+    "kind": "docs",
+    "expect": {
+      "candidates": [
+        {
+          "name": "db",
+          "transport": "stdio",
+          "sourceFormat": "claude-mcp-add",
+          "command": "npx",
+          "args": [
+            "-y",
+            "@bytebase/dbhub",
+            "--dsn",
+            "postgresql://readonly:pass@prod.db.com:5432/analytics"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "file": "66-claude-add-scope-user.txt",
+    "source": "https://code.claude.com/docs/en/mcp",
+    "retrieved": "2026-11-12",
+    "kind": "docs",
+    "expect": {
+      "candidates": [
+        {
+          "name": "hubspot",
+          "transport": "http",
+          "sourceFormat": "claude-mcp-add",
+          "url": "https://mcp.hubspot.com/anthropic"
+        }
+      ]
+    }
+  },
+  {
+    "file": "67-claude-mcp-json-expansion.txt",
+    "source": "https://code.claude.com/docs/en/mcp",
+    "retrieved": "2026-11-12",
+    "kind": "docs",
+    "expect": {
+      "candidates": [
+        {
+          "name": "api-server",
+          "transport": "http",
+          "sourceFormat": "mcpServers-json",
+          "url": "${API_BASE_URL:-https://api.example.com}/mcp",
+          "headers": {
+            "Authorization": "ref"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "68-devin-remote-transport.txt",
+    "source": "https://docs.devin.ai/cli/extensibility/mcp/configuration.md",
+    "retrieved": "2026-11-12",
+    "kind": "docs",
+    "expect": {
+      "candidates": [
+        {
+          "name": "notion",
+          "transport": "http",
+          "sourceFormat": "mcpServers-json",
+          "url": "https://mcp.notion.com/mcp"
+        }
+      ]
+    }
+  },
+  {
+    "file": "69-devin-github-token.txt",
+    "source": "https://docs.devin.ai/cli/extensibility/mcp/configuration.md",
+    "retrieved": "2026-11-12",
+    "kind": "docs",
+    "expect": {
+      "candidates": [
+        {
+          "name": "github",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-github"],
+          "env": {
+            "GITHUB_TOKEN": "placeholder"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "70-devin-oauth-fields.txt",
+    "source": "https://docs.devin.ai/cli/extensibility/mcp/configuration.md",
+    "retrieved": "2026-11-12",
+    "kind": "docs",
+    "expect": {
+      "candidates": [
+        {
+          "name": "my-server",
+          "transport": "http",
+          "sourceFormat": "mcpServers-json",
+          "url": "https://mcp.example.com/mcp"
+        }
+      ]
+    }
+  },
+  {
+    "file": "71-devin-disabled.txt",
+    "source": "https://docs.devin.ai/cli/extensibility/mcp/configuration.md",
+    "retrieved": "2026-11-12",
+    "kind": "docs",
+    "expect": {
+      "candidates": [
+        {
+          "name": "my-server",
+          "transport": "stdio",
+          "sourceFormat": "mcpServers-json",
+          "command": "npx",
+          "args": ["-y", "@company/mcp-server"]
+        }
+      ]
+    }
+  },
+  {
+    "file": "72-vscode-redirect-link-brave.txt",
+    "source": "https://github.com/modelcontextprotocol/servers-archived/blob/9be4674d1ddf/src/brave-search/README.md#L87",
+    "retrieved": "2026-11-12",
+    "kind": "readme",
+    "note": "README install badge",
+    "expect": {
+      "candidates": [
+        {
+          "name": "brave",
+          "transport": "stdio",
+          "sourceFormat": "vscode-link",
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+          "env": {
+            "BRAVE_API_KEY": "ref"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "file": "73-cursor-install-link.txt",
+    "source": "https://cursor.com/docs/mcp/install-links",
+    "retrieved": "2026-11-12",
+    "kind": "docs",
+    "note": "built from the documented link format with the memory server's README entry",
+    "expect": {
+      "candidates": [
+        {
+          "name": "memory",
+          "transport": "stdio",
+          "sourceFormat": "cursor-link",
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-memory"]
+        }
+      ]
+    }
+  }
+]
