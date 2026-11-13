@@ -326,7 +326,7 @@ export function failureHints(a: {
       hints.push({
         code: "install-node",
         text: `\`${prog}\` was not found. Install Node.js (it includes npx), then restart your editor so the PATH is refreshed.`,
-        link: "https://nodejs.org/en/download",
+        link: "https://docs.npmjs.com/downloading-and-installing-node-js-and-npm",
       });
     } else if (["uvx", "uv"].includes(prog)) {
       hints.push({
