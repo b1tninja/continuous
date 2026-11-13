@@ -160,7 +160,7 @@ import {
 } from "./util/retirementStartup";
 import { SESSION_LOG_STORAGE_DEFAULT } from "./util/sessionLog";
 import { searchSessions, titlesOf } from "./util/sessionSearch";
-import { resolveShell } from "./util/shell";
+import { executionShell } from "./util/shell";
 import {
   credentialUrlNames,
   getTerminalEnvironmentStatus,
@@ -1082,7 +1082,7 @@ export class Core {
           reviewerPrompt: readUserReviewerPrompt(),
           trustedDomains: readUserTrustedDomains(),
           envNames: readUserEnvNames(),
-          shell: resolveShell().kind,
+          shell: executionShell((await this.ide.getIdeInfo()).remoteName).kind,
           reviewerReasoning: reasoningOptionsForEffort(
             config.modeModels?.reviewer?.reasoningEffort,
           ),
@@ -2522,8 +2522,9 @@ export class Core {
           largeChangeLines: readUserLargeChangeLines(),
           ...(dirs[0] ? { cwd: uriToPath(dirs[0]) } : {}),
           ...deputyWorkspace(dirs),
-          // The shell terminal commands run in
-          shell: resolveShell().kind,
+          // The shell that will read a terminal command: the one started
+          // here, or unknown when it goes to a remote window's terminal
+          shell: executionShell((await this.ide.getIdeInfo()).remoteName).kind,
           // The tainted-session rule's fact; nothing when the rule is off
           ...taintInput(sessionId, callId),
         });
