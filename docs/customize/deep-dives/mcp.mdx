@@ -63,6 +63,37 @@ If you're coming from another tool that uses JSON MCP format configuration files
 For example, place your JSON MCP config file at `.continuous/mcpServers/mcp.json` in your workspace.
 </Info>
 
+## Add a server from a README snippet
+
+`continuous mcp add` takes what a server's README tells you to paste and adds it to your own `config.yaml`:
+
+```bash
+continuous mcp add 'npx -y @modelcontextprotocol/server-memory@2025.4.25' --dry-run
+continuous mcp add ./snippet.json
+pbpaste | continuous mcp add -
+```
+
+It reads `mcpServers` JSON (Claude Desktop, Cursor, Cline, Windsurf, Devin), VS Code `servers` with `inputs`, Zed `context_servers`, OpenCode `mcp`, Codex `[mcp_servers.<name>]` TOML, one server object, `npx`, `uvx`, `docker run`, `node` and `python` lines, an `https://` URL ending in `/mcp` or `/sse`, `claude mcp add` and `claude mcp add-json` lines, `code --add-mcp`, and VS Code and Cursor install links. Install steps, `curl ... | sh` lines, the MCP Inspector, a `docker run` without `-i` and a server started on a port are reported, not added.
+
+Before anything starts, it prints the exact command or URL (credentials masked), the environment variable and header names, the entry it will write, and the checks:
+
+| Level   | Checks                                                                                                                                                                                                    |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Blocked | a download run by a shell (`curl ... \| sh`, `iwr ... \| iex`); `docker run --privileged`, a mount of `/` or the Docker socket; `http://` to a host that is not this computer; on Windows, `& \| < > ^ %` in an `npx`, `uvx` or `cmd /c` argument |
+| Warning | `npx`, `uvx`, `pnpm dlx`, `pipx run` without an exact version (`@latest` counts as unpinned); `sh -c`, `cmd /c` and `powershell -Command`; docker host network or PID, `--cap-add`, a home-folder mount; a key written into the snippet; an example value such as `YOUR_TOKEN` left in |
+| Note    | `-y`, an image without a tag, a private address, `http://localhost`                                                                                                                                       |
+
+A blocked server is not added. Then it asks once whether to run the command (or connect to the URL) to test it, answer `y` or `N`, because the test starts the command. The test lists the server's tools, resources and prompts and disconnects; it never calls a tool. Tool descriptions that read like instructions to the model are marked. If the server does not start, the output shows its last lines of stderr (masked) and a fix, such as installing Node.js or uv.
+
+| Flag            | Meaning                                                                    |
+| --------------- | -------------------------------------------------------------------------- |
+| `--dry-run`     | Show the review and the entry. Start nothing, connect to nothing, write nothing |
+| `--name <name>` | Name the server, or pick one when the snippet has several                  |
+| `--skip-test`   | Save without the test                                                      |
+| `--yes-run`     | Test without asking; refused for a package that is not pinned              |
+
+A key in the snippet is stored in `~/.continuous/.env` and the file gets `${{ secrets.<SERVER>_<KEY> }}`. A value the README leaves for you to fill in (`YOUR_TOKEN`, VS Code's `${input:...}`) gets an empty line in `~/.continuous/.env` to fill in; the test waits until it has a value, or pass `--skip-test`. The file keeps its comments and key order, a file that does not parse is left alone and the error names the line, and a name already in use is refused with a free name to use instead. Adding a server does not trust it or approve its tools: calls still ask as your permission levels say.
+
 ## How to Configure MCP Servers
 
 To set up your own MCP server, read the [MCP

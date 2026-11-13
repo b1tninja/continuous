@@ -169,6 +169,17 @@ List every permission rule with its source and state, try a call against them, a
 | `--dry-run`              | `add`, `remove`, `adopt` | Show the change and write nothing                          |
 | `--probe <text>`         | `add`, `adopt`       | A sample call, to show what the rule changes                   |
 
+### `mcp add <paste-or-file>`
+
+Add an MCP server from a README snippet, a file holding one, or `-` for stdin: parse it, show what would run and what is risky, ask before a test connection, then add it to your `config.yaml`. See [Add a server from a README snippet](/customize/deep-dives/mcp#add-a-server-from-a-readme-snippet).
+
+| Flag            | Meaning                                                                         |
+| --------------- | ------------------------------------------------------------------------------- |
+| `--dry-run`     | Show the review and the entry; start nothing, connect to nothing, write nothing |
+| `--name <name>` | Name the server, or pick one when the snippet has several                       |
+| `--skip-test`   | Save without the test connection                                                |
+| `--yes-run`     | Test without asking; refused for a package that is not pinned                   |
+
 ### `audit [action] [session]`
 
 Read the audit trail of tool call decisions. Actions: `list`, `show <session>`, `inbox`, `suggest`, `shadow`, `prune`. See [Audit trail](/ide-extensions/agent/audit-trail).
@@ -336,7 +347,7 @@ Hide the deprecation or retirement notice shown at start-up for an Anthropic mod
 | ---- | ----------------------------------------------------------------------------------------------------------------------------- |
 | 0    | Success                                                                                                                       |
 | 1    | Error: a failed run, an invalid combination of flags, an unknown command, or a check that did not pass (`doctor`, `test-connection`) |
-| 2    | Usage error in a subcommand (`audit`, `clean`, `plan build`, `secrets`, `test-connection`), or `permissions` asking for `--yes` |
+| 2    | Usage error in a subcommand (`audit`, `clean`, `mcp`, `plan build`, `secrets`, `test-connection`), `mcp add` finding several servers without `--name`, or `permissions` asking for `--yes` |
 | 3    | `secrets scan` found something                                                                                                |
 | 20   | A run stopped at `--max-budget-usd`                                                                                           |
 | 21   | A run stopped at `--max-turns`                                                                                                |
