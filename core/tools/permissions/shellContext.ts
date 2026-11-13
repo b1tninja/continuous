@@ -1191,13 +1191,14 @@ export function interpretersOfCommand(
 /**
  * One line for an approval card: the interpreters that are not the outer
  * shell, outermost first, or undefined when the outer shell reads all of it.
- * `uncertain` is true when any of them is opaque, unknown or low-confidence.
+ * `uncertain` is true when any of them is opaque, unknown or low-confidence;
+ * `hidden` when what one of them runs is not written in the command at all.
  */
 export function describeInterpreters(
   command: string,
   outer: ShellKind | undefined,
   opts: InterpreterOptions = {},
-): { text: string; uncertain: boolean } | undefined {
+): { text: string; uncertain: boolean; hidden: boolean } | undefined {
   const { readings, truncated } = interpretersOfCommand(command, outer, opts);
   const changed = readings.filter(
     (r) => r.interpreter.changes && !r.interpreter.evident,
@@ -1219,6 +1220,7 @@ export function describeInterpreters(
   if (truncated) labels.push("more nested commands than are followed");
   return {
     text: labels.join(", then "),
+    hidden: truncated || changed.some(({ interpreter: c }) => c.opaque),
     uncertain:
       truncated ||
       changed.some(

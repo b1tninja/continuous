@@ -360,10 +360,12 @@ describe("with no outer shell known (a webview)", () => {
     ).toEqual({
       text: "bash -c",
       uncertain: false,
+      hidden: false,
     });
     expect(describeInterpreters("./deploy.sh", undefined)).toEqual({
       text: "./deploy.sh (a script: its first line, or on Windows its file type, names the interpreter)",
       uncertain: true,
+      hidden: true,
     });
   });
 });
@@ -395,12 +397,16 @@ describe("describeInterpreters: the line an approval card shows", () => {
       describeInterpreters("wsl bash -lc 'make test'", "powershell", {
         platform: "win32",
       }),
-    ).toEqual({ text: "bash -lc in WSL", uncertain: false });
+    ).toEqual({ text: "bash -lc in WSL", uncertain: false, hidden: false });
     expect(
       describeInterpreters(`bash -c "pwsh -c 'Get-Date'"`, "bash", {
         platform: "linux",
       }),
-    ).toEqual({ text: "bash -c, then pwsh -c", uncertain: false });
+    ).toEqual({
+      text: "bash -c, then pwsh -c",
+      uncertain: false,
+      hidden: false,
+    });
   });
 
   it("says uncertain for a script, a remote shell and a decoded command it cannot read", () => {
