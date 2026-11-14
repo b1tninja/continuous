@@ -275,6 +275,21 @@ export function getSessionFilePath(sessionId: string): string {
   return path.join(getSessionsFolderPath(), `${sessionId}.json`);
 }
 
+/** The append-only log of a session (STOR6); see core/util/sessionLog.ts. */
+export function getSessionLogFilePath(sessionId: string): string {
+  return path.join(getSessionsFolderPath(), `${sessionId}.jsonl`);
+}
+
+/** The folder of a session's own files (blobs): `sessions/<id>/`. */
+export function getSessionDataFolderPath(sessionId: string): string {
+  return path.join(getSessionsFolderPath(), sessionId);
+}
+
+/** Large strings of a session stored by hash (STOR7): `sessions/<id>/blobs/`. */
+export function getSessionBlobFolderPath(sessionId: string): string {
+  return path.join(getSessionDataFolderPath(sessionId), "blobs");
+}
+
 export function getSessionsListPath(): string {
   const filepath = path.join(getSessionsFolderPath(), "sessions.json");
   if (!fs.existsSync(filepath)) {

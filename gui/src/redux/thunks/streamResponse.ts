@@ -5,6 +5,7 @@ import { InputModifiers } from "core";
 import { selectSelectedChatModel } from "../slices/configSlice";
 import { ThunkApiType } from "../store";
 import { addUserInputToHistory } from "./addUserInputToHistory";
+import { checkpointSession } from "./session";
 import { streamNormalInput } from "./streamNormalInput";
 import { streamThunkWrapper } from "./streamThunkWrapper";
 
@@ -37,6 +38,9 @@ export const streamResponseThunk = createAsyncThunk<
             getState,
             ideMessenger: extra.ideMessenger,
           });
+        // On disk before the answer starts: a window that dies mid-turn
+        // reopens with the message and Resume (STOR6)
+        void checkpointSession(getState, extra.ideMessenger);
 
         unwrapResult(
           await dispatch(

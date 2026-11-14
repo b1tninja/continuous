@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -131,5 +132,66 @@ describe("--resume and a damaged session file", () => {
       err.mockRestore();
       out.mockRestore();
     }
+  });
+});
+
+describe("--resume and the extension's session log", () => {
+  const savedTestFlag = process.env.CONTINUE_CLI_TEST;
+
+  beforeEach(() => {
+    delete process.env.CONTINUE_CLI_TEST;
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(dir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+    if (savedTestFlag !== undefined) {
+      process.env.CONTINUE_CLI_TEST = savedTestFlag;
+    }
+  });
+
+  it("resumes a .jsonl session, reading its blobs", () => {
+    writeSession("older", "Older", new Date("2026-01-01"));
+    const output = "x".repeat(20_000);
+    const hash = createHash("sha256").update(output).digest("hex");
+    fs.mkdirSync(path.join(dir, "from-ide", "blobs"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "from-ide", "blobs", hash), output);
+    const lines = [
+      {
+        t: "header",
+        format: "continuous-session",
+        v: 1,
+        sessionId: "from-ide",
+      },
+      { t: "meta", k: "title", v: "From the IDE" },
+      { t: "meta", k: "workspaceDirectory", v: "/work/project" },
+      {
+        t: "item",
+        i: 0,
+        v: { message: { role: "user", content: "read it" }, contextItems: [] },
+      },
+      {
+        t: "item",
+        i: 1,
+        v: {
+          message: {
+            role: "tool",
+            content: { $blob: hash, n: output.length },
+            toolCallId: "c",
+          },
+          contextItems: [],
+        },
+      },
+    ];
+    const file = path.join(dir, "from-ide.jsonl");
+    fs.writeFileSync(file, lines.map((l) => `${JSON.stringify(l)}\n`).join(""));
+    const newest = new Date("2026-01-03");
+    fs.utimesSync(file, newest, newest);
+
+    const session = loadSession();
+    expect(session?.sessionId).toBe("from-ide");
+    expect(session?.title).toBe("From the IDE");
+    expect(session?.history[1].message.content).toBe(output);
   });
 });

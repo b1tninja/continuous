@@ -91,6 +91,10 @@ export function sessionBudgetWarning(
   sessionId: string,
   bytes: number,
   budget: number = SESSION_FILE_BUDGET_BYTES,
+  storage: "json" | "log" = "json",
 ): string {
+  if (storage === "log") {
+    return `Session ${sessionId} takes ${formatFileSize(bytes)} on disk (its log and stored outputs), past the ${formatFileSize(budget)} session budget: opening it reads all of it, and the chat window holds all of it in memory. Start a new session to keep working quickly.`;
+  }
   return `Session ${sessionId} file is ${formatFileSize(bytes)}, past the ${formatFileSize(budget)} session budget: every save rewrites it whole, so saving and opening it get slower. Start a new session to keep working quickly.`;
 }

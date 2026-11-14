@@ -1,5 +1,7 @@
 import { Command } from "commander";
 
+import { applyDebugPromptLogFlag } from "./util/debugPromptLog.js";
+
 // Function to add common options to any command
 export function addCommonOptions(command: Command): Command {
   return command
@@ -19,6 +21,13 @@ export function addCommonOptions(command: Command): Command {
       "Who decides what a rule leaves open, per area (context, tools, edits, plan, questions): a preset (careful, acceptEdits, handsOff, reviewer, idgaf) or area=level pairs such as tools=permissive,plan=manual. Levels: manual, cautious, automatic, permissive, idgaf.",
     )
     .option("--verbose", "Enable verbose logging")
+    .option(
+      "--debug-prompt-log",
+      "Keep each request's full prompt in ~/.continuous/logs/prompts/ (secrets masked, 50 MB, 14 days). Off by default",
+    )
+    .on("option:debug-prompt-log", () =>
+      applyDebugPromptLogFlag({ debugPromptLog: true }),
+    )
     .option("--beta-status-tool", "Enable beta status tool")
     .option(
       "--rule <rule>",

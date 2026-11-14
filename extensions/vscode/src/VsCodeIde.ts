@@ -758,6 +758,7 @@ class VsCodeIde implements IDE {
         "pauseCodebaseIndexOnStart",
         false,
       ),
+      debugPromptLog: settings.get<boolean>("debugPromptLog", false),
     };
     return ideSettings;
   }

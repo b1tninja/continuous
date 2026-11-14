@@ -358,7 +358,7 @@ describe("ContextMeter details", () => {
 });
 
 describe("ContextMeter session file (STOR8)", () => {
-  const listed = (fileBytes?: number) =>
+  const listed = (fileBytes?: number, storage?: "json" | "log") =>
     setAllSessionMetadata([
       {
         sessionId: "other",
@@ -373,6 +373,7 @@ describe("ContextMeter session file (STOR8)", () => {
         dateCreated: "0",
         workspaceDirectory: "",
         fileBytes,
+        ...(storage && { storage }),
       },
     ]);
 
@@ -398,6 +399,31 @@ describe("ContextMeter session file (STOR8)", () => {
     expect(note.className).toContain("text-warning");
     expect(note.textContent).toContain("Session file 63 MB, 2 items.");
     expect(note.textContent).toContain("Past the 50 MB session budget");
+  });
+
+  it("counts a log session's log and stored outputs", async () => {
+    const { user, store } = await setup({ reported: 86_000 });
+    await act(async () => {
+      store.dispatch(listed(1.5 * 1024 * 1024, "log"));
+    });
+    await user.click(screen.getByTestId("context-meter"));
+    const note = await screen.findByTestId("context-session-file");
+    expect(note.textContent).toBe(
+      "Session 1.5 MB on disk (log and stored outputs), 2 items.",
+    );
+  });
+
+  it("warns past the budget for a log session without saying saves rewrite it", async () => {
+    const { user, store } = await setup({ reported: 86_000 });
+    await act(async () => {
+      store.dispatch(listed(70 * 1024 * 1024, "log"));
+    });
+    await user.click(screen.getByTestId("context-meter"));
+    const note = await screen.findByTestId("context-session-file");
+    expect(note.getAttribute("data-over-budget")).toBe("true");
+    expect(note.textContent).toContain("Past the 50 MB session budget");
+    expect(note.textContent).toContain("opening it reads all of it");
+    expect(note.textContent).not.toContain("rewrites");
   });
 
   it("says nothing while the size is unknown", async () => {

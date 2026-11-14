@@ -82,6 +82,12 @@ import { refuseRoleCalls } from "./refuseRoleCalls";
 import { checkToolDialectLeak } from "./noteToolDialectLeak";
 import { nudgeLeakedToolCall } from "./nudgeLeakedToolCall";
 import { streamResponseAfterToolCall } from "./streamResponseAfterToolCall";
+import { checkpointSession } from "./session";
+
+/** While an answer streams, it is saved this often (STOR6 checkpoints)... */
+export const CHECKPOINT_EVERY_MS = 3_000;
+/** ...or after this much of it, whichever comes first. */
+export const CHECKPOINT_EVERY_CHARS = 32 * 1024;
 
 export const streamNormalInput = createAsyncThunk<
   void,
@@ -256,6 +262,10 @@ export const streamNormalInput = createAsyncThunk<
         );
       }
 
+      // The last token counts the API sent, for the chatInteraction record
+      let lastUsage: { promptTokens?: number; completionTokens?: number } = {};
+      let checkpointAt = Date.now();
+      let checkpointChars = 0;
       let next = await gen.next();
       while (!next.done) {
         if (!getState().session.isStreaming) {
@@ -280,13 +290,26 @@ export const streamNormalInput = createAsyncThunk<
         ) {
           dispatch(setRecoveryHold(false));
         }
-        if (reply.length > 0) dispatch(streamUpdate(reply));
+        if (reply.length > 0) {
+          dispatch(streamUpdate(reply));
+          // The partial answer, saved every few seconds or KB (STOR6)
+          checkpointChars += JSON.stringify(reply).length;
+          if (
+            checkpointChars >= CHECKPOINT_EVERY_CHARS ||
+            Date.now() - checkpointAt >= CHECKPOINT_EVERY_MS
+          ) {
+            checkpointChars = 0;
+            checkpointAt = Date.now();
+            void checkpointSession(getState, extra.ideMessenger);
+          }
+        }
 
         // The final chunk carries the API's token counts. Remember the input
         // size so the cache button can say what throwing the cache away costs,
         // and check that a cache that should have been warm was read.
         for (const message of next.value) {
           if (message.role === "assistant" && message.usage) {
+            lastUsage = message.usage;
             const key =
               message.route && message.route !== routeExpected
                 ? cacheKeyFor(message.route)
@@ -414,6 +437,14 @@ export const streamNormalInput = createAsyncThunk<
               modelName: selectedChatModel.title,
               modelTitle: selectedChatModel.title,
               sessionId: state.session.id,
+              // Core keeps sizes, these counts and a hash locally, not the
+              // texts (STOR4); the debug prompt log, when on, keeps the texts
+              ...(lastUsage.promptTokens !== undefined && {
+                promptTokens: lastUsage.promptTokens,
+              }),
+              ...(lastUsage.completionTokens !== undefined && {
+                completionTokens: lastUsage.completionTokens,
+              }),
               ...(!!activeTools.length && {
                 tools: activeTools.map((tool) => tool.function.name),
               }),

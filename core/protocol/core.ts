@@ -80,6 +80,8 @@ import {
   RangeInFileWithNextEditInfo,
   SerializedContinueConfig,
   Session,
+  SessionDelta,
+  SessionSaveResult,
   SiteIndexingConfig,
   SlashCommandDescWithSource,
   StreamDiffLinesPayload,
@@ -207,7 +209,8 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
   "history/list": [ListHistoryOptions, BaseSessionMetadata[]];
   "history/delete": [{ id: string }, void];
   "history/load": [{ id: string }, Session];
-  "history/save": [Session, void];
+  "history/save": [Session, SessionSaveResult | void];
+  "history/saveDelta": [SessionDelta, SessionSaveResult];
   "history/share": [{ id: string; outputDir?: string }, void];
   "history/clear": [undefined, void];
   "devdata/log": [DevDataLogEvent, void];

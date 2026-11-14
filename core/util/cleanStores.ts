@@ -2,7 +2,8 @@
  * Retention for the product's own persisted files (ROADMAP X15). Node only.
  *
  * `planClean` lists what is older than a cutoff under the global folder and
- * `runClean` deletes it. Only three stores are touched: `sessions/*.json`,
+ * `runClean` deletes it. Only three stores are touched: `sessions/*.json`
+ * and `sessions/*.jsonl` (with the session's `sessions/<id>/` folder of blobs),
  * `dev_data/` jsonl files (by the `timestamp` of each line) and `logs/`.
  * Nothing outside the global folder is ever touched, symbolic links are
  * skipped, and neither function returns file contents: only counts, sizes
@@ -110,7 +111,13 @@ function oldLines(file: string, cutoffMs: number) {
 const STORES: [StoreName, (f: string) => boolean][] = [
   [
     "sessions",
-    (f) => f.endsWith(".json") && path.basename(f) !== "sessions.json",
+    // A session's own file. Blobs under `sessions/<id>/` are written once and
+    // never touched again, so they are not aged on their own: they go with
+    // the session file that refers to them.
+    (f) =>
+      path.basename(path.dirname(f)) === "sessions" &&
+      (f.endsWith(".json") || f.endsWith(".jsonl")) &&
+      path.basename(f) !== "sessions.json",
   ],
   ["dev_data", (f) => f.endsWith(".jsonl")],
   ["logs", () => true],
@@ -123,15 +130,38 @@ function entryFor(
 ): CleanEntry | undefined {
   const st = fs.statSync(file);
   if (store !== "dev_data") {
-    return st.mtimeMs < cutoffMs
-      ? { store, file, bytes: st.size, action: "file" }
-      : undefined;
+    if (st.mtimeMs >= cutoffMs) return undefined;
+    const bytes =
+      st.size + (store === "sessions" ? folderBytes(sessionFolder(file)) : 0);
+    return { store, file, bytes, action: "file" };
   }
   const { old, oldBytes, kept } = oldLines(file, cutoffMs);
   if (!old) return undefined;
   return kept
     ? { store, file, bytes: oldBytes, action: "lines", lines: old }
     : { store, file, bytes: st.size, action: "file", lines: old };
+}
+
+/** `sessions/<id>/`, the folder of a session file's blobs. */
+function sessionFolder(file: string): string {
+  return path.join(path.dirname(file), sessionIdOf(file));
+}
+
+function sessionIdOf(file: string): string {
+  return path.basename(file).replace(/\.jsonl?$/, "");
+}
+
+/** Bytes of the regular files under `dir` (symbolic links not followed). */
+function folderBytes(dir: string): number {
+  let total = 0;
+  for (const f of walk(dir, [])) {
+    try {
+      total += fs.lstatSync(f).size;
+    } catch {
+      // gone meanwhile
+    }
+  }
+  return total;
 }
 
 /** One age for every store (a number), or the per-store defaults (undefined). */
@@ -180,6 +210,28 @@ function dropOldLines(file: string, cutoffMs: number): void {
   fs.renameSync(tmp, file);
 }
 
+/**
+ * Deletes a session's blob folder once neither of its files is left. Only a
+ * real folder inside the root: a symbolic link there is left alone.
+ */
+function removeSessionFolder(root: string, file: string): void {
+  const id = sessionIdOf(file);
+  const dir = path.dirname(file);
+  if (
+    fs.existsSync(path.join(dir, `${id}.json`)) ||
+    fs.existsSync(path.join(dir, `${id}.jsonl`))
+  ) {
+    return;
+  }
+  const folder = sessionFolder(file);
+  try {
+    if (!inside(root, folder) || !fs.lstatSync(folder).isDirectory()) return;
+  } catch {
+    return;
+  }
+  fs.rmSync(folder, { recursive: true, force: true });
+}
+
 /** Forget deleted session files in sessions.json, if it parses as a list. */
 function pruneSessionsList(root: string, deleted: Set<string>): void {
   const list = path.join(root, "sessions", "sessions.json");
@@ -223,7 +275,8 @@ export function runClean(plan: CleanPlan): CleanResult {
         fs.unlinkSync(e.file);
         result.deletedFiles++;
         if (e.store === "sessions") {
-          deletedSessions.add(path.basename(e.file, ".json"));
+          deletedSessions.add(sessionIdOf(e.file));
+          removeSessionFolder(plan.root, e.file);
         }
       } else {
         dropOldLines(e.file, plan.cutoffs[e.store]);
