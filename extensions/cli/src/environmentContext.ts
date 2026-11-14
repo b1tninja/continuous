@@ -1,5 +1,6 @@
 import { execSync } from "child_process";
 
+import { sanitiseEnvValue } from "core/util/envDisclosure.js";
 import type { ChatCompletionMessageParam } from "openai/resources.mjs";
 
 /**
@@ -23,6 +24,25 @@ function isGitRepo(): boolean {
   }
 }
 
+/**
+ * The porcelain text as the model may read it. File names come from the
+ * repository: hidden and control characters are removed (a name spelled in
+ * Unicode tag characters reaches the porcelain output as is when
+ * `core.quotePath` is false) and `&`, `<` and `>` are escaped, so a path such
+ * as `</context>x` cannot close the environment block. A line says how many
+ * characters were removed. Nothing else changes: a clean tree and names
+ * without those characters give the same bytes as before. The line and
+ * character caps are C65 (#750).
+ */
+export function gitStatusForPrompt(status: string): string {
+  const { text, removed } = sanitiseEnvValue(status.trim(), {
+    maxChars: Number.POSITIVE_INFINITY,
+  });
+  if (removed === 0) return text;
+  const what = removed === 1 ? "character was" : "characters were";
+  return `${text}\n(${removed} hidden or control ${what} removed from file names.)`;
+}
+
 function getGitStatus(): string {
   try {
     if (!isGitRepo()) {
@@ -32,7 +52,7 @@ function getGitStatus(): string {
       encoding: "utf-8",
       cwd: process.cwd(),
     });
-    return result.trim() || "Working tree clean";
+    return gitStatusForPrompt(result) || "Working tree clean";
   } catch {
     return "Git status not available";
   }
