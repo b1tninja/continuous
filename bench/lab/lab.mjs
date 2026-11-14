@@ -40,6 +40,7 @@ commands
   diff <before> <after>     compare two result files
   compare <A> <B>           pair two result sets: rates, McNemar exact (per pass and per prompt), flipped cases;
                             --unit prompt|pass|auto (auto: prompt when the passes ran at temperature 0)
+  envshell <cmd>            the env-shell-tasks suite (does telling the agent its shell reduce failed commands?): list, plan, run, selftest, replay, report, power; envshell help
   replay --dumps PATH       send recorded request dumps through the cache path, report cached/evaluated tokens
   suggest                   write profiles/<model>.json from the results
   fixtures --suite S        write observed corpus fixtures from raw replies
@@ -205,6 +206,9 @@ async function pickModels(spec, inv) {
 }
 
 export async function main(argv, env = process.env) {
+  // the env-shell-tasks suite has its own options (envshell/cli.mjs)
+  if (argv[0] === "envshell")
+    return (await import("./envshell/cli.mjs")).main(argv.slice(1), env);
   let parsed;
   try {
     parsed = parseArgs({

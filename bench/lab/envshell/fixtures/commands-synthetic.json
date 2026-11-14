@@ -1,0 +1,437 @@
+{
+  "note": "Synthetic, hand-written commands of the kinds agents write for bash, PowerShell and cmd. NOT recorded model output; used to test the detector against the shells' own parsers (oracle).",
+  "commands": [
+    {
+      "command": "cd src && npm test"
+    },
+    {
+      "command": "cd C:\\Users\\me\\proj; npm run build"
+    },
+    {
+      "command": "mkdir -p build && cd build && cmake .."
+    },
+    {
+      "command": "ls -la"
+    },
+    {
+      "command": "ls -la src | grep foo"
+    },
+    {
+      "command": "rm -rf node_modules && npm ci"
+    },
+    {
+      "command": "cat package.json | head -20"
+    },
+    {
+      "command": "cat <<'EOF' > notes.txt\nhello\nEOF"
+    },
+    {
+      "command": "export NODE_ENV=production && node app.js"
+    },
+    {
+      "command": "NODE_ENV=test npm test"
+    },
+    {
+      "command": "echo $HOME"
+    },
+    {
+      "command": "echo $env:USERPROFILE"
+    },
+    {
+      "command": "echo %USERPROFILE%"
+    },
+    {
+      "command": "git status"
+    },
+    {
+      "command": "git log --oneline -5"
+    },
+    {
+      "command": "git commit -m \"fix: handle edge case\""
+    },
+    {
+      "command": "git commit -m 'a && b'"
+    },
+    {
+      "command": "git add -A && git commit -m wip"
+    },
+    {
+      "command": "npm test 2>&1 | tail -30"
+    },
+    {
+      "command": "npm test 2>&1 | Select-Object -Last 30"
+    },
+    {
+      "command": "find . -name \"*.ts\" -not -path \"./node_modules/*\""
+    },
+    {
+      "command": "Get-ChildItem -Recurse -Filter *.ts | Select-Object -First 20"
+    },
+    {
+      "command": "Get-ChildItem -Force | Where-Object { $_.Length -gt 1kb }"
+    },
+    {
+      "command": "Select-String -Path src\\*.ts -Pattern TODO"
+    },
+    {
+      "command": "grep -rn \"TODO\" src/"
+    },
+    {
+      "command": "grep -rn TODO src/ | wc -l"
+    },
+    {
+      "command": "sed -i 's/foo/bar/g' a.txt"
+    },
+    {
+      "command": "awk '{print $1}' data.txt"
+    },
+    {
+      "command": "head -n 5 a.txt"
+    },
+    {
+      "command": "tail -f app.log"
+    },
+    {
+      "command": "touch a.txt"
+    },
+    {
+      "command": "which node"
+    },
+    {
+      "command": "curl -s https://example.com | jq ."
+    },
+    {
+      "command": "curl.exe -s https://example.com"
+    },
+    {
+      "command": "Invoke-WebRequest https://example.com -UseBasicParsing"
+    },
+    {
+      "command": "node -e \"console.log(1)\""
+    },
+    {
+      "command": "node -e 'console.log(1)'"
+    },
+    {
+      "command": "python -c \"print(1)\""
+    },
+    {
+      "command": "python3 script.py"
+    },
+    {
+      "command": "pip install -r requirements.txt"
+    },
+    {
+      "command": "$env:FOO = 'bar'; node app.js"
+    },
+    {
+      "command": "set FOO=bar && node app.js"
+    },
+    {
+      "command": "if exist build rmdir /s /q build"
+    },
+    {
+      "command": "dir /b"
+    },
+    {
+      "command": "type a.txt"
+    },
+    {
+      "command": "del /q *.tmp"
+    },
+    {
+      "command": "if [ -f a.txt ]; then cat a.txt; fi"
+    },
+    {
+      "command": "for f in *.txt; do echo $f; done"
+    },
+    {
+      "command": "for ($i=0; $i -lt 3; $i++) { Write-Host $i }"
+    },
+    {
+      "command": "foreach ($f in Get-ChildItem) { $f.Name }"
+    },
+    {
+      "command": "while read line; do echo $line; done < a.txt"
+    },
+    {
+      "command": "test -d build || mkdir build"
+    },
+    {
+      "command": "[ -d build ] || mkdir build"
+    },
+    {
+      "command": "[[ -n \"$X\" ]] && echo set"
+    },
+    {
+      "command": "ls /tmp"
+    },
+    {
+      "command": "cat /etc/hosts"
+    },
+    {
+      "command": "cd /mnt/c/Users/me"
+    },
+    {
+      "command": "cd /c/Users/me"
+    },
+    {
+      "command": "node app.js > /dev/null 2>&1 &"
+    },
+    {
+      "command": "Start-Process node -ArgumentList app.js -WindowStyle Hidden"
+    },
+    {
+      "command": "nohup node app.js &"
+    },
+    {
+      "command": "sleep 2"
+    },
+    {
+      "command": "Start-Sleep -Seconds 2"
+    },
+    {
+      "command": "chmod +x run.sh && ./run.sh"
+    },
+    {
+      "command": "./run.sh"
+    },
+    {
+      "command": ".\\run.ps1"
+    },
+    {
+      "command": "powershell -Command \"Get-Date\""
+    },
+    {
+      "command": "cmd /c dir"
+    },
+    {
+      "command": "bash -c \"ls -la\""
+    },
+    {
+      "command": "wsl ls -la"
+    },
+    {
+      "command": "docker ps -a"
+    },
+    {
+      "command": "docker run --rm -v \"$PWD:/app\" node:20 npm test"
+    },
+    {
+      "command": "kill -9 1234"
+    },
+    {
+      "command": "Stop-Process -Id 1234"
+    },
+    {
+      "command": "taskkill /F /PID 1234"
+    },
+    {
+      "command": "sort -u a.txt"
+    },
+    {
+      "command": "sort a.txt | uniq -c | sort -nr"
+    },
+    {
+      "command": "diff a.txt b.txt"
+    },
+    {
+      "command": "Compare-Object (Get-Content a.txt) (Get-Content b.txt)"
+    },
+    {
+      "command": "xargs -n1 echo < a.txt"
+    },
+    {
+      "command": "tar -czf out.tgz src"
+    },
+    {
+      "command": "Compress-Archive -Path src -DestinationPath out.zip"
+    },
+    {
+      "command": "cp -r src dist"
+    },
+    {
+      "command": "Copy-Item -Recurse src dist"
+    },
+    {
+      "command": "mv a.txt b.txt"
+    },
+    {
+      "command": "Move-Item a.txt b.txt"
+    },
+    {
+      "command": "echo \"hello\" > a.txt"
+    },
+    {
+      "command": "echo hello | Out-File a.txt -Encoding utf8"
+    },
+    {
+      "command": "printf 'a\\nb\\n' > a.txt"
+    },
+    {
+      "command": "Set-Content a.txt 'x'"
+    },
+    {
+      "command": "(Get-Content a.txt) -replace 'foo','bar' | Set-Content a.txt"
+    },
+    {
+      "command": "npx tsc --noEmit"
+    },
+    {
+      "command": "npm run lint -- --fix"
+    },
+    {
+      "command": "yarn install"
+    },
+    {
+      "command": "cargo build --release 2>&1 | tail -20"
+    },
+    {
+      "command": "go test ./... 2>&1 | head -50"
+    },
+    {
+      "command": "make -j4"
+    },
+    {
+      "command": "dotnet build"
+    },
+    {
+      "command": "code ."
+    },
+    {
+      "command": "echo done"
+    },
+    {
+      "command": "echo \"a && b\""
+    },
+    {
+      "command": "Write-Host \"a || b\""
+    },
+    {
+      "command": "true && echo ok"
+    },
+    {
+      "command": "false || echo failed"
+    },
+    {
+      "command": "ps aux | grep node"
+    },
+    {
+      "command": "Get-Process node"
+    },
+    {
+      "command": "env | sort"
+    },
+    {
+      "command": "Get-ChildItem Env: | Sort-Object Name"
+    },
+    {
+      "command": "printenv HOME"
+    },
+    {
+      "command": "$PWD"
+    },
+    {
+      "command": "pwd"
+    },
+    {
+      "command": "cd ..; pwd"
+    },
+    {
+      "command": "cd .. && pwd"
+    },
+    {
+      "command": "cat a.txt b.txt > c.txt"
+    },
+    {
+      "command": "Get-Content a.txt, b.txt | Set-Content c.txt"
+    },
+    {
+      "command": "test -f a.txt && echo yes || echo no"
+    },
+    {
+      "command": "mkdir build; cd build"
+    },
+    {
+      "command": "New-Item -ItemType Directory -Force build | Out-Null"
+    },
+    {
+      "command": "git diff --stat HEAD~1"
+    },
+    {
+      "command": "git stash && git pull --rebase && git stash pop"
+    },
+    {
+      "command": "git checkout -b feature/x"
+    },
+    {
+      "command": "git push origin HEAD"
+    },
+    {
+      "command": "gh pr create --title \"x\" --body \"y\""
+    },
+    {
+      "command": "gh pr view 12 --json state -q .state"
+    },
+    {
+      "command": "ssh host 'ls -la'"
+    },
+    {
+      "command": "scp a.txt host:/tmp/"
+    },
+    {
+      "command": "rsync -av src/ dest/"
+    },
+    {
+      "command": "du -sh *"
+    },
+    {
+      "command": "df -h"
+    },
+    {
+      "command": "ls -R"
+    },
+    {
+      "command": "wc -l *.ts"
+    },
+    {
+      "command": "file a.bin"
+    },
+    {
+      "command": "stat a.txt"
+    },
+    {
+      "command": "basename \"$PWD\""
+    },
+    {
+      "command": "readlink -f a.txt"
+    },
+    {
+      "command": "realpath a.txt"
+    },
+    {
+      "command": "date +%Y-%m-%d"
+    },
+    {
+      "command": "Get-Date -Format yyyy-MM-dd"
+    },
+    {
+      "command": "uname -a"
+    },
+    {
+      "command": "whoami"
+    },
+    {
+      "command": "hostname"
+    },
+    {
+      "command": "echo $PATH"
+    },
+    {
+      "command": "echo $USER"
+    },
+    {
+      "command": "echo ${HOME}/x"
+    }
+  ]
+}

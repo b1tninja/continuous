@@ -367,6 +367,7 @@ adapter.mjs   the one module that touches the product
 lab.mjs       the CLI
 lib/          ollama client, transports, server helper, cache suite, compare, think probe, replay, guards, suites, classify, run, report, diff, suggest, fixtures, inventory, stats (Wilson, effective n), sampling (inherit, seeds, sampling record), paths, prompts
 suites/       dialect-probe, args-whitespace, prompt-variants, reviewer, leaks, cache (data)
+envshell/     the env-shell-tasks suite: do an environment block and corrective hints reduce failed shell commands (own README; `lab.mjs envshell help`)
 fixtures/     frozen agent tool list, recorded-shape replies for the whitespace report (args-whitespace/)
 samples/      small committed examples (from the fake server)
 test/         offline tests and the fake Ollama
