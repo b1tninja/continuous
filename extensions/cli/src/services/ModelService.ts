@@ -9,8 +9,10 @@ import { readUserToolPermissions } from "core/util/userToolPermissions.js";
 import { AuthConfig, getModelName } from "../auth/workos.js";
 import { createLlmApi, getLlmApi } from "../config.js";
 import { logger } from "../util/logger.js";
+import { userNotice } from "../util/userNotice.js";
 
 import { BaseService, ServiceWithDependencies } from "./BaseService.js";
+import { checkModeModelsForCli } from "./modeModelsCheck.js";
 import { AgentFileServiceState, ModelServiceState } from "./types.js";
 
 /**
@@ -76,6 +78,7 @@ export class ModelService
       logger.warn(notice);
     }
     this.authConfig = authConfig;
+    reportModeModelsProblems(assistant);
     this.availableModels = (assistant.models?.filter(
       (model) =>
         model && (model.roles?.includes("chat") || model.roles === undefined),
@@ -493,4 +496,26 @@ export function withReasoningEffort(
       },
     },
   } as ModelConfig;
+}
+
+let configLoads = 0;
+
+/**
+ * The `modeModels` entries the CLI skips, and the efforts it does not send
+ * (M8): one notice per config load, naming each entry and model. Without it
+ * the CLI keeps the current model, or sends no effort, and says nothing.
+ */
+export function reportModeModelsProblems(assistant: AssistantUnrolled): void {
+  configLoads++;
+  const problems = checkModeModelsForCli(
+    (assistant as { modeModels?: Record<string, any> }).modeModels,
+    (assistant.models ?? []).filter((m): m is ModelConfig => !!m),
+  );
+  if (problems.length === 0) return;
+  userNotice(
+    ["The CLI skips part of modeModels in this config:", ...problems].join(
+      "\n- ",
+    ),
+    `modeModels#${configLoads}`,
+  );
 }

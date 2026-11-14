@@ -8,6 +8,7 @@ vi.mock("../auth/workos.js");
 import * as workos from "../auth/workos.js";
 import { AuthConfig } from "../auth/workos.js";
 import * as config from "../config.js";
+import { resetUserNotices, setUserNoticeSink } from "../util/userNotice.js";
 
 import { ModelService, withReasoningEffort } from "./ModelService.js";
 
@@ -407,6 +408,34 @@ describe("ModelService: the model for a use (modeModels)", () => {
     expect(await service.switchToModelForUse("replan")).toBe(false); // falls back to plan
     expect(await service.switchToModelForUse("loop")).toBe(true);
     expect(service.getState().model?.model).toBe("gpt-4");
+  });
+
+  test("tells the person once per config load what modeModels the CLI skips (M8)", async () => {
+    const lines: string[] = [];
+    resetUserNotices();
+    setUserNoticeSink((text) => lines.push(text));
+    try {
+      const modeModels = {
+        plan: { model: "Missing" },
+        loop: { model: "Judge" },
+        agent: { model: "Claude 3", reasoningEffort: "high" },
+      };
+      await start(modeModels);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain('"Missing"');
+      expect(lines[0]).toContain(
+        'modeModels.loop: "Judge" is not a chat model',
+      );
+      // Anthropic applies the effort (#852): nothing about it
+      expect(lines[0]).not.toContain("reasoningEffort");
+      // a second load says it again, once
+      await start(modeModels);
+      expect(lines).toHaveLength(2);
+      await start({ plan: { model: "Claude 3" } });
+      expect(lines).toHaveLength(2);
+    } finally {
+      resetUserNotices();
+    }
   });
 
   test("leaves the model alone for a use with no entry or a non-chat model", async () => {

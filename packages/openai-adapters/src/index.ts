@@ -225,6 +225,10 @@ export {
 
 // export
 export { AiSdkApi } from "./apis/AiSdk.js";
+export {
+  appliesReasoningEffort,
+  REASONING_EFFORT_NOT_APPLIED,
+} from "./reasoningEffortSupport.js";
 export type { BaseLlmApi } from "./apis/base.js";
 export type {
   AiSdkConfig,
