@@ -1,8 +1,8 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import * as core from "./bedrockHelpers";
 import * as coreRules from "./bedrockFamilyRules";
+import * as core from "./bedrockHelpers";
 
 // Loaded at run time from a path held in a variable, not with a static import,
 // for the reason given in bedrockOneHourCache.vitest.ts.
@@ -440,7 +440,6 @@ describe("the unmeasured families (plans/model-families-2026-11.md)", () => {
       "zai.glm-5",
       "minimax.minimax-m2.5",
       "nvidia.nemotron-super-3-120b",
-      "us.xai.grok-4.6",
     ];
     for (const id of unwired) {
       for (const reasoning of REASONING) {
@@ -504,11 +503,16 @@ describe("the families measured live on 2026-11-10", () => {
         expect(row.probedOn).toBe("2026-11-10");
         expect(row.evidence!.length).toBeGreaterThan(0);
       }
-      for (const id of ["kimi-k2.5", "grok-4.6"]) {
+      for (const id of ["kimi-k2.5"]) {
         expect(rules.FAMILY_RULES.find((r) => r.id === id)!.status).toBe(
           "unprobed",
         );
       }
+      // Grok 4.6 and 4.7 were measured live on 2026-11-14
+      const grok = rules.FAMILY_RULES.find((r) => r.id === "grok-4.6")!;
+      expect(grok.status).toBe("probed");
+      expect(grok.probedOn).toBe("2026-11-14");
+      expect(grok.evidence!.length).toBeGreaterThan(0);
     }
   });
 

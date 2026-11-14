@@ -32,17 +32,31 @@ import {
 } from "openai/resources/index";
 
 import {
+  bedrockRefusedField,
+  converseRequestHasField,
+  converseRequestWithoutField,
+} from "@continuedev/llm-info";
+import { holdChunk } from "../dialects/holdSignal.js";
+import type { RecoveredCall } from "../dialects/qwenXml.js";
+import {
+  createTextToolRecovery,
+  dialectToolsFromConverse,
+  recoveredCallId,
+  recoverFromText,
+  type TextToolRecovery,
+} from "../dialects/recovery.js";
+import {
   applyCrossRegionInference,
   bedrockCachePartsForModel,
   bedrockCachePoint,
   bedrockCachePointAfterTextOnly,
   bedrockCacheTtl,
   bedrockFinishReason,
-  bedrockModelAccessMessage,
   bedrockMinMaxTokens,
+  bedrockModelAccessMessage,
   bedrockOmitUnsupportedInference,
-  bedrockRepairsStreamedToolInput,
   bedrockReasoningFields,
+  bedrockRepairsStreamedToolInput,
   bedrockSamplingParams,
   bedrockStreamsToolInputCleanly,
   bedrockToolsNeedNonStreaming,
@@ -64,33 +78,9 @@ import {
   ToolInputGate,
   toolSchemaKeys,
 } from "./bedrockHelpers.js";
-import { holdChunk } from "../dialects/holdSignal.js";
-import type { RecoveredCall } from "../dialects/qwenXml.js";
-import {
-  createTextToolRecovery,
-  dialectToolsFromConverse,
-  recoveredCallId,
-  recoverFromText,
-  type TextToolRecovery,
-} from "../dialects/recovery.js";
-import {
-  bedrockRefusedField,
-  converseRequestHasField,
-  converseRequestWithoutField,
-} from "@continuedev/llm-info";
 
-import {
-  AutoCacheTtl,
-  isCachePinned,
-  optsOutOfPromptCache,
-  requestedCacheTtl,
-} from "./cacheTtl.js";
-import { recordFieldFallback, refusedFields } from "./fieldFallbacks.js";
-import {
-  reasoningSwitch,
-  requestedReasoningEffort,
-} from "./reasoningSwitch.js";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
+import { fromStatic } from "@aws-sdk/token-providers";
 import {
   createAgentForUrl,
   defaultUseSystemCa,
@@ -98,7 +88,6 @@ import {
   needsCustomAgent,
 } from "@continuedev/fetch";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
-import { fromStatic } from "@aws-sdk/token-providers";
 import { BedrockConfig } from "../types.js";
 import {
   chatChunk,
@@ -115,6 +104,17 @@ import {
   FimCreateParamsStreaming,
   RerankCreateParams,
 } from "./base.js";
+import {
+  AutoCacheTtl,
+  isCachePinned,
+  optsOutOfPromptCache,
+  requestedCacheTtl,
+} from "./cacheTtl.js";
+import { recordFieldFallback, refusedFields } from "./fieldFallbacks.js";
+import {
+  reasoningSwitch,
+  requestedReasoningEffort,
+} from "./reasoningSwitch.js";
 
 import {
   isTaskListBlockText,
@@ -1273,6 +1273,10 @@ export class BedrockApi implements BaseLlmApi {
       // Each toolUse block gets its own tool_calls index, so a reply with
       // several calls is not merged into one.
       let toolIndex = -1;
+      // The tool_calls index of each toolUse block, by contentBlockIndex, so
+      // an input fragment goes to its own call (fragments carry only the
+      // block index; the id comes with the start)
+      const toolIndexByBlock = new Map<number, number>();
       // A toolUse block is held until its input is known to parse (see
       // ToolInputGate): a model that streams it broken is retried once
       // through Converse, before any of it has reached the caller.
@@ -1371,15 +1375,22 @@ export class BedrockApi implements BaseLlmApi {
             continue;
           }
 
-          // Handle tool use
+          // Handle tool use. A fragment belongs to the call its block
+          // started (contentBlockIndex), not to the newest call: with parallel
+          // calls their fragments can interleave
           if (delta.toolUse) {
+            const blockIndex = chunk.contentBlockDelta?.contentBlockIndex;
+            const callIndex =
+              (blockIndex === undefined
+                ? undefined
+                : toolIndexByBlock.get(blockIndex)) ?? Math.max(toolIndex, 0);
             const fragment = chatChunkFromDelta({
               model: body.model,
               id,
               delta: {
                 tool_calls: [
                   {
-                    index: Math.max(toolIndex, 0),
+                    index: callIndex,
                     id: delta.toolUse.toolUseId,
                     type: "function",
                     function: {
@@ -1400,6 +1411,10 @@ export class BedrockApi implements BaseLlmApi {
 
           if (start.toolUse) {
             toolIndex++;
+            const startedBlock = chunk.contentBlockStart.contentBlockIndex;
+            if (startedBlock !== undefined) {
+              toolIndexByBlock.set(startedBlock, toolIndex);
+            }
             toolName = start.toolUse.name;
             const opened = chatChunkFromDelta({
               model: body.model,

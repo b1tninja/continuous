@@ -1,8 +1,8 @@
-import { Usage } from "../..";
 import {
   normalizeClaudeModelId,
   normalizeNovaModelId,
 } from "@continuedev/llm-info";
+import { Usage } from "../..";
 import { OPENROUTER_MODELS_URL } from "../openRouterCatalog";
 import {
   getBedrockPriceList,
@@ -231,14 +231,34 @@ function continuesWithMinorVersion(rest: string): boolean {
  * its own for Nova 2 Lite's cheaper `global.` profile.
  */
 const BEDROCK_GEO_PROFILE_FACTOR = 1.1;
-const BEDROCK_GEO_PREFIX = /^(us|eu|apac|jp|au|ca)\.anthropic\./i;
+const BEDROCK_GEO_PREFIX =
+  /^(?:us|eu|apac|jp|au|ca)\.(anthropic|openai|xai)\.(.+)$/i;
 /** Normalized IDs of the Claude models the premium applies to: 4.5 and later. */
 const REGIONAL_PREMIUM_MODELS =
   /^claude-(?:(?:opus|sonnet|haiku)-(?:4-[5-9]|[5-9])|fable|mythos)/;
+/**
+ * The OpenAI and xAI models whose geographic profiles carry the premium. GPT
+ * 5.x and 6.x: the gateway's table bills `us.openai.gpt-5.6-sol` at $4.40 /
+ * $22 against OpenAI's $4 / $20, and the same 1.1 on Terra, Luna and 6.x.
+ * Grok: the AWS Price List rows `xai.grok-4.6-mantle-*-standard` are 1.1 times
+ * the `-global-standard` rows (2026-11-14). GPT OSS is on-demand by its bare
+ * ID and stays at list.
+ */
+const REGIONAL_PREMIUM_OTHER: Record<string, RegExp> = {
+  openai: /^gpt-[5-9](?:[.-]|$)/i,
+  xai: /^grok-/i,
+};
 
 /** The multiplier to apply to list prices for this model ID. */
 export function bedrockRegionalPriceFactor(model: string): number {
-  if (!BEDROCK_GEO_PREFIX.test(model)) return 1;
+  const geo = BEDROCK_GEO_PREFIX.exec(model);
+  if (!geo) return 1;
+  const vendor = geo[1].toLowerCase();
+  if (vendor !== "anthropic") {
+    return REGIONAL_PREMIUM_OTHER[vendor]?.test(geo[2])
+      ? BEDROCK_GEO_PROFILE_FACTOR
+      : 1;
+  }
   const id = normalizeClaudeModelId(model);
   return id && REGIONAL_PREMIUM_MODELS.test(id)
     ? BEDROCK_GEO_PROFILE_FACTOR
@@ -508,6 +528,18 @@ const BEDROCK_PRICING: { id: string; pricing: ModelPricing }[] = [
   { id: "deepseek.v3.2", pricing: tokenPricing(0.62, 1.85) },
   { id: "openai.gpt-oss-120b", pricing: tokenPricing(0.15, 0.6) },
   { id: "openai.gpt-oss-20b", pricing: tokenPricing(0.07, 0.3) },
+  // xAI Grok: the AWS Price List's `xai.grok-4.x-mantle-*-global-standard`
+  // rows (us-east-1 and us-east-2, fetched 2026-11-14); a regional profile
+  // bills 1.1 times this (bedrockRegionalPriceFactor). Cache reads have their
+  // own row ($0.50 per MTok for 4.6 and 4.7).
+  {
+    id: "xai.grok-4.7",
+    pricing: { ...tokenPricing(2, 6), cacheRead: 0.5 },
+  },
+  {
+    id: "xai.grok-4.6",
+    pricing: { ...tokenPricing(2, 6), cacheRead: 0.5 },
+  },
   {
     id: "mistral.mistral-large-3-675b-instruct",
     pricing: tokenPricing(0.5, 1.5),
@@ -569,17 +601,61 @@ function calculateBedrockCost(
   }
   const other = findBedrockPricing(model);
   if (other) {
+    const factor = bedrockRegionalPriceFactor(model);
     return {
       ...priceCachedUsage(
         model,
         usage,
-        other,
-        "Prices: AWS Price List, us-east-1 on-demand",
+        scalePricing(other, factor),
+        factor === 1
+          ? "Prices: AWS Price List, us-east-1 on-demand"
+          : `Prices: AWS Price List, us-east-1 on-demand × ${factor} (Bedrock regional endpoint)`,
       ),
       priceSource: AWS_PRICE_LIST_SOURCE,
     };
   }
+  // OpenAI's GPT models on Bedrock (us.openai.gpt-6.1-sol and the like) bill
+  // at OpenAI's list prices, times 1.1 on a regional profile; nothing priced
+  // them before, so their cost showed as unknown
+  const gpt = findBedrockOpenAIPricing(model);
+  if (gpt) {
+    const factor = bedrockRegionalPriceFactor(model);
+    return {
+      ...priceCachedUsage(
+        model,
+        usage,
+        scalePricing(gpt, factor),
+        factor === 1
+          ? "Prices: OpenAI list (Bedrock)"
+          : `Prices: OpenAI list × ${factor} (Bedrock regional endpoint)`,
+      ),
+      priceSource: OPENAI_PRICE_SOURCE,
+    };
+  }
   return calculateCachedModelCost(model, usage);
+}
+
+/**
+ * OpenAI's list prices for a GPT model served by Bedrock, in Bedrock's
+ * pricing shape (`promptTokens` there leaves the cache out): the model ID
+ * after its `openai.` part (`us.openai.gpt-6.1-sol` -> `gpt-6.1-sol`).
+ * Cache writes at OpenAI's 30-minute rate for both lifetimes Bedrock reports.
+ * Null for GPT OSS (its own rows in BEDROCK_PRICING) and unlisted models.
+ */
+export function findBedrockOpenAIPricing(model: string): ModelPricing | null {
+  const match = /(?:^|\.)openai\.(gpt-[^:]+?)(?:-v\d+)?(?::\d+)?$/i.exec(model);
+  if (!match || /^gpt-oss/i.test(match[1])) return null;
+  const price = openAIPriceFor(match[1]);
+  if (!price) return null;
+  const cacheRead = price.cachedInput ?? price.input;
+  const cacheWrite = price.writes?.cacheWrite ?? price.input;
+  return {
+    input: price.input,
+    output: price.output,
+    cacheRead,
+    cacheWrite,
+    cacheWrite1h: cacheWrite,
+  };
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   ToolResultChatMessage,
   UserChatMessage,
 } from "core";
+import { describeToolCall } from "core/llm/contextBreakdown";
 import { chatMessageIsEmpty } from "core/llm/messages";
 import { getSystemMessageWithRules } from "core/llm/rules/getSystemMessageWithRules";
 import { RulePolicies } from "core/llm/rules/types";
@@ -17,9 +18,9 @@ import {
   ERRORED_TOOL_CALL_OUTPUT_MESSAGE,
   NO_TOOL_CALL_OUTPUT_MESSAGE,
 } from "core/tools/constants";
-import { describeToolCall } from "core/llm/contextBreakdown";
 import { convertToolCallStatesToSystemCallsAndOutput } from "core/tools/systemMessageTools/convertSystemTools";
 import { SystemMessageToolsFramework } from "core/tools/systemMessageTools/types";
+import { sendAttachmentsOnce } from "core/util/contextReferences";
 import {
   maskRemovedToolResults,
   removedToolResultLabels,
@@ -132,7 +133,11 @@ export function constructMessages(
       state.parsedArgs ?? state.toolCall?.function?.arguments,
     ),
   );
-  const historyCopy = filteredHistory.map(withRemovedParts);
+  // A file attached again with the same content is sent once, at its first
+  // attachment; later copies are a one-line stub (contextReferences.ts)
+  const historyCopy = sendAttachmentsOnce(
+    filteredHistory.map(withRemovedParts),
+  );
 
   const msgs: MessageWithContextItems[] = [];
   let appliedRuleIndex = -1;

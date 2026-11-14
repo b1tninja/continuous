@@ -134,6 +134,15 @@ export class BedrockMantleApi extends OpenAIApi {
     return quirks;
   }
 
+  /** Use the path a model was found on, so a new adapter skips the wrong one. */
+  private useLearnedPrefix(model: string): void {
+    const learned = this.quirksFor(model)?.prefix;
+    if (!learned || this.prefixIsFixed || learned === this.prefix) return;
+    this.prefix = learned;
+    this.apiBase = mantleBaseUrl(this.region, this.prefix);
+    this.openai = this.createOpenAIClient();
+  }
+
   /** Adjust settings in response to a recognised rejection. True means "retry". */
   private adaptToError(e: unknown, model: string): boolean {
     const message = e instanceof Error ? e.message : String(e);
@@ -193,6 +202,7 @@ export class BedrockMantleApi extends OpenAIApi {
     body: ChatCompletionCreateParamsNonStreaming,
     signal: AbortSignal,
   ): Promise<ChatCompletion> {
+    this.useLearnedPrefix(body.model);
     for (let attempt = 0; ; attempt++) {
       try {
         return await super.chatCompletionNonStream(body, signal);
@@ -208,6 +218,7 @@ export class BedrockMantleApi extends OpenAIApi {
     body: ChatCompletionCreateParamsStreaming,
     signal: AbortSignal,
   ): AsyncGenerator<ChatCompletionChunk, any, unknown> {
+    this.useLearnedPrefix(body.model);
     for (let attempt = 0; ; attempt++) {
       let yielded = false;
       try {

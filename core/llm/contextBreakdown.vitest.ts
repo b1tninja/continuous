@@ -153,6 +153,29 @@ const tokensOf = (b: ReturnType<typeof computeContextBreakdown>, key: string) =>
   b.categories.find((c) => c.key === key)?.tokens ?? 0;
 
 describe("computeContextBreakdown", () => {
+  it("counts a file attached twice once, the second copy as its stub (as sent)", () => {
+    const file = {
+      id: { providerTitle: "file", itemId: "a.ts" },
+      name: "a.ts",
+      description: "src/a.ts",
+      content: "x".repeat(3999),
+      uri: { type: "file" as const, value: "file:///w/src/a.ts" },
+    };
+    const twice = computeContextBreakdown({
+      segments: [],
+      history: [
+        { message: { role: "user", content: "one" }, contextItems: [file] },
+        { message: { role: "assistant", content: "ok" }, contextItems: [] },
+        { message: { role: "user", content: "two" }, contextItems: [file] },
+      ],
+      contextLength: 200_000,
+    });
+    // 4000 characters with the newline: 1000 tokens once, plus a short stub
+    const context = tokensOf(twice, "context");
+    expect(context).toBeGreaterThan(1000);
+    expect(context).toBeLessThan(1030);
+  });
+
   it("splits a fixture history into the categories the request carries", () => {
     const b = computeContextBreakdown({
       segments,

@@ -1,103 +1,43 @@
+import { fetchwithRequestOptions } from "@continuedev/fetch";
 import fs from "node:fs";
 import path from "node:path";
-import { fetchwithRequestOptions } from "@continuedev/fetch";
 import * as URI from "uri-js";
 import { v4 as uuidv4 } from "uuid";
 
 import { CompletionProvider } from "./autocomplete/CompletionProvider";
-import { localPathToUri } from "./util/pathToUri";
 import {
   openedFilesLruCache,
   prevFilepaths,
 } from "./autocomplete/util/openedFilesLruCache";
 import { ConfigHandler } from "./config/ConfigHandler";
-import { addModel, deleteModel } from "./config/util";
-import { saveModeModels } from "./config/yaml/saveModeModels";
-import { saveToolDialect } from "./config/yaml/saveToolDialect";
 import {
   getModelBlock,
   previewModelEdit,
   saveModelEdit,
 } from "./config/modelEdit/modelBlockEdit";
-import { getOllamaShowHint } from "./util/ollamaShowHint";
-import { probeStatusFor } from "./util/measuredFacts";
 import {
-  openAICompatBase,
-  testOpenAICompatConnection,
-} from "./util/openaiCompatTest";
-import { currentNotice, dismissCurrentNotice } from "./util/retirementStartup";
-import { isDismissed, recordLive } from "./util/retirementNoticeState";
+  convertConnectionToAccount,
+  saveProviderModelsToAccount,
+} from "./config/providers/accountSetup";
+import {
+  getGlobalModelsPath,
+  loadModelCatalog,
+} from "./config/providers/modelsFile";
+import { addModel, deleteModel } from "./config/util";
+import { listCatalog, saveModelRoles } from "./config/yaml/saveModelRoles";
+import { saveModeModels } from "./config/yaml/saveModeModels";
 import { saveRulesByMode } from "./config/yaml/saveRulesByMode";
-import { toolForPolicy } from "./tools/definitions/sessionMessaging";
-import { evaluateToolPolicyWithRules } from "./tools/permissions/evaluate";
-import { deputyWorkspace } from "./tools/permissions/workspaceRoots";
-import { uriToPath } from "./tools/permissions/names";
-import { taintInput } from "./tools/permissions/taint/taintWiring";
-import type { PolicyLevels } from "./tools/permissions/policy";
-import {
-  readRuleSources,
-  readUserTrustedDomains,
-  ruleSourcesOfLoadedConfig,
-} from "./tools/permissions/readRuleSources";
-import { readUserEnvNames } from "./tools/permissions/userEnvNames";
-import { readUserReviewerPrompt } from "./tools/permissions/userReviewerPrompt";
-import { listEffectiveRules } from "./tools/permissions/effectiveRules";
-import { testToolCall } from "./tools/permissions/testToolCall";
-import { readUserLargeChangeLines } from "./tools/permissions/userLimits";
-import { initTreeSitterBash } from "./tools/permissions/treeSitterBash";
-import { resolveShell } from "./util/shell";
-import { modelToolFetch } from "./util/modelToolFetch";
-import { BuiltInToolNames } from "./tools/builtIn";
-import {
-  credentialUrlNames,
-  getTerminalEnvironmentStatus,
-} from "./util/terminalEnvironment";
-import { saveUserTerminalSettings } from "./util/userTerminalSettings";
-import { readUserGuidance } from "./util/userGuidance";
-import { registerShadowSettingsHandlers } from "./tools/permissions/audit/shadowSettingsHandlers";
-import {
-  confirmInIde,
-  registerRuleEditorHandlers,
-  undoAvailable,
-} from "./tools/permissions/ruleEditorHandlers";
-import { autoReviewToolCall } from "./tools/permissions/auto/handler";
-import { IdeShadow } from "./tools/permissions/auto/shadowIde";
-import { getAuditTrail } from "./tools/permissions/audit/global";
-import { recordAutoAnswer } from "./tools/permissions/audit/autoAnswer";
+import { saveToolDialect } from "./config/yaml/saveToolDialect";
 import { setQuestionsLevel } from "./context/mcp/mcpElicitation";
-import { registerAuditListHandlers } from "./tools/permissions/audit/listingHandlers";
-import { machineAuditHost } from "./tools/permissions/audit/listingHost";
-import {
-  recordPolicyDecision,
-  recordReviewDecision,
-} from "./tools/permissions/audit/hook";
-import { registerAuditOverview } from "./tools/permissions/audit/overviewHandler";
-import {
-  diffPolicySettings,
-  recordFileEdits,
-  recordSettingChanges,
-  rememberSettings,
-} from "./tools/permissions/settingChanges";
-import { readPolicyFile } from "./tools/permissions/settingsFile";
-import {
-  previewPolicySave,
-  savePolicyWithConfirmation,
-} from "./tools/permissions/policySave";
-import { AutoReviewSessions } from "./tools/permissions/auto/state";
-import {
-  suggestAllowRule,
-  withLoosensCheck,
-} from "./tools/permissions/suggest";
 import { DevDataSqliteDb } from "./data/devdataSqlite";
 import { DataLogger } from "./data/log";
 import { CodebaseIndexer } from "./indexing/CodebaseIndexer";
 import DocsService from "./indexing/docs/DocsService";
-import { countTokens } from "./llm/countTokens";
-import Bedrock from "./llm/llms/Bedrock";
-import { globalProfileStatus } from "./llm/llms/bedrockHelpers";
-import BedrockMantle, { mantleRegionError } from "./llm/llms/BedrockMantle";
-import Lemonade from "./llm/llms/Lemonade";
-import { fetchModels } from "./llm/fetchModels";
+import {
+  BedrockMetadataTracker,
+  withQuotaWarnings,
+} from "./llm/bedrockMetadata";
+import { ensureBedrockPriceList } from "./llm/bedrockPriceList";
 import type { CommunityCatalog } from "./llm/communityCatalog";
 import {
   createCommunityRefresher,
@@ -106,23 +46,20 @@ import {
   pullCommunityCatalog,
   readCommunityCatalog,
 } from "./llm/communityCatalogStore";
-import {
-  BedrockMetadataTracker,
-  withQuotaWarnings,
-} from "./llm/bedrockMetadata";
-import { ensureBedrockPriceList } from "./llm/bedrockPriceList";
+import { countTokens } from "./llm/countTokens";
+import { fetchModels } from "./llm/fetchModels";
+import Bedrock from "./llm/llms/Bedrock";
+import { globalProfileStatus } from "./llm/llms/bedrockHelpers";
+import BedrockMantle, { mantleRegionError } from "./llm/llms/BedrockMantle";
 import { zeroQuotaWarning } from "./llm/llms/bedrockQuotas";
+import Lemonade from "./llm/llms/Lemonade";
+import Ollama from "./llm/llms/Ollama";
+import { detectLocalServers, serverConcurrency } from "./llm/localServers";
 import {
   createOpenRouterRefresher,
   underTestRunner,
   type ModelCatalogRefresher,
 } from "./llm/modelCatalogRefresh";
-import {
-  createSelectedModelRefresher,
-  type RefreshTarget,
-  type SelectedModelRefresher,
-  targetKey,
-} from "./llm/providerModelRefresh";
 import {
   loadOpenRouterPrices,
   modelInfoFetchBlocked,
@@ -132,20 +69,95 @@ import {
   saveModelCatalogSettings,
 } from "./llm/modelCatalogStore";
 import {
-  convertConnectionToAccount,
-  saveProviderModelsToAccount,
-} from "./config/providers/accountSetup";
-import {
-  getGlobalModelsPath,
-  loadModelCatalog,
-} from "./config/providers/modelsFile";
-import { isIgnoreFile } from "./util/workspaceDirs";
-import { listCatalog, saveModelRoles } from "./config/yaml/saveModelRoles";
-import { detectLocalServers, serverConcurrency } from "./llm/localServers";
-import Ollama from "./llm/llms/Ollama";
+  createSelectedModelRefresher,
+  targetKey,
+  type RefreshTarget,
+  type SelectedModelRefresher,
+} from "./llm/providerModelRefresh";
 import { EditAggregator } from "./nextEdit/context/aggregateEdits";
 import { createNewPromptFileV2 } from "./promptFiles/createNewPromptFile";
+import { BuiltInToolNames } from "./tools/builtIn";
 import { callTool } from "./tools/callTool";
+import { toolForPolicy } from "./tools/definitions/sessionMessaging";
+import { recordAutoAnswer } from "./tools/permissions/audit/autoAnswer";
+import { getAuditTrail } from "./tools/permissions/audit/global";
+import {
+  recordPolicyDecision,
+  recordReviewDecision,
+} from "./tools/permissions/audit/hook";
+import { registerAuditListHandlers } from "./tools/permissions/audit/listingHandlers";
+import { machineAuditHost } from "./tools/permissions/audit/listingHost";
+import { registerAuditOverview } from "./tools/permissions/audit/overviewHandler";
+import { registerShadowSettingsHandlers } from "./tools/permissions/audit/shadowSettingsHandlers";
+import { autoReviewToolCall } from "./tools/permissions/auto/handler";
+import { IdeShadow } from "./tools/permissions/auto/shadowIde";
+import { AutoReviewSessions } from "./tools/permissions/auto/state";
+import { listEffectiveRules } from "./tools/permissions/effectiveRules";
+import { evaluateToolPolicyWithRules } from "./tools/permissions/evaluate";
+import { uriToPath } from "./tools/permissions/names";
+import type { PolicyLevels } from "./tools/permissions/policy";
+import {
+  previewPolicySave,
+  savePolicyWithConfirmation,
+} from "./tools/permissions/policySave";
+import {
+  readRuleSources,
+  readUserTrustedDomains,
+  ruleSourcesOfLoadedConfig,
+} from "./tools/permissions/readRuleSources";
+import {
+  confirmInIde,
+  registerRuleEditorHandlers,
+  undoAvailable,
+} from "./tools/permissions/ruleEditorHandlers";
+import {
+  diffPolicySettings,
+  recordFileEdits,
+  recordSettingChanges,
+  rememberSettings,
+} from "./tools/permissions/settingChanges";
+import { readPolicyFile } from "./tools/permissions/settingsFile";
+import {
+  suggestAllowRule,
+  withLoosensCheck,
+} from "./tools/permissions/suggest";
+import { taintInput } from "./tools/permissions/taint/taintWiring";
+import { testToolCall } from "./tools/permissions/testToolCall";
+import { initTreeSitterBash } from "./tools/permissions/treeSitterBash";
+import { readUserEnvNames } from "./tools/permissions/userEnvNames";
+import { readUserLargeChangeLines } from "./tools/permissions/userLimits";
+import { readUserReviewerPrompt } from "./tools/permissions/userReviewerPrompt";
+import { deputyWorkspace } from "./tools/permissions/workspaceRoots";
+import { ChatDescriber } from "./util/chatDescriber";
+import { compactConversation } from "./util/conversationCompaction";
+import { GlobalContext } from "./util/GlobalContext";
+import historyManager, { damagedSessionNotice } from "./util/history";
+import { probeStatusFor } from "./util/measuredFacts";
+import { modelToolFetch } from "./util/modelToolFetch";
+import { reasoningOptionsForEffort } from "./util/modelUse";
+import { getOllamaShowHint } from "./util/ollamaShowHint";
+import {
+  openAICompatBase,
+  testOpenAICompatConnection,
+} from "./util/openaiCompatTest";
+import {
+  editConfigFile,
+  getConfigYamlPath,
+  getContinueGlobalPath,
+  migrateV1DevDataFiles,
+} from "./util/paths";
+import { localPathToUri } from "./util/pathToUri";
+import { isDismissed, recordLive } from "./util/retirementNoticeState";
+import { currentNotice, dismissCurrentNotice } from "./util/retirementStartup";
+import { SESSION_LOG_STORAGE_DEFAULT } from "./util/sessionLog";
+import { resolveShell } from "./util/shell";
+import {
+  credentialUrlNames,
+  getTerminalEnvironmentStatus,
+} from "./util/terminalEnvironment";
+import { readUserGuidance } from "./util/userGuidance";
+import { saveUserTerminalSettings } from "./util/userTerminalSettings";
+import { isIgnoreFile } from "./util/workspaceDirs";
 import { ideInWorkspace } from "./util/workspaceOverride";
 import {
   applyPatch,
@@ -156,18 +168,6 @@ import {
   removeWorktree,
   worktreePatch,
 } from "./util/worktree";
-import { ChatDescriber } from "./util/chatDescriber";
-import { compactConversation } from "./util/conversationCompaction";
-import { GlobalContext } from "./util/GlobalContext";
-import { reasoningOptionsForEffort } from "./util/modelUse";
-import historyManager, { damagedSessionNotice } from "./util/history";
-import { SESSION_LOG_STORAGE_DEFAULT } from "./util/sessionLog";
-import {
-  editConfigFile,
-  getConfigYamlPath,
-  getContinueGlobalPath,
-  migrateV1DevDataFiles,
-} from "./util/paths";
 
 import {
   isProcessBackgrounded,
@@ -200,24 +200,6 @@ import { getDiffFn, GitDiffCache } from "./autocomplete/snippets/gitDiffCache";
 import { stringifyMcpPrompt } from "./commands/slash/mcpSlashCommand";
 import { createNewAssistantFile } from "./config/createNewAssistantFile";
 import {
-  isColocatedRulesFile,
-  isContinueAgentConfigFile,
-  isContinueConfigRelatedUri,
-} from "./config/loadLocalAssistants";
-import { CodebaseRulesCache } from "./config/markdown/loadCodebaseRules";
-import { openSecretLocation } from "./config/openSecretLocation";
-import {
-  moveCredentialsToSecrets,
-  requestHasCredentials,
-} from "./config/providers/modelCredentials";
-import {
-  defaultSecretName,
-  readProviderConnections,
-  ProviderSetupError,
-  saveProviderModels,
-  validateSaveRequest,
-} from "./config/providerSetup";
-import {
   existingMcpServerNames,
   findSettingsFiles,
   importMcpServers,
@@ -225,12 +207,17 @@ import {
   readGlobalConfigYaml,
 } from "./config/importClineMcp";
 import {
-  annotateKeyStorage,
-  isSecureStorageAvailable,
-  moveEnvSecretToSecureStorage,
-  removeEnvSecret,
-  storeSecret,
-} from "./config/secretStorage";
+  isColocatedRulesFile,
+  isContinueAgentConfigFile,
+  isContinueConfigRelatedUri,
+} from "./config/loadLocalAssistants";
+import { CodebaseRulesCache } from "./config/markdown/loadCodebaseRules";
+import { setupLocalConfig } from "./config/onboarding";
+import { openSecretLocation } from "./config/openSecretLocation";
+import {
+  moveCredentialsToSecrets,
+  requestHasCredentials,
+} from "./config/providers/modelCredentials";
 import {
   ConfigFileContent,
   deleteProviderInstance,
@@ -244,7 +231,19 @@ import {
   loadProviderInstances,
   readWorkspaceProvidersFiles,
 } from "./config/providers/providersFile";
-import { setupLocalConfig } from "./config/onboarding";
+import {
+  ProviderSetupError,
+  readProviderConnections,
+  saveProviderModels,
+  validateSaveRequest,
+} from "./config/providerSetup";
+import {
+  annotateKeyStorage,
+  isSecureStorageAvailable,
+  moveEnvSecretToSecureStorage,
+  removeEnvSecret,
+  storeSecret,
+} from "./config/secretStorage";
 import {
   createNewGlobalRuleFile,
   createNewWorkspaceBlockFile,
@@ -266,8 +265,8 @@ import { NextEditProvider } from "./nextEdit/NextEditProvider";
 import type { FromCoreProtocol, ToCoreProtocol } from "./protocol";
 import { OnboardingModes } from "./protocol/core";
 import type { IMessenger, Message } from "./protocol/messenger";
-import { ContinueError, ContinueErrorReason } from "./util/errors";
 import { loadSubagentDefinitions } from "./subagents/loadSubagents";
+import { ContinueError, ContinueErrorReason } from "./util/errors";
 import { shareSession } from "./util/historyUtils";
 import { Logger } from "./util/Logger.js";
 import { MessageAbortControllers } from "./util/messageAbortControllers";
@@ -1950,7 +1949,9 @@ export class Core {
         return undefined;
       } catch (error) {
         Logger.error(`Error compacting conversation: ${error}`);
-        return undefined;
+        // Passed on, so the GUI can say why nothing changed. Returning
+        // undefined here made a failed "Compact now" look like it did nothing.
+        throw error;
       }
     });
 

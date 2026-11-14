@@ -1151,6 +1151,63 @@ describe("BedrockApi stream events", () => {
     expect(res.choices[0].message.content).toBe("partial");
   });
 
+  // A fragment carries its block's contentBlockIndex but not its id. With
+  // parallel calls whose fragments interleave, giving each fragment the
+  // newest call's index mixed their arguments.
+  it("gives each tool input fragment the index of its own block", async () => {
+    const { collect, nonStream } = streaming([
+      {
+        contentBlockStart: {
+          contentBlockIndex: 0,
+          start: { toolUse: { toolUseId: "t1", name: "read" } },
+        },
+      },
+      {
+        contentBlockStart: {
+          contentBlockIndex: 1,
+          start: { toolUse: { toolUseId: "t2", name: "ls" } },
+        },
+      },
+      {
+        contentBlockDelta: {
+          contentBlockIndex: 1,
+          delta: { toolUse: { input: '{"dir":' } },
+        },
+      },
+      {
+        contentBlockDelta: {
+          contentBlockIndex: 0,
+          delta: { toolUse: { input: '{"path":"a.txt"}' } },
+        },
+      },
+      {
+        contentBlockDelta: {
+          contentBlockIndex: 1,
+          delta: { toolUse: { input: '"src"}' } },
+        },
+      },
+      { contentBlockStop: { contentBlockIndex: 0 } },
+      { contentBlockStop: { contentBlockIndex: 1 } },
+      { messageStop: { stopReason: "tool_use" } },
+    ]);
+    const indexes = deltas(await collect("us.anthropic.claude-opus-5-5"))
+      .flatMap((d) => d.tool_calls ?? [])
+      .map((t) => t.index);
+    // starts 0 and 1, then the fragments of blocks 1, 0 and 1
+    expect(indexes).toEqual([0, 1, 1, 0, 1]);
+
+    const res = await nonStream("us.anthropic.claude-opus-5-5");
+    expect(
+      (res.choices[0].message.tool_calls ?? []).map((t: any) => [
+        t.id,
+        t.function.arguments,
+      ]),
+    ).toEqual([
+      ["t1", '{"path":"a.txt"}'],
+      ["t2", '{"dir":"src"}'],
+    ]);
+  });
+
   it("numbers each tool call and collects them in a non-streaming call", async () => {
     const toolEvents = [
       { contentBlockDelta: { delta: { text: "Reading." } } },

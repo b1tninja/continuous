@@ -1,5 +1,6 @@
 import type { ChatHistoryItem, MessagePart } from "..";
 import { BuiltInToolNames } from "../tools/builtIn";
+import { sendAttachmentsOnce } from "../util/contextReferences";
 import {
   removedToolResultStub,
   withRemovedParts,
@@ -254,10 +255,14 @@ export function computeContextBreakdown(
   // tool messages are rebuilt from the assistant's tool call states, and empty
   // messages are left out.
   // What the person removed ("Choose what to keep") counts as its stub, and a
-  // removed old turn not at all (core/util/contextRemoval.ts).
-  for (const original of historyAfterSummary(input.history)) {
-    if (original.removedByUser?.turn) continue;
-    const item = withRemovedParts(original);
+  // removed old turn not at all (core/util/contextRemoval.ts). A repeated
+  // attachment counts as its stub, as sent (core/util/contextReferences.ts).
+  const sentHistory = sendAttachmentsOnce(
+    historyAfterSummary(input.history)
+      .filter((original) => !original.removedByUser?.turn)
+      .map(withRemovedParts),
+  );
+  for (const item of sentHistory) {
     const removedResults = item.removedByUser?.toolResults ?? [];
     const removedCtx = item.removedByUser?.contextItems ?? [];
     const message = item.message;
