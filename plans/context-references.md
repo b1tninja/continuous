@@ -77,10 +77,20 @@ again, remove from what is sent (all copies), hold.
 
 ## 4. Build order
 
-1. **Sent once** (§3.2): a pure function over the history, applied in
-   `constructMessages`; the breakdown counts the stubs. Tests.
-2. The session attachment list as a selector, and the panel (§3.4).
-3. Selection references (§3.3): the code-block chip becomes a reference, with
-   the pointer text.
-4. Remove and hold per reference, across all its copies.
-5. Provider files as a transport for PDFs and images (Anthropic API only).
+Status 2026-11-14, on `fix/stream-cutoff-pricing-gpt`:
+
+1. **Done** (`6612700e3`). Sent once (§3.2): `sendAttachmentsOnce` in
+   `core/util/contextReferences.ts`, applied in `constructMessages` and the
+   context breakdown.
+2. **Done** (`84a60123c`). The session attachment list: `sessionAttachments`
+   and `SessionAttachments` in the context meter's panel.
+3. **Done** (`1398d5dff`). Selection references (§3.3): the code-block chip
+   (Ctrl/Cmd+L, or Continuous > Add to Chat in the editor menu) is sent as an
+   attachment, with a pointer in the text.
+4. **Remove done** (`21d3dbb88`): every copy of a source, with Undo.
+   **Hold** waits for hold in `context-policy.md` (§3.2 there).
+5. Not started: provider files as a transport for PDFs and images
+   (Anthropic API only).
+
+Also not done: "changed on disk since" in the list (needs a file read per
+row; do it on opening the panel), and re-attach from the list.
