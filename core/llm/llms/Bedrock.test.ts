@@ -515,6 +515,59 @@ describe("Bedrock", () => {
       expect(out.at(-1).usage.response.stopReason).toBe("max_tokens");
     });
 
+    // Bedrock sends a toolUse block's id only with its start; the fragments
+    // carry the contentBlockIndex. Without the id, the GUI attached each
+    // fragment to whichever call it saw last, mixing parallel calls' input.
+    it("stamps each tool input fragment with its own call's id, by block index", async () => {
+      const { collect } = streaming("us.anthropic.claude-opus-5-5", [
+        {
+          contentBlockStart: {
+            contentBlockIndex: 0,
+            start: { toolUse: { toolUseId: "call_a", name: "read_file" } },
+          },
+        },
+        {
+          contentBlockStart: {
+            contentBlockIndex: 1,
+            start: { toolUse: { toolUseId: "call_b", name: "ls" } },
+          },
+        },
+        {
+          contentBlockDelta: {
+            contentBlockIndex: 1,
+            delta: { toolUse: { input: '{"dirPath":' } },
+          },
+        },
+        {
+          contentBlockDelta: {
+            contentBlockIndex: 0,
+            delta: { toolUse: { input: '{"filepath":"a.ts"}' } },
+          },
+        },
+        {
+          contentBlockDelta: {
+            contentBlockIndex: 1,
+            delta: { toolUse: { input: '"src"}' } },
+          },
+        },
+        { contentBlockStop: { contentBlockIndex: 0 } },
+        { contentBlockStop: { contentBlockIndex: 1 } },
+        { messageStop: { stopReason: "tool_use" } },
+      ]);
+      const out = await collect();
+      const byId: Record<string, string> = {};
+      for (const m of out) {
+        for (const tc of m.toolCalls ?? []) {
+          expect(tc.id).toBeTruthy();
+          byId[tc.id] = (byId[tc.id] ?? "") + (tc.function?.arguments ?? "");
+        }
+      }
+      expect(byId).toEqual({
+        call_a: '{"filepath":"a.ts"}',
+        call_b: '{"dirPath":"src"}',
+      });
+    });
+
     it("drops DeepSeek V3.2's leaked tool-call marker, even split across deltas", async () => {
       const { collect } = streaming("deepseek.v3.2", [
         { contentBlockDelta: { delta: { text: "I will echo it." } } },
