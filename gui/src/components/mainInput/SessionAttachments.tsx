@@ -1,7 +1,12 @@
-import { sessionAttachments } from "core/util/contextReferences";
+import {
+  removalMarksForSource,
+  sessionAttachments,
+} from "core/util/contextReferences";
 import { useContext, useMemo, useState } from "react";
 import { IdeMessengerContext } from "../../context/IdeMessenger";
-import { useAppSelector } from "../../redux/hooks";
+import { useAppDispatch, useAppSelector } from "../../redux/hooks";
+import { applyContextRemovals } from "../../redux/slices/sessionSlice";
+import { saveCurrentSession } from "../../redux/thunks/session";
 import { formatTokens } from "../../util/cacheNotices";
 
 /** Rows shown before "Show all". */
@@ -17,10 +22,28 @@ const CHARS_PER_TOKEN = 4;
  */
 export function SessionAttachments() {
   const history = useAppSelector((s) => s.session.history);
+  const isStreaming = useAppSelector((s) => s.session.isStreaming);
+  const dispatch = useAppDispatch();
   const ideMessenger = useContext(IdeMessengerContext);
   const [expanded, setExpanded] = useState(false);
   const list = useMemo(() => sessionAttachments(history), [history]);
   if (list.length === 0) return null;
+
+  // Every copy of the source leaves what is sent, as Choose what to keep
+  // does, so the context meter's Undo puts it back
+  const remove = (source: string, chars: number, copies: number) => {
+    const marks = removalMarksForSource(history, source);
+    if (Object.keys(marks).length === 0) return;
+    dispatch(
+      applyContextRemovals({
+        marks,
+        removedTokens: Math.ceil((chars * copies) / CHARS_PER_TOKEN),
+      }),
+    );
+    void dispatch(
+      saveCurrentSession({ openNewSession: false, generateTitle: false }),
+    );
+  };
 
   const shown = expanded ? list : list.slice(0, ATTACHMENTS_VISIBLE);
   return (
@@ -39,6 +62,8 @@ export function SessionAttachments() {
           a.versions > 1 ? `${a.versions} versions` : undefined,
         ].filter(Boolean);
         const uri = a.uri?.type === "file" ? a.uri.value : undefined;
+        const removable =
+          Object.keys(removalMarksForSource(history, a.source)).length > 0;
         return (
           <div
             key={a.source}
@@ -62,6 +87,25 @@ export function SessionAttachments() {
             <span className="shrink-0 text-description-muted">
               {details.join(", ")}
             </span>
+            {removable ? (
+              <button
+                type="button"
+                data-testid="session-attachment-remove"
+                className="ml-auto shrink-0 cursor-pointer border-none bg-transparent p-0 text-xs text-link hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={isStreaming}
+                title="Stop sending it: every copy in this session (Undo in the context panel)"
+                onClick={() => remove(a.source, a.chars, a.timesSentInFull)}
+              >
+                Remove
+              </button>
+            ) : (
+              <span
+                className="ml-auto shrink-0 text-description-muted"
+                data-testid="session-attachment-removed"
+              >
+                removed
+              </span>
+            )}
           </div>
         );
       })}

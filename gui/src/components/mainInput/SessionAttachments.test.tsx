@@ -46,7 +46,7 @@ async function render(messages: ChatHistoryItem[]) {
     store,
     mockIdeMessenger: ideMessenger,
   });
-  return { ...rendered, opened };
+  return { ...rendered, opened, store };
 }
 
 describe("SessionAttachments", () => {
@@ -94,6 +94,32 @@ describe("SessionAttachments", () => {
     expect(screen.getAllByTestId("session-attachment")).toHaveLength(
       ATTACHMENTS_VISIBLE + 2,
     );
+  });
+
+  it("removes every copy of a file from what is sent, and then says so", async () => {
+    const { user: u, store } = await render([
+      user("1", [file("src/a.ts", "x")]),
+      user("2", [file("src/a.ts", "x"), file("src/b.ts", "y")]),
+    ]);
+    const row = screen
+      .getAllByTestId("session-attachment")
+      .find((r) => r.textContent?.includes("a.ts"))!;
+    await act(async () => {
+      await u.click(
+        row.querySelector('[data-testid="session-attachment-remove"]')!,
+      );
+    });
+    const marked = store
+      .getState()
+      .session.history.filter((h) => h.removedByUser?.contextItems?.length)
+      .map((h) => h.removedByUser!.contextItems);
+    // Both messages: index 0 in each (b.ts, at index 1 in the second, kept)
+    expect(marked).toEqual([[0], [0]]);
+    expect(store.getState().session.contextRemovalUndo).toBeDefined();
+    const after = screen
+      .getAllByTestId("session-attachment")
+      .find((r) => r.textContent?.includes("a.ts"))!;
+    expect(after.textContent).toContain("removed");
   });
 
   it("shows nothing when nothing was attached", async () => {

@@ -1,4 +1,4 @@
-import type { ChatHistoryItem, ContextItemWithId } from "..";
+import type { ChatHistoryItem, ContextItemWithId, RemovedByUser } from "..";
 
 /**
  * Attached context is sent once per version: plans/context-references.md
@@ -119,6 +119,41 @@ export function sessionAttachments(
   return [...bySource.values()]
     .map(({ keys: _keys, ...rest }) => rest)
     .sort((a, b) => b.lastAttachedAt - a.lastAttachedAt);
+}
+
+/**
+ * The key the GUI marks a history item by (selectiveCompaction historyKey):
+ * the message's id, else its index.
+ */
+export function historyItemKey(item: ChatHistoryItem, index: number): string {
+  return (item.message as { id?: string }).id ?? `#${index}`;
+}
+
+/**
+ * The removal marks that take every copy of `source` out of what is sent, by
+ * history item key (`historyItemKey`), merged with what each item already had
+ * removed. In the form `applyContextRemovals` takes, so the Undo of Choose
+ * what to keep applies.
+ */
+export function removalMarksForSource(
+  history: ChatHistoryItem[],
+  source: string,
+): Record<string, RemovedByUser> {
+  const marks: Record<string, RemovedByUser> = {};
+  history.forEach((item, index) => {
+    if (item.message.role !== "user") return;
+    const indexes = (item.contextItems ?? [])
+      .map((ctx, i) => (sourceOf(ctx) === source ? i : -1))
+      .filter((i) => i >= 0);
+    if (!indexes.length) return;
+    const before = item.removedByUser ?? {};
+    const merged = [
+      ...new Set([...(before.contextItems ?? []), ...indexes]),
+    ].sort((a, b) => a - b);
+    if (merged.length === (before.contextItems ?? []).length) return;
+    marks[historyItemKey(item, index)] = { ...before, contextItems: merged };
+  });
+  return marks;
 }
 
 /**

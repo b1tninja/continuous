@@ -3,6 +3,7 @@ import type { ChatHistoryItem, ContextItemWithId } from "..";
 import {
   attachmentKey,
   contentHash,
+  removalMarksForSource,
   repeatedAttachmentStub,
   sendAttachmentsOnce,
   sessionAttachments,
@@ -180,6 +181,52 @@ describe("sessionAttachments", () => {
 
   it("skips empty attachments", () => {
     expect(sessionAttachments([user("1", [file("e.ts", "  ")])])).toEqual([]);
+  });
+});
+
+describe("removalMarksForSource", () => {
+  const withId = (id: string, item: ChatHistoryItem): ChatHistoryItem => ({
+    ...item,
+    message: { ...item.message, id } as unknown as ChatHistoryItem["message"],
+  });
+
+  it("marks every copy of the source, in every message", () => {
+    const history = [
+      withId("m1", user("1", [file("b.ts", "y"), file("a.ts", "x")])),
+      withId("m2", assistant("ok")),
+      withId("m3", user("2", [file("a.ts", "x2")])),
+    ];
+    expect(removalMarksForSource(history, "file:///w/a.ts")).toEqual({
+      m1: { contextItems: [1] },
+      m3: { contextItems: [0] },
+    });
+  });
+
+  it("keeps what the message already had removed", () => {
+    const item = withId(
+      "m1",
+      user("1", [file("a.ts", "x"), file("b.ts", "y")]),
+    );
+    item.removedByUser = { contextItems: [1], toolResults: ["t"] };
+    expect(removalMarksForSource([item], "file:///w/a.ts")).toEqual({
+      m1: { contextItems: [0, 1], toolResults: ["t"] },
+    });
+  });
+
+  it("gives nothing when every copy is already removed or the source is absent", () => {
+    const item = withId("m1", user("1", [file("a.ts", "x")]));
+    item.removedByUser = { contextItems: [0] };
+    expect(removalMarksForSource([item], "file:///w/a.ts")).toEqual({});
+    expect(removalMarksForSource([item], "file:///w/zzz.ts")).toEqual({});
+  });
+
+  it("keys a message without an id by its index, as the GUI does", () => {
+    expect(
+      removalMarksForSource(
+        [assistant("a"), user("1", [file("a.ts", "x")])],
+        "file:///w/a.ts",
+      ),
+    ).toEqual({ "#1": { contextItems: [0] } });
   });
 });
 
