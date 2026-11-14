@@ -359,6 +359,38 @@ export const FAMILY_RULES: FamilyRule[] = [
       "MEASURED: a 20-token maxTokens returned no visible text; 20b was not probed beyond the availability call",
     ],
   },
+  {
+    // OpenAI's closed GPT models on Bedrock: GPT-5.6 Sol, Terra and Luna, GPT-6
+    // Sol and Luna, GPT-6.1 Sol, by their regional or global profile. GPT OSS
+    // (above) and Daybreak Blue (Mantle only) are not matched here.
+    id: "gpt-closed",
+    match: /(^|\.)openai\.gpt-(?:5\.[5-9]|6(?:\.\d+)?)-(?:sol|terra|luna)$/i,
+    status: "probed",
+    read: "2026-11-14",
+    probedOn: "2026-11-14",
+    evidence: [
+      "live-runtime 2026-11-14: us.openai.gpt-6-luna, gpt-6.1-sol, gpt-5.6-terra",
+    ],
+    unsupportedInference: ["stopSequences"],
+    // Sol and Terra spent a 60-token budget on reasoning and made no call
+    minMaxTokens: 1024,
+    sources: [`${AWS}/bedrock-mantle.html`],
+    // No Converse field: reasoning_effort is refused ("Unknown parameter:
+    // 'reasoning_effort'"). The Responses API takes reasoning.effort.
+    candidateReasoningFields: ["reasoning.effort"],
+    toolChoice: "unknown",
+    sampling: "stopSequences refused on Converse",
+    dialect: "native-structured",
+    contextLength: 1_050_000,
+    maxOutputTokens: 128_000,
+    quirks: [
+      "MEASURED 2026-11-14: stopSequences refused ('This model doesn't support the stopSequences field')",
+      "MEASURED: reasoning_effort in additionalModelRequestFields refused ('Unknown parameter: reasoning_effort'); reasoning cannot be set on Converse",
+      "MEASURED: Terra and Sol may open with a reasoningContent block, so tool calls start at contentBlockIndex 1 or later",
+      "MEASURED: parallel tool calls stream as separate blocks with valid JSON; ids look like call_<hex>",
+      "MEASURED: a 60-token cap ended at max_tokens with the arguments cut short (Luna) or with only reasoning (Sol, Terra)",
+    ],
+  },
 ];
 
 /** The rule for a Bedrock model id, or undefined. */
