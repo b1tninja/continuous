@@ -21,6 +21,12 @@ export const OPEN_WITHIN_MS = 2 * 60 * 60 * 1000;
 /** Entries older than this are dropped from a process's own file. */
 const FORGET_AFTER_MS = 24 * 60 * 60 * 1000;
 const MAX_ENTRIES = 50;
+/**
+ * A session that is already this process's newest is written again only
+ * after this long. A turn saves every few seconds (STOR6 mid-turn saves);
+ * the record only has to stay newer than `OPEN_WITHIN_MS`.
+ */
+export const LEASE_REFRESH_MS = 60 * 1000;
 
 interface LeaseFile {
   pid: number;
@@ -38,6 +44,14 @@ function safeHost(): string {
 }
 
 let own: LeaseFile | undefined;
+let ownFile: string | undefined;
+
+/** True when `sessionId` is the newest entry of `lease`. */
+function isNewest(lease: LeaseFile, sessionId: string): boolean {
+  const at = lease.sessions[sessionId];
+  if (at === undefined) return false;
+  return Object.values(lease.sessions).every((other) => other <= at);
+}
 
 /** Records that this process has `sessionId` open. Best effort. */
 export function markSessionOpen(
@@ -47,6 +61,19 @@ export function markSessionOpen(
   try {
     const now = options.now ?? Date.now();
     const pid = options.pid ?? process.pid;
+    const dir = leaseDir(options.root);
+    const file = path.join(dir, `${safeHost()}-${pid}.json`);
+    if (
+      own &&
+      own.pid === pid &&
+      ownFile === file &&
+      isNewest(own, sessionId) &&
+      now - own.sessions[sessionId] < LEASE_REFRESH_MS &&
+      fs.existsSync(file)
+    ) {
+      // Already recorded as this process's newest, and recently
+      return;
+    }
     if (!own || own.pid !== pid)
       own = { pid, host: os.hostname(), sessions: {} };
     own.sessions[sessionId] = now;
@@ -55,12 +82,11 @@ export function markSessionOpen(
       .sort((a, b) => b[1] - a[1])
       .slice(0, MAX_ENTRIES);
     own.sessions = Object.fromEntries(kept);
-    const dir = leaseDir(options.root);
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const file = path.join(dir, `${safeHost()}-${pid}.json`);
     const tmp = `${file}.${now}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(own), { mode: 0o600 });
     fs.renameSync(tmp, file);
+    ownFile = file;
   } catch {
     // a session that cannot be marked is still loaded and saved
   }
@@ -69,6 +95,7 @@ export function markSessionOpen(
 /** Forget this process's own record (for tests). */
 export function resetOwnLease(): void {
   own = undefined;
+  ownFile = undefined;
 }
 
 function isAlive(pid: number): boolean {

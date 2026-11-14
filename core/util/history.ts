@@ -627,6 +627,9 @@ export class HistoryManager {
    */
   private afterLogSave(sessionId: string, started: number): number {
     const elapsed = Date.now() - started;
+    // Every save to the log, the webview's mid-turn checkpoints included,
+    // records the session as open, so a cleanup run elsewhere leaves it alone
+    markSessionOpen(sessionId);
     const sizes = this.log.sessionBytes(sessionId);
     const fileBytes = sizes ? sizes.logBytes + sizes.blobBytes : 0;
     this.warnIfLarge(sessionId, fileBytes, elapsed, "log");
