@@ -1,4 +1,4 @@
-import type { ShellKind } from "../../util/shell";
+import { isPosixShell, type ShellKind } from "../../util/shell";
 import { parseCommand } from "./command";
 import { detectCommandShell, familyOf } from "./detectShell";
 import { canonicalCmdlet, isPowerShellAlias } from "./powershell";
@@ -380,6 +380,24 @@ export function grammarsToRead(
   return [shell, ...extra];
 }
 
+/**
+ * PowerShell reads curly quotes as quotes, an en dash, em dash or horizontal
+ * bar as a parameter's dash and any Unicode space as a space, so `git`
+ * followed by `push` in curly quotes is `git push` there. The same text with
+ * the ASCII characters, for a deny rule, an ask rule or a protected path to
+ * meet. A POSIX shell keeps them as ordinary characters.
+ */
+function asciiLookalikes(command: string): string {
+  return command
+    .replace(/[\u2018-\u201b]/g, "'")
+    .replace(/[\u201c-\u201f]/g, '"')
+    .replace(/[\u2013-\u2015]/g, "-")
+    .replace(
+      /[\u00a0\u0085\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]/g,
+      " ",
+    );
+}
+
 /** Every string a deny or ask rule should be tried against, and whether the cap stopped the expansion. */
 export function commandCandidateSet(
   command: string,
@@ -389,6 +407,13 @@ export function commandCandidateSet(
   const cap: CandidateCap = { truncated: false };
   for (const g of grammarsToRead(command, shell)) {
     addCommand(command, 0, out, cap, g);
+  }
+  // PowerShell's own spelling of the same command, when it is not POSIX's
+  const ascii = isPosixShell(shell) ? command : asciiLookalikes(command);
+  if (ascii !== command) {
+    for (const g of grammarsToRead(ascii, shell)) {
+      addCommand(ascii, 0, out, cap, g);
+    }
   }
   return { list: [...out], truncated: cap.truncated };
 }
