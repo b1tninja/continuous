@@ -153,11 +153,84 @@ endpoint (Anthropic, Bedrock) before automatic compaction when it is cheap.
 6. Replay recorded sessions (`npm run replay:ageing`) to compare presets on
    tokens, cache reads and cost before choosing the Balanced numbers.
 
-## 5. Questions for the owner
+## 5. Decisions (2026-11-14)
 
-1. Is Balanced the right default, or should the default stay "Keep
-   everything" until the replay (step 6) has numbers?
-2. Should automatic compaction ask first while the prompt cache is warm (a
-   rebuild costs a full uncached read), or only show the row afterwards?
-3. Should the summary use the conversation's model (Roo's choice, better with
-   tool calls) or a cheaper one the person picks?
+### 5.1 What compaction costs, by strategy
+
+Claude Sonnet 5.5 on a Bedrock regional profile, per million tokens: input
+$2.20, output $11, cache read $0.11, 5-minute cache write $2.75. A session at
+800k tokens of context, with system prompt and tools of 40k:
+
+| Strategy                                                                        | One-off cost                                                                           | Each later request                                                                      | Notes                                        |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------- |
+| Do nothing, below the limit                                                     | none                                                                                   | 800k read: **$0.088**                                                                   | grows every turn                             |
+| Do nothing, at the limit (pruning drops the oldest)                             | none                                                                                   | prefix changes at the start every request: a full rewrite, about 1M x $2.75 = **$2.75** | the worst case, and the default today        |
+| Compact while the cache is warm (summary request reuses the cached prefix, C25) | 800k read $0.088 + ~8k output $0.088 + new 50k prefix written $0.14 = **~$0.32**       | 50k read: **$0.0055**                                                                   | pays back in 4 requests                      |
+| Compact with a cold cache                                                       | 800k uncached $1.76 + output $0.09 + write $0.14 = **~$2.00**                          | $0.0055                                                                                 | 6 times the warm cost                        |
+| Mask old tool results (no model call)                                           | the history after the first masked result is rewritten, e.g. 300k x $2.75 = **~$0.83** | smaller reads                                                                           | keeps the reasoning; each batch is a rebuild |
+
+What follows from it:
+
+1. **Pruning at the limit is the expensive default.** Dropping the oldest
+   message changes the start of the prompt, so every request near the limit
+   is a full cache rewrite. A long session that keeps going past the limit
+   pays about 30 times the warm read cost per request.
+2. **When matters more than how.** The same compaction costs about $0.32 right
+   after a response (cache warm) and about $2 after an idle break (cache cold).
+   Automatic compaction should run only while the cache is warm.
+3. **Masking is not free** on a cached provider: it is a rebuild from the first
+   masked result. It is cheap only in rare, large batches, or with no cache
+   (local models, providers without caching), where it costs nothing.
+4. **Local models are different.** With a local prefix cache (llama.cpp,
+   Ollama) there is no per-token bill: the cost is time to re-read. There,
+   masking and pruning cost only re-processing, and a summary costs a
+   generation. Default to masking first on local models.
+
+### 5.2 The defaults
+
+- **Automatic compaction on, at 80% of the context window**, triggered by the
+  provider's reported prompt size after a response, and run straight away while
+  the cache is warm. No question asked: the row in the conversation shows what
+  happened, what it cost and an Undo. If the threshold is first crossed with a
+  cold cache (a resumed session), ask, with both costs shown.
+- **The summary uses the conversation's own model**, with the cached prefix.
+  A cheaper model is an option, but it cannot reuse the conversation's cache,
+  so it is usually not cheaper on a cached provider.
+- **Keep everything** stays available for a long session, and now says so
+  when pruning starts, with the per-request cost of carrying on.
+- **Local models**: mask old tool results first, at 60%, then compact at 80%.
+
+### 5.3 Choose what to keep: calls and results
+
+- A call and its result stay paired on every provider. A removed result is
+  sent as a one-line stub with the same `toolCallId` (contextRemoval.ts), so
+  Bedrock's "tool_use without tool_result" rule holds. Turns are removed only
+  from the start, so a pair is never split. Keep it that way.
+- **A result without its call is not offered and should not be.** The model
+  would see output with nothing saying what produced it.
+- **A call without its result is useful**: the call says what was done ("read
+  config.ts", "ran npm test") and the stub says how big the output was, which
+  is usually enough to continue. That is what removing a result does today.
+- **Add: remove a call's large input.** The biggest items in an agent session
+  are often edit and create_new_file arguments (whole files). Once applied,
+  the file is on disk. Replace each large string argument with
+  "[removed: 12k tokens]", keeping the call's JSON valid.
+- **Add: remove a step.** Turns start at the person's messages, and the latest
+  turn is never offered. An agent session is often one or two messages with
+  hundreds of tool calls, so the turn list is nearly empty and the dialog seems
+  to insist on keeping one. Offer the older steps of the current turn (an
+  assistant message with its calls and results) as one unit, removed together
+  so no pair is split.
+
+### 5.4 Guidance and control over the summary
+
+Today the prompt is fixed (COMPACTION_PROMPT), the model is the chat model,
+Compact now summarises up to the latest message, and a message's own Compact
+button summarises up to that message. Add:
+
+- **Instructions**: an optional text field on Compact now ("keep every file
+  path and error"), and `compactPrompt` in the policy for every compaction.
+- **Keep the recent turns verbatim** (`keepRecentTurns`, default 4 steps).
+- **Held items** stay verbatim (section 3.2).
+- **Preview**: the summary is shown before it replaces anything, with Accept,
+  Edit and Discard. Automatic compaction skips the preview and offers Undo.
