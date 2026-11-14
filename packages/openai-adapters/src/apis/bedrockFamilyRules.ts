@@ -296,13 +296,25 @@ export const FAMILY_RULES: FamilyRule[] = [
   {
     id: "grok-4.6",
     match: /(^|\.)xai\.grok-4\.[67]$/i,
-    status: "unprobed",
+    status: "probed",
     read: "2026-11-10",
+    probedOn: "2026-11-14",
+    evidence: ["live-runtime 2026-11-14: us.xai.grok-4.6, us.xai.grok-4.7"],
+    unsupportedInference: ["stopSequences"],
+    // A 64-token budget came back as hidden reasoning with no answer
+    minMaxTokens: 1024,
     sources: [
       `${AWS}/model-card-xai-grok-4-6.html`,
       "https://docs.x.ai/docs/guides/reasoning",
     ],
-    // Responses: reasoning {effort}; Chat Completions: reasoning_effort.
+    // Measured: reasoning_effort "low" is accepted on Converse. There is no
+    // off value: reasoning cannot be turned off, so off maps to "low".
+    converseReasoning: {
+      field: "reasoning_effort",
+      values: ["low", "medium", "high", "xhigh"],
+      off: "low",
+      defaultWhenAbsent: "medium",
+    },
     candidateReasoningFields: ["reasoning_effort", "reasoning.effort"],
     toolChoice: "unknown",
     sampling:
@@ -313,6 +325,11 @@ export const FAMILY_RULES: FamilyRule[] = [
       "reasoning cannot be turned off; effort low, medium, high, xhigh",
       "on bedrock-runtime only us.xai.grok-4.6 and global.xai.grok-4.6 answer; xai.grok-4.6 is the Mantle id with path /openai/v1",
       "Chat Completions does not return reasoning tokens",
+      "MEASURED 2026-11-14 (4.6, 4.7): stopSequences refused; reasoning_effort low accepted",
+      "MEASURED: reasoning arrives redacted (reasoningContent with no text)",
+      "MEASURED: caches by itself: cacheReadInputTokens on a repeated prefix with no cachePoint",
+      "MEASURED: parallel streamed calls open after a reasoning block (contentBlockIndex 1, 2), each input in one fragment, valid JSON",
+      "MEASURED: one request took over 100 s while the same probe alone took 2 to 8 s",
     ],
   },
   {
