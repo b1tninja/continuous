@@ -15,7 +15,6 @@ import { createLlmApi, getLlmApi } from "../config.js";
 import { logger } from "../util/logger.js";
 
 import { BaseService, ServiceWithDependencies } from "./BaseService.js";
-import { reportModeModelsProblems } from "./modeModelsCheck.js";
 import {
   announceModelInUse,
   type ModelInUse,
@@ -23,6 +22,7 @@ import {
   modelInUseOf,
   sameModelInUse,
 } from "./modelInUse.js";
+import { reportModeModelsProblems } from "./modeModelsCheck.js";
 import { AgentFileServiceState, ModelServiceState } from "./types.js";
 
 /** Why a switch happened, for the record of the model in use (M7). */
