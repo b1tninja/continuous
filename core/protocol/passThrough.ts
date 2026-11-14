@@ -14,6 +14,7 @@ export const WEBVIEW_TO_CORE_PASS_THROUGH: (keyof ToCoreFromWebviewProtocol)[] =
     "history/delete",
     "history/load",
     "history/save",
+    "history/saveDelta",
     "history/clear",
     "devdata/log",
     "config/addModel",

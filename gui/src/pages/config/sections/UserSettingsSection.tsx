@@ -2,6 +2,7 @@ import {
   SharedConfigSchema,
   modifyAnyConfigWithSharedConfig,
 } from "core/config/sharedConfig";
+import { SESSION_LOG_STORAGE_DEFAULT } from "core/util/constants";
 import { DEFAULT_AUTOCOMPLETE_OPTS } from "core/util/parameters";
 import { useContext, useEffect, useState } from "react";
 import { Card, Toggle, useFontSize } from "../../../components/ui";
@@ -52,6 +53,8 @@ export function UserSettingsSection() {
   const continueAfterToolRejection =
     config.ui?.continueAfterToolRejection ?? false;
   const nudgeLeakedToolCalls = config.ui?.nudgeLeakedToolCalls ?? true;
+  const sessionLogStorage =
+    config.ui?.sessionLogStorage ?? SESSION_LOG_STORAGE_DEFAULT;
   const codeWrap = config.ui?.codeWrap ?? false;
   const showChatScrollbar = config.ui?.showChatScrollbar ?? false;
   const keepThinkingExpanded = config.ui?.keepThinkingExpanded ?? false;
@@ -317,6 +320,15 @@ export function UserSettingsSection() {
                     value={nudgeLeakedToolCalls}
                     onChange={(value) =>
                       handleUpdate({ nudgeLeakedToolCalls: value })
+                    }
+                  />
+                  <UserSetting
+                    type="toggle"
+                    title="Save chats as an append-only log"
+                    description=" each save adds only what changed, large tool outputs and images are stored once, and a turn is saved while it runs, so a crash keeps it for Resume. Off: each save rewrites the whole chat file."
+                    value={sessionLogStorage}
+                    onChange={(value) =>
+                      handleUpdate({ sessionLogStorage: value })
                     }
                   />
                 </div>

@@ -161,6 +161,7 @@ import { compactConversation } from "./util/conversationCompaction";
 import { GlobalContext } from "./util/GlobalContext";
 import { reasoningOptionsForEffort } from "./util/modelUse";
 import historyManager, { damagedSessionNotice } from "./util/history";
+import { SESSION_LOG_STORAGE_DEFAULT } from "./util/sessionLog";
 import {
   editConfigFile,
   getConfigYamlPath,
@@ -330,6 +331,11 @@ export class Core {
 
       const ideInfoPromise = messenger.request("getIdeInfo", undefined);
       const ideSettingsPromise = messenger.request("getIdeSettings", undefined);
+      // Sessions saved before the config has loaded use the setting as stored
+      historyManager.setSessionLog(
+        this.globalContext.getSharedConfig().sessionLogStorage ??
+          SESSION_LOG_STORAGE_DEFAULT,
+      );
       this.configHandler = new ConfigHandler(this.ide, this.llmLogger);
 
       this.docsService = DocsService.createSingleton(
@@ -362,6 +368,9 @@ export class Core {
       );
 
       this.configHandler.onConfigUpdate((result) => {
+        historyManager.setSessionLog(
+          result.config?.ui?.sessionLogStorage ?? SESSION_LOG_STORAGE_DEFAULT,
+        );
         void this.offerToMovePlaintextKeys();
         this.selectedChatModel =
           result.config?.selectedModelByRole.chat ?? undefined;
@@ -1260,7 +1269,11 @@ export class Core {
     });
 
     on("history/save", (msg) => {
-      historyManager.save(msg.data);
+      return historyManager.save(msg.data);
+    });
+
+    on("history/saveDelta", (msg) => {
+      return historyManager.saveDelta(msg.data);
     });
 
     on("history/share", async (msg) => {

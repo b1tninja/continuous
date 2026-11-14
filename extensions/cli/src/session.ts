@@ -17,7 +17,7 @@ import { addRequestUsage } from "core/llm/utils/sessionUsage.js";
 import { forkSession } from "core/util/forkSession.js";
 import historyManager, {
   damagedSessionNotice,
-  isQuarantinedSessionFile,
+  isSessionFileName,
   readSessionFile,
 } from "core/util/history.js";
 import { restoreLoop } from "core/util/loopMode.js";
@@ -426,13 +426,8 @@ export function loadSession(): Session | null {
 
     const files = fs
       .readdirSync(sessionDir)
-      .filter(
-        (f) =>
-          f.endsWith(".json") &&
-          f !== "sessions.json" &&
-          !f.includes(".tmp") &&
-          !isQuarantinedSessionFile(f),
-      )
+      // .json, or the IDE's .jsonl log (read here; the CLI saves .json)
+      .filter(isSessionFileName)
       .map((f) => ({
         name: f,
         path: path.join(sessionDir, f),

@@ -25,7 +25,7 @@ The VS Code extension and the terminal agent keep everything on your machine: on
 
 | Name                       | What it holds                                                               | Reset                                                       |
 | -------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `sessions/`                | Chat sessions of both products, and the loops saved with them               | `continuous sessions clean`, `continuous clean` (older than 30 days by default), or delete |
+| `sessions/`                | Chat sessions of both products, and the loops saved with them: `<id>.jsonl` (the extension's append-only log, with tool outputs and images in `<id>/blobs/`) or `<id>.json` (the CLI, or the extension with "Save chats as an append-only log" off)               | `continuous sessions clean`, `continuous clean` (older than 30 days by default), or delete |
 | `logs/`                    | `cn.log` (terminal agent), `core.log`, `prompt.log`, and `prompts/` when the debug prompt log is on | `continuous clean` (14 days), or delete |
 | `dev_data/`                | Local development data                                                      | `continuous clean` (90 days), or delete                     |
 | `cleanup-backups/`         | The originals of files changed by **Clean up old sessions**, one folder a day | Delete, or `--delete-backups-older-than`                  |

@@ -82,6 +82,12 @@ import { refuseRoleCalls } from "./refuseRoleCalls";
 import { checkToolDialectLeak } from "./noteToolDialectLeak";
 import { nudgeLeakedToolCall } from "./nudgeLeakedToolCall";
 import { streamResponseAfterToolCall } from "./streamResponseAfterToolCall";
+import { checkpointSession } from "./session";
+
+/** While an answer streams, it is saved this often (STOR6 checkpoints)... */
+export const CHECKPOINT_EVERY_MS = 3_000;
+/** ...or after this much of it, whichever comes first. */
+export const CHECKPOINT_EVERY_CHARS = 32 * 1024;
 
 export const streamNormalInput = createAsyncThunk<
   void,
@@ -258,6 +264,8 @@ export const streamNormalInput = createAsyncThunk<
 
       // The last token counts the API sent, for the chatInteraction record
       let lastUsage: { promptTokens?: number; completionTokens?: number } = {};
+      let checkpointAt = Date.now();
+      let checkpointChars = 0;
       let next = await gen.next();
       while (!next.done) {
         if (!getState().session.isStreaming) {
@@ -282,7 +290,19 @@ export const streamNormalInput = createAsyncThunk<
         ) {
           dispatch(setRecoveryHold(false));
         }
-        if (reply.length > 0) dispatch(streamUpdate(reply));
+        if (reply.length > 0) {
+          dispatch(streamUpdate(reply));
+          // The partial answer, saved every few seconds or KB (STOR6)
+          checkpointChars += JSON.stringify(reply).length;
+          if (
+            checkpointChars >= CHECKPOINT_EVERY_CHARS ||
+            Date.now() - checkpointAt >= CHECKPOINT_EVERY_MS
+          ) {
+            checkpointChars = 0;
+            checkpointAt = Date.now();
+            void checkpointSession(getState, extra.ideMessenger);
+          }
+        }
 
         // The final chunk carries the API's token counts. Remember the input
         // size so the cache button can say what throwing the cache away costs,

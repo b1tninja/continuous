@@ -360,6 +360,32 @@ export interface SessionPromptCache {
   escalatedBy?: "gap" | "requests";
 }
 
+/**
+ * What the webview sends instead of the whole session (`history/saveDelta`,
+ * STOR6): the history items and session fields changed since its last save.
+ */
+export interface SessionDelta {
+  sessionId: string;
+  /** The revision the webview's last save was answered with. */
+  baseRev: string;
+  /** The history's length now; shorter than before means items were cut. */
+  length: number;
+  /** New or changed items. Every index from the old length on must be here. */
+  items: { index: number; item: ChatHistoryItem }[];
+  /** Changed session fields; title and workspace are always sent. */
+  meta: Partial<Omit<Session, "history" | "sessionId">>;
+  /** Session fields that were removed. */
+  unset?: string[];
+}
+
+/**
+ * A save's answer. `rev` is what the next delta is sent against; null when
+ * deltas cannot be used (the session log is off). `needFull` asks for the
+ * whole session (`history/save`).
+ */
+export type SessionSaveResult =
+  { rev: string | null; needFull?: false } | { rev: null; needFull: true };
+
 export interface Session {
   sessionId: string;
   title: string;
@@ -2527,6 +2553,11 @@ export interface ContinueUIConfig {
   codeWrap?: boolean;
   showSessionTabs?: boolean;
   continueAfterToolRejection?: boolean;
+  /**
+   * Save sessions as an append-only log with large tool outputs and images
+   * stored once by hash (STOR6/STOR7) instead of rewriting a JSON file.
+   */
+  sessionLogStorage?: boolean;
   /** Ask the model once to re-issue a tool call it wrote as text (H13). Default true. */
   nudgeLeakedToolCalls?: boolean;
   /** The first-run overview on Settings > Permissions was dismissed. Never shown again. */

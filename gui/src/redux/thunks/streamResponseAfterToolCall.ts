@@ -14,6 +14,7 @@ import { ThunkApiType } from "../store";
 import { addUserInputToHistory } from "./addUserInputToHistory";
 import { addItemBudgetNote } from "./loopHolds";
 import { streamNormalInput } from "./streamNormalInput";
+import { checkpointSession } from "./session";
 import { streamThunkWrapper } from "./streamThunkWrapper";
 
 /**
@@ -70,6 +71,8 @@ export const streamResponseAfterToolCall = createAsyncThunk<
           toolCallId,
         };
         dispatch(streamUpdate([newMessage]));
+        // The tool ran: its result is saved now, not at the turn's end (STOR6)
+        void checkpointSession(getState, extra.ideMessenger);
         if (endTurn) {
           // The turn ends here (e.g. a plan awaiting Build): the queue goes
           // now, as at any other turn end

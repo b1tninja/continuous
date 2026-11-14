@@ -2,7 +2,6 @@ import { createAsyncThunk, unwrapResult } from "@reduxjs/toolkit";
 import { BaseSessionMetadata, ChatMessage, Session } from "core";
 import { NEW_SESSION_TITLE } from "core/util/constants";
 import { renderChatMessage } from "core/util/messageContent";
-import { withoutPrompts } from "core/util/promptLogs";
 import { IIdeMessenger } from "../../context/IdeMessenger";
 import { selectSelectedChatModel } from "../slices/configSlice";
 import { selectSelectedProfile } from "../slices/profilesSlice";
@@ -13,7 +12,8 @@ import {
   setIsSessionMetadataLoading,
   updateSessionMetadata,
 } from "../slices/sessionSlice";
-import { ThunkApiType } from "../store";
+import { RootState, ThunkApiType } from "../store";
+import { saveSessionToCore } from "../util/sessionDelta";
 import { updateSelectedModelByRole } from "../thunks/updateSelectedModelByRole";
 
 const MAX_TITLE_LENGTH = 100;
@@ -77,7 +77,8 @@ export const updateSession = createAsyncThunk<void, Session, ThunkApiType>(
         title: session.title,
       }),
     ); // optimistic session metadata update
-    await extra.ideMessenger.request("history/save", session);
+    // Only what changed since the last save crosses to the extension
+    await saveSessionToCore(extra.ideMessenger, session);
     await dispatch(refreshSessionMetadata({}));
   },
 );
@@ -184,6 +185,89 @@ function getChatTitleFromMessage(message: ChatMessage) {
   return text;
 }
 
+/**
+ * The session as saved. Its history is the store's own items (the save
+ * drops their prompts, core/util/promptLogs): the delta save compares them
+ * by reference with the last save's.
+ */
+function sessionToSave(
+  session: RootState["session"],
+  title: string,
+  chatModelTitle: string | null,
+): Session {
+  const cache = session.promptCache;
+  return {
+    sessionId: session.id,
+    title,
+    workspaceDirectory: window.workspacePaths?.[0] || "",
+    history: session.history,
+    mode: session.mode,
+    chatModelTitle,
+    ...(session.usage && { usage: session.usage }),
+    checkpoints: session.checkpoints,
+    ...(session.taskPlan && { taskPlan: session.taskPlan }),
+    ...(session.planFile && { planFile: session.planFile }),
+    ...(session.loop && { loop: session.loop }),
+    ...(session.loopRequested && { loopRequested: true }),
+    ...(session.forkedFrom && { forkedFrom: session.forkedFrom }),
+    // Saving an empty list removes queued messages from the file
+    queuedMessages: session.queuedMessages ?? [],
+    // Enough for a resumed session to know its cache has expired and what
+    // re-reading the conversation will cost.
+    ...(cache?.lastRequestAt !== undefined && {
+      promptCache: {
+        lastRequestAt: cache.lastRequestAt,
+        lastInputTokens: cache.lastInputTokens,
+        lastTtl: cache.lastTtl,
+        requests: cache.requests,
+        escalated: cache.escalated,
+        escalatedBy: cache.escalatedBy,
+      },
+    }),
+  };
+}
+
+/**
+ * Saves the open session in the middle of a turn: when the person's message
+ * is added, at each tool result, and every few seconds while an answer
+ * streams. The newest item is saved marked as cut off ("reloaded"), so a
+ * window that dies before the turn ends reopens with Resume on it; the save
+ * at the turn's end writes it again unmarked. Only the change is sent, and
+ * nothing at all when the extension keeps sessions as one JSON file (each
+ * save would rewrite the whole file). No title is generated. A plain
+ * function, not a thunk: it changes nothing in the store, so it dispatches
+ * nothing.
+ */
+export async function checkpointSession(
+  getState: () => RootState,
+  ideMessenger: IIdeMessenger,
+): Promise<void> {
+  const state = getState();
+  const session = state.session;
+  if (session.history.length === 0 || session.isInEdit) return;
+  const known = session.allSessionMetadata.find(
+    (m) => m.sessionId === session.id,
+  );
+  const title =
+    session.title !== NEW_SESSION_TITLE
+      ? session.title
+      : (known?.title ?? NEW_SESSION_TITLE);
+  try {
+    await saveSessionToCore(
+      ideMessenger,
+      sessionToSave(
+        session,
+        title || NEW_SESSION_TITLE,
+        selectSelectedChatModel(state)?.title ?? null,
+      ),
+      { checkpoint: "reloaded" },
+    );
+  } catch (e) {
+    // The turn's own save at its end still runs
+    console.warn("Session checkpoint not saved", e);
+  }
+}
+
 export const saveCurrentSession = createAsyncThunk<
   void,
   { openNewSession: boolean; generateTitle: boolean },
@@ -248,38 +332,11 @@ export const saveCurrentSession = createAsyncThunk<
       title = NEW_SESSION_TITLE;
     }
 
-    const cache = session.promptCache;
-    const updatedSession: Session = {
-      sessionId: session.id,
+    const updatedSession = sessionToSave(
+      session,
       title,
-      workspaceDirectory: window.workspacePaths?.[0] || "",
-      // A session file keeps no prompts (core/util/promptLogs), so they are
-      // not sent to the extension on every save either
-      history: withoutPrompts(session.history),
-      mode: session.mode,
-      chatModelTitle: selectedChatModel?.title ?? null,
-      ...(session.usage && { usage: session.usage }),
-      checkpoints: session.checkpoints,
-      ...(session.taskPlan && { taskPlan: session.taskPlan }),
-      ...(session.planFile && { planFile: session.planFile }),
-      ...(session.loop && { loop: session.loop }),
-      ...(session.loopRequested && { loopRequested: true }),
-      ...(session.forkedFrom && { forkedFrom: session.forkedFrom }),
-      // Saving an empty list removes queued messages from the file
-      queuedMessages: session.queuedMessages ?? [],
-      // Enough for a resumed session to know its cache has expired and what
-      // re-reading the conversation will cost.
-      ...(cache?.lastRequestAt !== undefined && {
-        promptCache: {
-          lastRequestAt: cache.lastRequestAt,
-          lastInputTokens: cache.lastInputTokens,
-          lastTtl: cache.lastTtl,
-          requests: cache.requests,
-          escalated: cache.escalated,
-          escalatedBy: cache.escalatedBy,
-        },
-      }),
-    };
+      selectedChatModel?.title ?? null,
+    );
 
     const result = await dispatch(updateSession(updatedSession));
     unwrapResult(result);

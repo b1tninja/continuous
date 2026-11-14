@@ -79,6 +79,7 @@ class MessageTypes {
             "history/delete",
             "history/load",
             "history/save",
+            "history/saveDelta",
             "history/loadRemote",
             "history/clear",
             "devdata/log",

@@ -42,6 +42,7 @@ const DEFAULT_MOCK_CORE_RESPONSES: MockResponses = {
   "history/list": [],
   "docs/getIndexedPages": [],
   "history/save": undefined,
+  "history/saveDelta": { rev: null, needFull: true },
   "policy/save": undefined,
   "policy/preview": {
     before: "",

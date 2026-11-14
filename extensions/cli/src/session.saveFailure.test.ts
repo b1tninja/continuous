@@ -80,6 +80,7 @@ describe("a session that cannot be saved", () => {
 
   it("says nothing when the save works", () => {
     vi.spyOn(historyManager, "save").mockImplementation(() => ({
+      rev: null,
       fileBytes: 0,
     }));
     createSession([message("one")], "save-works");

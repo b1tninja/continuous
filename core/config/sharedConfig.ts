@@ -34,6 +34,7 @@ export const sharedConfigSchema = z
     displayRawMarkdown: z.boolean(),
     showChatScrollbar: z.boolean(),
     continueAfterToolRejection: z.boolean(),
+    sessionLogStorage: z.boolean(),
     nudgeLeakedToolCalls: z.boolean(),
     keepThinkingExpanded: z.boolean(),
     permissionsIntroDismissed: z.boolean(),
@@ -162,6 +163,10 @@ export function modifyAnyConfigWithSharedConfig<
   if (sharedConfig.continueAfterToolRejection !== undefined) {
     configCopy.ui.continueAfterToolRejection =
       sharedConfig.continueAfterToolRejection;
+  }
+
+  if (sharedConfig.sessionLogStorage !== undefined) {
+    configCopy.ui.sessionLogStorage = sharedConfig.sessionLogStorage;
   }
 
   if (sharedConfig.nudgeLeakedToolCalls !== undefined) {
