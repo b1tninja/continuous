@@ -23,22 +23,22 @@ The `prompt` string is built in `core/llm/index.ts:1454-1456`: after compiling a
 
 ### 2.2 Writers
 
-| Writer | Where | What it writes |
-| ------ | ----- | -------------- |
-| `addPromptCompletionPair` reducer | `gui/src/redux/slices/sessionSlice.ts:372-384` | Appends the request's `PromptLog` to `history[last].promptLogs` with `concat`. Never trims. |
-| Dispatch after each streamed request | `gui/src/redux/thunks/streamNormalInput.ts:404-405` | One call per model request, including each agent round after a tool call. |
-| `chatInteraction` dev data | same file, lines 407-431; `core/data/log.ts:98` | The same `prompt` and `completion`, appended (scrubbed, `scrubDeep`) to `~/.continue/dev_data/<version>/chatInteraction.jsonl`. Always on. |
-| JetBrains binary prompt log | `binary/src/index.ts:44-50`, `core/util/scrubStream.ts:12-16` | Every LLM interaction formatted to `~/.continue/logs/prompt.log`, scrubbed, truncated at process start (`flags: "w"`), unbounded within one process. |
+| Writer                               | Where                                                         | What it writes                                                                                                                                       |
+| ------------------------------------ | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `addPromptCompletionPair` reducer    | `gui/src/redux/slices/sessionSlice.ts:372-384`                | Appends the request's `PromptLog` to `history[last].promptLogs` with `concat`. Never trims.                                                          |
+| Dispatch after each streamed request | `gui/src/redux/thunks/streamNormalInput.ts:404-405`           | One call per model request, including each agent round after a tool call.                                                                            |
+| `chatInteraction` dev data           | same file, lines 407-431; `core/data/log.ts:98`               | The same `prompt` and `completion`, appended (scrubbed, `scrubDeep`) to `~/.continue/dev_data/<version>/chatInteraction.jsonl`. Always on.           |
+| JetBrains binary prompt log          | `binary/src/index.ts:44-50`, `core/util/scrubStream.ts:12-16` | Every LLM interaction formatted to `~/.continue/logs/prompt.log`, scrubbed, truncated at process start (`flags: "w"`), unbounded within one process. |
 
 The CLI (`extensions/cli`) has no `promptLogs` writer: a search for `promptLog` in `extensions/` finds none.
 
 ### 2.3 Readers
 
-| Reader | Where | Needs |
-| ------ | ----- | ----- |
-| Thumbs up/down | `gui/src/components/FeedbackButtons.tsx:22-36` | All logs on the item, posted as `chatFeedback` dev data. In practice the item's last request. |
-| Fork a session | `core/util/forkSession.ts:73` | Does not read it, but `structuredClone(parent.history.slice(0, end))` copies every prompt log into the fork, so a fork of a 432 MB session writes a second file of the same order and briefly holds two copies in memory. |
-| Tests | `gui/src/redux/thunks/streamResponse*.test.ts` | Assert on `promptLogs` contents. These are the tests the hotfix breaks. |
+| Reader         | Where                                          | Needs                                                                                                                                                                                                                     |
+| -------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Thumbs up/down | `gui/src/components/FeedbackButtons.tsx:22-36` | All logs on the item, posted as `chatFeedback` dev data. In practice the item's last request.                                                                                                                             |
+| Fork a session | `core/util/forkSession.ts:73`                  | Does not read it, but `structuredClone(parent.history.slice(0, end))` copies every prompt log into the fork, so a fork of a 432 MB session writes a second file of the same order and briefly holds two copies in memory. |
+| Tests          | `gui/src/redux/thunks/streamResponse*.test.ts` | Assert on `promptLogs` contents. These are the tests the hotfix breaks.                                                                                                                                                   |
 
 Checked and not readers: the context meter (#833, `ContextMeter.tsx`), selective compaction (#851, `SelectiveCompactDialog.tsx`, `core/util/contextRemoval.ts`), Resume (#831, `interrupted` on the item), the cache ledger (`session.promptCache`), usage (`session.usage`), conversation compaction (`core/util/conversationCompaction.ts`), share/export (`core.ts` `history/share` maps to `msg.message` only). `grep -rn promptLogs` over `core`, `gui/src` and `extensions` finds only the files in the two tables.
 
@@ -65,18 +65,18 @@ The context window used to bound this. `compileChatMessages` prunes each prompt 
 
 ### 2.6 Other accumulations found while reading
 
-| Accumulation | Where | Growth | Verdict |
-| ------------ | ----- | ------ | ------- |
-| Tool output stored twice | `toolCallStates[].output` (context items) and the `role: "tool"` message whose content is `renderContextItems(toolOutput)` (`gui/src/redux/thunks/streamResponseAfterToolCall.ts:62-71`) | linear, 2x | Real but bounded; a blob reference fixes both copies (section 4f). |
-| Prompt logs copied by Fork | `core/util/forkSession.ts:73` | one full copy per fork | Fixed for free once prompts are not persisted. |
-| `chatInteraction` dev data | `streamNormalInput.ts:407-431`, `core/data/log.ts:98` | quadratic per session, on disk, append-only, always on | Same problem on disk: the 424 MB also went to `chatInteraction.jsonl`. Retention exists only as `cn clean` (`core/util/cleanStores.ts:18-22`, dev_data 90 days), which nothing runs automatically. |
-| JetBrains `prompt.log` | `binary/src/index.ts:44-50` | quadratic within one process | Truncated at each start; unbounded while running. |
-| CLI user items | `extensions/cli/src/session.ts:317-331` sets `editorState: item.message.content` | linear, 2x for user text and images | Small unless images are pasted. |
-| Images | user message parts hold data URLs; the GUI editor document (`editorState`) holds the image node too | linear, possibly 2x per image | Not measured here; the long-session test should include images. |
-| Checkpoints | `core/util/checkpoints.ts:43-46` | bounded: 90,000 bytes per file, 4,000,000 characters per session, `evicted`/`too_large` markers | Good precedent: a budget with a visible marker. |
-| Permission audit log | `core/tools/permissions/audit/` | append-only JSONL with an index | Good precedent for the append-only design. |
-| Cache ledger, usage, task plan, loop state | `core/util/history.ts:369-394` | small, bounded by counts | Not a concern. |
-| VS Code `globalState` | `extensions/vscode/src/quickEdit/HistoryQuickPick.ts:25` | small list | Not a concern; sessions are not in `globalState` or `workspaceState`. |
+| Accumulation                               | Where                                                                                                                                                                                    | Growth                                                                                          | Verdict                                                                                                                                                                                            |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tool output stored twice                   | `toolCallStates[].output` (context items) and the `role: "tool"` message whose content is `renderContextItems(toolOutput)` (`gui/src/redux/thunks/streamResponseAfterToolCall.ts:62-71`) | linear, 2x                                                                                      | Real but bounded; a blob reference fixes both copies (section 4f).                                                                                                                                 |
+| Prompt logs copied by Fork                 | `core/util/forkSession.ts:73`                                                                                                                                                            | one full copy per fork                                                                          | Fixed for free once prompts are not persisted.                                                                                                                                                     |
+| `chatInteraction` dev data                 | `streamNormalInput.ts:407-431`, `core/data/log.ts:98`                                                                                                                                    | quadratic per session, on disk, append-only, always on                                          | Same problem on disk: the 424 MB also went to `chatInteraction.jsonl`. Retention exists only as `cn clean` (`core/util/cleanStores.ts:18-22`, dev_data 90 days), which nothing runs automatically. |
+| JetBrains `prompt.log`                     | `binary/src/index.ts:44-50`                                                                                                                                                              | quadratic within one process                                                                    | Truncated at each start; unbounded while running.                                                                                                                                                  |
+| CLI user items                             | `extensions/cli/src/session.ts:317-331` sets `editorState: item.message.content`                                                                                                         | linear, 2x for user text and images                                                             | Small unless images are pasted.                                                                                                                                                                    |
+| Images                                     | user message parts hold data URLs; the GUI editor document (`editorState`) holds the image node too                                                                                      | linear, possibly 2x per image                                                                   | Not measured here; the long-session test should include images.                                                                                                                                    |
+| Checkpoints                                | `core/util/checkpoints.ts:43-46`                                                                                                                                                         | bounded: 90,000 bytes per file, 4,000,000 characters per session, `evicted`/`too_large` markers | Good precedent: a budget with a visible marker.                                                                                                                                                    |
+| Permission audit log                       | `core/tools/permissions/audit/`                                                                                                                                                          | append-only JSONL with an index                                                                 | Good precedent for the append-only design.                                                                                                                                                         |
+| Cache ledger, usage, task plan, loop state | `core/util/history.ts:369-394`                                                                                                                                                           | small, bounded by counts                                                                        | Not a concern.                                                                                                                                                                                     |
+| VS Code `globalState`                      | `extensions/vscode/src/quickEdit/HistoryQuickPick.ts:25`                                                                                                                                 | small list                                                                                      | Not a concern; sessions are not in `globalState` or `workspaceState`.                                                                                                                              |
 
 Subagent and Loop runs save through the same `HistoryManager`; their sessions carry prompt logs when they run in the IDE webview path, and not in the CLI path. Not measured here.
 
@@ -84,7 +84,7 @@ Subagent and Loop runs save through the same `HistoryManager`; their sessions ca
 
 - No size budget anywhere on the session path. PERF21 (CI budgets) covers bundle bytes and start-up, not session bytes.
 - No long-session test. The `streamResponse*` tests run a few turns, and a few turns of quadratic growth look linear.
-- The only reader is a feedback button, so nobody saw the data, and the per-save cost was hidden: `performance-startup-resources.md` measured a full save at 3 ms for 1,000 messages *without* prompt logs and 46 ms at 300 messages *with* them, both fast enough on a desktop not to notice.
+- The only reader is a feedback button, so nobody saw the data, and the per-save cost was hidden: `performance-startup-resources.md` measured a full save at 3 ms for 1,000 messages _without_ prompt logs and 46 ms at 300 messages _with_ them, both fast enough on a desktop not to notice.
 - The failure mode is out-of-memory in a webview, which leaves no stack trace in the extension's logs and looks like a VS Code crash.
 - PERF10 was filed with an owner question attached (`performance-startup-resources.md` section 11, question 3), and work waited on the answer.
 
@@ -102,7 +102,7 @@ Subagent and Loop runs save through the same `HistoryManager`; their sessions ca
 **Data risk.**
 
 - **Sessions too big to open.** A session past the V8 string limit cannot be saved; one near it cannot be loaded into a webview with a normal heap. The conversation itself (the 8 MB) is fine and recoverable by stripping `promptLogs` from the file, which is exactly what the hotfix does on load.
-- **Secrets at rest.** Session files are written owner-only (0600) but **not scrubbed** (`HistoryManager.save` has no `scrubDeep`; only dev data and logs are scrubbed, by `be1ea7f47`, X15). The conversation is stored in clear anyway, so prompt logs add little new *kind* of exposure, with one exception: the **system message** (rules, environment disclosure, memory) is not part of the history, and prompt logs persisted it, in clear, once per request. Anything the environment disclosure or a rule placed in the system message is in the session file up to 445 times. `continuous secrets scan --history` (`core/util/secretScan/historyScan.ts`) can find it after the fact.
+- **Secrets at rest.** Session files are written owner-only (0600) but **not scrubbed** (`HistoryManager.save` has no `scrubDeep`; only dev data and logs are scrubbed, by `be1ea7f47`, X15). The conversation is stored in clear anyway, so prompt logs add little new _kind_ of exposure, with one exception: the **system message** (rules, environment disclosure, memory) is not part of the history, and prompt logs persisted it, in clear, once per request. Anything the environment disclosure or a rule placed in the system message is in the session file up to 445 times. `continuous secrets scan --history` (`core/util/secretScan/historyScan.ts`) can find it after the fact.
 
 ## 4. Designs compared
 
@@ -163,14 +163,14 @@ Store tool outputs over a threshold (for example 16 KB) and images in `sessions/
 
 ### Comparison
 
-| Design | Memory | Disk | Write per response | Crash safety | Secrets at rest | Migration | Effort |
-| ------ | ------ | ---- | ------------------ | ------------ | --------------- | --------- | ------ |
-| (a) rebuild on demand | none | none | none | unchanged | best | strip on load | S |
-| (b) newest only | one prompt | one prompt | one prompt | unchanged | newest system message | strip on load | done (hotfix) |
-| (c) content-addressed | O(n) | O(n) | new blocks | needs a store | all prompts, deduped | new format | L |
-| (d) append-only JSONL | unchanged by itself | O(n) plus slack | O(delta) | best | unchanged | snapshot old files | M |
-| (e) opt-in debug log | none (off) | capped | none (off) | n/a | scrubbed, aged | none | S |
-| (f) blobs by reference | previews only | O(n), deduped | new blobs | same as base | same | lazy | M |
+| Design                 | Memory              | Disk            | Write per response | Crash safety  | Secrets at rest       | Migration          | Effort        |
+| ---------------------- | ------------------- | --------------- | ------------------ | ------------- | --------------------- | ------------------ | ------------- |
+| (a) rebuild on demand  | none                | none            | none               | unchanged     | best                  | strip on load      | S             |
+| (b) newest only        | one prompt          | one prompt      | one prompt         | unchanged     | newest system message | strip on load      | done (hotfix) |
+| (c) content-addressed  | O(n)                | O(n)            | new blocks         | needs a store | all prompts, deduped  | new format         | L             |
+| (d) append-only JSONL  | unchanged by itself | O(n) plus slack | O(delta)           | best          | unchanged             | snapshot old files | M             |
+| (e) opt-in debug log   | none (off)          | capped          | none (off)         | n/a           | scrubbed, aged        | none               | S             |
+| (f) blobs by reference | previews only       | O(n), deduped   | new blobs          | same as base  | same                  | lazy               | M             |
 
 ### How peers store sessions
 
@@ -235,13 +235,13 @@ No peer found stores a rendered copy of every past prompt inside the session tha
 
 For the PERF track, after PERF25, or as a new track "STOR: session storage". PERF10 becomes "Done (hotfix)" when `4e85f761f` lands, with STOR1 as its follow-up.
 
-| ID    | Scope | Depends on | Status |
-| ----- | ----- | ---------- | ------ |
-| STOR1 | Prompt logs out of saved sessions: `promptLogs` stripped in `saveCurrentSession`, `HistoryManager.save` and `forkSession`; the newest kept in webview memory for feedback; old sessions stripped on load | PERF10 hotfix | Not started (S) |
-| STOR2 | Synthetic 500-request agent session test (tool outputs, images, compaction, fork, interrupted turn) in the gui job: linear saved size, largest save and redux size under budget | none | Not started (S) |
-| STOR3 | Field-growth test: no `ChatHistoryItem` field grows with the request number; new fields declare their growth class | STOR2 | Not started (S) |
-| STOR4 | `chatInteraction` dev data without the full prompt by default (sizes, hash); opt-in debug prompt log under `logs/prompts/`, scrubbed, capped per file, aged out | owner question 2 | Not started (S) |
-| STOR5 | Automatic age-based cleaning of sessions, dev data and logs at activation and CLI start, using `cleanStores` defaults; pinned sessions exempt | owner question 3 | Not started (S) |
-| STOR6 | Append-only JSONL session log with snapshot compaction; migration from `.json`; asynchronous writes; deltas from webview to core | STOR2 | Not started (M) |
-| STOR7 | Tool outputs over 16 KB and images stored as hashed blobs under the session folder; previews in the webview; fork shares blobs | STOR6 | Not started (M) |
-| STOR8 | Session size and item count in the context meter details; warning past the session budget; slow-save log line | STOR2 | Not started (S) |
+| ID    | Scope                                                                                                                                                                                                    | Depends on       | Status          |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- | --------------- |
+| STOR1 | Prompt logs out of saved sessions: `promptLogs` stripped in `saveCurrentSession`, `HistoryManager.save` and `forkSession`; the newest kept in webview memory for feedback; old sessions stripped on load | PERF10 hotfix    | Not started (S) |
+| STOR2 | Synthetic 500-request agent session test (tool outputs, images, compaction, fork, interrupted turn) in the gui job: linear saved size, largest save and redux size under budget                          | none             | Not started (S) |
+| STOR3 | Field-growth test: no `ChatHistoryItem` field grows with the request number; new fields declare their growth class                                                                                       | STOR2            | Not started (S) |
+| STOR4 | `chatInteraction` dev data without the full prompt by default (sizes, hash); opt-in debug prompt log under `logs/prompts/`, scrubbed, capped per file, aged out                                          | owner question 2 | Not started (S) |
+| STOR5 | Automatic age-based cleaning of sessions, dev data and logs at activation and CLI start, using `cleanStores` defaults; pinned sessions exempt                                                            | owner question 3 | Not started (S) |
+| STOR6 | Append-only JSONL session log with snapshot compaction; migration from `.json`; asynchronous writes; deltas from webview to core                                                                         | STOR2            | Not started (M) |
+| STOR7 | Tool outputs over 16 KB and images stored as hashed blobs under the session folder; previews in the webview; fork shares blobs                                                                           | STOR6            | Not started (M) |
+| STOR8 | Session size and item count in the context meter details; warning past the session budget; slow-save log line                                                                                            | STOR2            | Not started (S) |
