@@ -9,6 +9,11 @@ import { fireSubagentStart, fireSubagentStop } from "../hooks/fireHook.js";
 import { usageSince } from "../loop/loopBudget.js";
 import { toolPermissionManager } from "../permissions/permissionManager.js";
 import { services } from "../services/index.js";
+import {
+  announceModelInUse,
+  describeModelInUse,
+  modelInUseOf,
+} from "../services/modelInUse.js";
 import { serviceContainer } from "../services/ServiceContainer.js";
 import type { ToolPermissionServiceState } from "../services/ToolPermissionService.js";
 import { ModelServiceState, SERVICE_NAMES } from "../services/types.js";
@@ -341,6 +346,13 @@ async function runSubAgent(
     }
     // The model's sub-agent context budget, if one is configured
     const model = getSubagentModel(subAgent.model);
+    // The subagent's own model and effort, in its output and the stream (M7)
+    const inUse = modelInUseOf(model, "subagent", {
+      use: "subagent",
+      agent: agentType,
+    });
+    transcript.notice(describeModelInUse(inUse));
+    announceModelInUse(inUse);
 
     // SubagentStart cannot block (Claude Code: exit 2 "shows stderr to user
     // only"); its additionalContext goes to the subagent before its prompt.

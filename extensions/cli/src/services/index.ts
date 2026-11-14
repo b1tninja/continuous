@@ -15,7 +15,7 @@ import { ConfigService } from "./ConfigService.js";
 import { FileIndexService } from "./FileIndexService.js";
 import { GitAiIntegrationService } from "./GitAiIntegrationService.js";
 import { MCPService } from "./MCPService.js";
-import { ModelService } from "./ModelService.js";
+import { ModelService, type ModelSwitchWhy } from "./ModelService.js";
 import { quizService } from "./QuizService.js";
 import { ResourceMonitoringService } from "./ResourceMonitoringService.js";
 import { SafeModeHookService } from "./SafeModeHookService.js";
@@ -408,12 +408,19 @@ function currentModelName(): string | undefined {
   return model?.name;
 }
 
-/** Switch to a chat model by its name, when it exists and is not current. */
-export async function applyModelNamed(name: string): Promise<void> {
+/**
+ * Switch to a chat model by its name, when it exists and is not current.
+ * `why` is what the record of the model in use says (M7): by default, coming
+ * back from a Loop item's own model.
+ */
+export async function applyModelNamed(
+  name: string,
+  why: ModelSwitchWhy = { reason: "restore" },
+): Promise<void> {
   try {
     const index = modelService.getModelIndexByName(name);
     if (index === -1 || index === modelService.getCurrentModelIndex()) return;
-    await modelService.switchModel(index);
+    await modelService.switchModel(index, undefined, why);
     serviceContainer.set(SERVICE_NAMES.MODEL, modelService.getState());
   } catch (error) {
     logger.error("Could not switch back to the model", { name, error });

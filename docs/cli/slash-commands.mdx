@@ -21,6 +21,8 @@ A line is read as a command only when `/` is its first character. If the word af
 
 While the model thinks, its reasoning streams dimmed above the status line, newest lines only. When the reply is done the reasoning folds to one line above it, "∴ Thought for 4s". `/thinking expanded` keeps the reasoning under that line, and `/thinking hide` shows none of it; the choice holds for the session, and redraws the transcript. Start with a mode with `--thinking <mode>` or the `CONTINUE_CLI_THINKING` variable; without either, the IDE's **Keep Thinking Expanded** setting (`ui.keepThinkingExpanded`) starts the session in `expanded`. What a provider returns is often a summary of the model's thinking rather than all of it.
 
+The status line shows the model the next request goes to and its reasoning effort, as `• Claude Opus (high)`. When that changes without `/model` (a mode's or a Loop turn's `modeModels` entry, a Loop item's own `model:`), a line in the transcript says which model and effort now run and why, including when a model asked for is not configured and another runs instead. A subagent's output starts with the model it runs on. With `-p --format stream-json` the same changes are `model` lines ([headless output](/cli/headless-output)).
+
 ## Sessions on disk
 
 | Command          | What it does                                                                                                                            |

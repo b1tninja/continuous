@@ -17,6 +17,7 @@ import {
 } from "../../loop/loopSession.js";
 import { toolPermissionManager } from "../../permissions/permissionManager.js";
 import { services } from "../../services/index.js";
+import { ModelNoteGate, onModelInUse } from "../../services/modelInUse.js";
 import {
   createSession,
   forkIntoNewSession,
@@ -319,6 +320,31 @@ export function useChat({
   // on (src/loop/loopDriver.ts). `busy` counts the turns and messages in
   // flight, which a turn's stale closures cannot read from state.
   const busyRef = useRef(0);
+  // The model in use, in the transcript when it changes (M7): a line written
+  // while a turn streams would land inside its reply, so it waits for the
+  // turn to end
+  const modelNoteGateRef = useRef<ModelNoteGate | null>(null);
+  const pendingModelNoteRef = useRef<string | null>(null);
+  const flushModelNote = () => {
+    const note = pendingModelNoteRef.current;
+    if (!note || busyRef.current > 0) return;
+    pendingModelNoteRef.current = null;
+    setChatHistory((prev) => [
+      ...prev,
+      { message: { role: "system", content: note }, contextItems: [] },
+    ]);
+  };
+  useEffect(() => {
+    modelNoteGateRef.current = new ModelNoteGate(
+      services.model?.getState?.()?.inUse,
+    );
+    return onModelInUse((info) => {
+      const note = modelNoteGateRef.current?.next(info);
+      if (!note) return;
+      pendingModelNoteRef.current = note;
+      flushModelNote();
+    });
+  }, []);
   const sendLoopTurnRef = useRef<(prompt: string) => Promise<void>>(
     async () => {},
   );
@@ -466,6 +492,7 @@ export function useChat({
       } finally {
         busyRef.current--;
       }
+      flushModelNote();
       loopRunnerRef.current?.kick();
     }
   };
@@ -624,6 +651,7 @@ export function useChat({
     } finally {
       busyRef.current--;
     }
+    flushModelNote();
     // The loop waited for this message's turn
     loopRunnerRef.current?.kick();
   };

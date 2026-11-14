@@ -6,6 +6,7 @@ import * as runLimits from "../budget/runLimits.js";
 import { stripThinkTags } from "../commands/chatOutput.js";
 import { safeStderr, safeStdout } from "../init.js";
 import { services } from "../services/index.js";
+import { effortOfModel, onModelInUse } from "../services/modelInUse.js";
 import { getSessionUsage } from "../session.js";
 import { refusalCapReached } from "../stream/refusalCap.js";
 import type { StreamChatResponseOptions } from "../stream/streamChatResponse.js";
@@ -102,6 +103,7 @@ export function startStreamJson(
     model: string;
     provider: string;
     mode: string;
+    reasoningEffort?: string;
     limits?: {
       maxBudgetUsd?: number;
       maxTurns?: number;
@@ -120,6 +122,9 @@ export function startStreamJson(
       provider: facts.provider,
       cwd: process.cwd(),
       mode: facts.mode,
+      ...(facts.reasoningEffort
+        ? { reasoningEffort: facts.reasoningEffort }
+        : {}),
       ...(facts.limits && Object.keys(facts.limits).length > 0
         ? { limits: facts.limits }
         : {}),
@@ -133,12 +138,18 @@ export function startStreamJson(
       // the stream never breaks the run
     }
   });
+  // A later switch of model or effort (a mode's or Loop turn's modeModels
+  // entry, an item's own model, a subagent's): a `model` line (M7)
+  stopFollowingModel?.();
+  stopFollowingModel = onModelInUse((info) => run.modelInUse(info));
 }
+
+let stopFollowingModel: (() => void) | undefined;
 
 /** `startStreamJson` for a headless run, with the facts read from the services. */
 export function startStreamJsonRun(
   format: string | undefined,
-  model: Pick<ModelConfig, "model" | "provider">,
+  model: Pick<ModelConfig, "model" | "provider" | "requestOptions">,
 ): void {
   if (!isStreamJson(format)) return;
   startStreamJson(
@@ -148,6 +159,7 @@ export function startStreamJsonRun(
       model: model.model,
       provider: model.provider,
       mode: services.toolPermissions.getCurrentMode(),
+      reasoningEffort: effortOfModel(model),
       limits: runLimits.activeRunBudget()?.limits,
     },
     services.chatHistory,

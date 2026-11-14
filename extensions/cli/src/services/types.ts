@@ -14,6 +14,7 @@ import { BaseCommandOptions } from "../commands/BaseCommandOptions.js";
 import { PermissionMode } from "../permissions/types.js";
 
 import { type MCPService } from "./MCPService.js";
+import type { ModelInUse } from "./modelInUse.js";
 
 /**
  * Service lifecycle states
@@ -59,6 +60,8 @@ export interface ModelServiceState {
   model: ModelConfig | null;
   assistant: AssistantUnrolled | null;
   authConfig: AuthConfig | null;
+  /** The model and effort the next request goes to, and why (ROADMAP M7). */
+  inUse?: ModelInUse;
 }
 
 export type MCPServerStatus = "idle" | "connecting" | "connected" | "error";

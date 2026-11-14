@@ -1,7 +1,11 @@
 import { AssistantUnrolled, ModelConfig } from "@continuedev/config-yaml";
 import type { LoopItemModel, ModelUse } from "core/index.js";
 import { resolveToolPermissions } from "core/tools/permissions/ruleTrust.js";
-import { modeModelFor, modelForLoopItem } from "core/util/modelUse.js";
+import {
+  modeModelFor,
+  modelForLoopItem,
+  USE_FALLBACK,
+} from "core/util/modelUse.js";
 import { resolveTerminalSettings } from "core/util/terminalEnvironment.js";
 import { readUserTerminalSettings } from "core/util/userTerminalSettings.js";
 import { readUserToolPermissions } from "core/util/userToolPermissions.js";
@@ -12,7 +16,20 @@ import { logger } from "../util/logger.js";
 
 import { BaseService, ServiceWithDependencies } from "./BaseService.js";
 import { reportModeModelsProblems } from "./modeModelsCheck.js";
+import {
+  announceModelInUse,
+  type ModelInUse,
+  modelInUseLabel,
+  modelInUseOf,
+  sameModelInUse,
+} from "./modelInUse.js";
 import { AgentFileServiceState, ModelServiceState } from "./types.js";
+
+/** Why a switch happened, for the record of the model in use (M7). */
+export type ModelSwitchWhy = Omit<
+  ModelInUse,
+  "name" | "model" | "provider" | "effort"
+>;
 
 /**
  * Service for managing LLM and model state
@@ -113,6 +130,7 @@ export class ModelService
           model,
           assistant,
           authConfig,
+          inUse: startInUse(model, "default"),
         };
       } else {
         // Use the preferred model - but we need to handle initialization specially
@@ -136,6 +154,10 @@ export class ModelService
           model: selectedModel,
           assistant,
           authConfig,
+          inUse: startInUse(
+            selectedModel,
+            modelSource === "agentFile" ? "agentFile" : "persisted",
+          ),
         };
       }
     } else {
@@ -146,6 +168,7 @@ export class ModelService
         model,
         assistant,
         authConfig,
+        inUse: startInUse(model, "default"),
       };
     }
   }
@@ -216,6 +239,7 @@ export class ModelService
   async switchModel(
     modelIndex: number,
     effort?: string,
+    why: ModelSwitchWhy = { reason: "manual" },
   ): Promise<ModelServiceState> {
     // Get assistant and authConfig from state, but fall back to instance properties
     // This is needed during initialization when state isn't set yet
@@ -279,12 +303,16 @@ export class ModelService
         throw new Error("Failed to initialize LLM with selected model");
       }
 
+      const before = this.getState().inUse;
+      const inUse = modelInUseOf(selectedModel, why.reason, why);
       this.setState({
         llmApi,
         model: selectedModel,
         assistant,
         authConfig,
+        inUse,
       });
+      if (!sameModelInUse(before, inUse)) announceModelInUse(inUse);
 
       logger.debug("Model switched successfully", {
         modelProvider: selectedModel.provider,
@@ -323,16 +351,19 @@ export class ModelService
     >;
     const named: Parameters<typeof modeModelFor>[0] = {};
     for (const [key, entry] of Object.entries(raw)) {
-      const name = entry?.model ?? entry?.models?.[0];
-      if (name) {
-        named[key as ModelUse] = {
-          title: name,
-          reasoningEffort: entry?.reasoningEffort as any,
-        };
-      }
+      if (!entry) continue;
+      // An entry that names no model (`loop: { reasoningEffort: low }`)
+      // takes its fallback's model with its own effort, as in the IDE
+      const name = entry.model ?? entry.models?.[0];
+      named[key as ModelUse] = {
+        title: name || undefined,
+        reasoningEffort: entry.reasoningEffort as any,
+      };
     }
     const entry = modeModelFor(named, use);
-    return entry && { name: entry.title, effort: entry.reasoningEffort };
+    return entry?.title
+      ? { name: entry.title, effort: entry.reasoningEffort }
+      : undefined;
   }
 
   /**
@@ -388,7 +419,7 @@ export class ModelService
     use: ModelUse,
     itemModel?: string,
   ): Promise<boolean> {
-    const { index } = this.resolveModelForUse(use, itemModel);
+    const { index, record } = this.resolveModelForUse(use, itemModel);
     const effort = this.entryForUse(use)?.effort;
     if (index === -1) return false;
     if (
@@ -397,9 +428,41 @@ export class ModelService
     ) {
       return false;
     }
-    await this.switchModel(index, effort);
-    logger.debug("Model switched for use", { use, itemModel, index, effort });
+    // What runs and why: the item's own model, or the use's entry (its own
+    // or its fallback's), with the reason when the asked-for model is not
+    // the one that runs
+    const ownModel = !!record && !record.fallbackReason;
+    const fallbackReason =
+      record?.fallbackReason ?? this.useFallbackReason(use);
+    const state = await this.switchModel(index, effort, {
+      reason: ownModel ? "item" : "use",
+      use,
+      ...(fallbackReason ? { fallbackReason } : {}),
+    });
+    logger.debug(
+      `Model for ${use}: ${state.inUse ? modelInUseLabel(state.inUse) : index}`,
+      { use, itemModel, index, effort, fallbackReason },
+    );
     return true;
+  }
+
+  /**
+   * Why a use's model is its fallback's (`loop` takes `agent`'s, `replan`
+   * `plan`'s): undefined when the use's own entry names a model, or when its
+   * fallback names none either.
+   */
+  private useFallbackReason(use: ModelUse): string | undefined {
+    const fallback = USE_FALLBACK[use];
+    if (!fallback) return undefined;
+    const assistant = this.getState().assistant ?? this.assistant;
+    const raw = (assistant?.modeModels ?? {}) as Record<
+      string,
+      { model?: string; models?: string[] } | undefined
+    >;
+    const names = (e?: { model?: string; models?: string[] }) =>
+      !!(e?.model ?? e?.models?.[0]);
+    if (names(raw[use]) || !names(raw[fallback])) return undefined;
+    return `modeModels.${use} names no model, so modeModels.${fallback}'s is used`;
   }
 
   /**
@@ -495,4 +558,12 @@ export function withReasoningEffort(
       },
     },
   } as ModelConfig;
+}
+
+/** The record of the model chosen at start (M7). */
+function startInUse(
+  model: ModelConfig | null | undefined,
+  source: NonNullable<ModelInUse["source"]>,
+): ModelInUse | undefined {
+  return model ? modelInUseOf(model, "start", { source }) : undefined;
 }

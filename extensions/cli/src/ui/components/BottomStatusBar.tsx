@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 
 import { setExitMessageCallback, shouldShowExitMessage } from "../../index.js";
 import type { PermissionMode } from "../../permissions/types.js";
+import { type ModelInUse, modelInUseLabel } from "../../services/modelInUse.js";
 import type { NavigationScreen } from "../context/NavigationContext.js";
 import { UpdateNotification } from "../UpdateNotification.js";
 
@@ -28,7 +29,7 @@ export const BottomStatusBar: React.FC<BottomStatusBarProps> = ({
   currentMode,
   remoteUrl,
   isRemoteMode,
-  services: _services,
+  services,
   navState: _navState,
   navigateTo: _navigateTo,
   closeCurrentScreen: _closeCurrentScreen,
@@ -46,6 +47,9 @@ export const BottomStatusBar: React.FC<BottomStatusBarProps> = ({
   }, []);
 
   const showingExitMessage = shouldShowExitMessage();
+  // The model and effort the next request goes to (M7), as the model
+  // service recorded it at the last switch
+  const inUse = services?.model?.inUse as ModelInUse | undefined;
 
   return (
     <Box flexDirection="row" justifyContent="space-between" alignItems="center">
@@ -67,6 +71,17 @@ export const BottomStatusBar: React.FC<BottomStatusBarProps> = ({
           </React.Fragment>
         )}
         <ModeIndicator />
+        {inUse && (
+          <React.Fragment>
+            <Text key="model-separator" color="dim">
+              {" "}
+              •{" "}
+            </Text>
+            <Text key="model-in-use" color="dim" wrap="truncate-end">
+              {modelInUseLabel(inUse)}
+            </Text>
+          </React.Fragment>
+        )}
         {contextPercentage !== undefined && contextPercentage > 0 && (
           <React.Fragment>
             <Text key="context-separator" color="dim">
