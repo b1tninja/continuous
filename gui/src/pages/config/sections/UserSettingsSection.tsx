@@ -325,7 +325,7 @@ export function UserSettingsSection() {
                   <UserSetting
                     type="toggle"
                     title="Save chats as an append-only log"
-                    description=" each save adds only what changed, large tool outputs and images are stored once, and a turn is saved while it runs, so a crash keeps it for Resume. Off: each save rewrites the whole chat file."
+                    description="On: each save adds only what changed, large tool outputs and images are stored once, and a turn is saved while it runs, so a crash keeps it for Resume. Off: each save rewrites the whole chat file."
                     value={sessionLogStorage}
                     onChange={(value) =>
                       handleUpdate({ sessionLogStorage: value })
