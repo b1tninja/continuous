@@ -9,6 +9,11 @@ import * as workos from "../auth/workos.js";
 import { AuthConfig } from "../auth/workos.js";
 import * as config from "../config.js";
 
+import {
+  type ModelInUse,
+  modelInUseLabel,
+  onModelInUse,
+} from "./modelInUse.js";
 import { ModelService, withReasoningEffort } from "./ModelService.js";
 
 describe("ModelService", () => {
@@ -67,6 +72,7 @@ describe("ModelService", () => {
         model: mockAssistant.models![0],
         assistant: mockAssistant,
         authConfig: mockAuthConfig,
+        inUse: expect.objectContaining({ reason: "start", source: "default" }),
       });
     });
 
@@ -111,6 +117,7 @@ describe("ModelService", () => {
         model: mockAssistant.models![1],
         assistant: mockAssistant,
         authConfig: mockAuthConfig,
+        inUse: expect.objectContaining({ reason: "manual" }),
       });
       expect(service.getState()).toEqual(state);
     });
@@ -466,6 +473,78 @@ describe("ModelService: the model for a use (modeModels)", () => {
     // The next item without its own model goes back to the loop model
     expect(await service.switchToModelForUse("loop")).toBe(true);
     expect(service.getState().model?.model).toBe("gpt-4");
+  });
+
+  test("records the model and effort in use and why, from the model that runs (M7)", async () => {
+    const service = await start({
+      plan: { model: "Claude 3", reasoningEffort: "high" },
+      agent: { model: "GPT-4" },
+      loop: { reasoningEffort: "low" }, // no model: the agent entry's
+    });
+    expect(service.getState().inUse).toMatchObject({
+      name: "GPT-4",
+      reason: "start",
+      source: "default",
+    });
+    await service.switchToModelForUse("plan");
+    expect(service.getState().inUse).toEqual({
+      name: "Claude 3",
+      model: "claude-3",
+      provider: "anthropic",
+      effort: "high",
+      reason: "use",
+      use: "plan",
+    });
+    await service.switchToModelForUse("loop");
+    expect(service.getState().inUse).toMatchObject({
+      name: "GPT-4",
+      effort: "low",
+      reason: "use",
+      use: "loop",
+      fallbackReason: expect.stringContaining("modeModels.agent"),
+    });
+    // A Loop item's own model is what runs, with the loop entry's effort,
+    // not the loop entry's model
+    await service.switchToModelForUse("loop", "Claude 3");
+    expect(service.getState().inUse).toMatchObject({
+      name: "Claude 3",
+      effort: "low",
+      reason: "item",
+      use: "loop",
+    });
+    // An item model that is not configured: the loop model runs, and why
+    await service.switchToModelForUse("plan");
+    await service.switchToModelForUse("loop", "Nope");
+    expect(service.getState().inUse).toMatchObject({
+      name: "GPT-4",
+      reason: "use",
+      fallbackReason: expect.stringContaining('"Nope" is not configured'),
+    });
+    // A manual pick is recorded as one, with no effort left over
+    await service.switchModel(1);
+    expect(service.getState().inUse).toMatchObject({
+      name: "Claude 3",
+      reason: "manual",
+    });
+    expect(service.getState().inUse?.effort).toBeUndefined();
+  });
+
+  test("announces a change of model or effort once, not a switch that changes neither (M7)", async () => {
+    const seen: ModelInUse[] = [];
+    const stop = onModelInUse((info) => seen.push(info));
+    try {
+      const service = await start({
+        plan: { model: "Claude 3", reasoningEffort: "high" },
+        replan: { model: "Claude 3", reasoningEffort: "high" },
+        agent: { model: "GPT-4" },
+      });
+      await service.switchToModelForUse("plan");
+      await service.switchToModelForUse("replan");
+      await service.switchToModelForUse("agent");
+      expect(seen.map(modelInUseLabel)).toEqual(["Claude 3 (high)", "GPT-4"]);
+    } finally {
+      stop();
+    }
   });
 
   test("an item's model that is not configured falls back to the loop model with the reason", async () => {

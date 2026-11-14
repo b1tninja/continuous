@@ -411,3 +411,81 @@ describe("stream-json price sources", () => {
     expect(lineSchema.safeParse(result).success).toBe(false);
   });
 });
+
+describe("stream-json model lines (M7)", () => {
+  it("writes a model line for each switch after init, schema-valid, masked", () => {
+    const h = harness();
+    // before init nothing is written: init names the start model
+    h.run.modelInUse({
+      name: "Early",
+      model: "early",
+      provider: "openai",
+      reason: "use",
+    });
+    h.run.init(
+      {
+        sessionId: "s1",
+        cliVersion: "1.0.0",
+        model: "m",
+        provider: "openai",
+        cwd: "/w",
+        mode: "plan",
+        reasoningEffort: "high",
+      },
+      [],
+    );
+    h.run.modelInUse({
+      name: "Start",
+      model: "start",
+      provider: "openai",
+      reason: "start",
+    });
+    h.run.modelInUse({
+      name: "Opus",
+      model: "claude-opus",
+      provider: "anthropic",
+      effort: "high",
+      reason: "use",
+      use: "plan",
+    });
+    h.run.modelInUse({
+      name: "Nova",
+      model: "nova",
+      provider: "bedrock",
+      reason: "use",
+      use: "loop",
+      fallbackReason: `model "${CANARY}" is not configured; using Nova`,
+    });
+    h.run.modelInUse({
+      name: "Helper",
+      model: "helper",
+      provider: "openai",
+      reason: "subagent",
+      use: "subagent",
+      agent: "Helper",
+    });
+    h.run.finish({ status: "success", exitCode: 0, result: "" });
+    const events = h.events();
+    expect(events.map((e) => e.type)).toEqual([
+      "init",
+      "model",
+      "model",
+      "model",
+      "result",
+    ]);
+    expect(events[0].reasoningEffort).toBe("high");
+    expect(events[1]).toMatchObject({
+      model: "claude-opus",
+      name: "Opus",
+      reasoningEffort: "high",
+      reason: "use",
+      use: "plan",
+    });
+    expect(events[2].reasoningEffort).toBeUndefined();
+    expect(events[3]).toMatchObject({ reason: "subagent", agent: "Helper" });
+    expect(h.lines.join("")).not.toContain(CANARY);
+    for (const l of h.lines) {
+      expect(lineSchema.safeParse(JSON.parse(l)).success, l).toBe(true);
+    }
+  });
+});

@@ -5,6 +5,7 @@
   "description": "One line of the event stream. A reader must ignore fields and event types it does not know: adding an optional field or an event type does not raise schemaVersion.",
   "oneOf": [
     { "$ref": "#/$defs/init" },
+    { "$ref": "#/$defs/model" },
     { "$ref": "#/$defs/reasoning" },
     { "$ref": "#/$defs/message" },
     { "$ref": "#/$defs/tool_use" },
@@ -42,6 +43,7 @@
         "provider": { "type": "string" },
         "cwd": { "type": "string" },
         "mode": { "type": "string" },
+        "reasoningEffort": { "type": "string" },
         "limits": {
           "type": "object",
           "additionalProperties": false,
@@ -51,6 +53,34 @@
             "maxDurationMinutes": { "type": "number" }
           }
         }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "seq",
+        "time",
+        "model",
+        "provider",
+        "name",
+        "reason"
+      ],
+      "properties": {
+        "type": { "const": "model" },
+        "seq": { "type": "integer", "minimum": 1 },
+        "time": { "type": "string" },
+        "model": { "type": "string" },
+        "provider": { "type": "string" },
+        "name": { "type": "string" },
+        "reasoningEffort": { "type": "string" },
+        "reason": {
+          "enum": ["use", "item", "manual", "restore", "subagent"]
+        },
+        "use": { "type": "string" },
+        "agent": { "type": "string" },
+        "fallbackReason": { "type": "string" }
       }
     },
     "reasoning": {

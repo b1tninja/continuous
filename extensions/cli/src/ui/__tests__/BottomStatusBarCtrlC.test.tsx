@@ -63,6 +63,35 @@ describe("BottomStatusBar Ctrl+C message", () => {
     expect(lastFrame()).not.toContain("github.com/user/repo");
   });
 
+  it("shows the model and effort in use after a bullet separator (M7)", () => {
+    const { lastFrame } = render(
+      <BottomStatusBar
+        {...defaultProps}
+        services={{
+          model: {
+            model: null,
+            inUse: {
+              name: "o3",
+              model: "o3",
+              provider: "openai",
+              effort: "high",
+              reason: "use",
+              use: "plan",
+            },
+          },
+        }}
+      />,
+    );
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("\u2022 o3 (high)");
+    expect(frame).not.toContain("\ufffd");
+  });
+
+  it("shows no model when none is recorded", () => {
+    const { lastFrame } = render(<BottomStatusBar {...defaultProps} />);
+    expect(lastFrame()).not.toContain("(high)");
+  });
+
   it("registers exit message callback on mount", async () => {
     const indexModule = (await vi.importMock("../../index.js")) as any;
 
