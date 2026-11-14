@@ -53,15 +53,16 @@ import {
   unresolvedSecretNamesOfLlm,
 } from "../util/unresolvedSecrets.js";
 import { withExponentialBackoff } from "../util/withExponentialBackoff.js";
-import { providerModelFactsFor } from "./providerModelInfoStore.js";
-import { type LimitInputs, resolveModelLimits } from "./providerModelLimits.js";
-import { retryStreamOnDroppedConnection } from "./utils/streamRetry.js";
 import {
   promptProgressOf,
   streamsPromptProgress,
   withThinkingOff,
 } from "./localServers.js";
+import { providerModelFactsFor } from "./providerModelInfoStore.js";
+import { resolveModelLimits, type LimitInputs } from "./providerModelLimits.js";
+import { retryStreamOnDroppedConnection } from "./utils/streamRetry.js";
 
+import { applyToolOverrides } from "../tools/applyToolOverrides.js";
 import {
   autodetectPromptTemplates,
   autodetectTemplateFunction,
@@ -77,20 +78,26 @@ import {
   LLMConfigurationStatuses,
 } from "./constants.js";
 import {
+  contextCorrectionFor,
+  correctedContextLength,
+  correctionFromOverflow,
+  learnContextCorrection,
+  parseContextOverflow,
+} from "./contextOverflow.js";
+import {
   compileChatMessages,
   countTokens,
   pruneRawPromptFromTop,
 } from "./countTokens.js";
 import { providerRequiresAlternation } from "./normalizeTurns.js";
 import {
-  messagesFromChatCompletionChunk,
   fromChatResponse,
   LlmApiRequestType,
+  messagesFromChatCompletionChunk,
   toChatBody,
   toCompleteBody,
   toFimBody,
 } from "./openaiTypeConverters.js";
-import { applyToolOverrides } from "../tools/applyToolOverrides.js";
 import {
   firstRouteToTry,
   isContextLengthError,
@@ -1121,6 +1128,32 @@ export abstract class BaseLLM implements ILLM {
     return historyAgeingEnabled() ? { state: this._ageingState } : undefined;
   }
 
+  /**
+   * When the provider refused the prompt as too long and said how long it
+   * was, remember how far our estimate was off for this model, so the next
+   * request (the retry the person makes, or the next turn) is pruned to fit.
+   * See contextOverflow.ts.
+   */
+  private _learnFromContextOverflow(
+    e: unknown,
+    model: string,
+    sent: ChatMessage[],
+  ): void {
+    const message = e instanceof Error ? e.message : String(e ?? "");
+    const overflow = parseContextOverflow(message);
+    if (!overflow) return;
+    const estimated = sent.reduce(
+      (sum, m) => sum + countTokens(m.content, model),
+      0,
+    );
+    const factor = correctionFromOverflow(
+      overflow,
+      estimated,
+      contextCorrectionFor(model),
+    );
+    if (factor !== undefined) learnContextCorrection(model, factor);
+  }
+
   compileChatMessages(
     message: ChatMessage[],
     options: LLMFullCompletionOptions,
@@ -1131,7 +1164,11 @@ export abstract class BaseLLM implements ILLM {
     return compileChatMessages({
       modelName: completionOptions.model,
       msgs: message,
-      knownContextLength: this._contextLength,
+      // Smaller after the provider refused a prompt our estimate said fitted
+      knownContextLength: correctedContextLength(
+        this._contextLength,
+        completionOptions.model,
+      ),
       maxTokens: completionOptions.maxTokens ?? DEFAULT_MAX_TOKENS,
       supportsImages: this.supportsImages(),
       tools: options.tools,
@@ -1438,7 +1475,10 @@ export abstract class BaseLLM implements ILLM {
       const { compiledChatMessages } = compileChatMessages({
         modelName: completionOptions.model,
         msgs: _messages,
-        knownContextLength: this._contextLength,
+        knownContextLength: correctedContextLength(
+          this._contextLength,
+          completionOptions.model,
+        ),
         maxTokens: completionOptions.maxTokens ?? DEFAULT_MAX_TOKENS,
         supportsImages: this.supportsImages(),
         tools: optionsWithOverrides.tools,
@@ -1612,6 +1652,7 @@ export abstract class BaseLLM implements ILLM {
         usage,
       );
     } catch (e) {
+      this._learnFromContextOverflow(e, completionOptions.model, messages);
       Logger.error(e as Error, {
         context: "llm_stream_chat",
         model: completionOptions.model,
