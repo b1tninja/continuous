@@ -12,6 +12,7 @@ export const STREAM_JSON_SCHEMA_VERSION = 1;
 /** Every event type, in the order a run can first produce them. */
 export const STREAM_JSON_EVENT_TYPES = [
   "init",
+  "model",
   "reasoning",
   "message",
   "tool_use",
@@ -52,12 +53,37 @@ export interface InitEvent extends EventBase<"init"> {
   cwd: string;
   /** The permission mode the run started in. */
   mode: string;
+  /** The `reasoning_effort` the first requests carry; absent when none. */
+  reasoningEffort?: string;
   /** The run limits in force; absent when none is set. */
   limits?: {
     maxBudgetUsd?: number;
     maxTurns?: number;
     maxDurationMinutes?: number;
   };
+}
+
+/**
+ * The model or reasoning effort the next requests go to changed after
+ * `init` (a mode's or a Loop turn's `modeModels` entry, a Loop item's own
+ * model, a subagent starting on its own model). Written once per change.
+ */
+export interface ModelEvent extends EventBase<"model"> {
+  /** The API model id. */
+  model: string;
+  provider: string;
+  /** The model's `name` in the config. */
+  name: string;
+  /** The `reasoning_effort` the requests carry; absent when none. */
+  reasoningEffort?: string;
+  /** use: a `modeModels` entry; item: a Loop item's own model; manual: `/model`; restore: back from an item's model; subagent: a subagent's model. */
+  reason: "use" | "item" | "manual" | "restore" | "subagent";
+  /** The use whose requests these are: plan, agent, loop, replan, subagent. */
+  use?: string;
+  /** The subagent, for reason `subagent`. */
+  agent?: string;
+  /** Why the model asked for is not the one that runs. */
+  fallbackReason?: string;
 }
 
 /**
@@ -222,6 +248,7 @@ export interface ResultEvent extends EventBase<"result"> {
 
 export type StreamJsonEvent =
   | InitEvent
+  | ModelEvent
   | ReasoningEvent
   | MessageEvent
   | ToolUseEvent

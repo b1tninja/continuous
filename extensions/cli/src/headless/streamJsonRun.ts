@@ -8,6 +8,7 @@ import {
 } from "core/tools/permissions/displayMask.js";
 
 import { idgafObjectionCount } from "../audit/idgafObjections.js";
+import type { ModelInUse } from "../services/modelInUse.js";
 
 import {
   STREAM_JSON_SCHEMA_VERSION,
@@ -211,6 +212,27 @@ export class StreamJsonRun {
       type: "init",
       schemaVersion: STREAM_JSON_SCHEMA_VERSION,
       ...facts,
+    });
+  }
+
+  /**
+   * The model in use changed (M7): a `model` line. A record from before
+   * `init` (the start model) is not one: `init` names it.
+   */
+  modelInUse(info: ModelInUse): void {
+    if (this.seq === 0 || info.reason === "start") return;
+    this.emit({
+      type: "model",
+      model: info.model,
+      provider: info.provider,
+      name: info.name,
+      ...(info.effort ? { reasoningEffort: info.effort } : {}),
+      reason: info.reason,
+      ...(info.use ? { use: info.use } : {}),
+      ...(info.agent ? { agent: info.agent } : {}),
+      ...(info.fallbackReason
+        ? { fallbackReason: maskCommandForDisplay(info.fallbackReason) }
+        : {}),
     });
   }
 

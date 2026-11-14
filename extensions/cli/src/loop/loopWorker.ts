@@ -184,7 +184,9 @@ export async function runLoopItemHere(
       input.options.policy,
     ),
   });
-  if (input.model) await applyModelNamed(input.model);
+  if (input.model) {
+    await applyModelNamed(input.model, { reason: "use", use: "loop" });
+  }
   const modelState = await getService<ModelServiceState>(SERVICE_NAMES.MODEL);
   if (!modelState.model || !modelState.llmApi) {
     throw new Error("The worker could not initialize its model.");
