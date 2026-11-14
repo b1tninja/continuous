@@ -267,6 +267,19 @@
           "default": false,
           "markdownDescription": "Pause Continuous's tab autocomplete feature when your battery is low."
         },
+        "continuous.debugPromptLog": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "markdownDescription": "Keep each request's full prompt in `~/.continuous/logs/prompts/`, for debugging what a model was sent. Secrets the scanner recognises are masked; the files are capped at 50 MB together and deleted after 14 days. Off: dev data keeps only sizes, token counts and a hash of each prompt."
+        },
+        "continuous.sessionCleanup.deleteBackupsAfterDays": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "scope": "application",
+          "markdownDescription": "When **Continuous: Clean up old sessions** runs, also delete its backup folders older than this many days. 0 keeps them until you delete `~/.continuous/cleanup-backups/` yourself."
+        },
         "continuous.pauseCodebaseIndexOnStart": {
           "type": "boolean",
           "default": false,
@@ -297,6 +310,12 @@
       }
     },
     "commands": [
+      {
+        "command": "continuous.cleanUpOldSessions",
+        "category": "Continuous",
+        "title": "Clean up old sessions",
+        "group": "Continuous"
+      },
       {
         "command": "continuous.applyCodeFromChat",
         "category": "Continuous",

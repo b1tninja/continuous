@@ -11,13 +11,13 @@ Some statements below describe the product **after** the egress fix ([#627](http
 Everything lives under the global folder, `~/.continuous` (copied from `~/.continue` on first start; the old folder is left alone). Set `CONTINUOUS_GLOBAL_DIR` to move it.
 
 - **Settings, models and rules**: `config.yaml`, `permissions.yaml` (your tool permission rules).
-- **Chat sessions and history**: `sessions/`, plus `dev_data/` event files and `logs/`.
+- **Chat sessions and history**: `sessions/`, plus `dev_data/` event files and `logs/`. Sessions keep the conversation, not the full prompt of each request (which repeated the conversation and the system message every time). Dev data keeps the sizes, token counts and a hash of each prompt, not its text. Full prompts are kept only if you turn on the debug prompt log (`continuous.debugPromptLog`, or `--debug-prompt-log` in the terminal): `logs/prompts/`, masked, 50 MB at most, deleted after 14 days.
 - **The audit trail** of tool decisions: `audit/`, with `audit-index.json` and, in shadow mode, `shadow-spend.jsonl`. On by default, masked and capped (30 days, 20 MB a file). Turn it off with `audit.enabled: false` in `config.yaml` or `CONTINUE_AUDIT=off`.
 - **Checkpoints** of agent file edits, and plan files in your own project.
 
 New session and log files are written owner-only, and secrets the scanner recognises are masked before they reach disk. This is a safety net, not a guarantee: do not paste secrets into prompts.
 
-**Retention.** Nothing deletes by itself. `continuous clean` lists, and with `--yes` deletes, sessions older than 30 days, logs older than 14 days and `dev_data` older than 90 days; `--older-than 7d` sets one age for all. It does not securely erase: SSDs, snapshots and backups can keep copies. The audit trail has its own retention setting (30 days by default, `audit.retentionDays`).
+**Retention.** Nothing deletes by itself. `continuous clean` lists, and with `--yes` deletes, sessions older than 30 days, logs older than 14 days and `dev_data` older than 90 days; `--older-than 7d` sets one age for all. It does not securely erase: SSDs, snapshots and backups can keep copies. **Continuous: Clean up old sessions** (`continuous sessions clean`) removes the full prompts earlier releases stored in sessions and dev data; it asks first and keeps the originals in `cleanup-backups/` until you delete them. The audit trail has its own retention setting (30 days by default, `audit.retentionDays`).
 
 ## Sent to the model providers you choose
 

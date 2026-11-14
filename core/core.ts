@@ -1621,6 +1621,7 @@ export class Core {
     });
 
     on("config/ideSettingsUpdate", async (msg) => {
+      DataLogger.getInstance().ideSettingsPromise = Promise.resolve(msg.data);
       await this.configHandler.updateIdeSettings(msg.data);
     });
 

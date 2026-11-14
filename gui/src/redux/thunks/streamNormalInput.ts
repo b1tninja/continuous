@@ -256,6 +256,8 @@ export const streamNormalInput = createAsyncThunk<
         );
       }
 
+      // The last token counts the API sent, for the chatInteraction record
+      let lastUsage: { promptTokens?: number; completionTokens?: number } = {};
       let next = await gen.next();
       while (!next.done) {
         if (!getState().session.isStreaming) {
@@ -287,6 +289,7 @@ export const streamNormalInput = createAsyncThunk<
         // and check that a cache that should have been warm was read.
         for (const message of next.value) {
           if (message.role === "assistant" && message.usage) {
+            lastUsage = message.usage;
             const key =
               message.route && message.route !== routeExpected
                 ? cacheKeyFor(message.route)
@@ -414,6 +417,14 @@ export const streamNormalInput = createAsyncThunk<
               modelName: selectedChatModel.title,
               modelTitle: selectedChatModel.title,
               sessionId: state.session.id,
+              // Core keeps sizes, these counts and a hash locally, not the
+              // texts (STOR4); the debug prompt log, when on, keeps the texts
+              ...(lastUsage.promptTokens !== undefined && {
+                promptTokens: lastUsage.promptTokens,
+              }),
+              ...(lastUsage.completionTokens !== undefined && {
+                completionTokens: lastUsage.completionTokens,
+              }),
               ...(!!activeTools.length && {
                 tools: activeTools.map((tool) => tool.function.name),
               }),

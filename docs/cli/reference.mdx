@@ -28,6 +28,7 @@ These belong to `continuous` itself, not to a subcommand.
 | `--trust-project-hooks`  | Run this project's hooks for this run without asking and without recording trust. See [Hooks](/ide-extensions/agent/hooks-trust)     |
 | `--trust-project-config` | Use this project's own configuration files for this run without asking. See [Workspace trust](/customize/workspace-trust)            |
 | `--beta-subagent-tool`   | Offer the beta Subagent tool to the model                                                                                            |
+| `--debug-prompt-log`     | Keep each request's full messages in `~/.continuous/logs/prompts/`: secrets masked, 50 MB in all, deleted after 14 days. Same as `CONTINUOUS_DEBUG_PROMPT_LOG=1`. Off by default |
 | `-v`, `--version`        | Print the version                                                                                                                    |
 | `-h`, `--help`           | Print help                                                                                                                           |
 
@@ -256,6 +257,21 @@ Delete this product's own sessions, `dev_data` and logs older than an age. It is
 | `--dry-run`          | List only. This is the default                                                                  |
 | `--yes`              | Delete                                                                                          |
 | `--json`             | Machine-readable output                                                                         |
+
+### `sessions clean`
+
+Remove the full prompts earlier releases kept in saved sessions, full prompts and old lines from `dev_data`, and old logs. It is a dry run unless `--yes` is given, and it never runs by itself. Originals are kept in `cleanup-backups/<date>/`; sessions open in a window or agent are left alone. See [Clean up old sessions](/reference/storage-and-reset#clean-up-old-sessions).
+
+| Flag                                | Meaning                                                                      |
+| ----------------------------------- | ---------------------------------------------------------------------------- |
+| `--dry-run`                         | Report only. This is the default                                             |
+| `--yes`                             | Clean up                                                                     |
+| `--json`                            | Machine-readable output                                                      |
+| `--no-dev-data`                     | Leave `dev_data` alone                                                       |
+| `--no-logs`                         | Leave `logs` alone                                                           |
+| `--dev-data-days <age>`             | Dev data lines older than this go. Default `90d`                             |
+| `--logs-days <age>`                 | Log files older than this go. Default `14d`                                  |
+| `--delete-backups-older-than <age>` | With `--yes`, also delete backup folders older than this. Default: keep them |
 
 ### `reviewer eval`
 

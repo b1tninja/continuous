@@ -20,6 +20,7 @@ import {
   sessionBudgetWarning,
   SLOW_SESSION_SAVE_MS,
 } from "./sessionFile.js";
+import { markSessionOpen } from "./sessionLeases.js";
 function safeParseArray<T>(
   value: string,
   errorMessage: string = "Error parsing array",
@@ -370,6 +371,8 @@ export class HistoryManager {
     }
     if ("damaged" in read) return { session: empty, damaged: read.damaged };
     read.session.sessionId = sessionId;
+    // A cleanup run in another process leaves an open session alone
+    markSessionOpen(sessionId);
     return { session: read.session };
   }
 
@@ -381,6 +384,8 @@ export class HistoryManager {
     const fileBytes = Buffer.byteLength(contents, "utf8");
     writeAtomic(getSessionFilePath(session.sessionId), contents);
     const elapsed = Date.now() - started;
+
+    markSessionOpen(session.sessionId);
 
     // Logged once per session and process: every save of a large session
     // would repeat it

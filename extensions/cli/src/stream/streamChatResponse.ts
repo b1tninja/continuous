@@ -29,6 +29,7 @@ import { services } from "../services/index.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
 import { applyChatCompletionToolOverrides } from "../tools/applyToolOverrides.js";
 import { ToolCall } from "../tools/index.js";
+import { logCliDebugPrompt } from "../util/debugPromptLog.js";
 import {
   chatCompletionStreamWithBackoff,
   isContextLengthError,
@@ -464,6 +465,11 @@ export async function processStreamingResponse(
     });
     // CONTINUE_DUMP_REQUESTS: the body as handed to the adapter, for diffing
     dumpRequest(requestBody);
+    // --debug-prompt-log: the messages, scrubbed, in the capped prompt log
+    logCliDebugPrompt({
+      model: requestBody.model,
+      messages: requestBody.messages,
+    });
     return await chatCompletionStreamWithBackoff(
       llmApi,
       requestBody,

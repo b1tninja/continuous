@@ -25,9 +25,11 @@ The VS Code extension and the terminal agent keep everything on your machine: on
 
 | Name                       | What it holds                                                               | Reset                                                       |
 | -------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `sessions/`                | Chat sessions of both products, and the loops saved with them               | `continuous clean` (older than 30 days by default), or delete |
-| `logs/`                    | `cn.log` (terminal agent), `core.log`, `prompt.log`                         | `continuous clean` (14 days), or delete                     |
+| `sessions/`                | Chat sessions of both products, and the loops saved with them               | `continuous sessions clean`, `continuous clean` (older than 30 days by default), or delete |
+| `logs/`                    | `cn.log` (terminal agent), `core.log`, `prompt.log`, and `prompts/` when the debug prompt log is on | `continuous clean` (14 days), or delete |
 | `dev_data/`                | Local development data                                                      | `continuous clean` (90 days), or delete                     |
+| `cleanup-backups/`         | The originals of files changed by **Clean up old sessions**, one folder a day | Delete, or `--delete-backups-older-than`                  |
+| `sessions-open/`           | Which sessions each running window or agent has open, so a cleanup leaves them alone | Delete; it is rewritten                             |
 | `audit/`                   | The audit trail of tool decisions                                           | `continuous audit prune`; kept 30 days by default           |
 | `index/`                   | The codebase and docs indexes, and `globalContext.json` (selected config and other choices) | Delete; it is rebuilt                       |
 | `trusted-project.json`     | Projects whose own configuration you trusted                                | `continuous project revoke` in that project, or delete      |
@@ -42,6 +44,34 @@ The VS Code extension and the terminal agent keep everything on your machine: on
 | `bedrock-catalog`, `.utils`, `.diffs`, `.migrations`, `.configs` | Caches, downloaded tools, pending diffs, migration markers | Delete                              |
 
 `continuous clean` is a dry run unless you add `--yes`, and it touches only `sessions`, `logs` and `dev_data`. Deleting a file is not secure erasure: an SSD, a backup or a snapshot can keep the bytes, so rotate any key that was in a file you removed.
+
+### Clean up old sessions
+
+Earlier releases kept every request's full prompt in the session, and each prompt repeats the conversation before it, so a long session could reach hundreds of MB. The same prompts went to `dev_data/0.2.0/chatInteraction.jsonl`. To reclaim the space, run **Continuous: Clean up old sessions** from the Command Palette, or:
+
+```bash
+continuous sessions clean        # report only
+continuous sessions clean --yes  # clean up
+```
+
+The report reads like this:
+
+```text
+Sessions: 3 session(s) with old prompt logs, 418.2 MB of old prompt logs, largest session file 432.0 MB.
+Dev data: 0.0 MB older than 90 days, 431.5 MB of full prompts in chatInteraction records (kept as sizes and a hash).
+Logs: 2 file(s) older than 14 days, 1.3 MB.
+Reclaimable: 851.0 MB.
+```
+
+What it changes:
+
+- **Sessions**: each stored prompt is replaced by `[prompt not kept: older request]`, which is what a session is saved with now; the conversation, models and completions stay. Files are read in pieces, so a session too large to open is cleaned too.
+- **Dev data**: lines older than 90 days are dropped (`--dev-data-days`), and `chatInteraction` records keep sizes and a hash in place of the prompt and completion. `--no-dev-data` leaves it alone.
+- **Logs**: files older than 14 days are moved out (`--logs-days`). `--no-logs` leaves them alone.
+
+Each file is written to a temporary file, checked (a session must parse and hold the same messages, in order), and then put in place; the original goes to `cleanup-backups/<date>/`. The space is freed when you delete that folder, or when `--delete-backups-older-than 30d` (the `continuous.sessionCleanup.deleteBackupsAfterDays` setting in VS Code) deletes old backup folders after a cleanup. A session open in another window or used by a running agent, or written in the last 10 minutes, is left alone and reported.
+
+It never runs by itself. After an update, VS Code scans once in the background and offers the command only when more than 100 MB can be reclaimed; **Don't ask again** is remembered.
 
 ## In each project
 

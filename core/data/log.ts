@@ -13,10 +13,15 @@ import { fileURLToPath } from "url";
 import { ZodObject } from "zod";
 import { Core } from "../core.js";
 import { ContinueConfig, IdeInfo, IdeSettings } from "../index.js";
+import {
+  appendDebugPrompt,
+  debugPromptLogEnabled,
+} from "../util/debugPromptLog.js";
 import { getDevDataFilePath } from "../util/paths.js";
 import { appendPrivate } from "../util/privateFiles.js";
 import { scrubDeep } from "../util/secretScan/scrubForDisk.js";
 import { joinPathsToUri } from "../util/uri.js";
+import { summarizeChatInteraction } from "./chatInteractionSummary.js";
 
 const DEFAULT_DEV_DATA_LEVEL: DataLogLevel = "all";
 export const LOCAL_DEV_DATA_VERSION = "0.2.0";
@@ -86,7 +91,7 @@ export class DataLogger {
       }
 
       const eventDataWithBaseValues = await this.addBaseValues(
-        event.data,
+        await this.localEventData(event),
         event.name,
         LOCAL_DEV_DATA_VERSION,
         localSchema,
@@ -100,6 +105,32 @@ export class DataLogger {
     } catch (error) {
       console.error("Error logging local dev data:", error);
     }
+  }
+
+  /**
+   * STOR4: the local copy of a chatInteraction keeps sizes, token counts and
+   * a hash, not the prompt and completion. With the debug prompt log on, the
+   * full texts go to that log (scrubbed, capped, aged out) instead.
+   */
+  private async localEventData(
+    event: DevDataLogEvent,
+  ): Promise<Record<string, any>> {
+    if (event.name !== "chatInteraction") return event.data;
+    const data = event.data as Record<string, any>;
+    const settings = await this.ideSettingsPromise?.catch(() => undefined);
+    if (
+      typeof data.prompt === "string" &&
+      debugPromptLogEnabled(settings?.debugPromptLog)
+    ) {
+      appendDebugPrompt({
+        sessionId: data.sessionId,
+        model: data.modelTitle ?? data.modelName,
+        provider: data.modelProvider,
+        prompt: data.prompt,
+        completion: data.completion,
+      });
+    }
+    return summarizeChatInteraction(data);
   }
 
   async logDevData(event: DevDataLogEvent) {

@@ -1801,6 +1801,8 @@ export interface IdeSettings {
   userToken: string;
   continueTestEnvironment: "none" | "production" | "staging" | "local";
   pauseCodebaseIndexOnStart: boolean;
+  /** Keep each request's full prompt in the size-capped debug prompt log. Off by default. */
+  debugPromptLog?: boolean;
 }
 
 export interface FileStats {
