@@ -143,7 +143,7 @@ function dialectFitsModel(
 /** The notice's text. */
 export function leakNoticeText(_dialect: string): string {
   // The format name goes in the button tooltip, where it does not crowd the line
-  return "This model typed a tool request as plain text, so it did not run. Let Continue read that format for this model?";
+  return "This model typed a tool request as plain text, so it did not run. Let Continuous read that format for this model?";
 }
 
 /** The CLI's one-line hint. */

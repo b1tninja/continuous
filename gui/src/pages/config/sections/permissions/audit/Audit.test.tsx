@@ -433,6 +433,15 @@ describe("AuditInbox", () => {
     expect(screen.queryByTestId("rule-form")).toBeNull();
   });
 
+  it("Details and Adopt as rule are the same kind of button", async () => {
+    await renderIt(<AuditInbox env={env} />, {
+      "audit/inbox": async () =>
+        inbox([entry({ callId: "p", summary: "make build" })]),
+    });
+    const details = await screen.findByRole("button", { name: /Show details/ });
+    expect(details.className).toBe(screen.getByTestId("adopt-p").className);
+  });
+
   it("offers no Adopt when the rules file cannot be edited", async () => {
     await renderIt(<AuditInbox env={{ ...env, editable: false }} />, {
       "audit/inbox": async () => inbox([entry({ callId: "p" })]),

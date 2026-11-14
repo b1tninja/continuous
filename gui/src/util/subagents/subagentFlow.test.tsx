@@ -300,7 +300,7 @@ describe("Stop on a subagent card", () => {
     expect(childSignal!.aborted).toBe(true);
     expect(runOf(h, "s1")!.status).toBe("cancelled");
     expect(screen.getByTestId("subagent-status-s1").textContent).toBe(
-      "Cancelled",
+      "Stopped",
     );
     expect(screen.queryByTestId("subagent-stop-s1")).toBeNull();
     // The parent read the partial result and answered

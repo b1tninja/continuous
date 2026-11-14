@@ -20,7 +20,8 @@ const STATUS_LABEL: Record<SubagentRunStatus, string> = {
   completed: "Done",
   partial: "Stopped at turn limit",
   failed: "Failed",
-  cancelled: "Cancelled",
+  // the word the Stop button, the agents tree and the reason use
+  cancelled: "Stopped",
   interrupted: "Interrupted",
 };
 

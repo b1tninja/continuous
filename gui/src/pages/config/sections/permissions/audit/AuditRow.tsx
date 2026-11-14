@@ -1,5 +1,6 @@
 import type { ListedCall } from "core/tools/permissions/audit/listing";
 import type { ReactNode } from "react";
+import { Button } from "../../../../../components/ui";
 import { DecisionChip, DECISION_LABEL } from "../badges";
 import { AgentChip, ByChip } from "./AuditChips";
 import { formatTime } from "./auditVocab";
@@ -43,14 +44,17 @@ export function AuditRow({
         </code>
       </div>
       <div className="mt-1 flex flex-wrap items-start gap-1">
-        <button
+        {/* The same button as "Adopt as rule" beside it, so the two line up */}
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
+          className="min-h-6"
           onClick={onOpen}
           aria-label={`Show details: ${label}`}
-          className="min-h-6 cursor-pointer rounded-sm border border-solid border-border bg-transparent px-2 text-xs text-foreground"
         >
           Details
-        </button>
+        </Button>
         {extra}
       </div>
       {below}

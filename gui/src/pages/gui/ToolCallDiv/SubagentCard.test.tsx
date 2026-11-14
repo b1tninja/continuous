@@ -107,7 +107,7 @@ describe("SubagentCard", () => {
 
   it.each([
     ["failed", "Failed", "Bedrock throttled the request"],
-    ["cancelled", "Cancelled", "Stopped by the user"],
+    ["cancelled", "Stopped", "Stopped by the user"],
     ["interrupted", "Interrupted", "The window was reloaded while it ran"],
     ["partial", "Stopped at turn limit", "Stopped after 30 model calls"],
   ] as const)("shows a %s run with its reason", (runStatus, label, error) => {

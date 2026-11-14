@@ -28,6 +28,17 @@ interface ModelRoleSelectorProps {
   hideTitle?: boolean;
 }
 
+/**
+ * What the closed picker says when none of a role's models can be used. Apply
+ * and Edit fall back to the Chat model; Chat has nothing to fall back to, so
+ * it must not say "Using Chat model". Short enough for a 300 px sidebar.
+ */
+export function noValidModelText(displayName: string): string {
+  return ["Apply", "Edit"].includes(displayName)
+    ? `No valid ${displayName} model, using Chat`
+    : `No valid ${displayName} model`;
+}
+
 const ModelRoleSelector = ({
   models,
   selectedModel,
@@ -74,7 +85,7 @@ const ModelRoleSelector = ({
               className="w-full justify-between rounded-sm border border-command-border bg-input px-2 py-1.5 text-description underline hover:bg-list-active hover:text-list-active-foreground hover:underline"
             >
               <span className="line-clamp-1" style={{ fontSize: fontSize(-1) }}>
-                Setup {displayName} model
+                Set up {displayName} model
               </span>
             </ListboxButton>
           ) : (
@@ -84,12 +95,11 @@ const ModelRoleSelector = ({
                 className="w-full justify-between rounded-sm border border-command-border bg-input px-2 py-1.5 hover:bg-list-active hover:text-list-active-foreground"
               >
                 {models.length === 0 || noConfiguredModels ? (
-                  <span className="line-clamp-1 text-lightgray italic">
-                    {`No ${models.length === 0 ? "" : "valid "}${displayName} models${
-                      ["Chat", "Apply", "Edit"].includes(displayName)
-                        ? ". Using Chat model"
-                        : ""
-                    }`}
+                  <span
+                    className="line-clamp-1 text-lightgray italic"
+                    title={noValidModelText(displayName)}
+                  >
+                    {noValidModelText(displayName)}
                   </span>
                 ) : (
                   <span
