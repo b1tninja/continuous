@@ -1,3 +1,7 @@
+import {
+  type ContextBreakdown,
+  type ContextCategoryKey,
+} from "core/llm/contextBreakdown";
 import { formatTokens } from "core/llm/utils/sessionUsage";
 import {
   formatFileSize,
@@ -23,10 +27,6 @@ import {
   QUALITY_NOTE,
 } from "../../util/cacheNotices";
 import { useCompactConversation } from "../../util/compactConversation";
-import {
-  type ContextBreakdown,
-  type ContextCategoryKey,
-} from "core/llm/contextBreakdown";
 import { contextLevel, type ContextLevel } from "../../util/contextLevel";
 import { CONFIG_ROUTES } from "../../util/navigation";
 import {
@@ -38,6 +38,7 @@ import { Popover, PopoverButton, PopoverPanel } from "../ui";
 import { HoverButton } from "./InputToolbar/HoverItem";
 import { useToolbarWidthTier } from "./InputToolbar/widthTier";
 import { SelectiveCompactDialog } from "./SelectiveCompactDialog";
+import { SessionAttachments } from "./SessionAttachments";
 
 /** Hovering this long opens the details; leaving for this long closes them. */
 export const HOVER_OPEN_MS = 300;
@@ -404,6 +405,8 @@ function ContextPanel({
           </button>
         </span>
       )}
+
+      <SessionAttachments />
 
       <SessionFileNote />
 

@@ -43,6 +43,85 @@ export function attachmentKey(item: ContextItemWithId): string | undefined {
 }
 
 /**
+ * One attached source in the session: a file, URL or selection, with every
+ * version of it that was attached.
+ */
+export interface SessionAttachment {
+  /** The file or URL (or the name, for an attachment without one). */
+  source: string;
+  name: string;
+  description: string;
+  uri?: ContextItemWithId["uri"];
+  /** Distinct contents attached, oldest first. */
+  versions: number;
+  /** Messages that attached it (a message attaching it twice counts twice). */
+  timesAttached: number;
+  /** How many of those were sent in full; the rest went as a stub. */
+  timesSentInFull: number;
+  /** Characters of the newest version. */
+  chars: number;
+  /** History index of the last message that attached it. */
+  lastAttachedAt: number;
+}
+
+function sourceOf(item: ContextItemWithId): string {
+  return item.uri?.value || item.name || item.description || "";
+}
+
+/**
+ * Every attached source in the history, newest attachment first, with the
+ * counts the session's attachment list shows. Pass the full history; the
+ * counts follow the same rule as `sendAttachmentsOnce` (a repeat of an
+ * attached version is not sent in full).
+ */
+export function sessionAttachments(
+  history: ChatHistoryItem[],
+): SessionAttachment[] {
+  const bySource = new Map<string, SessionAttachment & { keys: Set<string> }>();
+  const sentVersions = new Set<string>();
+  history.forEach((item, index) => {
+    if (item.message.role !== "user") return;
+    for (const ctx of item.contextItems ?? []) {
+      const key = attachmentKey(ctx);
+      if (key === undefined) continue;
+      const source = sourceOf(ctx);
+      let entry = bySource.get(source);
+      if (!entry) {
+        entry = {
+          source,
+          name: ctx.name,
+          description: ctx.description,
+          uri: ctx.uri,
+          versions: 0,
+          timesAttached: 0,
+          timesSentInFull: 0,
+          chars: 0,
+          lastAttachedAt: index,
+          keys: new Set(),
+        };
+        bySource.set(source, entry);
+      }
+      if (!entry.keys.has(key)) {
+        entry.keys.add(key);
+        entry.versions++;
+      }
+      entry.timesAttached++;
+      if (!sentVersions.has(key)) {
+        sentVersions.add(key);
+        entry.timesSentInFull++;
+      }
+      entry.chars = ctx.content.length;
+      entry.lastAttachedAt = index;
+      entry.name = ctx.name;
+      entry.description = ctx.description;
+    }
+  });
+  return [...bySource.values()]
+    .map(({ keys: _keys, ...rest }) => rest)
+    .sort((a, b) => b.lastAttachedAt - a.lastAttachedAt);
+}
+
+/**
  * The history with each repeated attachment (the same source and content as
  * one sent earlier in these items) replaced by a stub. Give it the items that
  * are sent: after the newest summary, with removed parts already stubbed, so

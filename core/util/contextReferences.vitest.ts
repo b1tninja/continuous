@@ -5,6 +5,7 @@ import {
   contentHash,
   repeatedAttachmentStub,
   sendAttachmentsOnce,
+  sessionAttachments,
 } from "./contextReferences";
 
 function file(
@@ -133,6 +134,52 @@ describe("sendAttachmentsOnce", () => {
       name: "a.ts",
       uri: { type: "file", value: "file:///w/a.ts" },
     });
+  });
+});
+
+describe("sessionAttachments", () => {
+  it("lists each source once, newest first, with its counts", () => {
+    const list = sessionAttachments([
+      user("1", [file("a.ts", "one"), file("README.md", "r")]),
+      assistant("ok"),
+      user("2", [file("a.ts", "one")]),
+      user("3", [file("a.ts", "two!")]),
+    ]);
+    expect(list.map((a) => a.name)).toEqual(["a.ts", "README.md"]);
+    expect(list[0]).toMatchObject({
+      versions: 2,
+      timesAttached: 3,
+      timesSentInFull: 2,
+      chars: 4,
+      lastAttachedAt: 3,
+      uri: { type: "file", value: "file:///w/a.ts" },
+    });
+    expect(list[1]).toMatchObject({
+      versions: 1,
+      timesAttached: 1,
+      timesSentInFull: 1,
+      lastAttachedAt: 0,
+    });
+  });
+
+  it("agrees with sendAttachmentsOnce on what was sent in full", () => {
+    const history = [
+      user("1", [file("a.ts", "x")]),
+      user("2", [file("a.ts", "x"), file("a.ts", "x")]),
+    ];
+    const fullCopies = sendAttachmentsOnce(history)
+      .flatMap((h) => h.contextItems)
+      .filter((c) => c.content === "x").length;
+    expect(sessionAttachments(history)[0].timesSentInFull).toBe(fullCopies);
+  });
+
+  it("is empty for a history without attachments", () => {
+    expect(sessionAttachments([user("hi"), assistant("ok")])).toEqual([]);
+    expect(sessionAttachments([])).toEqual([]);
+  });
+
+  it("skips empty attachments", () => {
+    expect(sessionAttachments([user("1", [file("e.ts", "  ")])])).toEqual([]);
   });
 });
 
