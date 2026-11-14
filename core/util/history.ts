@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 
-import { BaseSessionMetadata, Session } from "../index.js";
+import { BaseSessionMetadata, Session, SessionStorage } from "../index.js";
 import { ListHistoryOptions } from "../protocol/core.js";
 
 import { writeFileAtomicSync } from "./atomicWrite.js";
@@ -572,16 +572,19 @@ export class HistoryManager {
     // keeping them made the file grow with the square of its length
     const session = { ...full, history: withoutPrompts(full.history) };
     if (this.useLog && !this.log.isJsonFallback(session.sessionId)) {
+      const started = Date.now();
       const result = this.log.saveFull(session);
       if (result.rev !== null) {
+        const fileBytes = this.afterLogSave(session.sessionId, started);
         this.updateListEntry(session.sessionId, {
           title: session.title,
           workspaceDirectory: session.workspaceDirectory,
           messageCount: session.history.filter(
             (item) => item.message.role === "assistant",
           ).length,
+          fileBytes,
         });
-        return result;
+        return { ...result, fileBytes };
       }
     }
     const fileBytes = this.saveJson(session);
@@ -594,8 +597,9 @@ export class HistoryManager {
    * restarted, another save came in between, or the file changed under it):
    * the webview then sends the whole session with `save`.
    */
-  saveDelta(delta: SessionDelta): SessionSaveResult {
+  saveDelta(delta: SessionDelta): SessionSaveResult & { fileBytes?: number } {
     if (!this.useLog) return { rev: null, needFull: true };
+    const started = Date.now();
     const before = this.log.listEntry(delta.sessionId);
     const result = this.log.saveDelta({
       ...delta,
@@ -605,30 +609,55 @@ export class HistoryManager {
       })),
     });
     if (result.needFull) return result;
+    const fileBytes = this.afterLogSave(delta.sessionId, started);
     this.updateListEntry(delta.sessionId, {
       title: delta.meta.title ?? before?.title ?? "",
       workspaceDirectory:
         delta.meta.workspaceDirectory ?? before?.workspaceDirectory ?? "",
       messageCount: this.log.messageCount(delta.sessionId),
+      fileBytes,
     });
-    return result;
+    return { ...result, fileBytes };
   }
 
-  /** sessions.json, rewritten only when what it shows of the session changed. */
+  /**
+   * After a save to the log: the session's size on disk (the log plus the
+   * blobs it refers to), checked against the session budget as a `.json`
+   * save is.
+   */
+  private afterLogSave(sessionId: string, started: number): number {
+    const elapsed = Date.now() - started;
+    const sizes = this.log.sessionBytes(sessionId);
+    const fileBytes = sizes ? sizes.logBytes + sizes.blobBytes : 0;
+    this.warnIfLarge(sessionId, fileBytes, elapsed, "log");
+    return fileBytes;
+  }
+
+  /**
+   * sessions.json, rewritten only when what it shows of the session changed:
+   * the size counts when it moved by a tenth or crossed the session budget,
+   * so a save that adds a few lines does not rewrite the list.
+   */
   private updateListEntry(
     sessionId: string,
-    entry: { title: string; workspaceDirectory: string; messageCount: number },
+    entry: {
+      title: string;
+      workspaceDirectory: string;
+      messageCount: number;
+      fileBytes: number;
+    },
   ): void {
     const last = this.log.listEntry(sessionId);
     if (
       last &&
       last.title === entry.title &&
       last.workspaceDirectory === entry.workspaceDirectory &&
-      last.messageCount === entry.messageCount
+      last.messageCount === entry.messageCount &&
+      !sizeMoved(last.fileBytes, entry.fileBytes, this.budgetBytes)
     ) {
       return;
     }
-    writeSessionsListEntry(sessionId, entry);
+    writeSessionsListEntry(sessionId, { ...entry, storage: "log" });
     this.log.setListed(sessionId, entry);
   }
 
@@ -668,6 +697,7 @@ export class HistoryManager {
       workspaceDirectory: session.workspaceDirectory,
       messageCount,
       fileBytes,
+      storage: "json",
     });
     return fileBytes;
   }
@@ -677,6 +707,7 @@ export class HistoryManager {
     sessionId: string,
     fileBytes: number,
     elapsed: number,
+    storage: SessionStorage = "json",
   ): void {
     if (
       isOverSessionBudget(fileBytes, this.budgetBytes) &&
@@ -684,7 +715,7 @@ export class HistoryManager {
     ) {
       this.warnedOverBudget.add(sessionId);
       console.warn(
-        sessionBudgetWarning(sessionId, fileBytes, this.budgetBytes),
+        sessionBudgetWarning(sessionId, fileBytes, this.budgetBytes, storage),
       );
     }
     if (elapsed >= SLOW_SESSION_SAVE_MS) {
@@ -702,8 +733,17 @@ export class HistoryManager {
     return sessions.map((session) => {
       if (session.fileBytes !== undefined) return session;
       try {
-        const { size } = fs.statSync(getSessionFilePath(session.sessionId));
-        return { ...session, fileBytes: size };
+        const id = session.sessionId;
+        const logFile = getSessionLogFilePath(id);
+        if (fs.existsSync(logFile)) {
+          // A log session: the log plus its stored outputs, as a save reports
+          const fileBytes =
+            fs.statSync(logFile).size +
+            folderBytes(getSessionBlobFolderPath(id));
+          return { ...session, fileBytes, storage: "log" as const };
+        }
+        const { size } = fs.statSync(getSessionFilePath(id));
+        return { ...session, fileBytes: size, storage: "json" as const };
       } catch {
         return session;
       }
@@ -718,6 +758,7 @@ function writeSessionsListEntry(
     workspaceDirectory: string;
     messageCount: number;
     fileBytes?: number;
+    storage?: SessionStorage;
   },
 ): void {
   updateSessionsList((sessionsList) => {
@@ -729,6 +770,9 @@ function writeSessionsListEntry(
         sessionMetadata.messageCount = entry.messageCount;
         if (entry.fileBytes !== undefined) {
           sessionMetadata.fileBytes = entry.fileBytes;
+        }
+        if (entry.storage !== undefined) {
+          sessionMetadata.storage = entry.storage;
         }
         found = true;
         break;
@@ -742,10 +786,46 @@ function writeSessionsListEntry(
         workspaceDirectory: entry.workspaceDirectory,
         messageCount: entry.messageCount,
         ...(entry.fileBytes !== undefined && { fileBytes: entry.fileBytes }),
+        ...(entry.storage !== undefined && { storage: entry.storage }),
       });
     }
     return sessionsList;
   });
+}
+
+/** Whether the listed size moved enough to rewrite sessions.json for it. */
+function sizeMoved(
+  listed: number | undefined,
+  now: number,
+  budget: number,
+): boolean {
+  if (listed === undefined) return true;
+  if (
+    isOverSessionBudget(listed, budget) !== isOverSessionBudget(now, budget)
+  ) {
+    return true;
+  }
+  return Math.abs(now - listed) * 10 >= listed;
+}
+
+/** Bytes of the files directly in `dir` (a blob folder has no subfolders). */
+function folderBytes(dir: string): number {
+  let bytes = 0;
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return 0;
+  }
+  for (const name of names) {
+    try {
+      const st = fs.statSync(path.join(dir, name));
+      if (st.isFile()) bytes += st.size;
+    } catch {
+      // removed meanwhile
+    }
+  }
+  return bytes;
 }
 
 const historyManager = new HistoryManager();

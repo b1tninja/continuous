@@ -301,6 +301,8 @@ export interface SessionListEntry {
   title: string;
   workspaceDirectory: string;
   messageCount: number;
+  /** The log plus its blobs, as last written to sessions.json. */
+  fileBytes?: number;
 }
 
 /** Counters for tests and for the write-cost measurement. */
@@ -339,6 +341,11 @@ interface LogState {
   /** Bytes on disk after the last completed write. */
   diskBytes: number;
   knownBlobs: Set<string>;
+  /**
+   * Bytes of the blobs in `knownBlobs`, each counted once: with `logBytes`,
+   * what the session takes on disk (the size guard, STOR8).
+   */
+  blobBytes: number;
   toolOutputs: EncodeContext["toolOutputs"];
   /** A fork's parent blob folder: blobs found there are linked, not written. */
   linkFrom?: string;
@@ -520,6 +527,10 @@ export class SessionLogWriter {
     for (const item of replay.items) {
       for (const h of blobRefs(item)) s.knownBlobs.add(h);
     }
+    for (const value of replay.meta.values()) {
+      for (const h of blobRefs(value)) s.knownBlobs.add(h);
+    }
+    s.blobBytes = storedBlobBytes(s.blobDir, s.knownBlobs);
     // Tool outputs, so a later tool message for one of these calls joins it
     const ctx = this.encodeContext(s);
     for (const item of decodedItems) rememberToolOutputs(item, ctx);
@@ -558,6 +569,19 @@ export class SessionLogWriter {
     }
     pendingText += this.pendingOpsText(s);
     return { replaceText, inflightStart, inflightText, pendingText, blobs };
+  }
+
+  /**
+   * What the session takes on disk once its queued writes are done: the log
+   * plus the blobs it refers to. Undefined when this process has no state
+   * for it (not loaded or saved here, or saved as `.json`).
+   */
+  sessionBytes(
+    sessionId: string,
+  ): { logBytes: number; blobBytes: number } | undefined {
+    const s = this.states.get(sessionId);
+    if (!s || s.dropped || s.jsonFallback) return undefined;
+    return { logBytes: s.logBytes, blobBytes: s.blobBytes };
   }
 
   /** Resolves when everything queued for `sessionId` (or all) is written. */
@@ -625,6 +649,7 @@ export class SessionLogWriter {
       logBytes: 0,
       diskBytes: 0,
       knownBlobs: new Set(),
+      blobBytes: 0,
       toolOutputs: new Map(),
       pendingOps: new Map(),
       pendingBlobs: new Map(),
@@ -660,6 +685,9 @@ export class SessionLogWriter {
     const sink: BlobSink = {
       has: (hash) => s.knownBlobs.has(hash),
       put: (hash, text) => {
+        if (!s.knownBlobs.has(hash)) {
+          s.blobBytes += Buffer.byteLength(text, "utf8");
+        }
         s.knownBlobs.add(hash);
         s.pendingBlobs.set(hash, text);
       },
@@ -1020,6 +1048,19 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
 }
 
 /** JSON with object keys sorted, for comparing two sessions. */
+/** Bytes of the given blobs in `dir`; one not stored counts 0. */
+function storedBlobBytes(dir: string, hashes: Iterable<string>): number {
+  let bytes = 0;
+  for (const hash of hashes) {
+    try {
+      bytes += fs.statSync(path.join(dir, hash)).size;
+    } catch {
+      // missing: read as a marker, takes no space
+    }
+  }
+  return bytes;
+}
+
 export function stableStringify(value: unknown): string {
   return JSON.stringify(value, (_k, v) => {
     if (v && typeof v === "object" && !Array.isArray(v)) {

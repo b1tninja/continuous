@@ -207,29 +207,36 @@ function LegendTable({ breakdown }: { breakdown: ContextBreakdown }) {
 }
 
 /**
- * The session's file on disk and its item count (STOR8), and a warning past
+ * The session's size on disk and its item count (STOR8), and a warning past
  * the session budget. The size is what core recorded at the last save (or
- * read from the file when the session was listed), so it is known once the
- * session list has been fetched.
+ * read from the files when the session was listed), so it is known once the
+ * session list has been fetched. A session saved as an append-only log
+ * counts the log and the outputs stored beside it.
  */
 function SessionFileNote() {
   const items = useAppSelector((s) => s.session.history.length);
-  const fileBytes = useAppSelector(
-    (s) =>
-      s.session.allSessionMetadata.find((m) => m.sessionId === s.session.id)
-        ?.fileBytes,
+  const listed = useAppSelector((s) =>
+    s.session.allSessionMetadata.find((m) => m.sessionId === s.session.id),
   );
+  const fileBytes = listed?.fileBytes;
   if (fileBytes === undefined) return null;
   const over = isOverSessionBudget(fileBytes);
+  const log = listed?.storage === "log";
+  const size = log
+    ? `Session ${formatFileSize(fileBytes)} on disk (log and stored outputs)`
+    : `Session file ${formatFileSize(fileBytes)}`;
+  const why = log
+    ? "opening it reads all of it, and this window holds all of it in memory"
+    : "every save rewrites the whole file, so saving and opening it get slower";
   return (
     <span
       className={over ? "text-warning" : "text-description-muted"}
       data-testid="context-session-file"
       data-over-budget={over ? "true" : undefined}
     >
-      {`Session file ${formatFileSize(fileBytes)}, ${items.toLocaleString("en-US")} ${items === 1 ? "item" : "items"}.`}
+      {`${size}, ${items.toLocaleString("en-US")} ${items === 1 ? "item" : "items"}.`}
       {over &&
-        ` Past the ${formatFileSize(SESSION_FILE_BUDGET_BYTES)} session budget: every save rewrites the whole file, so saving and opening it get slower. A new session starts small.`}
+        ` Past the ${formatFileSize(SESSION_FILE_BUDGET_BYTES)} session budget: ${why}. A new session starts small.`}
     </span>
   );
 }

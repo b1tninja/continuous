@@ -1100,9 +1100,18 @@ export interface BaseSessionMetadata {
   dateCreated: string;
   workspaceDirectory: string;
   messageCount?: number;
-  /** Bytes of the session file when it was last saved (STOR8). */
+  /**
+   * Bytes the session takes on disk when it was last saved (STOR8): the
+   * `.json` file, or for a log session the `.jsonl` plus the blobs it
+   * refers to.
+   */
   fileBytes?: number;
+  /** How the session is stored; absent for entries saved before 2.22.0. */
+  storage?: SessionStorage;
 }
+
+/** `json`: one `<id>.json` rewritten whole; `log`: an append-only `<id>.jsonl` with blobs. */
+export type SessionStorage = "json" | "log";
 
 export interface RangeInFile {
   filepath: string;
