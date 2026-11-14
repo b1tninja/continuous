@@ -1,13 +1,15 @@
-import type { ModelConfig } from "@continuedev/config-yaml";
+import type { AssistantUnrolled, ModelConfig } from "@continuedev/config-yaml";
 import { appliesReasoningEffort } from "@continuedev/openai-adapters";
 import type { ModelUse } from "core/index.js";
 import { USE_FALLBACK } from "core/util/modelUse.js";
 
+import { userNotice } from "../util/userNotice.js";
+
 /**
  * What the CLI skips in a config's `modeModels` without a word (ROADMAP
  * M8): a name that matches no model, a name that is not a chat model, and a
- * `reasoningEffort` the CLI does not send. Pure, so the messages can be
- * tested; ModelService shows them once per config load.
+ * `reasoningEffort` the CLI does not send. The check is pure, so its
+ * messages can be tested; ModelService reports them once per config load.
  *
  * Only the CLI's reading is checked. The IDE reads the same entries its own
  * way (core's resolveModeModels reports unknown names there, and it maps an
@@ -98,4 +100,26 @@ export function checkModeModelsForCli(
     );
   }
   return warnings;
+}
+
+let configLoads = 0;
+
+/**
+ * The `modeModels` entries the CLI skips, and the efforts it does not send
+ * (M8): one notice per config load, naming each entry and model. Without it
+ * the CLI keeps the current model, or sends no effort, and says nothing.
+ */
+export function reportModeModelsProblems(assistant: AssistantUnrolled): void {
+  configLoads++;
+  const problems = checkModeModelsForCli(
+    (assistant as { modeModels?: Record<string, any> }).modeModels,
+    (assistant.models ?? []).filter((m): m is ModelConfig => !!m),
+  );
+  if (problems.length === 0) return;
+  userNotice(
+    ["The CLI skips part of modeModels in this config:", ...problems].join(
+      "\n- ",
+    ),
+    `modeModels#${configLoads}`,
+  );
 }
