@@ -203,13 +203,18 @@ export const applyForEditTool = createAsyncThunk<
   }
 
   let didError = false;
+  // The IDE's reason, when it gave one ("The file changed in the editor
+  // while the edit was being applied..."), so the model knows what to do
+  let reason: string | undefined;
   try {
     const response = await extra.ideMessenger.request("applyToFile", payload);
     if (response.status === "error") {
       didError = true;
+      reason = response.error;
     }
   } catch (e) {
     didError = true;
+    reason = e instanceof Error ? e.message : undefined;
   }
   if (didError) {
     const state = getState();
@@ -235,7 +240,9 @@ export const applyForEditTool = createAsyncThunk<
               icon: "problems",
               name: "Apply Error",
               description: "Failed to apply changes",
-              content: `Error editing file: failed to apply changes to file.\n\nPlease try again with correct args or notify the user and request further instructions.`,
+              content: reason
+                ? `Error editing file: ${reason}`
+                : `Error editing file: failed to apply changes to file.\n\nPlease try again with correct args or notify the user and request further instructions.`,
               hidden: false,
             },
           ],
