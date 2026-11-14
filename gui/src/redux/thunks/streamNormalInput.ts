@@ -1,18 +1,41 @@
-import { selectCacheSetting } from "../selectors/selectCacheSetting";
 import { createAsyncThunk, unwrapResult } from "@reduxjs/toolkit";
-import { LLMFullCompletionOptions, ModelDescription } from "core";
+import { LLMFullCompletionOptions } from "core";
 import { getRuleId } from "core/llm/rules/getSystemMessageWithRules";
+import { totalInputTokens } from "core/llm/utils/cacheStats";
 import { ToCoreProtocol } from "core/protocol";
 import { renderChatMessage } from "core/util/messageContent";
+import { buildLedgerEntry } from "../../util/cacheLedger";
+import {
+  detectCacheMiss,
+  expectedRebuildCauses,
+  expectedRoute,
+  promptCacheKey,
+} from "../../util/cacheSafeguards";
+import { sentHistoryItems } from "../../util/forkCost";
+import { localCacheWarmMs } from "../../util/localWarmWindow";
+import {
+  INITIAL_PROMPT_CACHE_STATE,
+  modelSupportsOneHourCache,
+  modelSupportsPromptCacheControl,
+  modelUsesLocalPrefixCache,
+  promptCacheStatus,
+  resolvePromptCache,
+} from "../../util/promptCache";
+import { splitPromptProgress } from "../../util/promptProgress";
+import { selectCacheSetting } from "../selectors/selectCacheSetting";
 import { selectSelectedChatModel } from "../slices/configSlice";
 import {
   abortStream,
   addPromptCompletionPair,
-  errorToolCall,
-  setActive,
-  setAppliedRulesAtIndex,
   addRequestUsageToSession,
   clearContextRemovalUndo,
+  errorToolCall,
+  recordCacheMiss,
+  recordCacheRequest,
+  requestQueuedMessagesSend,
+  setActive,
+  setAnsweredRoute,
+  setAppliedRulesAtIndex,
   setContextPercentage,
   setInactive,
   setInlineErrorMessage,
@@ -20,36 +43,13 @@ import {
   setPromptCacheInputTokens,
   setPromptCacheKey,
   setPromptCacheRequestAt,
-  setAnsweredRoute,
-  setPromptReadSpeed,
-  setPromptProgress,
-  setRecoveryHold,
   setPromptCacheState,
-  recordCacheMiss,
-  recordCacheRequest,
-  requestQueuedMessagesSend,
+  setPromptProgress,
+  setPromptReadSpeed,
+  setRecoveryHold,
   setToolGenerated,
   streamUpdate,
 } from "../slices/sessionSlice";
-import {
-  resolvePromptCache,
-  INITIAL_PROMPT_CACHE_STATE,
-  modelSupportsOneHourCache,
-  modelSupportsPromptCacheControl,
-  modelUsesLocalPrefixCache,
-  promptCacheStatus,
-} from "../../util/promptCache";
-import { buildLedgerEntry } from "../../util/cacheLedger";
-import { sentHistoryItems } from "../../util/forkCost";
-import { splitPromptProgress } from "../../util/promptProgress";
-import {
-  detectCacheMiss,
-  expectedRebuildCauses,
-  expectedRoute,
-  promptCacheKey,
-} from "../../util/cacheSafeguards";
-import { localCacheWarmMs } from "../../util/localWarmWindow";
-import { totalInputTokens } from "core/llm/utils/cacheStats";
 import { ThunkApiType } from "../store";
 import { buildChatRequest } from "../util/buildChatRequest";
 import { dumpPromptSegments } from "../util/promptSegmentDump";
@@ -57,32 +57,32 @@ import { dumpPromptSegments } from "../util/promptSegmentDump";
 import { mainAuditAgent } from "core/tools/permissions/audit/identity";
 import { interceptSystemToolCalls } from "core/tools/systemMessageTools/interceptSystemToolCalls";
 
-import {
-  selectCurrentToolCalls,
-  selectPendingToolCalls,
-} from "../selectors/selectToolCalls";
 import { localOutputLimit } from "core/llm/outputLimit";
-import { callToolById } from "./callToolById";
-import { cancelStream } from "./cancelStream";
-import { applyLoopHolds, endRunAtTurnLimit } from "./loopHolds";
+import { allowOutsideWorkspaceOf } from "../../util/outsideEdits";
 import {
   selectApprovalSettings,
   selectAutoApproval,
 } from "../selectors/selectAutoApproval";
 import {
+  selectCurrentToolCalls,
+  selectPendingToolCalls,
+} from "../selectors/selectToolCalls";
+import { callToolById } from "./callToolById";
+import { cancelStream } from "./cancelStream";
+import {
   buildReviewHistory,
   evaluateToolPolicies,
 } from "./evaluateToolPolicies";
+import { applyLoopHolds, endRunAtTurnLimit } from "./loopHolds";
+import { checkToolDialectLeak } from "./noteToolDialectLeak";
+import { nudgeLeakedToolCall } from "./nudgeLeakedToolCall";
 import {
   preprocessToolCalls,
   refuseTruncatedToolCalls,
 } from "./preprocessToolCallArgs";
-import { allowOutsideWorkspaceOf } from "../../util/outsideEdits";
 import { refuseRoleCalls } from "./refuseRoleCalls";
-import { checkToolDialectLeak } from "./noteToolDialectLeak";
-import { nudgeLeakedToolCall } from "./nudgeLeakedToolCall";
-import { streamResponseAfterToolCall } from "./streamResponseAfterToolCall";
 import { checkpointSession } from "./session";
+import { streamResponseAfterToolCall } from "./streamResponseAfterToolCall";
 
 /** While an answer streams, it is saved this often (STOR6 checkpoints)... */
 export const CHECKPOINT_EVERY_MS = 3_000;
@@ -243,6 +243,9 @@ export const streamNormalInput = createAsyncThunk<
 
     const start = Date.now();
     const streamAborter = state.session.streamAborter;
+    // The reply's stop reason, from the usage on its last chunk: it tells a
+    // tool call cut off at the output limit from one that arrived incomplete
+    let lastStopReason: string | undefined;
     try {
       let gen = extra.ideMessenger.llmStreamChat(
         {
@@ -268,7 +271,10 @@ export const streamNormalInput = createAsyncThunk<
       let checkpointChars = 0;
       let next = await gen.next();
       while (!next.done) {
-        if (!getState().session.isStreaming) {
+        // A request that was replaced (Stop, a retry, a new turn) stops here
+        // even when a newer one has set isStreaming again: its chunks would
+        // otherwise land in the newer turn's history, attached to its calls
+        if (!getState().session.isStreaming || streamAborter.signal.aborted) {
           dispatch(abortStream());
           break;
         }
@@ -308,6 +314,12 @@ export const streamNormalInput = createAsyncThunk<
         // size so the cache button can say what throwing the cache away costs,
         // and check that a cache that should have been warm was read.
         for (const message of next.value) {
+          if (
+            message.role === "assistant" &&
+            message.usage?.response?.stopReason
+          ) {
+            lastStopReason = message.usage.response.stopReason;
+          }
           if (message.role === "assistant" && message.usage) {
             lastUsage = message.usage;
             const key =
@@ -506,12 +518,14 @@ export const streamNormalInput = createAsyncThunk<
       );
     }
 
-    // A call cut off at the output limit must not run with partial arguments
+    // A call cut off at the output limit must not run with partial arguments;
+    // the stop reason tells a real cut from arguments that arrived incomplete
     refuseTruncatedToolCalls(
       dispatch,
       selectPendingToolCalls(getState()),
       completionOptions.maxTokens ??
         selectedChatModel.completionOptions?.maxTokens,
+      lastStopReason,
     );
 
     // A call to a tool the mode's role may not use is refused, offered or not

@@ -24,6 +24,38 @@ export function isTruncatedJson(raw: string): boolean {
   return inString || depth > 0;
 }
 
+/**
+ * Stop reasons that mean the reply hit its output limit. Bedrock's
+ * `max_tokens` and `model_context_window_exceeded`, OpenAI's `length`,
+ * Anthropic's `max_tokens`.
+ */
+const LENGTH_STOP_REASONS = new Set([
+  "max_tokens",
+  "length",
+  "model_context_window_exceeded",
+]);
+
+/**
+ * Whether the reply stopped because it ran out of output: true or false when
+ * the provider reported a stop reason, undefined when it reported none.
+ */
+export function stoppedForLength(
+  stopReason: string | null | undefined,
+): boolean | undefined {
+  if (!stopReason) return undefined;
+  return LENGTH_STOP_REASONS.has(stopReason.toLowerCase());
+}
+
+/**
+ * What the model sees when its tool call's arguments arrived incomplete but
+ * the reply did not hit the output limit (it stopped for a tool call or
+ * ended normally). Sending smaller pieces would not help; sending the call
+ * again does. Seen when argument fragments were attached to the wrong call.
+ */
+export function incompleteToolCallResult(toolName: string): string {
+  return `Your ${toolName} call's arguments arrived incomplete, so it was not run and nothing was written. This was not the output limit: the reply ended normally. Send the same call again.`;
+}
+
 /** What the model sees when its tool call was cut off and not run. */
 export function truncatedToolCallResult(
   toolName: string,
