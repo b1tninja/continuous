@@ -10,7 +10,7 @@ import {
   inferResolvedUriFromRelativePath,
   resolveRelativePathInDir,
 } from "../../util/ideUtils";
-import { createNewFileImpl } from "./createNewFile";
+import { createNewFileImpl, outsideAbsolutePath } from "./createNewFile";
 import { multiEditImpl, singleFindAndReplaceImpl } from "./exactEdits";
 
 let root: string;
@@ -87,6 +87,51 @@ describe("a path outside the workspace, without the option", () => {
     expect(await inferResolvedUriFromRelativePath(inside, ide)).toBe(
       pathToFileURL(inside).href,
     );
+  });
+
+  // It was joined onto the workspace folder (C:/repo/c:/elsewhere/a.md) and
+  // the write failed with EINVAL from mkdir
+  it("create_new_file refuses it, saying why, and writes nothing", async () => {
+    const target = path.join(elsewhere, "refused.md");
+    await expect(
+      createNewFileImpl({ filepath: target, contents: "x" }, extras()),
+    ).rejects.toThrow(/outside the workspace/);
+    expect(fs.existsSync(target)).toBe(false);
+    expect(fs.readdirSync(work)).not.toContain("c:");
+  });
+
+  it("create_new_file still writes a relative path", async () => {
+    await createNewFileImpl(
+      { filepath: "notes/kept.md", contents: "x" },
+      extras(),
+    );
+    expect(fs.existsSync(path.join(work, "notes", "kept.md"))).toBe(true);
+  });
+});
+
+describe("outsideAbsolutePath", () => {
+  const dirs = () => [pathToFileURL(work).href];
+
+  it("finds an absolute path outside, also with an encoded drive colon", () => {
+    const outside = path.join(elsewhere, "x.ts");
+    expect(outsideAbsolutePath(outside, dirs())).toBeDefined();
+    if (/^[a-zA-Z]:/.test(outside)) {
+      const encoded = outside
+        .replace(/^([a-zA-Z]):/, "$1%3A")
+        .replace(/\\/g, "/");
+      expect(outsideAbsolutePath(encoded, dirs())).toBeDefined();
+    }
+  });
+
+  it("is undefined inside the workspace, for relative paths and with no folders", () => {
+    expect(
+      outsideAbsolutePath(path.join(work, "a.ts"), dirs()),
+    ).toBeUndefined();
+    expect(outsideAbsolutePath("src/a.ts", dirs())).toBeUndefined();
+    expect(outsideAbsolutePath("../x.md", dirs())).toBeUndefined();
+    expect(
+      outsideAbsolutePath(path.join(elsewhere, "a.ts"), []),
+    ).toBeUndefined();
   });
 });
 

@@ -1,7 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
 import { createNewFileImpl } from "./createNewFile";
 
-vi.mock("../../util/ideUtils", () => ({
+vi.mock("../../util/ideUtils", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../util/ideUtils")>()),
   inferResolvedUriFromRelativePath: async (path: string) => `file:///w/${path}`,
 }));
 
