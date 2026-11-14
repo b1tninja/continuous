@@ -1,12 +1,19 @@
 import {
+  BedrockClient,
+  GetFoundationModelAvailabilityCommand,
+  GetUseCaseForModelAccessCommand,
+  ListFoundationModelsCommand,
+  ListInferenceProfilesCommand,
+} from "@aws-sdk/client-bedrock";
+import {
   BedrockRuntimeClient,
   ContentBlock,
   ContentBlockDelta,
   ContentBlockStart,
   ContentBlockStartEvent,
+  ConversationRole,
   ConverseCommand,
   ConverseCommandOutput,
-  ConversationRole,
   ConverseStreamCommand,
   ConverseStreamCommandInput,
   ConverseStreamCommandOutput,
@@ -17,13 +24,6 @@ import {
   ToolUseBlock,
   ToolUseBlockDelta,
 } from "@aws-sdk/client-bedrock-runtime";
-import {
-  BedrockClient,
-  GetFoundationModelAvailabilityCommand,
-  GetUseCaseForModelAccessCommand,
-  ListFoundationModelsCommand,
-  ListInferenceProfilesCommand,
-} from "@aws-sdk/client-bedrock";
 import {
   ListServiceQuotasCommand,
   ServiceQuotasClient,
@@ -36,38 +36,42 @@ import {
   createTextToolRecovery,
   dialectToolsFromConverse,
   fillMissingToolResults,
-  repairConverseTurns,
   recoveredCallId,
   recoverFromText,
+  repairConverseTurns,
   type RecoveredCall,
   type TextToolRecovery,
 } from "@continuedev/openai-adapters";
 import type { NodeHttpHandler } from "@smithy/node-http-handler";
 
-import type { CompletionOptions, RequestOptions } from "../../index.js";
+import {
+  bedrockRefusedField,
+  converseRequestHasField,
+  converseRequestWithoutField,
+  type BedrockRefusableField,
+} from "@continuedev/llm-info";
+import type { CompletionOptions, RequestOptions, Usage } from "../../index.js";
 import { ChatMessage, Chunk, LLMOptions, MessageContent } from "../../index.js";
-import type { Usage } from "../../index.js";
 import { CANCELLED_TOOL_CALL_MESSAGE } from "../../tools/constants.js";
 import { safeParseToolCallArgs } from "../../tools/parseArgs.js";
 import { renderChatMessage, stripImages } from "../../util/messageContent.js";
+import { isTaskPlanBlockText } from "../../util/taskPlan.js";
 import {
   probeToolDialect,
   type ToolDialectProbeResult,
 } from "../../util/toolDialectProbe.js";
 import { parseDataUrl } from "../../util/url.js";
-import { BaseLLM } from "../index.js";
 import { DEFAULT_REASONING_TOKENS } from "../constants.js";
+import { BaseLLM } from "../index.js";
 import { bedrockSupportsTools } from "../toolSupport.js";
-import { createBedrockRequestHandler } from "./bedrockHttp.js";
 import { withResponseInfo } from "../utils/cacheStats.js";
-import { isTaskPlanBlockText } from "../../util/taskPlan.js";
-import {
-  type BedrockRefusableField,
-  bedrockRefusedField,
-  converseRequestHasField,
-  converseRequestWithoutField,
-} from "@continuedev/llm-info";
+import { createBedrockRequestHandler } from "./bedrockHttp.js";
 
+import {
+  modelCatalogDir,
+  readModelCatalogSettings,
+  type ModelCatalogSettings,
+} from "../modelCatalogStore.js";
 import { resolvePromptCacheTtl } from "./anthropicCache.js";
 import {
   bedrockCatalogCacheKey,
@@ -75,29 +79,17 @@ import {
   writeBedrockCatalogCache,
 } from "./bedrockCatalogCache.js";
 import {
-  checkBedrockQuotas,
-  credentialFingerprint,
-  zeroQuotaWarning,
-  type BedrockQuotaReport,
-  type QuotaCheckTrigger,
-} from "./bedrockQuotas.js";
-import {
-  modelCatalogDir,
-  readModelCatalogSettings,
-  type ModelCatalogSettings,
-} from "../modelCatalogStore.js";
-import {
   applyCrossRegionInference,
   applyModelAccess,
-  BedrockModelAccess,
-  BedrockModelOption,
   bedrockCachePartsForModel,
   bedrockCachePointAfterTextOnly,
   bedrockCacheTtl,
   bedrockMinMaxTokens,
+  BedrockModelAccess,
+  BedrockModelOption,
   bedrockOmitUnsupportedInference,
-  bedrockRepairsStreamedToolInput,
   bedrockReasoningFields,
+  bedrockRepairsStreamedToolInput,
   bedrockSamplingParams,
   bedrockStreamsToolInputCleanly,
   bedrockToolsNeedNonStreaming,
@@ -125,6 +117,13 @@ import {
   ToolInputGate,
   toolSchemaKeys,
 } from "./bedrockHelpers.js";
+import {
+  checkBedrockQuotas,
+  credentialFingerprint,
+  zeroQuotaWarning,
+  type BedrockQuotaReport,
+  type QuotaCheckTrigger,
+} from "./bedrockQuotas.js";
 
 /** The use-case lookup is advisory, so listing never waits on it for long. */
 const USE_CASE_LOOKUP_TIMEOUT_MS = 2000;
@@ -202,6 +201,14 @@ interface StreamTextState {
    */
   recovery?: TextToolRecovery;
   recovered: RecoveredCall[];
+  /**
+   * The tool call id of each toolUse block, by `contentBlockIndex`. Bedrock
+   * sends the id only with the block's start, so its input fragments are
+   * stamped with it here; the GUI then matches each fragment to its own call
+   * instead of to whichever call it saw last, which mixed parallel calls'
+   * arguments and left a call with no id.
+   */
+  toolUseIds: Map<number, string>;
 }
 
 function streamTextState(
@@ -215,6 +222,7 @@ function streamTextState(
     isNova2: /nova-2-/i.test(model),
     recovery,
     recovered: [],
+    toolUseIds: new Map(),
   };
 }
 
@@ -291,6 +299,7 @@ function recoveredCallMessage(call: RecoveredCall, index: number): ChatMessage {
 function* deltaMessages(
   delta: ContentBlockDelta,
   state: StreamTextState,
+  blockIndex?: number,
 ): Generator<ChatMessage> {
   if (delta.text) {
     let text = delta.text;
@@ -331,16 +340,20 @@ function* deltaMessages(
     yield { role: "thinking", content: "", signature: reasoning.signature };
     return;
   }
-  // A tool-call input fragment; the id and name came with the block start
+  // A tool-call input fragment; the id came with the block start (see
+  // StreamTextState.toolUseIds), the name only there
   const toolUse = delta.toolUse as
     (ToolUseBlockDelta & ToolUseBlock) | undefined;
   if (toolUse) {
+    const id =
+      toolUse.toolUseId ??
+      (blockIndex === undefined ? undefined : state.toolUseIds.get(blockIndex));
     yield {
       role: "assistant",
       content: "",
       toolCalls: [
         {
-          id: toolUse.toolUseId,
+          id,
           type: "function",
           function: { name: toolUse.name, arguments: toolUse.input },
         },
@@ -1219,7 +1232,11 @@ class Bedrock extends BaseLLM {
         }
         if (chunk.contentBlockDelta?.delta) {
           const delta = chunk.contentBlockDelta.delta;
-          for (const message of deltaMessages(delta, state)) {
+          for (const message of deltaMessages(
+            delta,
+            state,
+            chunk.contentBlockDelta.contentBlockIndex,
+          )) {
             if (delta.toolUse && gate.holding) {
               gate.add(message, delta.toolUse.input);
               continue;
@@ -1232,10 +1249,13 @@ class Bedrock extends BaseLLM {
         const started = toolCallStartMessage(chunk.contentBlockStart);
         if (started) {
           sawToolUse = true;
-          toolName =
-            started.role === "assistant"
-              ? started.toolCalls?.[0]?.function?.name
-              : undefined;
+          const startedCall =
+            started.role === "assistant" ? started.toolCalls?.[0] : undefined;
+          toolName = startedCall?.function?.name;
+          const blockIndex = chunk.contentBlockStart?.contentBlockIndex;
+          if (blockIndex !== undefined && startedCall?.id) {
+            state.toolUseIds.set(blockIndex, startedCall.id);
+          }
           yield* gate.open(started);
         }
       }
