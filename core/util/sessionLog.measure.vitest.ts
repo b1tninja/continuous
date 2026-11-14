@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import type { ChatHistoryItem, Session, SessionDelta } from "../index.js";
 
 import { forkSession } from "./forkSession.js";
+import { findLastIndex } from "./findLast.js";
 import { HistoryManager } from "./history.js";
 import {
   getSessionBlobFolderPath,
@@ -158,7 +159,7 @@ class SyntheticAgentSession {
   }
 
   private compact(k: number): void {
-    const i = this.history.findLastIndex((h) => h.message.role === "user");
+    const i = findLastIndex(this.history, (h) => h.message.role === "user");
     this.history[i] = {
       ...this.history[i],
       conversationSummary: text(30_000 + k, 4_000),
