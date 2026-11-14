@@ -66,6 +66,7 @@ Reclaimable: 851.0 MB.
 What it changes:
 
 - **Sessions**: each stored prompt is replaced by `[prompt not kept: older request]`, which is what a session is saved with now; the conversation, models and completions stay. Files are read in pieces, so a session too large to open is cleaned too.
+- **Stored outputs**: a chat saved as an append-only log (`<id>.jsonl`) has no prompts to remove, but a tool output or image whose message was edited or cut stays in `sessions/<id>/blobs/` until the chat is deleted. Outputs the chat no longer refers to, and blob folders whose chat is gone, are moved to the backup folder. An output the chat refers to is never moved, and neither is one written in the last 10 minutes. The report adds a `Stored outputs:` line when there are any, and the largest session counts its log and its stored outputs.
 - **Dev data**: lines older than 90 days are dropped (`--dev-data-days`), and `chatInteraction` records keep sizes and a hash in place of the prompt and completion. `--no-dev-data` leaves it alone.
 - **Logs**: files older than 14 days are moved out (`--logs-days`). `--no-logs` leaves them alone.
 

@@ -107,6 +107,51 @@ describe("continuous sessions clean", () => {
     expect(out.join("")).not.toContain("conversation text");
   });
 
+  it("reports and moves the stale blobs of a log session", async () => {
+    // A .jsonl session that refers to one blob; a second blob is left over
+    const id = "log";
+    const used = "a".repeat(64);
+    const stale = "b".repeat(64);
+    const log = path.join(root, "sessions", `${id}.jsonl`);
+    fs.writeFileSync(
+      log,
+      [
+        { t: "header", format: "continuous-session", v: 1, sessionId: id },
+        { t: "meta", k: "title", v: "t" },
+        {
+          t: "item",
+          i: 0,
+          v: {
+            message: { role: "tool", content: { $blob: used, n: 5 } },
+            contextItems: [],
+          },
+        },
+      ]
+        .map(
+          (l) => `${JSON.stringify(l)}
+`,
+        )
+        .join(""),
+    );
+    const blobs = path.join(root, "sessions", id, "blobs");
+    fs.mkdirSync(blobs, { recursive: true });
+    fs.writeFileSync(path.join(blobs, used), "kept!");
+    fs.writeFileSync(path.join(blobs, stale), "stale output");
+    const t = new Date(Date.now() - 86_400_000);
+    for (const f of [log, path.join(blobs, used), path.join(blobs, stale)]) {
+      fs.utimesSync(f, t, t);
+    }
+
+    await sessionsCleanCommand({ root, json: true }, io());
+    const report = JSON.parse(out.join(""));
+    expect(report.scan.blobs).toEqual([
+      { dir: blobs, staleBlobs: 1, reclaimableBytes: 12 },
+    ]);
+    out = [];
+    await sessionsCleanCommand({ root, yes: true }, io());
+    expect(fs.readdirSync(blobs)).toEqual([used]);
+  });
+
   it("leaves dev data and logs alone when asked", async () => {
     fs.mkdirSync(path.join(root, "logs"));
     const log = path.join(root, "logs", "core.log");

@@ -110,6 +110,11 @@ export async function sessionsCleanCommand(
             reclaimableBytes,
           })),
           logs: scan.logs.map(({ file, bytes }) => ({ file, bytes })),
+          blobs: scan.blobs.map(({ dir, staleBlobs, reclaimableBytes }) => ({
+            dir,
+            staleBlobs,
+            reclaimableBytes,
+          })),
           skipped: scan.skipped,
           largestSession: scan.largestSession,
           totals: scan.totals,

@@ -11,7 +11,11 @@
  * - `dev_data` lines older than the dev data retention (90 days by default),
  *   and full prompts in kept `chatInteraction` lines, which now keep sizes
  *   and a hash instead;
- * - files in `logs/` older than the log retention (14 days by default).
+ * - files in `logs/` older than the log retention (14 days by default);
+ * - for sessions saved as an append-only log (`<id>.jsonl`, which holds no
+ *   prompts), blobs in `<id>/blobs/` the session no longer refers to (an
+ *   output whose item was edited, cut or compacted away), and blob folders
+ *   whose session is gone. A blob the session refers to is never touched.
  *
  * `applyCleanup` does what a scan found, file by file. Each file is
  * rewritten to a temporary file, checked (a session must parse and hold the
@@ -37,6 +41,11 @@ import {
   writeWithEdits,
   type SessionFileScan,
 } from "./sessionFile.js";
+import {
+  blobFolderOf,
+  scanBlobFolder,
+  scanSessionLogRefs,
+} from "./sessionLogFile.js";
 
 export { DROPPED_PROMPT_MARKER } from "./sessionFile.js";
 
@@ -86,6 +95,20 @@ export interface DevDataFinding {
   reclaimableBytes: number;
 }
 
+/** Blobs of one session (or of a session that is gone) nothing refers to. */
+export interface BlobFinding {
+  /** `sessions/<id>/blobs`. */
+  dir: string;
+  sessionId: string;
+  /** The session's `.jsonl`; absent when the folder's session is gone or saved as `.json`. */
+  logFile?: string;
+  /** The log's size and time when scanned, to tell whether it changed since. */
+  logBytes?: number;
+  logMtimeMs?: number;
+  staleBlobs: number;
+  reclaimableBytes: number;
+}
+
 export interface LogFinding {
   file: string;
   bytes: number;
@@ -116,11 +139,18 @@ export interface CleanupScan {
   sessions: SessionFinding[];
   devData: DevDataFinding[];
   logs: LogFinding[];
+  /** Stored outputs no session refers to. */
+  blobs: BlobFinding[];
   skipped: Skipped[];
-  /** The largest session file seen, cleaned or not. */
+  /**
+   * The largest session seen, cleaned or not; a log session counts its log
+   * and its blob folder.
+   */
   largestSession?: { file: string; bytes: number };
   totals: {
     sessionsBytes: number;
+    /** Stale blobs. */
+    blobsBytes: number;
     devDataBytes: number;
     logsBytes: number;
     reclaimableBytes: number;
@@ -130,6 +160,8 @@ export interface CleanupScan {
 export interface CleanupResult {
   backupDir: string;
   sessions: { cleaned: number; bytes: number };
+  /** Stale blobs moved to the backup folder. */
+  blobs: { moved: number; bytes: number };
   devData: { cleaned: number; bytes: number };
   logs: { moved: number; bytes: number };
   skipped: Skipped[];
@@ -163,7 +195,12 @@ async function walk(
   return out;
 }
 
-/** Session files: `sessions/<id>.json`, not the list, temporaries or set-aside copies. */
+/**
+ * Session files: `sessions/<id>.json` and `sessions/<id>.jsonl`, not the
+ * list, temporaries or set-aside copies. A `.json` beside a `.jsonl` of the
+ * same session (a migration that did not finish removing it) is listed too:
+ * loads read the `.jsonl`, and the `.json` may still hold old prompts.
+ */
 export async function listSessionFiles(root: string): Promise<string[]> {
   const dir = path.join(root, "sessions");
   let names: string[];
@@ -175,13 +212,36 @@ export async function listSessionFiles(root: string): Promise<string[]> {
   return names
     .filter(
       (n) =>
-        n.endsWith(".json") &&
+        (n.endsWith(".json") || n.endsWith(".jsonl")) &&
         n !== "sessions.json" &&
         !n.includes(".tmp") &&
         !n.includes(".corrupt-"),
     )
     .sort()
     .map((n) => path.join(dir, n));
+}
+
+/**
+ * Blob folders (`sessions/<id>/blobs`) with no `<id>.jsonl` beside them:
+ * the session was deleted, turned back to `.json`, or its migration did not
+ * finish.
+ */
+async function listOrphanBlobFolders(root: string): Promise<string[]> {
+  const dir = path.join(root, "sessions");
+  let entries: fs.Dirent[];
+  try {
+    entries = await fsp.readdir(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (!e.isDirectory()) continue;
+    if (fs.existsSync(path.join(dir, `${e.name}.jsonl`))) continue;
+    const blobs = path.join(dir, e.name, "blobs");
+    if (fs.existsSync(blobs)) out.push(blobs);
+  }
+  return out;
 }
 
 const TIMESTAMP_RE = /"timestamp"\s*:\s*"([^"]+)"/;
@@ -266,7 +326,7 @@ async function scanDevDataFile(
 }
 
 function sessionIdOf(file: string): string {
-  return path.basename(file, ".json");
+  return path.basename(file).replace(/\.jsonl?$/, "");
 }
 
 /** The dry run. Reads only. */
@@ -289,9 +349,11 @@ export async function scanForCleanup(
     sessions: [],
     devData: [],
     logs: [],
+    blobs: [],
     skipped: [],
     totals: {
       sessionsBytes: 0,
+      blobsBytes: 0,
       devDataBytes: 0,
       logsBytes: 0,
       reclaimableBytes: 0,
@@ -320,6 +382,10 @@ export async function scanForCleanup(
     try {
       st = await fsp.stat(file);
     } catch {
+      continue;
+    }
+    if (file.endsWith(".jsonl")) {
+      await scanLogSession(file, st, scan, open, now, options.signal);
       continue;
     }
     if (!scan.largestSession || st.size > scan.largestSession.bytes) {
@@ -362,6 +428,29 @@ export async function scanForCleanup(
     scan.totals.sessionsBytes += s.reclaimableBytes;
   }
 
+  if (stores.includes("sessions")) {
+    for (const dir of await listOrphanBlobFolders(root)) {
+      options.signal?.throwIfAborted();
+      const sessionId = path.basename(path.dirname(dir));
+      if (open.has(sessionId)) continue;
+      // Nothing refers to them: a .json session holds its text inline
+      const blobs = await scanBlobFolder(
+        dir,
+        new Set(),
+        now - RECENTLY_WRITTEN_MS,
+      );
+      if (blobs.stale.length) {
+        scan.blobs.push({
+          dir,
+          sessionId,
+          staleBlobs: blobs.stale.length,
+          reclaimableBytes: blobs.staleBytes,
+        });
+        scan.totals.blobsBytes += blobs.staleBytes;
+      }
+    }
+  }
+
   const devCutoff = now - devDataDays * DAY_MS;
   for (const file of devFiles) {
     options.signal?.throwIfAborted();
@@ -393,9 +482,78 @@ export async function scanForCleanup(
 
   scan.totals.reclaimableBytes =
     scan.totals.sessionsBytes +
+    scan.totals.blobsBytes +
     scan.totals.devDataBytes +
     scan.totals.logsBytes;
   return scan;
+}
+
+/**
+ * One `.jsonl` session: its size with its blobs, and the blobs it no longer
+ * refers to. An open or recently written session is skipped, as a `.json`
+ * one is; so is one with a damaged line, since what that line referred to
+ * is unknown.
+ */
+async function scanLogSession(
+  file: string,
+  st: fs.Stats,
+  scan: CleanupScan,
+  open: Map<string, OpenSession>,
+  now: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  const dir = blobFolderOf(file);
+  const skip = sessionSkipReason(file, st, open, now);
+  if (skip) {
+    const blobs = await scanBlobFolder(dir, new Set(), -Infinity);
+    noteLargest(scan, file, st.size + blobs.totalBytes);
+    scan.skipped.push({
+      file,
+      store: "sessions",
+      reason: skip,
+      bytes: st.size,
+    });
+    return;
+  }
+  let referenced: Set<string>;
+  let badLines: number;
+  try {
+    ({ referenced, badLines } = await scanSessionLogRefs(file, { signal }));
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    noteLargest(scan, file, st.size);
+    scan.skipped.push({
+      file,
+      store: "sessions",
+      reason: "not a readable session",
+      bytes: st.size,
+    });
+    return;
+  }
+  scan.sessionFilesScanned++;
+  const blobs = await scanBlobFolder(
+    dir,
+    referenced,
+    now - RECENTLY_WRITTEN_MS,
+  );
+  noteLargest(scan, file, st.size + blobs.totalBytes);
+  if (badLines > 0 || !blobs.stale.length) return;
+  scan.blobs.push({
+    dir,
+    sessionId: sessionIdOf(file),
+    logFile: file,
+    logBytes: st.size,
+    logMtimeMs: st.mtimeMs,
+    staleBlobs: blobs.stale.length,
+    reclaimableBytes: blobs.staleBytes,
+  });
+  scan.totals.blobsBytes += blobs.staleBytes;
+}
+
+function noteLargest(scan: CleanupScan, file: string, bytes: number): void {
+  if (!scan.largestSession || bytes > scan.largestSession.bytes) {
+    scan.largestSession = { file, bytes };
+  }
 }
 
 function sessionSkipReason(
@@ -423,7 +581,13 @@ export async function quickCleanupEstimate(
       // gone
     }
   };
-  for (const f of await listSessionFiles(root)) await add(f);
+  for (const f of await listSessionFiles(root)) {
+    // A log holds no prompts: only its blobs can be reclaimed
+    if (!f.endsWith(".jsonl")) await add(f);
+  }
+  for (const f of await walk(path.join(root, "sessions"))) {
+    if (path.basename(path.dirname(f)) === "blobs") await add(f);
+  }
   for (const f of await walk(path.join(root, "dev_data"))) {
     if (f.endsWith(".jsonl")) await add(f);
   }
@@ -500,12 +664,17 @@ export async function applyCleanup(
   const result: CleanupResult = {
     backupDir,
     sessions: { cleaned: 0, bytes: 0 },
+    blobs: { moved: 0, bytes: 0 },
     devData: { cleaned: 0, bytes: 0 },
     logs: { moved: 0, bytes: 0 },
     skipped: [],
     failed: [],
   };
-  const total = scan.sessions.length + scan.devData.length + scan.logs.length;
+  const total =
+    scan.sessions.length +
+    scan.blobs.length +
+    scan.devData.length +
+    scan.logs.length;
   let done = 0;
   const progress = (file: string) => options.onProgress?.(file, ++done, total);
 
@@ -517,6 +686,19 @@ export async function applyCleanup(
       now,
       open,
       verify,
+      backupDir,
+      result,
+      signal: options.signal,
+    });
+  }
+
+  for (const finding of scan.blobs) {
+    options.signal?.throwIfAborted();
+    progress(finding.dir);
+    await applyBlobs(finding, {
+      root,
+      now,
+      open,
       backupDir,
       result,
       signal: options.signal,
@@ -630,6 +812,111 @@ async function applySession(
       file,
       reason: error instanceof JsonScanError ? "not valid JSON" : codeOf(error),
     });
+  }
+}
+
+/**
+ * Moves one session's stale blobs to the backup folder. The session is
+ * checked again first (open, written recently, changed since the scan), and
+ * its references are read again, so only blobs it does not refer to now are
+ * moved. If the log changed while they were moved, any blob it now refers
+ * to is put back.
+ */
+async function applyBlobs(
+  finding: BlobFinding,
+  ctx: {
+    root: string;
+    now: number;
+    open: Map<string, OpenSession>;
+    backupDir: string;
+    result: CleanupResult;
+    signal?: AbortSignal;
+  },
+): Promise<void> {
+  const { dir, logFile } = finding;
+  const { result } = ctx;
+  const skip = (reason: SkipReason, bytes: number) =>
+    result.skipped.push({
+      file: logFile ?? dir,
+      store: "sessions",
+      reason,
+      bytes,
+    });
+  if (ctx.open.has(finding.sessionId)) {
+    skip("open elsewhere", finding.reclaimableBytes);
+    return;
+  }
+  const moved: { from: string; to: string; bytes: number }[] = [];
+  try {
+    let referenced = new Set<string>();
+    let before: fs.Stats | undefined;
+    if (logFile) {
+      try {
+        before = fs.statSync(logFile);
+      } catch {
+        skip("changed during cleanup", finding.reclaimableBytes);
+        return;
+      }
+      const recent = sessionSkipReason(logFile, before, ctx.open, ctx.now);
+      if (recent) {
+        skip(recent, finding.reclaimableBytes);
+        return;
+      }
+      if (
+        before.size !== finding.logBytes ||
+        before.mtimeMs !== finding.logMtimeMs
+      ) {
+        skip("changed during cleanup", finding.reclaimableBytes);
+        return;
+      }
+      const refs = await scanSessionLogRefs(logFile, { signal: ctx.signal });
+      if (refs.badLines > 0) {
+        skip("not a readable session", finding.reclaimableBytes);
+        return;
+      }
+      referenced = refs.referenced;
+    } else if (fs.existsSync(`${path.dirname(dir)}.jsonl`)) {
+      // The session was saved as a log since the scan
+      skip("changed during cleanup", finding.reclaimableBytes);
+      return;
+    }
+    const blobs = await scanBlobFolder(
+      dir,
+      referenced,
+      ctx.now - RECENTLY_WRITTEN_MS,
+    );
+    if (!blobs.stale.length) {
+      skip("nothing to remove", 0);
+      return;
+    }
+    for (const blob of blobs.stale) {
+      ctx.signal?.throwIfAborted();
+      const to = backupPathFor(ctx.root, ctx.backupDir, blob.file);
+      fs.renameSync(blob.file, to);
+      moved.push({ from: blob.file, to, bytes: blob.bytes });
+    }
+    if (logFile && before && !sameFile(before, fs.statSync(logFile))) {
+      // Written meanwhile: whatever it refers to now goes back
+      const after = await scanSessionLogRefs(logFile, { signal: ctx.signal });
+      for (const m of [...moved]) {
+        if (!after.referenced.has(path.basename(m.from))) continue;
+        fs.renameSync(m.to, m.from);
+        moved.splice(moved.indexOf(m), 1);
+      }
+    }
+    result.blobs.moved += moved.length;
+    result.blobs.bytes += moved.reduce((n, m) => n + m.bytes, 0);
+  } catch (error) {
+    // Put back what was moved: the folder stays as it was
+    for (const m of moved) {
+      try {
+        fs.renameSync(m.to, m.from);
+      } catch {
+        // the backup keeps it
+      }
+    }
+    if (ctx.signal?.aborted) throw error;
+    result.failed.push({ file: logFile ?? dir, reason: codeOf(error) });
   }
 }
 
@@ -775,6 +1062,13 @@ export function describeScan(scan: CleanupScan): string[] {
       ].filter(Boolean);
       out.push(`  Left alone: ${parts.join(", ")}.`);
     }
+    const blobs = scan.blobs;
+    if (blobs.length) {
+      const files = blobs.reduce((n, b) => n + b.staleBlobs, 0);
+      out.push(
+        `Stored outputs: ${files} no session refers to any more, in ${blobs.length} session folder(s), ${formatMegabytes(scan.totals.blobsBytes)}.`,
+      );
+    }
   }
   if (scan.stores.includes("dev_data")) {
     const old = scan.devData.reduce((n, f) => n + f.oldBytes, 0);
@@ -794,7 +1088,7 @@ export function describeScan(scan: CleanupScan): string[] {
 
 export function describeResult(result: CleanupResult): string[] {
   const out = [
-    `Cleaned ${result.sessions.cleaned} session(s) (${formatMegabytes(result.sessions.bytes)}), ${result.devData.cleaned} dev data file(s) (${formatMegabytes(result.devData.bytes)}), moved ${result.logs.moved} log file(s) (${formatMegabytes(result.logs.bytes)}).`,
+    `Cleaned ${result.sessions.cleaned} session(s) (${formatMegabytes(result.sessions.bytes)}), moved ${result.blobs.moved} stored output(s) no session refers to (${formatMegabytes(result.blobs.bytes)}), ${result.devData.cleaned} dev data file(s) (${formatMegabytes(result.devData.bytes)}), moved ${result.logs.moved} log file(s) (${formatMegabytes(result.logs.bytes)}).`,
     `Originals are kept in ${result.backupDir}. The space is freed when that folder is deleted.`,
   ];
   if (result.skipped.length) {
