@@ -22,6 +22,7 @@ import {
   modelInUseOf,
   sameModelInUse,
 } from "./modelInUse.js";
+import { reportModeModelsProblems } from "./modeModelsCheck.js";
 import { AgentFileServiceState, ModelServiceState } from "./types.js";
 
 /** Why a switch happened, for the record of the model in use (M7). */
@@ -93,6 +94,7 @@ export class ModelService
       logger.warn(notice);
     }
     this.authConfig = authConfig;
+    reportModeModelsProblems(assistant);
     this.availableModels = (assistant.models?.filter(
       (model) =>
         model && (model.roles?.includes("chat") || model.roles === undefined),
