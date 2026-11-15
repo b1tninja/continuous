@@ -247,6 +247,17 @@ class MCPConnection {
     }
   }
 
+  /**
+   * What a stdio server has written to stderr since it was last started,
+   * bounded by `StdioOutputBuffer` and masked with the server's own
+   * environment. Empty for a remote server. The add wizard's probe reads it.
+   */
+  getCapturedStderr(): string {
+    return this.stdioStderr.isEmpty
+      ? ""
+      : this.stdioStderr.render(this.stdioEnv);
+  }
+
   getStatus(): MCPServerStatus {
     return {
       ...this.options,

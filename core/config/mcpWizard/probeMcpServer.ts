@@ -94,20 +94,9 @@ export interface McpProbeResult {
 /** The connection a real run would make, with pin evaluation left out. */
 class ProbeConnection extends MCPConnection {
   // A probe must not adopt, compare or record tool pins: the server is not
-  // saved yet and the person has not approved a call. Pin at Add is MCPW17.
+  // saved yet and the person has not approved a call. Pin at Add is MCPW16, after TR4 (#901).
   override async refreshPins(): Promise<void> {}
   override async recordToolUse(): Promise<void> {}
-
-  /**
-   * MCPConnection keeps stderr in a private string with no cap (MCPW19,
-   * #738 adds a bounded buffer). Until that lands the probe reads it here
-   * and caps and masks it itself.
-   */
-  stderrText(): string {
-    const out = (this as unknown as { stdioOutput?: { stderr?: string } })
-      .stdioOutput;
-    return out?.stderr ?? "";
-  }
 }
 
 export function draftToOptions(
@@ -192,7 +181,10 @@ export async function probeMcpServer(
   }
   const durationMs = Date.now() - started;
   const status = conn.getStatus();
-  const stderrRaw = conn.stderrText();
+  // Bounded (head and tail) and masked by MCPConnection's StdioOutputBuffer
+  // (#738); the probe masks again with the draft's own values and keeps the
+  // last lines.
+  const stderrRaw = conn.getCapturedStderr();
   try {
     await conn.disconnect();
   } catch {
