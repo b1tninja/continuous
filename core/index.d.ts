@@ -1394,6 +1394,16 @@ export interface PromptLog {
    */
   promptBytes?: number;
   promptSha256?: string;
+  /**
+   * A local Strata server's own record of the request (`/metrics`), read
+   * when the stream's usage gave no cached count: counts only.
+   */
+  serverCache?: {
+    promptTokens: number;
+    reused: number;
+    promptRead?: number;
+    promptMs?: number;
+  };
 }
 
 export type MessageModes = "chat" | "agent" | "plan" | "background";
@@ -2257,6 +2267,13 @@ export interface Tool {
     kind: "changed" | "added" | "launch";
     summary: string;
   };
+  /**
+   * An MCP tool the person has not approved (TR4): its server was never
+   * approved, or the tool appeared or changed since. It is not offered to the
+   * model until it is approved (Settings > Tools); at IDGAF it is offered and
+   * its first call pins it.
+   */
+  mcpPendingApproval?: "new" | "added" | "changed";
 }
 
 /**

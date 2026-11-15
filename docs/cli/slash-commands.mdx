@@ -40,6 +40,8 @@ The status line shows the model the next request goes to and its reasoning effor
 | `/model`  | Switch between the chat models of the current config                            |
 | `/config` | Switch to another configuration                                                 |
 | `/mcp`    | List the MCP servers of the config; restart or stop one, or all of them         |
+| `/mcp pending` | List the MCP tools that wait for your approval, with the description the model would read |
+| `/mcp approve <server> [tool...]` | Approve those tools (all of the server's when you name none). They are offered once the prompt cache goes cold, or at once after `/tools apply` |
 | `/init`   | Ask the agent to write an `AGENTS.md` file that describes this codebase         |
 
 `/init` sends a prepared prompt to the model, so it is a normal turn: the file is written with the edit tools and asks for approval like any other edit.

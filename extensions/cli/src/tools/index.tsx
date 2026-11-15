@@ -179,9 +179,14 @@ export async function getAllAvailableTools(
     },
   );
   const trusted = cliTrustedMcpServers();
-  const mcpTools = mcpState.tools.map((t, i) =>
-    convertMcpToolToContinueTool(t, names[i], trusted),
-  );
+  const mcpTools = mcpState.tools.map((t, i) => {
+    const tool = convertMcpToolToContinueTool(t, names[i], trusted);
+    // Not offered until the person approves it (TR4; the role table drops it)
+    const pending = t.serverName
+      ? services.mcp?.getPendingApproval?.(t.serverName, t.name)
+      : undefined;
+    return pending ? { ...tool, mcpPendingApproval: pending } : tool;
+  });
   tools.push(
     ...(stableToolOrderEnabled(process.env.CONTINUE_STABLE_TOOL_ORDER)
       ? stableToolOrder(
