@@ -4,6 +4,7 @@ import { HookService } from "../hooks/HookService.js";
 import { setTrustProjectHooksForRun } from "../hooks/hookTrust.js";
 import { initializeWithOnboarding } from "../onboarding.js";
 import { auditTrust } from "../permissions/policyAudit.js";
+import { setCliUnattended } from "../tools/roleGate.js";
 import { setBetaSubagentToolEnabled } from "../tools/toolsConfig.js";
 import { logger } from "../util/logger.js";
 
@@ -265,6 +266,9 @@ export async function initializeServices(initOptions: ServiceInitOptions = {}) {
       if (!configState.config) {
         throw new Error("Config not available for MCP service");
       }
+      // A headless run (and a Loop worker) is unattended (TR1, TR25)
+      mcpService.isUnattended = () => !!initOptions.headless;
+      setCliUnattended(!!initOptions.headless);
       return mcpService.initialize(
         configState.config,
         !!initOptions.options?.agent,
