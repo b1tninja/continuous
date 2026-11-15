@@ -116,6 +116,7 @@
               "customize/vscode-chat-and-agents",
               "customize/mcp-tools",
               "customize/web-search",
+              "customize/web",
               "customize/rules",
               "customize/prompts",
               {

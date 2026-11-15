@@ -491,6 +491,19 @@ export const sessionSlice = createSlice({
         curMessage.isGatheringContext = payload;
       }
     },
+    /**
+     * A failed request is being sent again as it was (retryFailedRequest):
+     * the turn is no longer marked for Resume.
+     */
+    clearTurnInterruption: (state) => {
+      const lastUser = findLastIndex(
+        state.history,
+        (item) => item.message.role === "user",
+      );
+      for (let i = Math.max(lastUser, 0); i < state.history.length; i++) {
+        delete state.history[i].interrupted;
+      }
+    },
     clearDanglingMessages: (
       state,
       action: PayloadAction<TurnInterruption | undefined>,
@@ -1836,6 +1849,7 @@ export const {
   truncateHistoryToMessage,
   updateHistoryItemAtIndex,
   clearDanglingMessages,
+  clearTurnInterruption,
   setMainEditorContentTrigger,
   deleteMessage,
   deleteCompaction,

@@ -10,7 +10,10 @@ import {
 } from "core";
 import { describeToolCall } from "core/llm/contextBreakdown";
 import { chatMessageIsEmpty } from "core/llm/messages";
-import { getSystemMessageWithRules } from "core/llm/rules/getSystemMessageWithRules";
+import {
+  getApplicableRules,
+  getSystemMessageWithRules,
+} from "core/llm/rules/getSystemMessageWithRules";
 import { RulePolicies } from "core/llm/rules/types";
 import { BuiltInToolNames } from "core/tools/builtIn";
 import {
@@ -27,7 +30,6 @@ import {
   removedToolResultStub,
   withRemovedParts,
 } from "core/util/contextRemoval";
-import { findLast, findLastIndex } from "core/util/findLast";
 import {
   normalizeToMessageParts,
   renderChatMessage,
@@ -90,6 +92,103 @@ export function withoutIncompleteToolCalls(
       message.role === "assistant" && calls
         ? { ...message, toolCalls: keptCalls?.length ? keptCalls : undefined }
         : message,
+  };
+}
+
+/** A rule first matched by a later message, sent with that message. */
+export function ruleNoteText(rule: RuleWithSource): string {
+  const name = rule.name ? ` name="${rule.name}"` : "";
+  return `<rule${name}>\n${rule.rule}\n</rule>`;
+}
+
+function ruleSortKey(rule: RuleWithSource): string {
+  return [
+    rule.sourceFile ?? "",
+    rule.slug ?? "",
+    rule.name ?? "",
+    rule.source ?? "",
+    rule.rule,
+  ].join("\u0000");
+}
+
+/** A fixed order for rules, by file, name and text: code-unit order, no locale. */
+export function compareRules(a: RuleWithSource, b: RuleWithSource): number {
+  const ka = ruleSortKey(a);
+  const kb = ruleSortKey(b);
+  return ka < kb ? -1 : ka > kb ? 1 : 0;
+}
+
+/**
+ * Which rules go in the system message and which with a message. Mutates
+ * `msgs`: a rule a later user or tool message is the first to match is
+ * appended to that message (a text part, or a paragraph of a tool result).
+ * The result is a function of the messages alone, so a message's bytes are
+ * the same in every request that carries it.
+ */
+function rulesForMessages(
+  msgs: MessageWithContextItems[],
+  baseSystemMessage: string | undefined,
+  configRules: RuleWithSource[],
+  rulePolicies: RulePolicies,
+): { systemMessage: string; appliedRules: RuleMetadata[] } {
+  // In a fixed order, not the config's: a reload can list the same rules in
+  // another order (a colocated rules.md that changed goes to the end of the
+  // list until the next full scan), and two rules that swap places leave the
+  // prompt the same length but different after the tools
+  const availableRules = [...configRules].sort(compareRules);
+  const firstIndex = msgs.findIndex((m) => m.message.role === "user");
+  const first = firstIndex >= 0 ? msgs[firstIndex] : undefined;
+  const system = getSystemMessageWithRules({
+    baseSystemMessage,
+    availableRules,
+    userMessage: first?.message as UserChatMessage | undefined,
+    contextItems: first?.ctxItems ?? [],
+    rulePolicies,
+  });
+  // The same rules getSystemMessageWithRules matched for the first message
+  const seen = new Set<RuleWithSource>(
+    getApplicableRules(
+      first?.message as UserChatMessage | undefined,
+      availableRules,
+      first?.ctxItems ?? [],
+      rulePolicies,
+    ),
+  );
+  const later: RuleMetadata[] = [];
+  msgs.forEach((item, index) => {
+    if (index <= firstIndex) return;
+    const role = item.message.role;
+    if (role !== "user" && role !== "tool") return;
+    const matched = getApplicableRules(
+      item.message as UserChatMessage | ToolResultChatMessage,
+      availableRules,
+      item.ctxItems,
+      rulePolicies,
+    ).filter((rule) => !seen.has(rule));
+    if (!matched.length) return;
+    for (const rule of matched) {
+      seen.add(rule);
+      const { rule: _text, ...meta } = rule;
+      later.push(meta);
+    }
+    const notes = matched.map(ruleNoteText).join("\n\n");
+    item.message =
+      role === "tool"
+        ? {
+            ...(item.message as ToolResultChatMessage),
+            content: `${renderChatMessage(item.message)}\n\n${notes}`,
+          }
+        : {
+            ...(item.message as UserChatMessage),
+            content: [
+              ...normalizeToMessageParts(item.message),
+              { type: "text", text: `\n\n${notes}` } as TextMessagePart,
+            ],
+          };
+  });
+  return {
+    systemMessage: system.systemMessage,
+    appliedRules: [...system.appliedRules, ...later],
   };
 }
 
@@ -273,45 +372,20 @@ export function constructMessages(
     }
   }
 
-  // Some rules only apply to the last user or tool message
-  const lastUserOrToolMsg = findLast(
+  // Rules (C62, and docs: "Why a turn re-reads the whole prompt"). The
+  // system message carries the rules that always apply and those the first
+  // message matched. A rule that a later message or tool result matches is
+  // sent with that message, after its content, and stays there in every
+  // later request. Putting it in the system message instead rewrote the
+  // front of the conversation: a local server's chat template puts the
+  // system message right after the tools, so the whole conversation was
+  // read again, minutes at 400k tokens.
+  const { systemMessage, appliedRules } = rulesForMessages(
     msgs,
-    (item) => item.message.role === "user" || item.message.role === "tool",
-  )?.message as UserChatMessage | ToolResultChatMessage;
-
-  // Some rules apply to all context items since the last user message, inclusiv
-  const lastUserMsgIndex = findLastIndex(
-    msgs,
-    (item) => item.message.role === "user",
-  );
-  const itemsBackToLastUserMessage = msgs
-    .slice(lastUserMsgIndex, msgs.length)
-    .filter(
-      (item) => item.message.role === "tool" || item.message.role === "user",
-    );
-  const rulesContextItems = itemsBackToLastUserMessage
-    .map((item) => item.ctxItems)
-    .flat();
-
-  // Rules that matched an earlier turn stay applied (see earlierTurns)
-  const earlierTurns = msgs
-    .slice(0, Math.max(lastUserMsgIndex, 0))
-    .filter(
-      (item) => item.message.role === "user" || item.message.role === "tool",
-    )
-    .map((item) => ({
-      userMessage: item.message as UserChatMessage | ToolResultChatMessage,
-      contextItems: item.ctxItems,
-    }));
-
-  const { systemMessage, appliedRules } = getSystemMessageWithRules({
     baseSystemMessage,
     availableRules,
-    userMessage: lastUserOrToolMsg,
-    contextItems: rulesContextItems,
     rulePolicies,
-    earlierTurns,
-  });
+  );
 
   // Append conversation summary to system message if it exists
   let finalSystemMessage = systemMessage;
