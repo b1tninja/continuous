@@ -7,7 +7,7 @@ import * as runLimits from "../budget/runLimits.js";
 import { compactChatHistory, findCompactionIndex } from "../compaction.js";
 import { processCommandFlags } from "../flags/flagProcessor.js";
 import * as headless from "../headless/streamJsonHeadless.js";
-import { runStopHooks } from "../hooks/lifecycleHooks.js";
+import { runTurnWithStopHooks } from "../hooks/lifecycleHooks.js";
 import {
   describePromptBlocked,
   runUserPromptSubmitHooks,
@@ -342,22 +342,34 @@ async function processMessage(
   }
 
   try {
-    // Get AI response with potential tool usage
-    const finalResponse = await getStreamingResponse(
-      compactionIndex,
-      model,
-      llmApi,
-    );
-
-    // Generate session title after first assistant response
-    if (firstAssistantResponse && finalResponse && finalResponse.trim()) {
-      await handleTitleGeneration(finalResponse, llmApi, model);
-    }
+    // Get AI response with potential tool usage. A Stop hook that blocks
+    // sends it back to work, up to three times (D4); only the last answer is
+    // printed in headless mode.
+    let firstTurn = true;
+    const finalResponse =
+      (await runTurnWithStopHooks({
+        runTurn: async () => {
+          const response = await getStreamingResponse(
+            compactionIndex,
+            model,
+            llmApi,
+          );
+          // Generate session title after first assistant response
+          if (firstTurn && firstAssistantResponse && response?.trim()) {
+            await handleTitleGeneration(response, llmApi, model);
+          }
+          firstTurn = false;
+          return response;
+        },
+        addUserMessage: (text) => services.chatHistory.addUserMessage(text),
+        notice: (text) => {
+          if (isHeadless) safeStderr(`${text}\n`);
+          else console.info(chalk.yellow(text));
+        },
+      })) ?? "";
 
     // Process and output response in headless mode
     processAndOutputResponse(finalResponse, isHeadless, silent, format);
-
-    await runStopHooks(finalResponse);
 
     // Save session after each successful response
     updateSessionHistory(services.chatHistory.getHistory());

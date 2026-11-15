@@ -2,7 +2,7 @@
 title: "Project Hooks and Trust"
 ---
 
-Hooks are commands the CLI runs around tool calls. Hooks in your own settings (`~/.claude/settings.json`, `~/.continuous/settings.json`) always run. Hooks that come with a repository (`.claude`, `.continue` or `.continuous` `settings.json` and `settings.local.json` in the project) run only after you trust them with `continuous hooks`, or for one run with `--trust-project-hooks`.
+Hooks are commands the CLI runs around tool calls. Hooks in your own settings file (`~/.continuous/settings.json`) always run. Hooks in Claude Code's user settings (`~/.claude/settings.json`) run only when you opt in, see [Hooks from Claude Code's settings](#hooks-from-claude-codes-settings). Hooks that come with a repository (`.claude`, `.continue` or `.continuous` `settings.json` and `settings.local.json` in the project) run only after you trust them with `continuous hooks`, or for one run with `--trust-project-hooks`.
 
 ## What trust covers
 
@@ -12,7 +12,25 @@ When a command runs a script inside the workspace, the fingerprint also includes
 
 ## Seeing what runs
 
-`continuous hooks` (or `continuous hooks list`) shows two things: your own hooks, each under the settings file it comes from (`~/.claude/settings.json` or the `settings.json` in the Continuous folder), and this project's hooks with whether they are trusted. Your own hooks always run. A file of yours that cannot be read as a JSON object is named, without quoting it, because none of its hooks run.
+`continuous hooks` (or `continuous hooks list`) shows two things: your own hooks, each under the settings file it comes from (`~/.claude/settings.json` or the `settings.json` in the Continuous folder), and this project's hooks with whether they are trusted. The hooks in your Continuous file always run. Those in `~/.claude/settings.json` are listed as `skipped`, with the setting that would run them, until you opt in. A file of yours that cannot be read as a JSON object is named, without quoting it, because none of its hooks run.
+
+## Hooks from Claude Code's settings
+
+Hooks in `~/.claude/settings.json` are commands that you wrote for another tool, so they do not run here unless you ask. To run them, add this to `~/.continuous/settings.json` (or the `settings.json` in `CONTINUOUS_GLOBAL_DIR`):
+
+```json title="~/.continuous/settings.json"
+{
+  "hooks": {
+    "readClaudeSettings": true
+  }
+}
+```
+
+Only the value `true` in that file counts. `~/.claude/settings.json` cannot switch itself on, and a project file cannot either. Until you opt in, the file is not read for hooks: its hooks do not run, its `disableAllHooks` does not switch off yours, and a parse error in it does not stop a headless start. A `managedHooksOnly: true` in it still counts, because it only narrows what runs.
+
+If `~/.claude/settings.json` has hooks and the setting is not there, the first start prints one notice on stderr that names the file, the number of hooks and the setting, and records that it was shown in `hook-notices.json` in the global folder. It is not shown again, and it is not shown at all if you set the value to `false`. Project files in `.claude/` are not affected: they still run once you trust the project.
+
+Earlier versions always ran the hooks in `~/.claude/settings.json`.
 
 ## Trying a hook
 
@@ -30,7 +48,7 @@ A hook from a project settings file can block a call or ask you to confirm it, b
 
 ## Only your own hooks
 
-Set `"managedHooksOnly": true` in your own settings (`~/.claude/settings.json` or `~/.continuous/settings.json`) and hooks that come with a repository are not read at all: not offered for trust, not run with `--trust-project-hooks`, and a `disableAllHooks` in a project file cannot switch off yours. Only a value of `true` in one of your own files counts; a project file cannot set it. `continuous hooks` says when this is in force. A path that only an administrator can write is not supported yet.
+Set `"managedHooksOnly": true` in your own settings (`~/.continuous/settings.json`, or `~/.claude/settings.json`, where it counts even when its hooks are not read) and hooks that come with a repository are not read at all: not offered for trust, not run with `--trust-project-hooks`, and a `disableAllHooks` in a project file cannot switch off yours. Only a value of `true` in one of your own files counts; a project file cannot set it. `continuous hooks` says when this is in force. A path that only an administrator can write is not supported yet.
 
 ## A settings file that does not parse
 
@@ -41,7 +59,7 @@ A hook settings file that exists but is not valid JSON (a trailing comma is the 
 - A broken file in the project is reported the same way, and does not stop your own hooks from loading.
 - A file that is simply absent is not an error and prints nothing.
 
-A `matcher` that is not a valid regular expression no longer switches its hook off: the hook runs on every event of that kind, and one warning per session names the matcher.
+A `matcher` that is read as a regular expression and does not compile no longer switches its hook off: the hook runs on every event of that kind, and one warning per session names the matcher.
 
 ## When a hook fails
 
@@ -62,18 +80,32 @@ If a hook sets both, the stricter one applies, and a value that is not understoo
 | --- | --- | --- |
 | `SessionStart` | once, after the services are up | `source` (`startup` or `resume`), `model` |
 | `SessionEnd` | when the CLI exits through its normal exit path, once; it waits at most 1.5 seconds | `reason` |
-| `Stop` | when an assistant turn ends in the terminal, headless and `serve` runs; not after a cancelled turn | `stop_hook_active`, `last_assistant_message` (not in the terminal UI) |
+| `Stop` | when an assistant turn ends in the terminal, headless and `serve` runs; not after a cancelled turn | `stop_hook_active` (`true` on a continuation), `last_assistant_message` |
 | `Notification` | when an approval is waiting for you | `message`, `title`, `notification_type` (`permission_prompt`) |
 | `PermissionRequest` | before you are asked to approve a call | `tool_name`, `tool_input` |
 | `PreCompact` | before a manual or automatic compaction | `trigger`, `custom_instructions` |
 
-`transcript_path` is empty: there is no transcript file. Some things are logged and not obeyed yet: a `Stop` hook that asks the assistant to continue, a `PreCompact` hook that blocks, and context from `SessionStart` (it is not added to the conversation). A `PermissionRequest` hook can deny a call but its `allow` does not skip the question, because the question may be one a rule insisted on. `SessionEnd` does not run on a signal or a crash.
+`transcript_path` is empty: there is no transcript file. Some things are logged and not obeyed yet: a `PreCompact` hook that blocks, context from `SessionStart` (it is not added to the conversation), and `additionalContext` from a `Stop` hook. A `PermissionRequest` hook can deny a call but its `allow` does not skip the question, because the question may be one a rule insisted on. `SessionEnd` does not run on a signal or a crash.
 
 Not covered yet: the `args` form that runs a command without a shell, an `if` filter, `prompt_id`, `agent_id` and the other optional input fields, and hooks in the IDE extensions. Hooks are a guardrail, not a boundary. Every tool call in the terminal agent, MCP tools and the search and list tools included, fires `PreToolUse` and `PostToolUse`; hooks do not exist in the IDE extensions.
 
+## A Stop hook that asks to continue
+
+A `Stop` hook that blocks (exit code 2 with a reason on stderr, or `{"decision": "block", "reason": "..."}` on stdout) sends the agent back to work: its reason is added to the conversation as the next user message, starting `Stop hook feedback:`, and the agent replies to it. That is a continuation. The next `Stop` event has `stop_hook_active: true`, so a hook can tell that it already asked.
+
+At most three continuations follow one message of yours. If the hook blocks a fourth time the turn ends, and a notice says that the cap was reached and repeats the hook's last reason. The count starts again with your next message. Claude Code's cap is eight and its count resets whenever a tool is called ([code.claude.com/docs/en/hooks](https://code.claude.com/docs/en/hooks), "Stop input", read 2026-11-15), so a hook that relies on more than three rounds ends sooner here. A cancelled turn runs no `Stop` hook.
+
 ## Matching a tool, and MCP tools
 
-A hook's `matcher` is a regular expression tested against `tool_name` (not anchored: `Edit` also matches `MultiEdit`; write `^Edit$` for an exact name). An empty matcher or `*` matches every call. This is how it works today and it differs from Claude Code, which treats a plain name or a `|` list as an exact match.
+A hook's `matcher` is read the way Claude Code reads it ([code.claude.com/docs/en/hooks](https://code.claude.com/docs/en/hooks), "Matcher patterns", read 2026-11-15):
+
+| Matcher | Read as | Example |
+| --- | --- | --- |
+| `*`, empty, or no matcher | every call | |
+| only letters, digits, `_`, `-`, spaces, `,` and `\|` | an exact name, or a list of exact names split on `\|` or `,` | `Edit` matches `Edit` and not `MultiEdit` or `NotebookEdit`; `Edit\|Write` and `Edit, Write` match either tool |
+| any other character | a JavaScript regular expression, not anchored | `Notebook.*` and `^Notebook` match `NotebookEdit` and `NotebookRead`; `Edit.*` matches `NotebookEdit` too; `^Edit$` matches only `Edit` |
+
+Names are compared with case. A matcher like `mcp__github`, with no `.*`, is an exact name and matches no tool; write `mcp__github__.*` for every tool of a server. Earlier versions read every matcher as an unanchored regular expression, so `Edit` also matched `MultiEdit`; a matcher written that way now matches only the exact name.
 
 An MCP tool fires its hooks under the tool's own name as the server reports it (`tool_name`, unchanged), and the input has one more field, `server`, the name of the MCP server. Two servers that both expose a tool called `search` are told apart by `server`. A built-in tool has no `server` field.
 
