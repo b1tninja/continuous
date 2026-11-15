@@ -43,6 +43,8 @@ function io(answer: boolean): McpIo {
 const opts = (extra: Record<string, unknown> = {}) => ({
   configFile: file,
   continueDir: dir,
+  // Never the real working folder
+  projectDir: path.join(dir, "project"),
   timeoutMs: 15_000,
   ...extra,
 });
@@ -236,7 +238,142 @@ describe("continuous mcp add", () => {
   });
 
   it("prints usage for an unknown action", async () => {
-    expect(await mcpCommand("list", [], opts(), io(true))).toBe(2);
-    expect(err[0]).toContain("Usage: continuous mcp add");
+    expect(await mcpCommand("frobnicate", [], opts(), io(true))).toBe(2);
+    expect(err.join("\n")).toContain("continuous mcp add <paste-or-file>");
+    expect(err.join("\n")).toContain("continuous mcp remove <name>");
+  });
+
+  it("refuses an unknown --scope", async () => {
+    expect(
+      await mcpCommand("add", [mockPaste()], opts({ scope: "team" }), io(true)),
+    ).toBe(2);
+    expect(err[0]).toBe("--scope takes user or project.");
+  });
+
+  it("--scope project writes .continuous/mcpServers/<name>.yaml", async () => {
+    const before = fs.readFileSync(file, "utf8");
+    const code = await mcpCommand(
+      "add",
+      [mockPaste({ GITHUB_TOKEN: CANARY })],
+      opts({ skipTest: true, scope: "project" }),
+      io(true),
+    );
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    expect(fs.readFileSync(file, "utf8")).toBe(before);
+    const block = path.join(
+      dir,
+      "project",
+      ".continuous",
+      "mcpServers",
+      "mock.yaml",
+    );
+    const text = fs.readFileSync(block, "utf8");
+    expect(text).not.toContain(CANARY);
+    expect(YAML.parse(text).mcpServers[0].name).toBe("mock");
+    const all = out.join("\n");
+    expect(all).toContain(`Will be added to: ${block}`);
+    expect(all).toContain("will be asked to trust it before it starts");
+  });
+});
+
+describe("continuous mcp add-json", () => {
+  it("names a lone server object with the name given", async () => {
+    const code = await mcpCommand(
+      "add-json",
+      ["tracker", JSON.stringify({ command: "node", args: ["t.js"] })],
+      opts({ skipTest: true }),
+      io(true),
+    );
+    expect(code).toBe(0);
+    expect(YAML.parse(fs.readFileSync(file, "utf8")).mcpServers[0]).toEqual({
+      name: "tracker",
+      command: "node",
+      args: ["t.js"],
+    });
+  });
+
+  it("refuses text that is not JSON", async () => {
+    expect(await mcpCommand("add-json", ["x", "{nope"], opts(), io(true))).toBe(
+      1,
+    );
+    expect(err[0]).toContain("That is not valid JSON.");
+  });
+
+  it("needs a name and the JSON", async () => {
+    expect(await mcpCommand("add-json", ["x"], opts(), io(true))).toBe(2);
+  });
+});
+
+describe("continuous mcp list, test and remove", () => {
+  async function addMock(extra: Record<string, string> = {}) {
+    const code = await mcpCommand(
+      "add",
+      [mockPaste(extra)],
+      opts({ skipTest: true }),
+      io(true),
+    );
+    expect(code).toBe(0);
+    out = [];
+    err = [];
+  }
+
+  it("lists nothing, then the saved server, without values", async () => {
+    expect(await mcpCommand("list", [], opts(), io(true))).toBe(0);
+    expect(out[0]).toContain("No MCP servers saved.");
+    out = [];
+    await addMock({ GITHUB_TOKEN: CANARY });
+    expect(await mcpCommand("list", [], opts(), io(true))).toBe(0);
+    const text = out.join("\n");
+    expect(text).toContain("mock (user, stdio)");
+    expect(text).toContain("secrets: MOCK_GITHUB_TOKEN");
+    expect(text).not.toContain(CANARY);
+    out = [];
+    expect(await mcpCommand("list", [], opts({ json: true }), io(true))).toBe(
+      0,
+    );
+    expect(JSON.parse(out.join("\n"))[0]).toMatchObject({
+      name: "mock",
+      scope: "user",
+      transport: "stdio",
+      secrets: ["MOCK_GITHUB_TOKEN"],
+    });
+  });
+
+  it("tests a saved server after asking, with its stored secret", async () => {
+    await addMock({ GITHUB_TOKEN: CANARY });
+    const code = await mcpCommand("test", ["MOCK"], opts(), io(true));
+    expect(err).toEqual([]);
+    expect(code).toBe(0);
+    expect(asked).toHaveLength(1);
+    expect(out.join("\n")).toContain("Found 2 tools");
+    expect([...out, ...asked].join("\n")).not.toContain(CANARY);
+  });
+
+  it("does not test when the person says no", async () => {
+    await addMock();
+    expect(await mcpCommand("test", ["mock"], opts(), io(false))).toBe(1);
+    expect(out).toEqual([]);
+  });
+
+  it("says which secret is missing instead of testing", async () => {
+    await addMock({ GITHUB_TOKEN: CANARY });
+    fs.writeFileSync(path.join(dir, ".env"), "");
+    expect(await mcpCommand("test", ["mock"], opts(), io(true))).toBe(1);
+    expect(asked).toEqual([]);
+    expect(err[0]).toContain("MOCK_GITHUB_TOKEN has no value");
+  });
+
+  it("removes a server and keeps its secrets", async () => {
+    await addMock({ GITHUB_TOKEN: CANARY });
+    expect(await mcpCommand("remove", ["mock"], opts(), io(true))).toBe(0);
+    expect(out.join("\n")).toContain(
+      "Its secrets (MOCK_GITHUB_TOKEN) were kept",
+    );
+    const config = YAML.parse(fs.readFileSync(file, "utf8"));
+    expect(config.mcpServers ?? []).toEqual([]);
+    expect(fs.readFileSync(path.join(dir, ".env"), "utf8")).toContain(CANARY);
+    expect(await mcpCommand("remove", ["mock"], opts(), io(true))).toBe(1);
+    expect(await mcpCommand("test", ["mock"], opts(), io(true))).toBe(1);
   });
 });

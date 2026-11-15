@@ -12,14 +12,17 @@ import path from "node:path";
 import * as readline from "node:readline/promises";
 
 import {
+  addMcpServerToProjectFile,
   addMcpServerToUserConfig,
   planMcpServerEntry,
+  projectBlockFileName,
   renderEntryYaml,
 } from "core/config/mcpWizard/addMcpServer.js";
 import {
   analyzeLaunch,
   type LaunchAnalysis,
 } from "core/config/mcpWizard/analyzeLaunch.js";
+import { projectMcpServerDir } from "core/config/mcpWizard/manageMcpServers.js";
 import { parseMcpPaste } from "core/config/mcpWizard/parseMcpPaste.js";
 import {
   probeMcpServer,
@@ -38,8 +41,16 @@ import { readSecretFromEnvFile } from "core/util/secretsFile.js";
 
 import { env } from "../env.js";
 
+import { mcpManageCommand } from "./mcpManage.js";
+
 export interface McpAddOptions {
   dryRun?: boolean;
+  /** Where to save: your own config.yaml (default) or this project. */
+  scope?: string;
+  /** The project folder for `--scope project`; defaults to the current one. */
+  projectDir?: string;
+  /** `list --json`. */
+  json?: boolean;
   /** Pick one server when the paste holds several. */
   name?: string;
   /** Save without the test connection. */
@@ -81,7 +92,7 @@ const FORMAT_LABELS: Record<McpPasteFormat, string> = {
 const NOT_UNDERSTOOD =
   "I could not find a server in that text. Paste a JSON config, a command such as `npx -y some-package`, or a URL that starts with https://.";
 
-async function terminalConfirm(question: string): Promise<boolean> {
+export async function terminalConfirm(question: string): Promise<boolean> {
   if (!process.stdin.isTTY) return false;
   const rl = readline.createInterface({
     input: process.stdin,
@@ -196,7 +207,7 @@ function printReview(
   io.out(renderEntryYaml(plan.entry).trimEnd());
 }
 
-function printProbe(r: McpProbeResult, io: McpIo) {
+export function printProbe(r: McpProbeResult, io: McpIo) {
   if (r.ok) {
     io.out(
       `Connected in ${(r.durationMs / 1000).toFixed(1)} s. Found ${r.tools.length} tools, ${r.resources.length} resources, ${r.prompts.length} prompts.`,
@@ -325,20 +336,26 @@ async function testFirst(
 
 async function save(
   draft: McpServerDraft,
-  file: string,
-  continueDir: string,
+  where: { file: string; continueDir: string },
   tested: boolean,
+  options: McpAddOptions,
   io: McpIo,
 ): Promise<number> {
-  const r = await addMcpServerToUserConfig(draft, {
-    configPath: file,
-    secrets: {
-      // The terminal has no keychain: secrets go to ~/.continuous/.env
-      ide: { readSecrets: async () => ({}), writeSecrets: async () => {} },
-      storage: "env",
-      continueDir,
-    },
-  });
+  const { file, continueDir } = where;
+  const secrets = {
+    // The terminal has no keychain: secrets go to ~/.continuous/.env
+    ide: { readSecrets: async () => ({}), writeSecrets: async () => {} },
+    storage: "env" as const,
+    continueDir,
+  };
+  const r =
+    options.scope === "project"
+      ? await addMcpServerToProjectFile(draft, {
+          projectDir: options.projectDir ?? process.cwd(),
+          configPath: file,
+          secrets,
+        })
+      : await addMcpServerToUserConfig(draft, { configPath: file, secrets });
   if (!r.ok) {
     io.err(`Not added: ${r.error}`);
     if (r.suggestion) {
@@ -356,6 +373,11 @@ async function save(
     io.out(`  Set ${p} in ~/.continuous/.env before the server starts.`);
   }
   for (const w of r.warnings) io.out(`  ${w}`);
+  if (options.scope === "project") {
+    io.out(
+      "  Other people who open this folder will be asked to trust it before it starts, and each of them sets the secrets on their own computer.",
+    );
+  }
   return 0;
 }
 
@@ -369,16 +391,77 @@ export async function mcpCommand(
     confirm: terminalConfirm,
   },
 ): Promise<number> {
-  if (action !== "add") {
-    io.err(
-      "Usage: continuous mcp add <paste-or-file> [--dry-run] [--name <name>] [--skip-test] [--yes-run]",
-    );
-    io.err(
-      "Pass the README snippet in quotes, a file that holds it, or - to read it from stdin.",
-    );
+  if (
+    options.scope &&
+    options.scope !== "user" &&
+    options.scope !== "project"
+  ) {
+    io.err("--scope takes user or project.");
     return 2;
   }
-  const parsed: McpPasteResult = parseMcpPaste(readInput(args, io));
+  switch (action) {
+    case "add":
+      return addCommand(readInput(args, io), options, io);
+    case "add-json":
+      return addJsonCommand(args, options, io);
+    case "list":
+    case "test":
+    case "remove":
+      return mcpManageCommand(action, args, options, io);
+    default:
+      for (const line of USAGE) io.err(line);
+      return 2;
+  }
+}
+
+const USAGE = [
+  "Usage:",
+  "  continuous mcp add <paste-or-file> [--name <name>] [--scope user|project] [--dry-run] [--skip-test] [--yes-run]",
+  "  continuous mcp add-json <name> '<json>' [same options as add]",
+  "  continuous mcp list [--json]",
+  "  continuous mcp test <name> [--scope user|project] [--yes-run]",
+  "  continuous mcp remove <name> [--scope user|project]",
+  "For add, pass the README snippet in quotes, a file that holds it, or - to read it from stdin.",
+];
+
+/** `add-json <name> <json>`: one server object (or an mcpServers block) under a name you choose. */
+function addJsonCommand(
+  args: string[],
+  options: McpAddOptions,
+  io: McpIo,
+): Promise<number> {
+  const [name, ...rest] = args;
+  if (!name || rest.length === 0) {
+    io.err("Usage: continuous mcp add-json <name> '<json>'");
+    return Promise.resolve(2);
+  }
+  const text = readInput(rest, io);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    io.err(
+      'That is not valid JSON. Pass one server object, such as \'{"command":"npx","args":["-y","pkg@1.0.0"]}\'.',
+    );
+    return Promise.resolve(1);
+  }
+  // A lone server object has no name of its own: give it the one passed
+  const wrapped =
+    parsed &&
+    typeof parsed === "object" &&
+    !Array.isArray(parsed) &&
+    ("command" in parsed || "url" in parsed || "serverUrl" in parsed)
+      ? JSON.stringify({ mcpServers: { [name]: parsed } })
+      : text;
+  return addCommand(wrapped, { ...options, name }, io);
+}
+
+async function addCommand(
+  input: string,
+  options: McpAddOptions,
+  io: McpIo,
+): Promise<number> {
+  const parsed: McpPasteResult = parseMcpPaste(input);
   const candidate = pickCandidate(parsed, options, io);
   if (typeof candidate === "number") return candidate;
   for (const w of parsed.warnings) io.out(`Note: ${w}`);
@@ -387,7 +470,14 @@ export async function mcpCommand(
   const file = options.configFile ?? path.join(continueDir, "config.yaml");
   const draft = candidateToDraft(candidate);
   const analysis = analyzeLaunch(draft, { platform: process.platform });
-  printReview(candidate, draft, analysis, file, io);
+  const target =
+    options.scope === "project"
+      ? path.join(
+          projectMcpServerDir(options.projectDir ?? process.cwd()),
+          projectBlockFileName(draft.name),
+        )
+      : file;
+  printReview(candidate, draft, analysis, target, io);
 
   if (analysis.blocked) {
     io.err(
@@ -405,7 +495,7 @@ export async function mcpCommand(
     const failed = await testFirst(draft, analysis, options, continueDir, io);
     if (failed !== undefined) return failed;
   }
-  return save(draft, file, continueDir, !options.skipTest, io);
+  return save(draft, { file, continueDir }, !options.skipTest, options, io);
 }
 
 /** For the test only: a pending secret's value from ~/.continuous/.env. */
@@ -420,7 +510,7 @@ function withStoredValue(
   return stored ? { ...v, value: stored } : v;
 }
 
-function hostOf(url: string | undefined): string {
+export function hostOf(url: string | undefined): string {
   try {
     return new URL(url ?? "").host;
   } catch {

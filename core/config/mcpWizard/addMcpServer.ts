@@ -15,6 +15,7 @@ import { existingMcpServerNames } from "../importClineMcp";
 import { type SecretStorageKind, storeSecret } from "../secretStorage";
 
 import { suggestedSecretName } from "./analyzeLaunch";
+import { listMcpServers, projectMcpServerDir } from "./manageMcpServers";
 import type { McpDraftValue, McpServerDraft } from "./types";
 import { referenceIn } from "./valueHints";
 
@@ -223,6 +224,106 @@ function freeName(name: string, taken: Set<string>): string {
   }
 }
 
+type AddFailure = Extract<AddMcpServerResult, { ok: false }>;
+
+interface PreparedEntry {
+  ok: true;
+  plan: McpEntryPlan;
+  stored: { name: string; location: SecretStorageKind }[];
+  warnings: string[];
+}
+
+/**
+ * Plan the entry and store its secrets, before any config file is touched,
+ * so a file never points at a value that failed to store.
+ */
+async function prepareEntry(
+  draft: McpServerDraft,
+  secretsOpt: AddMcpServerOptions["secrets"],
+): Promise<PreparedEntry | AddFailure> {
+  const continueDir = secretsOpt?.continueDir;
+  const existing = new Map<string, boolean>();
+  const plan = planMcpServerEntry(draft, (n) => {
+    // Presence in ~/.continuous/.env is checked here; secure storage below
+    if (!existing.has(n))
+      existing.set(n, !!continueDir && envFileHasValue(continueDir, n));
+    return existing.get(n)!;
+  });
+  if (plan.errors.length) {
+    return { ok: false, reason: "invalid", error: plan.errors.join(" ") };
+  }
+  if ((plan.secrets.length || plan.pending.length) && !secretsOpt) {
+    return {
+      ok: false,
+      reason: "secret",
+      error:
+        "This server has secret values and there is no secret store to put them in, so nothing was written.",
+    };
+  }
+
+  // A name already in secure storage belongs to something else: plan again
+  // with it taken, so no other key is overwritten
+  if (secretsOpt && plan.secrets.length) {
+    let inSecure: Record<string, string | undefined> = {};
+    try {
+      inSecure =
+        (await secretsOpt.ide.readSecrets(plan.secrets.map((s) => s.name))) ??
+        {};
+    } catch {
+      inSecure = {};
+    }
+    if (plan.secrets.some((s) => inSecure[s.name])) {
+      const again = planMcpServerEntry(
+        draft,
+        (n) =>
+          !!inSecure[n] || (!!continueDir && envFileHasValue(continueDir, n)),
+      );
+      plan.entry = again.entry;
+      plan.secrets = again.secrets;
+      plan.pending = again.pending;
+    }
+  }
+
+  // Secrets first, so the file never points at a value that failed to store
+  const stored: { name: string; location: SecretStorageKind }[] = [];
+  const warnings: string[] = [];
+  for (const s of plan.secrets) {
+    const r = await storeSecret({
+      ide: secretsOpt!.ide,
+      name: s.name,
+      value: s.value,
+      storage: secretsOpt!.storage,
+      continueDir: secretsOpt!.continueDir,
+    });
+    if (!r.stored) {
+      return {
+        ok: false,
+        reason: "secret",
+        error: `${s.name} could not be stored (${r.error}), so the server was not added.`,
+        secretsStored: stored.map((x) => x.name),
+      };
+    }
+    stored.push({
+      name: s.name,
+      location: r.location ?? secretsOpt!.storage,
+    });
+    if (r.envShadowed) {
+      warnings.push(
+        `${s.name} is in secure storage; ~/.continuous/.env still has an unused copy you can remove.`,
+      );
+    }
+  }
+  for (const p of plan.pending) {
+    try {
+      ensureSecretPlaceholder(secretsOpt!.continueDir, p);
+    } catch {
+      warnings.push(`Set ${p} in ~/.continuous/.env before the server starts.`);
+    }
+  }
+
+  return { ok: true, plan, stored, warnings };
+}
+
 export async function addMcpServerToUserConfig(
   draft: McpServerDraft,
   opts: AddMcpServerOptions,
@@ -260,85 +361,9 @@ export async function addMcpServerToUserConfig(
     };
   }
 
-  const continueDir = opts.secrets?.continueDir;
-  const existing = new Map<string, boolean>();
-  const plan = planMcpServerEntry(draft, (n) => {
-    // Presence in ~/.continuous/.env is checked here; secure storage below
-    if (!existing.has(n))
-      existing.set(n, !!continueDir && envFileHasValue(continueDir, n));
-    return existing.get(n)!;
-  });
-  if (plan.errors.length) {
-    return { ok: false, reason: "invalid", error: plan.errors.join(" ") };
-  }
-  if ((plan.secrets.length || plan.pending.length) && !opts.secrets) {
-    return {
-      ok: false,
-      reason: "secret",
-      error:
-        "This server has secret values and there is no secret store to put them in, so nothing was written.",
-    };
-  }
-
-  // A name already in secure storage belongs to something else: plan again
-  // with it taken, so no other key is overwritten
-  if (opts.secrets && plan.secrets.length) {
-    let inSecure: Record<string, string | undefined> = {};
-    try {
-      inSecure =
-        (await opts.secrets.ide.readSecrets(plan.secrets.map((s) => s.name))) ??
-        {};
-    } catch {
-      inSecure = {};
-    }
-    if (plan.secrets.some((s) => inSecure[s.name])) {
-      const again = planMcpServerEntry(
-        draft,
-        (n) =>
-          !!inSecure[n] || (!!continueDir && envFileHasValue(continueDir, n)),
-      );
-      plan.entry = again.entry;
-      plan.secrets = again.secrets;
-      plan.pending = again.pending;
-    }
-  }
-
-  // Secrets first, so the file never points at a value that failed to store
-  const stored: { name: string; location: SecretStorageKind }[] = [];
-  const warnings: string[] = [];
-  for (const s of plan.secrets) {
-    const r = await storeSecret({
-      ide: opts.secrets!.ide,
-      name: s.name,
-      value: s.value,
-      storage: opts.secrets!.storage,
-      continueDir: opts.secrets!.continueDir,
-    });
-    if (!r.stored) {
-      return {
-        ok: false,
-        reason: "secret",
-        error: `${s.name} could not be stored (${r.error}), so the server was not added.`,
-        secretsStored: stored.map((x) => x.name),
-      };
-    }
-    stored.push({
-      name: s.name,
-      location: r.location ?? opts.secrets!.storage,
-    });
-    if (r.envShadowed) {
-      warnings.push(
-        `${s.name} is in secure storage; ~/.continuous/.env still has an unused copy you can remove.`,
-      );
-    }
-  }
-  for (const p of plan.pending) {
-    try {
-      ensureSecretPlaceholder(opts.secrets!.continueDir, p);
-    } catch {
-      warnings.push(`Set ${p} in ~/.continuous/.env before the server starts.`);
-    }
-  }
+  const prepared = await prepareEntry(draft, opts.secrets);
+  if (!prepared.ok) return prepared;
+  const { plan, stored, warnings } = prepared;
 
   let duplicateOnWrite = false;
   let edit;
@@ -376,6 +401,90 @@ export async function addMcpServerToUserConfig(
       ok: false,
       reason: "write",
       error: edit.error,
+      secretsStored: stored.map((x) => x.name),
+    };
+  }
+  return {
+    ok: true,
+    file,
+    name,
+    entry: plan.entry,
+    secretsStored: stored,
+    secretsPending: plan.pending,
+    warnings,
+  };
+}
+
+export interface AddProjectMcpServerOptions {
+  /** The project folder; the file goes in its `.continuous/mcpServers`. */
+  projectDir: string;
+  /** The person's own config.yaml, so a name in use there is refused too. */
+  configPath?: string;
+  secrets?: AddMcpServerOptions["secrets"];
+}
+
+/** `GitHub Tools` -> `github-tools.yaml`. */
+export function projectBlockFileName(name: string): string {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^[-.]+|-+$/g, "");
+  return `${slug || "mcp-server"}.yaml`;
+}
+
+/**
+ * The "This project" choice: write one block file,
+ * `.continuous/mcpServers/<name>.yaml`, holding only this server. The file
+ * follows folder trust like any other project server, and its secrets are
+ * references that each person fills in on their own computer.
+ */
+export async function addMcpServerToProjectFile(
+  draft: McpServerDraft,
+  opts: AddProjectMcpServerOptions,
+): Promise<AddMcpServerResult> {
+  const name = draft.name?.trim() ?? "";
+  const names = new Set(
+    listMcpServers({
+      configPath: opts.configPath ?? "",
+      projectDir: opts.projectDir,
+    }).servers.map((s) => s.name.trim().toLowerCase()),
+  );
+  if (name && names.has(name.toLowerCase())) {
+    return {
+      ok: false,
+      reason: "duplicate",
+      error: `A server called ${name} already exists.`,
+      suggestion: freeName(name, names),
+    };
+  }
+  const dir = projectMcpServerDir(opts.projectDir);
+  const file = path.join(dir, projectBlockFileName(name));
+  if (fs.existsSync(file)) {
+    return {
+      ok: false,
+      reason: "duplicate",
+      error: `${file} already exists.`,
+      suggestion: freeName(name, names),
+    };
+  }
+  const prepared = await prepareEntry(draft, opts.secrets);
+  if (!prepared.ok) return prepared;
+  const { plan, stored, warnings } = prepared;
+  const block = {
+    name,
+    version: "0.0.1",
+    schema: "v1",
+    mcpServers: [plan.entry],
+  };
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(file, YAML.stringify(block), { flag: "wx" });
+  } catch (e) {
+    return {
+      ok: false,
+      reason: "write",
+      error: `Could not write ${file}: ${e instanceof Error ? e.message : String(e)}`,
       secretsStored: stored.map((x) => x.name),
     };
   }
