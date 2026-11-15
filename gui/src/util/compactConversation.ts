@@ -5,8 +5,10 @@ import { useAppDispatch, useAppSelector } from "../redux/hooks";
 import {
   deleteCompaction,
   setCompactionLoading,
+  setPreparedCompaction,
 } from "../redux/slices/sessionSlice";
 import type { RootState } from "../redux/store";
+import { usablePreparedCompaction } from "../redux/thunks/prepareCompaction";
 import { loadSession, saveCurrentSession } from "../redux/thunks/session";
 import { compactionPrefix } from "./compactionPrefix";
 
@@ -16,10 +18,16 @@ export const useCompactConversation = () => {
   const currentSessionId = useAppSelector((state) => state.session.id);
   const store = useStore<RootState>();
 
-  return async (index: number): Promise<boolean> => {
+  return async (requestedIndex: number): Promise<boolean> => {
     if (!currentSessionId) {
       return false;
     }
+
+    // Planned compaction: a summary prepared in the background for the
+    // current plan is saved as it is, at the plan's boundary, with no request.
+    // The newest turns after it stay word for word.
+    const prepared = usablePreparedCompaction(store.getState(), requestedIndex);
+    const index = prepared?.index ?? requestedIndex;
 
     try {
       // Set loading state
@@ -28,12 +36,15 @@ export const useCompactConversation = () => {
       // While the prompt cache is warm, the summary request is the conversation
       // plus the summary prompt, so it reads the cache. Otherwise it is sent
       // as it always was.
-      const prefix = compactionPrefix(store.getState(), index, Date.now());
+      const prefix = prepared
+        ? undefined
+        : compactionPrefix(store.getState(), index, Date.now());
 
       const result = await ideMessenger.request("conversation/compact", {
         index,
         sessionId: currentSessionId,
         ...(prefix && { prefix }),
+        ...(prepared && { summary: prepared.summary }),
       });
       // request() does not throw: a failure comes back as status "error".
       // Unchecked, a failed compaction reloaded the unchanged session and
@@ -46,6 +57,7 @@ export const useCompactConversation = () => {
         return false;
       }
 
+      if (prepared) dispatch(setPreparedCompaction(undefined));
       // Reload the current session to refresh the conversation state
       dispatch(
         loadSession({

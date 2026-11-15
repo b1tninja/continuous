@@ -1673,6 +1673,15 @@ export interface ILLMLogger {
   createInteractionLog(): ILLMInteractionLog;
 }
 
+/** The part of a model's `contextManagement` settings the IDE uses. */
+export interface ModelContextManagement {
+  /**
+   * Planned compaction: prepare the summary in the background past the
+   * prepare threshold. Unset: on for a local server, off otherwise.
+   */
+  plannedCompaction?: boolean;
+}
+
 export interface LLMOptions {
   model: string;
 
@@ -1752,6 +1761,9 @@ export interface LLMOptions {
 
   /** Tool overrides for this model */
   toolOverrides?: ToolOverride[];
+
+  /** The model's `contextManagement` settings the IDE reads. */
+  contextManagement?: ModelContextManagement;
 }
 
 type RequireAtLeastOne<T, Keys extends keyof T = keyof T> = Pick<
@@ -2385,6 +2397,9 @@ export interface ModelDescription {
 
   /** Tool overrides for this model */
   toolOverrides?: ToolOverride[];
+
+  /** The model's `contextManagement` settings the IDE reads. */
+  contextManagement?: ModelContextManagement;
 }
 
 export interface JSONEmbedOptions {
