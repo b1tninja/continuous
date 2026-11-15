@@ -33,6 +33,7 @@ import { v4 as uuidv4 } from "uuid";
 
 import { DEFAULT_SESSION_TITLE } from "./constants/session.js";
 import { env } from "./env.js";
+import { resetCliToolListHold } from "./tools/toolListHold.js";
 import { logger } from "./util/logger.js";
 import { userNotice } from "./util/userNotice.js";
 
@@ -989,6 +990,7 @@ export function restoreTrashedSessionById(
  * Load session by ID
  */
 export function loadSessionById(sessionId: string): Session | null {
+  resetCliToolListHold();
   try {
     const result = historyManager.loadWithStatus(sessionId);
     if (result.damaged) userNotice(damagedSessionNotice(result.damaged));
@@ -1043,6 +1045,8 @@ export function getCurrentSession(): Session {
  */
 export function startNewSession(history: ChatHistoryItem[] = []): Session {
   const manager = SessionManager.getInstance();
+  // A new conversation has a cold cache: tool changes that waited apply
+  resetCliToolListHold();
 
   // Clear the current session from memory (don't delete the file)
   manager.clear();

@@ -864,6 +864,12 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
       /** Which agent made the call (main, a subagent or a Loop worker), for the audit */
       agent?: import("../tools/permissions/audit/record").AuditAgent;
       /**
+       * The tool is withheld while the prompt cache is warm (C88): the call is
+       * refused with this reason, and the audit trail records it, without
+       * asking the rules.
+       */
+      withheld?: string;
+      /**
        * The conversation as the reviewer sees it. Offered only for a call that
        * may be shadow-reviewed (off unless the person's config turns it on).
        */

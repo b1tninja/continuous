@@ -36,6 +36,7 @@ import {
 import { TaskListPanel } from "../../components/mainInput/TaskListPanel";
 import { useLoopDriver } from "../../hooks/useLoopDriver";
 import { LargeMessageNotice } from "../../components/mainInput/LargeMessageNotice";
+import { PendingToolChangesNotice } from "../../components/mainInput/PendingToolChangesNotice";
 import { QueuedMessages } from "../../components/mainInput/QueuedMessages";
 import { useMainEditor } from "../../components/mainInput/TipTapEditor";
 import { mergeQueuedMessages } from "../../components/mainInput/util/queuedMessages";
@@ -602,6 +603,7 @@ export function Chat() {
         <ColdCacheNotice />
         <SessionLoadNotice />
         <CachingOffNotice />
+        <PendingToolChangesNotice />
         <LargeMessageNotice />
         {/* A loop shows its own plan in its panel */}
         {!hasLoop && <TaskListPanel />}

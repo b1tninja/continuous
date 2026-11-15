@@ -318,6 +318,28 @@ type SessionState = {
    * is sent and with the session. Not saved.
    */
   contextRemovalUndo?: ContextRemovalUndo;
+  /**
+   * The tool list the last request offered, before model overrides and tool
+   * search, and the context it was offered in (core/tools/toolListHold.ts).
+   * While the prompt cache is warm a change to the list waits and requests
+   * keep offering this one (C80, C88). Not saved: a loaded session starts
+   * from the current list.
+   */
+  sentToolList?: { key: string; tools: Tool[] };
+  /**
+   * On a model with preserved thinking's prefix check, the history length at
+   * the last request that changed the tool list: reasoning from before it is
+   * no longer sent (core/tools/toolListHold.ts, thinkingCutAfterToolChange).
+   * Not saved.
+   */
+  thinkingCutAt?: number;
+  /** "Apply now": the next request takes the current tool list. Not saved. */
+  applyToolChangesNext?: boolean;
+  /**
+   * The pending tool changes (toolChangesId) the person chose to leave for a
+   * cold cache, so the choice is not offered again for the same set. Not saved.
+   */
+  toolChangeChoiceMade?: string;
   /** Tokens and estimated cost of this session's requests, saved with it. */
   usage?: SessionUsage;
   inlineErrorMessage?: InlineErrorMessageType;
@@ -1120,6 +1142,12 @@ export const sessionSlice = createSlice({
       state.contextPercentage = undefined;
       state.contextRemovalUndo = undefined;
       state.answeredRoute = undefined;
+      // A new session, a loaded one or a compacted one (which is reloaded)
+      // builds its prompt from scratch: tool changes that waited apply now
+      state.sentToolList = undefined;
+      state.applyToolChangesNext = undefined;
+      state.toolChangeChoiceMade = undefined;
+      state.thinkingCutAt = undefined;
       state.usage = payload?.usage;
       // A different conversation shares nothing with the cached one: its size,
       // timing, misses and what Auto learned all start over. Each conversation
@@ -1537,6 +1565,27 @@ export const sessionSlice = createSlice({
     ) => {
       state.promptCache = action.payload;
     },
+    /** What a request offered; it also settles an "Apply now". */
+    setSentToolList: (
+      state,
+      action: PayloadAction<{
+        key: string;
+        tools: Tool[];
+        thinkingCut?: number;
+      }>,
+    ) => {
+      const { thinkingCut, ...sent } = action.payload;
+      state.sentToolList = sent;
+      state.thinkingCutAt = thinkingCut;
+      state.applyToolChangesNext = undefined;
+    },
+    applyToolChangesNow: (state) => {
+      state.applyToolChangesNext = true;
+    },
+    /** "Apply when the cache goes cold" for this set of changes */
+    keepToolChangesQueued: (state, action: PayloadAction<string>) => {
+      state.toolChangeChoiceMade = action.payload;
+    },
     setPromptProgress: (
       state,
       action: PayloadAction<PromptProgress | undefined>,
@@ -1801,6 +1850,9 @@ export const {
   acknowledgeCacheMisses,
   dismissColdCacheNotice,
   dismissCachingOffNotice,
+  setSentToolList,
+  applyToolChangesNow,
+  keepToolChangesQueued,
   noteToolDialectLeak,
   dismissToolDialectNotice,
   setInlineErrorMessage,

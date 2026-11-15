@@ -47,6 +47,12 @@ type UIState = {
   /** Cache tips the user dismissed, keyed by `cacheTipKey(modelTitle, tipId)`. */
   dismissedCacheTips: Record<string, true>;
   /**
+   * Apply a change to the tool list at once even while the prompt cache is
+   * warm, instead of waiting for it to go cold (core/tools/toolListHold.ts).
+   * Absent means wait.
+   */
+  applyToolChangesAtOnce?: boolean;
+  /**
    * Ended agents the person archived from the agents panel, keyed by
    * `agentArchiveKey(rootId, agentId)`, with when. Only hides the row: the
    * run stays in the session (and in what the model read).
@@ -290,6 +296,9 @@ export const uiSlice = createSlice({
     restoreCacheTips: (state) => {
       state.dismissedCacheTips = {};
     },
+    setApplyToolChangesAtOnce: (state, action: PayloadAction<boolean>) => {
+      state.applyToolChangesAtOnce = action.payload || undefined;
+    },
     /** Bring back the dismissed tips of one model, leaving other models' alone. */
     restoreCacheTipsForModel: (
       state,
@@ -368,6 +377,7 @@ export const {
   dismissCacheTip,
   restoreCacheTips,
   restoreCacheTipsForModel,
+  setApplyToolChangesAtOnce,
   archiveAgents,
   restoreAgents,
   setAgentsPanelFocusRequested,

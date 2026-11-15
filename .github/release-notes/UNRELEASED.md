@@ -4,10 +4,14 @@ Staging note for the next release. Fold it into that release's `<tag>.md` (the r
 
 ## New
 
+- Changing tools while the prompt cache is warm no longer rebuilds the cache without asking. Turning a tool, a tool group or an MCP server on or off, or a server that connects late or changes its tools, now waits until the cache goes cold when re-reading the conversation would cost a significant amount. The Tools page says what applying it now would cost and offers Apply now, Apply when the cache goes cold (the default) or Start a new session with it; a line above the input shows what is waiting. In the `cn` command line, `/tools` lists waiting changes and `/tools apply` applies them. See "Changing tools during a session" in the prompt caching docs.
+
 ## Behaviour changes
 
 - Add model > CometAPI no longer offers Claude Sonnet 4.5 (retires 2026-11-30; CometAPI has no Sonnet 5.5 preset yet) or the retired Claude Opus 4.1, Claude Opus 4.1 Thinking, Claude Sonnet 4, Claude Sonnet 4 Thinking and Claude 3.7 Sonnet Latest; Claude Haiku 4.5 stays. Existing configs and pricing are unchanged.
 - Prompt cache, once: the first request after upgrading writes the prompt cache once because the prompt prefix changed. The changes are all in text sent to the model: the `multi_edit` / `MultiEdit` tool description is shorter (the same rules in about a quarter of the words), the terminal agent's git status in the environment block is capped at 40 files and 4,000 characters (the rest is counted in a "... and N more changed files" line, files listed by path), and, with tool search on, the `search_tools` description now lists every deferrable tool and no longer changes after a search. Tool search is still off by default. In the terminal agent the tools a search activated are now read from the conversation, so a resumed session keeps the tools its history already called and a new session in the same process starts with none.
+- A tool turned off while the prompt cache is warm stays in the request's tool list until the cache goes cold, after compaction or in a new session, and a call to it is refused with a result that says why and recorded in the audit trail. To apply tool changes at once as before, choose "Apply tool changes at once" in the prompt cache menu, or set `CONTINUE_TOOL_CHANGES=now` for `cn`.
+- On models with preserved thinking's prefix check (Claude Fable 5.2 and Mythos 5.2, and depending on the account Fable 5.1, Mythos 5.1, Opus 5.5, Sonnet 5.5 and Haiku 5.5), the reasoning from before a tool list change is no longer sent back once the change applies, because those models refuse it.
 
 ## Fixes
 

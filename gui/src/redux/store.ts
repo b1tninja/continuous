@@ -66,6 +66,7 @@ const saveSubsetFilters = [
     "reasoningSettings",
     "promptCacheSettings",
     "dismissedCacheTips",
+    "applyToolChangesAtOnce",
     "archivedAgents",
     "archivedSessions",
   ]),
