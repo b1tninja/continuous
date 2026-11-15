@@ -12,13 +12,17 @@ import {
   RecentlyEditedRange,
 } from "../autocomplete/util/types";
 import type {
-  TerminalEnvironmentMode,
-  TerminalEnvironmentStatus,
-} from "../util/terminalEnvironment";
-import type { CatalogModel } from "../llm/openRouterCatalog";
-import type { CommunityPrice } from "../llm/communityCatalog";
+  McpImportPreview,
+  McpImportRequest,
+  McpImportResult,
+} from "../config/importClineMcp";
+import type {
+  ModelBlockInfo,
+  ModelEditPreview,
+  ModelEditSaveResult,
+} from "../config/modelEdit/modelBlockEdit";
+import type { ModelPatchOp } from "../config/modelEdit/modelEditFields";
 import { ProfileDescription } from "../config/ProfileLifecycleManager";
-import { SharedConfigSchema } from "../config/sharedConfig";
 import type {
   MovePlaintextKeysResult,
   PlaintextKey,
@@ -26,39 +30,35 @@ import type {
   SaveProviderInstanceRequest,
   SaveProviderInstanceResult,
 } from "../config/providers/types";
-import type { ModeModelsInput } from "../config/yaml/saveModeModels";
-import type { SubagentLoadResult } from "../subagents/loadSubagents";
-import type { ApplyPatchResult, WorktreeInfo } from "../util/worktree";
-import type { DetectedLocalServer } from "../llm/localServers";
-import type { RulesByModeInput } from "../config/yaml/saveRulesByMode";
-import type {
-  ModelBlockInfo,
-  ModelEditPreview,
-  ModelEditSaveResult,
-} from "../config/modelEdit/modelBlockEdit";
-import type { ModelPatchOp } from "../config/modelEdit/modelEditFields";
 import type { TrashSessionResult } from "../util/history.js";
 import type { SessionSearchResult } from "../util/sessionSearch.js";
 import type { TrashedSession } from "../util/sessionTrash.js";
-import type {
-  AutoReviewReply,
-  AutoReviewRequest,
-} from "../tools/permissions/auto/handler";
-import type {
-  McpImportPreview,
-  McpImportRequest,
-  McpImportResult,
-} from "../config/importClineMcp";
 import type {
   ProviderSetupInfo,
   SaveProviderModelsRequest,
   SaveProviderModelsResult,
 } from "../config/providerSetup";
-import type { DecisionSource as ToolDecisionSource } from "../tools/permissions/decide";
-import type { AuditListProtocol } from "./audit";
+import { SharedConfigSchema } from "../config/sharedConfig";
+import type { ModeModelsInput } from "../config/yaml/saveModeModels";
+import type { RulesByModeInput } from "../config/yaml/saveRulesByMode";
+import type { CommunityPrice } from "../llm/communityCatalog";
+import type { DetectedLocalServer } from "../llm/localServers";
+import type { CatalogModel } from "../llm/openRouterCatalog";
+import type { SubagentLoadResult } from "../subagents/loadSubagents";
 import type { ApprovalSettings } from "../tools/permissions/approval";
+import type {
+  AutoReviewReply,
+  AutoReviewRequest,
+} from "../tools/permissions/auto/handler";
+import type { DecisionSource as ToolDecisionSource } from "../tools/permissions/decide";
 import type { RuleEditRequest } from "../tools/permissions/ruleEditorHandlers";
 import { GlobalContextModelSelections } from "../util/GlobalContext";
+import type {
+  TerminalEnvironmentMode,
+  TerminalEnvironmentStatus,
+} from "../util/terminalEnvironment";
+import type { ApplyPatchResult, WorktreeInfo } from "../util/worktree";
+import type { AuditListProtocol } from "./audit";
 
 import {
   BaseSessionMetadata,
@@ -778,6 +778,12 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
        * made by tools/evaluatePolicy; this lets the tool resolve the path.
        */
       allowOutsideWorkspace?: boolean;
+      /**
+       * What run_terminal_command does with output that looks like a
+       * runaway, from the Tools policy level: "stop" (default) or
+       * "keep-running" (Permissive and IDGAF).
+       */
+      runawayAction?: "stop" | "keep-running";
     },
     {
       contextItems: ContextItem[];

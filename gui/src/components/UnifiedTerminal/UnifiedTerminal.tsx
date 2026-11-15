@@ -3,14 +3,16 @@ import Anser, { AnserJsonEntry } from "anser";
 import { ToolCallState } from "core";
 import { maskCommandForDisplay } from "core/tools/permissions/displayMask";
 import { escapeCarriageReturn } from "escape-carriage";
-import { type JSX, useMemo, useState } from "react";
+import { type JSX, useContext, useMemo, useState } from "react";
 import styled, { keyframes } from "styled-components";
+import { IdeMessengerContext } from "../../context/IdeMessenger";
 import { useAppDispatch } from "../../redux/hooks";
 import { moveTerminalProcessToBackground } from "../../redux/thunks/moveTerminalProcessToBackground";
 import { getFontSize } from "../../util";
 import { CopyButton } from "../StyledMarkdownPreview/StepContainerPreToolbar/CopyButton";
 import { RunInTerminalButton } from "../StyledMarkdownPreview/StepContainerPreToolbar/RunInTerminalButton";
 import { ButtonContent, SpoilerButton } from "../ui/SpoilerButton";
+import { commandMeterText, type CommandOutputStats } from "./commandMeter";
 
 const blinkCursor = keyframes`
   0%, 50% { opacity: 1; }
@@ -335,6 +337,8 @@ interface UnifiedTerminalCommandProps {
   toolCallState?: ToolCallState;
   toolCallId?: string;
   displayLines?: number;
+  /** The numbers core sends with the output, and where its full output is. */
+  commandOutput?: CommandOutputStats;
 }
 
 export function UnifiedTerminalCommand({
@@ -345,8 +349,10 @@ export function UnifiedTerminalCommand({
   toolCallState,
   toolCallId,
   displayLines = 15,
+  commandOutput,
 }: UnifiedTerminalCommandProps) {
   const dispatch = useAppDispatch();
+  const ideMessenger = useContext(IdeMessengerContext);
   // What is shown and copied is masked (the value of a secret variable
   // assignment or a credential-shaped string); "run in terminal" keeps the
   // real command, because it is an action and not a display.
@@ -361,6 +367,7 @@ export function UnifiedTerminalCommand({
   // Determine running state
   const isRunning = toolCallState?.status === "calling" || status === "running";
   const hasOutput = output.length > 0;
+  const meter = commandMeterText(commandOutput, isRunning);
 
   // Process terminal content for line limiting
   const processedTerminalContent = useMemo(() => {
@@ -517,7 +524,7 @@ export function UnifiedTerminalCommand({
         )}
 
         {/* Status information */}
-        {(statusMessage || isRunning) && (
+        {(statusMessage || isRunning || meter) && (
           <div
             className="flex items-center px-2 pt-2 pb-2 text-xs text-description"
             style={{
@@ -527,6 +534,26 @@ export function UnifiedTerminalCommand({
           >
             <StatusIcon status={statusType} />
             {isRunning ? "Running" : statusMessage}
+            {meter && (
+              <span className="ml-3" data-testid="terminal-meter">
+                {meter}
+              </span>
+            )}
+            {commandOutput?.outputUri && (
+              <a
+                href="#"
+                data-testid="terminal-open-full-output"
+                onClick={(e) => {
+                  e.preventDefault();
+                  ideMessenger.post("openFile", {
+                    path: commandOutput.outputUri!,
+                  });
+                }}
+                className="ml-3 cursor-pointer text-xs text-link no-underline hover:underline"
+              >
+                Open full output
+              </a>
+            )}
             {isRunning && toolCallId && (
               <a
                 href="#"

@@ -43,6 +43,8 @@ vi.mock("../../util/commandExecutor", async (orig) => {
   };
 });
 
+import { fullText } from "../../util/commandOutputBuffer";
+import { findCommand } from "../../util/commandOutputStore";
 import { runTerminalCommandImpl } from "./runTerminalCommand";
 
 type FakeChild = EventEmitter & {
@@ -174,7 +176,7 @@ describe("the IDE terminal tool starts commands through the executor", () => {
     expect(nodeSpawn).not.toHaveBeenCalled();
   });
 
-  it("streaming, in the background: resolves at once and keeps streaming", async () => {
+  it("streaming, in the background: resolves at once; its end is kept, not sent into the returned message", async () => {
     const child = fakeChild();
     const { executor, calls } = fakeExecutor(child);
     executorBox.current = executor;
@@ -184,17 +186,22 @@ describe("the IDE terminal tool starts commands through the executor", () => {
       ex,
     );
     expect(result[0].status).toBe("Command is running in the background...");
+    expect(result[0].content).toMatch(/read_command_output/);
     foregroundOptions(calls[0].options);
+    const before = (ex.onPartialOutput as ReturnType<typeof vi.fn>).mock.calls
+      .length;
+    child.stdout.emit("data", Buffer.from("ready on :3000\n"));
     child.emit("close", 0);
-    expect(ex.onPartialOutput).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        contextItems: [
-          expect.objectContaining({
-            status: "\nBackground command completed",
-          }),
-        ],
-      }),
+    // The message was already part of the conversation: changing it would
+    // break the prompt cache, so nothing more is sent
+    expect(
+      (ex.onPartialOutput as ReturnType<typeof vi.fn>).mock.calls.length,
+    ).toBe(before);
+    const record = findCommand(
+      (result[0] as { commandOutput?: { id?: string } }).commandOutput!.id!,
     );
+    expect(record?.exitCode).toBe(0);
+    expect(fullText(record!.capture)).toContain("ready on :3000");
   });
 
   it("without streaming, waiting: stdout on success, stderr and the code on failure", async () => {

@@ -1,7 +1,7 @@
 import { JSONContent } from "@tiptap/core";
 import { AssistantChatMessage, InputModifiers, PromptLog } from "core";
-import { describe, expect, it, vi } from "vitest";
 import { DROPPED_PROMPT_MARKER } from "core/util/promptLogs";
+import { describe, expect, it, vi } from "vitest";
 import { createMockStore } from "../../util/test/mockStore";
 import { streamResponseThunk } from "./streamResponse";
 
@@ -418,6 +418,8 @@ describe("streamResponseThunk - tool calls", () => {
           arguments: JSON.stringify({ query: "test function" }),
         },
       },
+      // Cautious, the default Tools level: a runaway command is stopped
+      runawayAction: "stop",
     });
 
     // Verify that multiple compilation calls were made (due to tool call continuation)
@@ -886,6 +888,8 @@ describe("streamResponseThunk - tool calls", () => {
           arguments: JSON.stringify({ query: "test function" }),
         },
       },
+      // Cautious, the default Tools level: a runaway command is stopped
+      runawayAction: "stop",
     });
 
     // Verify that multiple compilation calls were made (due to tool call continuation)
@@ -2119,6 +2123,8 @@ describe("streamResponseThunk - tool calls", () => {
           arguments: JSON.stringify({ query: "test function" }),
         },
       },
+      // Cautious, the default Tools level: a runaway command is stopped
+      runawayAction: "stop",
     });
 
     // Verify second streaming call was made for continuation
