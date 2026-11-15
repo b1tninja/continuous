@@ -34,6 +34,10 @@ export const selectActiveTools = createSelector(
     // What the person said about MCP tools for Plan mode (permissions.yaml)
     (store: RootState) => store.ui.policyExtras.planMcpTools,
     (store: RootState) => store.ui.policyExtras.trustedMcpServers,
+    // MCP tools a background run may use (`background.mcpTools`, TR25)
+    (store: RootState) => store.ui.policyExtras.backgroundMcpTools,
+    // IDGAF on Tool use offers MCP tools that wait for approval (TR4)
+    (store: RootState) => store.ui.policyLevels.tools === "idgaf",
   ],
   (
     mode,
@@ -44,6 +48,8 @@ export const selectActiveTools = createSelector(
     hasTaskList,
     planMcpTools,
     trustedMcpServers,
+    backgroundMcpTools,
+    approvalWaived,
   ): Tool[] => {
     if (mode === "chat") {
       return [];
@@ -88,10 +94,14 @@ export const selectActiveTools = createSelector(
       });
       // The role table decides what the mode's role may use (roleTools.ts):
       // Plan mode offers the read-only built-ins and the MCP tools the person
-      // marked read-only, not every tool of every server.
+      // marked read-only, not every tool of every server. An MCP tool the
+      // person has not approved is not offered (TR4), and a background run
+      // gets only the MCP tools listed for it (TR25).
       return stableToolOrder(
         filterToolsForRole(roleForMode(mode), enabledTools, ideToolRef, {
           trust: { tools: planMcpTools, trustedServers: trustedMcpServers },
+          unattendedMcpTools: backgroundMcpTools,
+          approvalWaived,
         }),
       );
     }

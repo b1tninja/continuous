@@ -336,6 +336,10 @@ export default async function doLoadConfig(options: {
           ...(connection?.changedTools.get(tool.name) && {
             mcpDefinitionChange: connection.changedTools.get(tool.name),
           }),
+          // Not offered until the person approves it (TR4, roleTools.ts)
+          ...(connection?.pendingTools.get(tool.name) && {
+            mcpPendingApproval: connection.pendingTools.get(tool.name),
+          }),
         };
       });
       newConfig.tools.push(...serverTools);

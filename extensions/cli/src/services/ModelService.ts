@@ -9,6 +9,7 @@ import {
 import { resolveTerminalSettings } from "core/util/terminalEnvironment.js";
 import { readUserTerminalSettings } from "core/util/userTerminalSettings.js";
 import { readUserToolPermissions } from "core/util/userToolPermissions.js";
+import { applyWebConfig } from "core/util/webConfig.js";
 
 import { AuthConfig, getModelName } from "../auth/workos.js";
 import { createLlmApi, getLlmApi } from "../config.js";
@@ -91,6 +92,12 @@ export class ModelService
       readUserTerminalSettings(),
       assistant.terminal,
     ).notices) {
+      logger.warn(notice);
+    }
+    // The same rule for web settings: other sources may only tighten. Old
+    // spellings are announced once per process.
+    const web = applyWebConfig(assistant.web);
+    for (const notice of [...web.notices, ...web.deprecations]) {
       logger.warn(notice);
     }
     this.authConfig = authConfig;

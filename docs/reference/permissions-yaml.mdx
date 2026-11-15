@@ -42,6 +42,7 @@ Most of this is written for you: the toolbar and **Settings, Tools** in the exte
 | `plan.maxNewItems`       | whole number, 0 or more                | `5`                                      | extension                                    |
 | `plan.allowTerminal`     | `true` / `false` (or `on` / `off`)     | `false`                                  | by hand, extension (Custom policy) |
 | `plan.mcpTools`          | list of `server/tool`, `server/*` or `server` | none                              | by hand, extension (Custom policy) |
+| `background.mcpTools`    | list of `server/tool`, `server/*` or `server` | none                              | by hand                            |
 | `questions.delivery`     | `inbox` or `wait`                      | `inbox`                                  | extension (Custom policy) |
 | `questions.youDecide`    | list of question types                 | `scope`, `irreversible`, `security`, `cost` | extension                                 |
 | `questions.agentDecides` | list of question types                 | `detail`                                 | extension                                    |
@@ -80,6 +81,19 @@ It sits under `levels` rather than at the top of the file on purpose: every term
 - `maxNewItems`: at Plan edits **Permissive**, a re-plan in Loop mode that adds more new to-dos than this waits for you. It has no effect at the other levels.
 - `allowTerminal`: offer the shell tool in the terminal agent's plan mode. Each command still goes through the permission checks and asks. Terminal agent only.
 - `mcpTools`: MCP tools that Plan mode may use, whatever the server says about them.
+
+### `background`
+
+- `mcpTools`: the MCP tools that runs nobody watches may use: headless `continuous -p` and `continuous serve`, Loop workers, and background agents. They get no MCP tool that is not listed. A listed tool of a server you never approved is offered to them, and its first call pins that tool only. A tool added or changed after an approval waits until you approve it in the IDE or the terminal UI. See [MCP tool changes](/ide-extensions/agent/mcp-tool-changes#plan-mode-and-unattended-runs).
+
+`background` is a top-level key, so a terminal agent older than 2.18.0 does not know it and treats the file as broken. Add it once every machine that reads the file is updated.
+
+```yaml
+background:
+  mcpTools:
+    - docs/search
+    - wiki/*
+```
 
 ### `questions`
 

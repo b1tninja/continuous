@@ -287,6 +287,12 @@ async function coreRulesVerdict(
       args: toolCall.arguments,
       cliPermission,
       evaluateToolCallPolicy: toolCall.tool?.evaluateToolCallPolicy,
+      ...(toolCall.preprocessResult?.processedArgs
+        ? { processedArgs: toolCall.preprocessResult.processedArgs }
+        : {}),
+      ...(toolCall.tool?.ownAskReason
+        ? { ownAskReason: toolCall.tool.ownAskReason }
+        : {}),
       assistantPermissions: permissions,
       approval,
       autoReview,
