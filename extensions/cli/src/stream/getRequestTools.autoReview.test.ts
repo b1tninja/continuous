@@ -33,8 +33,17 @@ const names = (r: any[]) => r.map((t) => t.function.name);
 beforeEach(() => setAutoReviewEnabled(false));
 
 describe("getRequestTools in headless mode", () => {
-  it("does not offer tools that ask, as before", async () => {
-    expect(names(await getRequestTools(true))).toEqual(["Read"]);
+  it("offers tools that ask (CO2): a call that would ask is refused with a reason", async () => {
+    expect(names(await getRequestTools(true))).toEqual(["Read", "Bash"]);
+  });
+
+  it("does not offer them under the legacy hatch, as before 2.18.0", async () => {
+    process.env.CONTINUOUS_HEADLESS_LEGACY_ALLOW = "1";
+    try {
+      expect(names(await getRequestTools(true))).toEqual(["Read"]);
+    } finally {
+      delete process.env.CONTINUOUS_HEADLESS_LEGACY_ALLOW;
+    }
   });
 
   it("offers them with --auto-review, where the reviewer answers", async () => {

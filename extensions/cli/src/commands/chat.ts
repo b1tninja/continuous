@@ -5,7 +5,10 @@ import { ChatHistoryItem, Session } from "core";
 
 import * as runLimits from "../budget/runLimits.js";
 import { compactChatHistory, findCompactionIndex } from "../compaction.js";
-import { processCommandFlags } from "../flags/flagProcessor.js";
+import {
+  announceHeadlessPolicy,
+  processCommandFlags,
+} from "../flags/flagProcessor.js";
 import * as headless from "../headless/streamJsonHeadless.js";
 import { runTurnWithStopHooks } from "../hooks/lifecycleHooks.js";
 import {
@@ -413,6 +416,8 @@ async function runHeadlessMode(
 
   // Initialize services for headless mode
   const { permissionOverrides } = processCommandFlags(options);
+  // One stderr line: the levels this run is at, and that an ask is refused
+  announceHeadlessPolicy(options);
 
   await initializeServices({
     options,

@@ -77,10 +77,11 @@ The value is one of three things:
 - **A preset**: `careful`, `acceptEdits`, `handsOff`, `reviewer` or `idgaf`. It sets all five levels.
 - **`area=level` pairs**, separated by commas or spaces, applied on top of the levels already in force. Areas: `context`, `tools`, `edits`, `plan`, `questions`. Levels: `manual`, `cautious`, `automatic`, `permissive`, `idgaf`.
 - **A bare level**, which sets every area to it.
+- **A file**: a path that starts with `./`, `../`, `/`, `~` or a drive letter, or ends in `.yaml` or `.yml`. It is read in the `permissions.yaml` format, and its levels and settings stand in for the ones in your own `permissions.yaml` for this run. A file that does not exist stops the run. A file cannot set IDGAF, as `permissions.yaml` cannot.
 
 `yolo` is read as `idgaf`, with a one-line note on standard error. A value that is none of these stops the run with an error that lists the valid words.
 
-The flag wins over the levels saved in `permissions.yaml` and is not saved. What each level and preset means is on the [Permissions page](/ide-extensions/agent/permissions-page). `/policy` takes the same value inside a session.
+In a headless run (`-p`, `serve`) the levels decide what runs and a call that would still ask is refused; with no `--policy` or `--auto` the run is at your saved levels. The run's first line on stderr names the levels. The flag wins over the levels saved in `permissions.yaml` and is not saved. What each level and preset means is on the [Permissions page](/ide-extensions/agent/permissions-page). `/policy` takes the same value inside a session.
 
 ## Run limits
 
@@ -327,7 +328,7 @@ Hide the deprecation or retirement notice shown at start-up for an Anthropic mod
 
 `serve` and `acp` do not define the common flags themselves. They pick up these when written before the subcommand's name, as in `continuous --config ./ci.yaml --max-turns 40 serve`:
 
-`--config`, `--org`, `--readonly`, `--auto`, `--auto-review`, `--verbose`, `--rule`, `--mcp`, `--model`, `--prompt`, `--allow`, `--ask`, `--exclude`, `--agent`, `--beta-subagent-tool`, `--trust-project-config`, `--max-budget-usd`, `--max-turns`, `--max-duration`, `--budget-allow-unpriced`.
+`--config`, `--org`, `--readonly`, `--auto`, `--auto-review`, `--policy`, `--verbose`, `--rule`, `--mcp`, `--model`, `--prompt`, `--allow`, `--ask`, `--exclude`, `--agent`, `--beta-subagent-tool`, `--trust-project-config`, `--max-budget-usd`, `--max-turns`, `--max-duration`, `--budget-allow-unpriced`.
 
 ## Exit codes
 

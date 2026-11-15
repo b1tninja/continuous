@@ -96,7 +96,7 @@ git diff | continuous -p "Review this diff for mistakes"
 
 Piped input is placed before the prompt. `--format json` prints JSON instead of text, and `--silent` strips `<think>` blocks and extra whitespace; both work only with `-p`.
 
-Because nobody can answer a question, a headless run uses different defaults: shell commands and MCP tools are allowed, where an interactive session would ask. Read [what a headless run allows](/reference#toolpermissions) before running one on a machine that matters, and give it [run limits](/cli/run-limits).
+A headless run uses your own levels, the same as an interactive session. Nobody can answer a question, so a call that would ask is refused: the model is told why, and a line on stderr names the flag that allows it. Pass `--auto` or `--policy` (for example `--policy handsOff`) to let more run without asking. Read [what a headless run allows](/reference#toolpermissions) before running one on a machine that matters, and give it [run limits](/cli/run-limits).
 
 ## Come back to a session
 
