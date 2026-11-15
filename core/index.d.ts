@@ -1387,6 +1387,16 @@ export interface PromptLog {
   route?: string;
   prompt: string;
   completion: string;
+  /**
+   * A local Strata server's own record of the request (`/metrics`), read
+   * when the stream's usage gave no cached count: counts only.
+   */
+  serverCache?: {
+    promptTokens: number;
+    reused: number;
+    promptRead?: number;
+    promptMs?: number;
+  };
 }
 
 export type MessageModes = "chat" | "agent" | "plan" | "background";
