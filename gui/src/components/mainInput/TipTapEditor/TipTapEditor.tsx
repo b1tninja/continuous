@@ -25,6 +25,7 @@ import { useChatInputDrop } from "./drop/useChatInputDrop";
 import { useMainEditor } from "./MainEditorProvider";
 import "./TipTapEditor.css";
 import { useDraftPersistence } from "./useDraftPersistence";
+import { useDropSessionLoadOnTyping } from "./useDropSessionLoadOnTyping";
 import { createEditorConfig, getPlaceholderText } from "./utils/editorConfig";
 import { useEditorEventHandlers } from "./utils/keyHandlers";
 
@@ -116,6 +117,8 @@ function TipTapEditorInner(props: TipTapEditorProps) {
     isSessionEmpty: historyLength === 0,
   });
   onSubmittedRef.current = draft.clearNow;
+  // After the draft's own listener: the text typed is saved, then carried
+  useDropSessionLoadOnTyping(editor, props.isMainInput && !isInEdit);
 
   useEffect(() => {
     if (isInEdit) {

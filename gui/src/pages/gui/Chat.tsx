@@ -25,6 +25,7 @@ import { CacheMissNotice } from "../../components/mainInput/CacheMissNotice";
 import { CachingOffNotice } from "../../components/mainInput/CachingOffNotice";
 import { ToolDialectNotice } from "../../components/mainInput/ToolDialectNotice";
 import { ColdCacheNotice } from "../../components/mainInput/ColdCacheNotice";
+import { SessionLoadNotice } from "../../components/mainInput/SessionLoadNotice";
 import { AgentsList } from "../../components/BackgroundMode/AgentsList";
 import { NeedsYouTray } from "../../components/loop/NeedsYouTray";
 import { LoopInbox } from "../../components/mainInput/LoopInbox";
@@ -58,6 +59,7 @@ import {
   QueuedMessage,
   moveQueuedMessage,
   removeQueuedMessage,
+  setLoadingSessionId,
   steerQueuedMessages,
   takeQueuedMessages,
   updateToolCallOutput,
@@ -85,6 +87,7 @@ import {
   lastSessionCandidates,
 } from "../../util/sessionWorkspace";
 import { EmptyChatBody } from "./EmptyChatBody";
+import { ResumingSessionBody } from "./ResumingSessionBody";
 import { ExploreDialogWatcher } from "./ExploreDialogWatcher";
 import { JumpToLatest } from "./JumpToLatest";
 import { TranscriptMessage } from "./TranscriptMessage";
@@ -178,6 +181,11 @@ export function Chat() {
       }).length > 0,
     [lastSessionIdByWorkspace, lastSessionId, allSessionMetadata],
   );
+  const loadingSessionId = useAppSelector(
+    (state) => state.session.loadingSessionId,
+  );
+  const isResumingSession =
+    history.length === 0 && !!loadingSessionId && !isInEdit;
   const hasDismissedExploreDialog = useAppSelector(
     (state) => state.ui.hasDismissedExploreDialog,
   );
@@ -222,6 +230,19 @@ export function Chat() {
           editorToClearOnSend?.commands.clearContent(false);
         }
         return;
+      }
+
+      // Sent while a saved session is still loading: the person has moved
+      // on, so the load is dropped and cannot replace what they sent. With
+      // an empty chat the current id may be the session being loaded, so
+      // the message goes to a fresh session rather than over it. (Typing
+      // already dropped it, useDropSessionLoadOnTyping; this is the backstop.)
+      if (stateSnapshot.session.loadingSessionId && !isCurrentlyInEdit) {
+        if (stateSnapshot.session.history.length === 0) {
+          dispatch(newSession());
+        } else {
+          dispatch(setLoadingSessionId(undefined));
+        }
       }
 
       // Cancel all pending tool calls
@@ -579,6 +600,7 @@ export function Chat() {
       <div className={"relative shrink-0"}>
         <CacheMissNotice />
         <ColdCacheNotice />
+        <SessionLoadNotice />
         <CachingOffNotice />
         <LargeMessageNotice />
         {/* A loop shows its own plan in its panel */}
@@ -610,23 +632,30 @@ export function Chat() {
         >
           <div className="flex flex-row items-center justify-between pr-2 pb-1 pl-0.5">
             <div className="hidden xs:inline">
-              {history.length === 0 && canReopenLastSession && !isInEdit && (
-                <NewSessionButton
-                  onClick={async () => {
-                    await dispatch(loadLastSession());
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  <ArrowLeftIcon className="h-3 w-3" />
-                  <span className="text-xs">Last Session</span>
-                </NewSessionButton>
-              )}
+              {history.length === 0 &&
+                canReopenLastSession &&
+                !isInEdit &&
+                !isResumingSession && (
+                  <NewSessionButton
+                    onClick={async () => {
+                      await dispatch(loadLastSession());
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <ArrowLeftIcon className="h-3 w-3" />
+                    <span className="text-xs">Last Session</span>
+                  </NewSessionButton>
+                )}
             </div>
           </div>
           <FatalErrorIndicator />
           {!hasDismissedExploreDialog && <ExploreDialogWatcher />}
-          {history.length === 0 && (
-            <EmptyChatBody showOnboardingCard={onboardingCard.show} />
+          {isResumingSession && loadingSessionId ? (
+            <ResumingSessionBody loadingSessionId={loadingSessionId} />
+          ) : (
+            history.length === 0 && (
+              <EmptyChatBody showOnboardingCard={onboardingCard.show} />
+            )
           )}
         </div>
       </div>
