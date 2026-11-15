@@ -706,3 +706,109 @@ export function resetServerBusy(): void {
   busyAnswers.clear();
   ownRequests.clear();
 }
+
+/**
+ * What Strata's `/metrics` says about one request: the prompt size, how much
+ * of it came from its cache (`reused`) and how much was read (`prompt_read`).
+ * K4: the cache-miss check reads it when the stream's usage gave no cached
+ * count. No text, only counts.
+ */
+export interface StrataRequestCache {
+  id?: string;
+  /** Seconds since the epoch, when the request started (Strata's `time`). */
+  time?: number;
+  promptTokens: number;
+  reused: number;
+  promptRead?: number;
+  promptMs?: number;
+  outputTokens?: number;
+}
+
+/** The `requests` list of a `/metrics` answer, newest first, as Strata lists it. */
+export function parseStrataMetrics(body: unknown): StrataRequestCache[] {
+  const requests = (body as { requests?: unknown })?.requests;
+  if (!Array.isArray(requests)) return [];
+  const out: StrataRequestCache[] = [];
+  for (const r of requests) {
+    const promptTokens = Number(r?.prompt_tokens);
+    const reused = Number(r?.reused);
+    if (!Number.isFinite(promptTokens) || !Number.isFinite(reused)) continue;
+    const num = (v: unknown) =>
+      typeof v === "number" && Number.isFinite(v) ? v : undefined;
+    out.push({
+      ...(typeof r?.id === "string" && { id: r.id }),
+      ...(num(r?.time) !== undefined && { time: num(r.time) }),
+      promptTokens,
+      reused,
+      ...(num(r?.prompt_read) !== undefined && {
+        promptRead: num(r.prompt_read),
+      }),
+      ...(num(r?.prompt_ms) !== undefined && { promptMs: num(r.prompt_ms) }),
+      ...(num(r?.output_tokens) !== undefined && {
+        outputTokens: num(r.output_tokens),
+      }),
+    });
+  }
+  return out;
+}
+
+/**
+ * The entry for a request that started at `startedAt` (ms) with
+ * `promptTokens`: the newest one that started after it (a second of clock
+ * slack) and, when the size is known, has that size.
+ */
+export function strataEntryFor(
+  entries: StrataRequestCache[],
+  request: { startedAt: number; promptTokens?: number },
+): StrataRequestCache | undefined {
+  const since = request.startedAt / 1000 - 1;
+  return entries.find(
+    (e) =>
+      (e.time === undefined || e.time >= since) &&
+      (request.promptTokens === undefined ||
+        e.promptTokens === request.promptTokens),
+  );
+}
+
+const strataServers = new Map<string, Promise<boolean>>();
+
+/** Whether the server at `apiBase` is Strata, asked once per address. */
+export function isStrataServer(
+  apiBase: string,
+  fetchFn: FetchFn = fetch,
+): Promise<boolean> {
+  const known = strataServers.get(apiBase);
+  if (known) return known;
+  const pending = isStrata(apiBase, fetchFn, 3000);
+  strataServers.set(apiBase, pending);
+  return pending;
+}
+
+/** Forget which servers are Strata (tests). */
+export function resetStrataServers(): void {
+  strataServers.clear();
+}
+
+/**
+ * After a request to a local Strata server, its own record of the request
+ * from `/metrics`. Undefined for any other server, a cloud address or no
+ * answer. Read once per request, never polled.
+ */
+export async function strataRequestCache(
+  apiBase: string | undefined,
+  request: { startedAt: number; promptTokens?: number },
+  fetchFn: FetchFn = fetch,
+  timeoutMs = 2000,
+): Promise<StrataRequestCache | undefined> {
+  if (!apiBase || !isLocalApiBase(apiBase)) return undefined;
+  if (!(await isStrataServer(apiBase, fetchFn))) return undefined;
+  try {
+    const response = await fetchFn(localServerEndpoint(apiBase, "metrics"), {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) return undefined;
+    return strataEntryFor(parseStrataMetrics(await response.json()), request);
+  } catch {
+    return undefined;
+  }
+}
