@@ -23,6 +23,7 @@ Staging note for the next release. Fold it into that release's `<tag>.md` (the r
 - `continuous --resume` in a terminal opens the session picker with the newest session of this folder selected (Enter resumes it) instead of resuming the newest session of any folder. Headless `-p --resume` resumes the newest session of this folder (a subfolder, a parent folder or the same git repository counts); when there is none it resumes the newest overall and says which folder it came from.
 
 - Add model > Anthropic no longer offers Claude Sonnet 4.5 and Claude Opus 4.5 (both retiring; Claude Sonnet 5.5 and Claude Opus 5.5 stay at the top of the list) or the retired Claude Opus 4.1 and Claude Sonnet 4. A new config created from the assistant template uses `claude-sonnet-5-5` instead of the retired `claude-sonnet-4-20250514`. Existing configs and pricing for the old ids are unchanged.
+- Add model > CometAPI no longer offers Claude Sonnet 4.5 (retires 2026-11-30; CometAPI has no Sonnet 5.5 preset yet) or the retired Claude Opus 4.1, Claude Opus 4.1 Thinking, Claude Sonnet 4, Claude Sonnet 4 Thinking and Claude 3.7 Sonnet Latest; Claude Haiku 4.5 stays. Existing configs and pricing are unchanged.
 
 ## Removed
 
