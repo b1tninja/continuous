@@ -722,6 +722,11 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
         messages: ChatMessage[];
         options: LLMFullCompletionOptions;
       };
+      /**
+       * A summary prepared in the background for exactly this span (planned
+       * compaction): saved at `index` with no summary request.
+       */
+      summary?: string;
     },
     string | undefined,
   ];
@@ -1017,4 +1022,23 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
   ];
   "loop/worktreeRemove": [{ repo: string; path: string; branch: string }, void];
   "loop/dirtyFiles": [{ repo: string }, string[]];
+  /**
+   * The summary "conversation/compact" would save at `index`, without saving
+   * it: planned compaction prepares it while the person is idle. Aborted by
+   * an "abort" message whose message id is `requestId`. Never throws: a
+   * background request that fails or is aborted must not show an error, so
+   * the failure comes back as `error`.
+   */
+  "conversation/summarize": [
+    {
+      index: number;
+      sessionId: string;
+      prefix?: {
+        messages: ChatMessage[];
+        options: LLMFullCompletionOptions;
+      };
+      requestId?: string;
+    },
+    { summary: string } | { error: string; aborted: boolean },
+  ];
 };

@@ -7,6 +7,7 @@ import {
   createSlice,
 } from "@reduxjs/toolkit";
 import { JSONContent } from "@tiptap/react";
+import type { CompactionPlan } from "core/util/compactionPlan";
 import {
   ApplyState,
   AssistantChatMessage,
@@ -237,6 +238,25 @@ export function handleStreamingToolCallUpdates(
   }
 }
 
+/**
+ * Planned compaction (C105): the summary of a plan's span, made in the
+ * background while the person was idle (thunks/prepareCompaction.ts). It is
+ * used only while `planId` is the current plan's id, so any edit to the span
+ * makes it unusable.
+ */
+export interface PreparedCompaction {
+  sessionId: string;
+  planId: string;
+  spanStart: number;
+  spanEnd: number;
+  status: "running" | "ready";
+  /** The request to abort while running. */
+  requestId?: string;
+  /** Set when ready: what "Compact now" saves on item `spanEnd - 1`. */
+  summary?: string;
+  preparedAt?: number;
+}
+
 // We need this to handle reorderings (e.g. a mid-array deletion) of the messages array.
 // The proper fix is adding a UUID to all chat messages, but this is the temp workaround.
 export type ChatHistoryItemWithMessageId = ChatHistoryItem & {
@@ -344,6 +364,14 @@ type SessionState = {
   usage?: SessionUsage;
   inlineErrorMessage?: InlineErrorMessageType;
   compactionLoading: Record<number, boolean>; // Track compaction loading by message index
+  /**
+   * Planned compaction (C103): the plan for this conversation, passed back to
+   * the planner so its boundary stays put. Kept by prepareCompaction while
+   * nothing streams. Not saved: a loaded session plans again.
+   */
+  compactionPlan?: CompactionPlan;
+  /** The summary prepared for `compactionPlan` (C105). Not saved. */
+  preparedCompaction?: PreparedCompaction;
   /** Pre-edit file snapshots for "Restore to here"; see core/util/checkpoints.ts */
   checkpoints: TurnCheckpoint[];
   /** The agent's task list, saved with the session; see core/util/taskPlan.ts */
@@ -1161,6 +1189,9 @@ export const sessionSlice = createSlice({
       state.applyToolChangesNext = undefined;
       state.toolChangeChoiceMade = undefined;
       state.thinkingCutAt = undefined;
+      // A plan and its summary belong to the conversation they were made for
+      state.compactionPlan = undefined;
+      state.preparedCompaction = undefined;
       state.usage = payload?.usage;
       // A different conversation shares nothing with the cached one: its size,
       // timing, misses and what Auto learned all start over. Each conversation
@@ -1708,6 +1739,18 @@ export const sessionSlice = createSlice({
       state.newestToolbarPreviewForInput[payload.inputId] =
         payload.contextItemId;
     },
+    setCompactionPlan: (
+      state,
+      { payload }: PayloadAction<CompactionPlan | undefined>,
+    ) => {
+      state.compactionPlan = payload;
+    },
+    setPreparedCompaction: (
+      state,
+      { payload }: PayloadAction<PreparedCompaction | undefined>,
+    ) => {
+      state.preparedCompaction = payload;
+    },
     setCompactionLoading: (
       state,
       action: PayloadAction<{ index: number; loading: boolean }>,
@@ -1873,6 +1916,8 @@ export const {
   setIsPruned,
   setContextPercentage,
   setCompactionLoading,
+  setCompactionPlan,
+  setPreparedCompaction,
 } = sessionSlice.actions;
 
 export const { selectIsGatheringContext } = sessionSlice.selectors;

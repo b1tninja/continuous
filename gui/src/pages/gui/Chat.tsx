@@ -45,6 +45,7 @@ import StepContainer from "../../components/StepContainer";
 import { TabBar } from "../../components/TabBar/TabBar";
 import { IdeMessengerContext } from "../../context/IdeMessenger";
 import { useApplyModeModel } from "../../hooks/useApplyModeModel";
+import { usePlannedCompaction } from "../../redux/thunks/prepareCompaction";
 import { useWebviewListener } from "../../hooks/useWebviewListener";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import {
@@ -144,6 +145,8 @@ export function Chat() {
   useLoopDriver();
   const hasLoop = useAppSelector((state) => !!state.session.loop);
   useApplyModeModel();
+  // Planned compaction: the summary is prepared while the person is idle
+  usePlannedCompaction();
   const dispatch = useAppDispatch();
   const ideMessenger = useContext(IdeMessengerContext);
   const reduxStore = useStore<RootState>();

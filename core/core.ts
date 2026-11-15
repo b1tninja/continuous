@@ -129,7 +129,10 @@ import { readUserLargeChangeLines } from "./tools/permissions/userLimits";
 import { readUserReviewerPrompt } from "./tools/permissions/userReviewerPrompt";
 import { deputyWorkspace } from "./tools/permissions/workspaceRoots";
 import { ChatDescriber } from "./util/chatDescriber";
-import { compactConversation } from "./util/conversationCompaction";
+import {
+  compactConversation,
+  summarizeConversation,
+} from "./util/conversationCompaction";
 import { GlobalContext } from "./util/GlobalContext";
 import historyManager, { damagedSessionNotice } from "./util/history";
 import { probeStatusFor } from "./util/measuredFacts";
@@ -489,6 +492,7 @@ export class Core {
       this.registerSubagentHandlers();
       this.registerModelListHandlers();
       this.registerHistoryTrashHandlers();
+      this.registerCompactionHandlers();
     } catch (error) {
       Logger.error(error);
       throw error; // Re-throw to prevent partially initialized core
@@ -1058,6 +1062,67 @@ export class Core {
         }),
         ...(dirs[0] ? { cwd: uriToPath(dirs[0]) } : {}),
       });
+    });
+  }
+
+  /** "Compact" and planned compaction's background summary. */
+  private registerCompactionHandlers() {
+    const on = this.messenger.on.bind(this.messenger);
+
+    on("conversation/compact", async (msg) => {
+      const currentModel = (await this.configHandler.loadConfig()).config
+        ?.selectedModelByRole.chat;
+
+      if (!currentModel) {
+        throw new Error("No chat model selected");
+      }
+
+      try {
+        await compactConversation({
+          sessionId: msg.data.sessionId,
+          index: msg.data.index,
+          historyManager,
+          currentModel,
+          conversationPrefix: msg.data.prefix,
+          summary: msg.data.summary,
+        });
+        return undefined;
+      } catch (error) {
+        Logger.error(`Error compacting conversation: ${error}`);
+        // Passed on, so the GUI can say why nothing changed. Returning
+        // undefined here made a failed "Compact now" look like it did nothing.
+        throw error;
+      }
+    });
+
+    // Planned compaction's background summary: nothing is saved, and the
+    // GUI aborts it (by `requestId`) when the person starts typing or sending.
+    on("conversation/summarize", async (msg) => {
+      // Registered first, so an abort sent while the config loads still lands
+      const id = msg.data.requestId ?? msg.messageId;
+      const abortController = this.addMessageAbortController(id);
+      try {
+        const currentModel = (await this.configHandler.loadConfig()).config
+          ?.selectedModelByRole.chat;
+        if (!currentModel) throw new Error("No chat model selected");
+        abortController.signal.throwIfAborted();
+        const summary = await summarizeConversation({
+          sessionId: msg.data.sessionId,
+          index: msg.data.index,
+          historyManager,
+          currentModel,
+          conversationPrefix: msg.data.prefix,
+          signal: abortController.signal,
+        });
+        return { summary };
+      } catch (error) {
+        return {
+          error: error instanceof Error ? error.message : String(error),
+          aborted: abortController.signal.aborted,
+        };
+      } finally {
+        this.messageAbortControllers.release(id, abortController);
+      }
     });
   }
 
@@ -2012,31 +2077,6 @@ export class Core {
       }
 
       return await ChatDescriber.describe(currentModel, {}, msg.data.text);
-    });
-
-    on("conversation/compact", async (msg) => {
-      const currentModel = (await this.configHandler.loadConfig()).config
-        ?.selectedModelByRole.chat;
-
-      if (!currentModel) {
-        throw new Error("No chat model selected");
-      }
-
-      try {
-        await compactConversation({
-          sessionId: msg.data.sessionId,
-          index: msg.data.index,
-          historyManager,
-          currentModel,
-          conversationPrefix: msg.data.prefix,
-        });
-        return undefined;
-      } catch (error) {
-        Logger.error(`Error compacting conversation: ${error}`);
-        // Passed on, so the GUI can say why nothing changed. Returning
-        // undefined here made a failed "Compact now" look like it did nothing.
-        throw error;
-      }
     });
 
     // Autocomplete
