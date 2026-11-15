@@ -1,6 +1,7 @@
 import { createAsyncThunk, unwrapResult } from "@reduxjs/toolkit";
 import { BaseSessionMetadata, ChatMessage, Session } from "core";
 import { NEW_SESSION_TITLE } from "core/util/constants";
+import type { TrashSessionResult } from "core/util/history";
 import { renderChatMessage } from "core/util/messageContent";
 import { IIdeMessenger } from "../../context/IdeMessenger";
 import { selectSelectedChatModel } from "../slices/configSlice";
@@ -21,8 +22,11 @@ import {
   workspaceKey,
 } from "../../util/sessionWorkspace";
 import { updateSelectedModelByRole } from "../thunks/updateSelectedModelByRole";
+import { clearSessionDrafts, pruneDrafts } from "../../util/drafts";
 
 const MAX_TITLE_LENGTH = 100;
+/** The most sessions core's `history/list` answers when no limit is given (core.ts) */
+const HISTORY_LIST_DEFAULT_LIMIT = 100;
 
 // Async session functions live in thunks (because of IDE messaging mostly)
 // see sessionSlice for sync redux session functions
@@ -45,23 +49,39 @@ export const refreshSessionMetadata = createAsyncThunk<
     limit?: number;
   },
   ThunkApiType
->("session/refreshMetadata", async ({ offset, limit }, { dispatch, extra }) => {
-  const result = await extra.ideMessenger.request("history/list", {
-    limit,
-    offset,
-  });
-  if (result.status === "error") {
-    throw new Error(result.error);
-  }
-  dispatch(setIsSessionMetadataLoading(false));
-  dispatch(setAllSessionMetadata(result.content));
-  return result.content;
-});
+>(
+  "session/refreshMetadata",
+  async ({ offset, limit }, { dispatch, extra, getState }) => {
+    const result = await extra.ideMessenger.request("history/list", {
+      limit,
+      offset,
+    });
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+    dispatch(setIsSessionMetadataLoading(false));
+    dispatch(setAllSessionMetadata(result.content));
+    // The whole list (core answers at most HISTORY_LIST_DEFAULT_LIMIT): drafts
+    // of sessions it no longer holds can go
+    if (
+      limit === undefined &&
+      offset === undefined &&
+      result.content.length < HISTORY_LIST_DEFAULT_LIMIT
+    ) {
+      pruneDrafts({
+        knownSessionIds: result.content.map((s) => s.sessionId),
+        keepSessionIds: [getState().session.id],
+      });
+    }
+    return result.content;
+  },
+);
 
 export const deleteSession = createAsyncThunk<void, string, ThunkApiType>(
   "session/delete",
   async (id, { getState, dispatch, extra }) => {
     dispatch(deleteSessionMetadata(id)); // optimistic
+    clearSessionDrafts(id);
     const state = getState();
     if (id === state.session.id) {
       await dispatch(loadLastSession());
@@ -70,9 +90,53 @@ export const deleteSession = createAsyncThunk<void, string, ThunkApiType>(
     if (result.status === "error") {
       throw new Error(result.error);
     }
+    // Again: leaving the deleted session saved what its input held
+    clearSessionDrafts(id);
     void dispatch(refreshSessionMetadata({}));
   },
 );
+
+/**
+ * Delete from the History page: the session goes to the trash, restorable
+ * for 7 days (core/util/sessionTrash.ts). When another window or terminal
+ * agent has it open nothing moves, and the answer says where, for the page
+ * to ask; `force` moves it anyway.
+ */
+export const trashSession = createAsyncThunk<
+  TrashSessionResult,
+  { id: string; force?: boolean },
+  ThunkApiType
+>("session/trash", async ({ id, force }, { getState, dispatch, extra }) => {
+  const result = await extra.ideMessenger.request("history/trash", {
+    id,
+    force,
+  });
+  if (result.status === "error") {
+    throw new Error(result.error);
+  }
+  if (result.content.status === "trashed") {
+    dispatch(deleteSessionMetadata(id));
+    if (id === getState().session.id) {
+      await dispatch(loadLastSession());
+    }
+    void dispatch(refreshSessionMetadata({}));
+  }
+  return result.content;
+});
+
+/** Undo, or Restore in the trash: the session is back in the list. */
+export const restoreTrashedSession = createAsyncThunk<
+  BaseSessionMetadata,
+  string,
+  ThunkApiType
+>("session/restoreTrashed", async (id, { dispatch, extra }) => {
+  const result = await extra.ideMessenger.request("history/restore", { id });
+  if (result.status === "error") {
+    throw new Error(result.error);
+  }
+  await dispatch(refreshSessionMetadata({}));
+  return result.content;
+});
 
 export const updateSession = createAsyncThunk<void, Session, ThunkApiType>(
   "session/update",

@@ -58,6 +58,11 @@ type UIState = {
    * kept as it was, and Restore brings it back. Deleting is separate.
    */
   archivedSessions: Record<string, number>;
+  /**
+   * The Command Palette asked for the agents panel (Show Agents): the panel
+   * opens its list, takes focus and clears this. Not persisted.
+   */
+  agentsPanelFocusRequested?: boolean;
   /** Model the user picked by hand per mode; wins over `modeModels` until reload. */
   modeModelOverrides: Partial<Record<MessageModes, string>>;
   ttsActive: boolean;
@@ -306,6 +311,9 @@ export const uiSlice = createSlice({
         MAX_ARCHIVED_AGENTS,
       );
     },
+    setAgentsPanelFocusRequested: (state, action: PayloadAction<boolean>) => {
+      state.agentsPanelFocusRequested = action.payload || undefined;
+    },
     restoreAgents: (state, action: PayloadAction<{ keys: string[] }>) => {
       if (!state.archivedAgents) return;
       for (const key of action.payload.keys) delete state.archivedAgents[key];
@@ -362,6 +370,7 @@ export const {
   restoreCacheTipsForModel,
   archiveAgents,
   restoreAgents,
+  setAgentsPanelFocusRequested,
   archiveSessions,
   restoreSessions,
   setModeModelOverride,

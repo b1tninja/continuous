@@ -27,6 +27,11 @@ import {
 
 import { gracefulExit } from "../util/exit.js";
 
+import {
+  sessionsRestoreCommand,
+  sessionsTrashCommand,
+} from "./sessionsTrash.js";
+
 export interface SessionsCleanOptions {
   yes?: boolean;
   dryRun?: boolean;
@@ -145,7 +150,7 @@ export async function sessionsCleanCommand(
   return result!.failed.length ? 1 : 0;
 }
 
-/** Adds `continuous sessions clean` to the program. */
+/** Adds `continuous sessions clean`, `trash` and `restore` to the program. */
 export function registerSessionsCommand(program: Command): void {
   const sessions = program
     .command("sessions")
@@ -171,5 +176,22 @@ export function registerSessionsCommand(program: Command): void {
     )
     .action(async (options) => {
       await gracefulExit(await sessionsCleanCommand(options));
+    });
+  sessions
+    .command("trash")
+    .description(
+      "List sessions deleted in the last 7 days (in VS Code or the session picker); they can be restored until then",
+    )
+    .option("--json", "Machine-readable output")
+    .option("--empty", "Delete everything in the trash permanently")
+    .option("--yes", "With --empty: do it (otherwise a dry run)")
+    .action(async (options) => {
+      await gracefulExit(sessionsTrashCommand(options));
+    });
+  sessions
+    .command("restore <id>")
+    .description("Put a session from the trash back in the session list")
+    .action(async (id: string) => {
+      await gracefulExit(sessionsRestoreCommand(id));
     });
 }

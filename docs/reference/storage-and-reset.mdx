@@ -26,6 +26,7 @@ The VS Code extension and the terminal agent keep everything on your machine: on
 | Name                       | What it holds                                                               | Reset                                                       |
 | -------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------- |
 | `sessions/`                | Chat sessions of both products, and the loops saved with them: `<id>.jsonl` (the extension's append-only log, with tool outputs and images in `<id>/blobs/`) or `<id>.json` (the CLI, or the extension with "Save chats as an append-only log" off)               | `continuous sessions clean`, `continuous clean` (older than 30 days by default), or delete |
+| `sessions-trash/`          | Deleted sessions, kept 7 days so they can be restored: `<id>/trashed.json` (when, and the list entry) and `<id>/files/` (the `.jsonl` with its `blobs/`, or the `.json`). See [Deleted sessions](#deleted-sessions) | Removed by itself after 7 days; **Empty trash** on the History page, `continuous sessions trash --empty --yes`, or delete |
 | `logs/`                    | `cn.log` (terminal agent), `core.log`, `prompt.log`, and `prompts/` when the debug prompt log is on | `continuous clean` (14 days), or delete |
 | `dev_data/`                | Local development data                                                      | `continuous clean` (90 days), or delete                     |
 | `cleanup-backups/`         | The originals of files changed by **Clean up old sessions**, one folder a day | Delete, or `--delete-backups-older-than`                  |
@@ -74,6 +75,16 @@ Each file is written to a temporary file, checked (a session must parse and hold
 
 It never runs by itself. After an update, VS Code scans once in the background and offers the command only when more than 100 MB can be reclaimed; **Don't ask again** is remembered.
 
+### Deleted sessions
+
+Deleting a chat on the History page, or in the terminal agent's session picker (`continuous ls`, `--resume`, `/resume`: select it, press Del, then `y`), moves it to `sessions-trash/` instead of removing it. Its stored outputs move with it. The History page shows an **Undo** line right away, and the picker puts it back with Ctrl+U.
+
+- A deleted chat stays in the trash for 7 days. Restore it from the **Trash** group at the bottom of the History page, or with `continuous sessions trash` (lists the trash) and `continuous sessions restore <id>`. **Delete permanently** removes one chat at once.
+- After 7 days it is removed the next time the session list or the trash is read, or when **Clean up old sessions** runs.
+- The trash is beside `sessions/`, so cleanup, the session list and the pickers never see a deleted chat as a live one.
+- A chat that another window or a running terminal agent has open (see `sessions-open/`) is not moved until you confirm, because that window may save it again. The session the terminal agent is in cannot be deleted from its own picker.
+- **Clear chats** on the History page deletes every chat and empties the trash; it cannot be undone.
+
 ## In each project
 
 | Name                                         | What it holds                                                          |
@@ -99,7 +110,7 @@ Uninstalling the extension (`code --uninstall-extension b1tninja.continuous`) or
 
 There is no single reset command. Pick what you need:
 
-- **Start over, keep your models**: delete `sessions/`, `index/` and the `trusted-*.json` and `mcp-tool-pins.json` files, and keep `config.yaml`, `providers.yaml`, `models.yaml` and `.env`.
+- **Start over, keep your models**: delete `sessions/`, `sessions-trash/`, `index/` and the `trusted-*.json` and `mcp-tool-pins.json` files, and keep `config.yaml`, `providers.yaml`, `models.yaml` and `.env`.
 - **Forget every trust grant**: delete `trusted-project.json`, `trusted-hooks.json` and `mcp-tool-pins.json`.
 - **Default permissions**: delete `permissions.yaml`. Your own `toolPermissions` rules in `config.yaml` stay.
 - **As if never installed**: uninstall both, then delete `~/.continuous`, the projects' `.continuous/` folders, and the keys in VS Code's secret storage. `~/.continue` belongs to the upstream product and is not this product's to delete. If you added hooks for this product to `~/.claude/settings.json`, remove them there.

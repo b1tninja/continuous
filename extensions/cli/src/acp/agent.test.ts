@@ -87,6 +87,9 @@ function scriptedBackend(
 ): AcpBackend {
   return {
     newSession: async () => "s1",
+    listSessions: async () => [],
+    inWorkspace: () => false,
+    openSession: async () => undefined,
     runTurn: (_id, _text, cb, signal) => run(cb, signal),
     resolvePermission: (id, approved) => {
       resolved.push([id, approved]);
@@ -124,7 +127,11 @@ describe("ACP agent", () => {
     const client = setup(scriptedBackend(async () => {}));
     const res = await client.call("initialize", { protocolVersion: 1 });
     expect(res.result.protocolVersion).toBe(1);
-    expect(res.result.agentCapabilities.loadSession).toBe(false);
+    expect(res.result.agentCapabilities.loadSession).toBe(true);
+    expect(res.result.agentCapabilities.sessionCapabilities).toEqual({
+      list: {},
+      resume: {},
+    });
     expect(res.result.agentCapabilities.promptCapabilities.image).toBe(false);
     expect(res.result.authMethods).toEqual([]);
     expect(res.result.agentInfo.name).toBe("continuous");

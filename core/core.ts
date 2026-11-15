@@ -133,6 +133,7 @@ import { compactConversation } from "./util/conversationCompaction";
 import { GlobalContext } from "./util/GlobalContext";
 import historyManager, { damagedSessionNotice } from "./util/history";
 import { probeStatusFor } from "./util/measuredFacts";
+import { liveFromFetched } from "./util/modelRetirement";
 import { modelToolFetch } from "./util/modelToolFetch";
 import { reasoningOptionsForEffort } from "./util/modelUse";
 import { getOllamaShowHint } from "./util/ollamaShowHint";
@@ -147,9 +148,18 @@ import {
   migrateV1DevDataFiles,
 } from "./util/paths";
 import { localPathToUri } from "./util/pathToUri";
-import { isDismissed, recordLive } from "./util/retirementNoticeState";
-import { currentNotice, dismissCurrentNotice } from "./util/retirementStartup";
+import {
+  isDismissed,
+  recordLive,
+  recordLiveMany,
+} from "./util/retirementNoticeState";
+import {
+  currentNotice,
+  dismissCurrentNotice,
+  noticesFor,
+} from "./util/retirementStartup";
 import { SESSION_LOG_STORAGE_DEFAULT } from "./util/sessionLog";
+import { searchSessions, titlesOf } from "./util/sessionSearch";
 import { resolveShell } from "./util/shell";
 import {
   credentialUrlNames,
@@ -476,6 +486,7 @@ export class Core {
       this.registerMessageHandlers(ideSettingsPromise);
       this.registerSubagentHandlers();
       this.registerModelListHandlers();
+      this.registerHistoryTrashHandlers();
     } catch (error) {
       Logger.error(error);
       throw error; // Re-throw to prevent partially initialized core
@@ -489,18 +500,49 @@ export class Core {
     );
   }
 
+  /** The session trash and message-text search of the History page (NI10). */
+  private registerHistoryTrashHandlers() {
+    const on = this.messenger.on.bind(this.messenger);
+    on("history/trash", (msg) =>
+      historyManager.trash(msg.data.id, { force: msg.data.force }),
+    );
+    on("history/restore", (msg) => historyManager.restore(msg.data.id));
+    on("history/listTrash", () => historyManager.listTrash());
+    on("history/deleteFromTrash", (msg) => {
+      historyManager.deleteFromTrash(msg.data.id);
+    });
+    on("history/emptyTrash", () => {
+      historyManager.emptyTrash();
+    });
+    on("history/search", (msg) =>
+      searchSessions({
+        query: msg.data.query,
+        maxSessions: msg.data.maxSessions,
+        maxResults: msg.data.maxResults,
+        titles: titlesOf(historyManager.list({})),
+      }),
+    );
+  }
+
   /** Live model lists, and the local servers running on this machine. */
   private registerModelListHandlers() {
     const on = this.messenger.on.bind(this.messenger);
 
     on("models/fetch", async (msg) => {
       try {
-        return await fetchModels(
+        const models = await fetchModels(
           msg.data.provider,
           msg.data.apiKey,
           msg.data.apiBase,
           (await this.configHandler.loadConfig()).config?.requestOptions,
         );
+        // The list already carries `deprecated` / `retiresAt`: keep them for
+        // the picker's and the config check's notices (no extra request).
+        recordLiveMany(
+          liveFromFetched(msg.data.provider, models),
+          new Date().toISOString().slice(0, 10),
+        );
+        return models;
       } catch (error: any) {
         void this.ide.showToast("error", error.message);
         return [];
@@ -1153,6 +1195,10 @@ export class Core {
     on("model/dismissRetirementNotice", async (msg) => {
       dismissCurrentNotice(msg.data);
     });
+    // Every listed model's notice, for the picker and Settings > Models.
+    on("model/retirementNotices", async (msg) => ({
+      notices: noticesFor(msg.data.models ?? []),
+    }));
 
     // Cached per model per process; no hint (an empty object) on any failure.
     on("ollama/showHint", async (msg) => ({

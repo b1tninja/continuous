@@ -106,6 +106,8 @@ export const PRODUCT_STATE_PATHS = [
   "node_modules",
   "plans",
   "reset-backups",
+  // deleted sessions, restorable for 7 days (sessionTrash.ts)
+  "sessions-trash",
 ] as const;
 
 export type LoadedDirName = keyof typeof PRODUCT_LOADED_DIRS;

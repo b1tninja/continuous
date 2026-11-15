@@ -1461,10 +1461,14 @@ describe("Bedrock", () => {
       ]);
     });
 
-    it("should handle thinking messages correctly", () => {
+    it("sends Claude's signed thinking back with its signature", () => {
       const messages: ChatMessage[] = [
         { role: "user", content: "Think about this" } as UserChatMessage,
-        { role: "thinking", content: "I am thinking about the solution" },
+        {
+          role: "thinking",
+          content: "I am thinking about the solution",
+          signature: "sig-abc",
+        },
         { role: "assistant", content: "Here's my answer" },
       ];
 
@@ -1480,7 +1484,7 @@ describe("Bedrock", () => {
               reasoningContent: {
                 reasoningText: {
                   text: "I am thinking about the solution",
-                  signature: undefined,
+                  signature: "sig-abc",
                 },
               },
             },
@@ -1488,6 +1492,92 @@ describe("Bedrock", () => {
           ],
         },
       ]);
+    });
+
+    // Bedrock refused the whole request: "messages.249.content.0.thinking.
+    // signature: Field required" (2026-11-14). A reply stopped before its
+    // signature arrived, or thinking from a model that does not sign.
+    it("leaves out Claude thinking without a signature, which fails the whole request", () => {
+      const messages: ChatMessage[] = [
+        { role: "user", content: "Think about this" } as UserChatMessage,
+        { role: "thinking", content: "I am thinking about the solution" },
+        { role: "assistant", content: "Here's my answer" },
+      ];
+      const converted = bedrock["_convertMessages"](messages, new Set());
+      expect(converted).toEqual([
+        { role: "user", content: [{ text: "Think about this" }] },
+        { role: "assistant", content: [{ text: "Here's my answer" }] },
+      ]);
+    });
+
+    it("keeps the signed block when an unsigned one is beside it", () => {
+      const messages: ChatMessage[] = [
+        { role: "user", content: "Think about this" } as UserChatMessage,
+        { role: "thinking", content: "signed", signature: "sig-1" },
+        { role: "thinking", content: "cut off" },
+        { role: "assistant", content: "Here's my answer" },
+      ];
+      const converted = bedrock["_convertMessages"](messages, new Set());
+      expect(converted[1].content).toEqual([
+        {
+          reasoningContent: {
+            reasoningText: { text: "signed", signature: "sig-1" },
+          },
+        },
+        { text: "Here's my answer" },
+      ]);
+    });
+
+    it("in a tool-use turn, leaves out the unsigned thinking and keeps the call", () => {
+      const messages: ChatMessage[] = [
+        { role: "user", content: "Weather in Paris?" } as UserChatMessage,
+        { role: "thinking", content: "I should call the tool." },
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: "tooluse_1",
+              type: "function",
+              function: { name: "get_weather", arguments: '{"city":"Paris"}' },
+            },
+          ],
+        },
+        { role: "tool", toolCallId: "tooluse_1", content: "Sunny" },
+      ];
+      const converted = bedrock["_convertMessages"](
+        messages,
+        new Set(["get_weather"]),
+      );
+      expect(converted[1]).toEqual({
+        role: "assistant",
+        content: [
+          {
+            toolUse: {
+              toolUseId: "tooluse_1",
+              name: "get_weather",
+              input: { city: "Paris" },
+            },
+          },
+        ],
+      });
+    });
+
+    it("another family's unsigned reasoning still goes back (it never signs)", () => {
+      const messages: ChatMessage[] = [
+        { role: "user", content: "Think about this" } as UserChatMessage,
+        { role: "thinking", content: "reasoning" },
+        { role: "assistant", content: "Answer" },
+      ];
+      const converted = bedrock["_convertMessages"](
+        messages,
+        new Set(),
+        undefined,
+        "openai.gpt-oss-120b-1:0",
+      );
+      expect(converted[1].content?.[0]).toEqual({
+        reasoningContent: { reasoningText: { text: "reasoning" } },
+      });
     });
 
     it("should handle redacted thinking messages", () => {

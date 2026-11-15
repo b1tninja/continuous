@@ -40,7 +40,11 @@ export const RESET_SCOPE_INFO: Record<
 > = {
   sessions: {
     what: "saved sessions and the prompt input history",
-    entries: [{ name: "sessions" }, { name: "input_history.json" }],
+    entries: [
+      { name: "sessions" },
+      { name: "sessions-trash" },
+      { name: "input_history.json" },
+    ],
   },
   trust: {
     what: "trusted projects, trusted hooks and pinned MCP tool definitions",

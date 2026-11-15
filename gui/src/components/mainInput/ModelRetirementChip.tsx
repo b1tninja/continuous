@@ -1,23 +1,13 @@
 import type { RetirementNotice } from "core/util/modelRetirement";
 import { useContext, useEffect, useState } from "react";
 import { IdeMessengerContext } from "../../context/IdeMessenger";
+import { retirementLabel } from "../../hooks/useRetirementNotices";
 import { useWebviewListener } from "../../hooks/useWebviewListener";
 import { useAppSelector } from "../../redux/hooks";
 import { selectSelectedChatModel } from "../../redux/slices/configSlice";
 
 /** The chip's words: short, with the date when there is one. */
-export function retirementChipText(n: RetirementNotice): string {
-  switch (n.severity) {
-    case "retired":
-      return "retired";
-    case "retiring":
-      return `retires ${n.retiresAt}`;
-    case "possible":
-      return `may retire ${n.retiresAt}`;
-    default:
-      return "deprecated";
-  }
-}
+export const retirementChipText = retirementLabel;
 
 function tooltip(n: RetirementNotice): string {
   const source =

@@ -30,6 +30,9 @@ import type {
   SaveProviderInstanceRequest,
   SaveProviderInstanceResult,
 } from "../config/providers/types";
+import type { TrashSessionResult } from "../util/history.js";
+import type { SessionSearchResult } from "../util/sessionSearch.js";
+import type { TrashedSession } from "../util/sessionTrash.js";
 import type {
   ProviderSetupInfo,
   SaveProviderModelsRequest,
@@ -213,6 +216,18 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
   "history/saveDelta": [SessionDelta, SessionSaveResult];
   "history/share": [{ id: string; outputDir?: string }, void];
   "history/clear": [undefined, void];
+  /** Delete now: to the trash, restorable for 7 days (NI10). */
+  "history/trash": [{ id: string; force?: boolean }, TrashSessionResult];
+  "history/restore": [{ id: string }, BaseSessionMetadata];
+  "history/listTrash": [undefined, TrashedSession[]];
+  /** "Delete permanently" in the trash. */
+  "history/deleteFromTrash": [{ id: string }, void];
+  "history/emptyTrash": [undefined, void];
+  /** Message-text search over the newest sessions (bounded). */
+  "history/search": [
+    { query: string; maxSessions?: number; maxResults?: number },
+    SessionSearchResult,
+  ];
   "devdata/log": [DevDataLogEvent, void];
   "config/addOpenAiKey": [string, void];
   "config/addModel": [
@@ -637,6 +652,17 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
     { notice?: RetirementNotice },
   ];
   "model/dismissRetirementNotice": [{ provider: string; model: string }, void];
+  /**
+   * The notices of several configured models at once (the picker, Settings >
+   * Models): same sources as `model/retirementNotice`, not filtered by a
+   * dismissal of the chip. No network call.
+   */
+  "model/retirementNotices": [
+    { models: { provider: string; model: string }[] },
+    {
+      notices: { provider: string; model: string; notice: RetirementNotice }[];
+    },
+  ];
   "ollama/showHint": [
     { provider?: string; apiBase?: string; model: string },
     { serverParses?: boolean; toolsAdvertised?: boolean },
