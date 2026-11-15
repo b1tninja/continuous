@@ -91,8 +91,35 @@ A blocked server is not added. Then it asks once whether to run the command (or 
 | `--name <name>` | Name the server, or pick one when the snippet has several                  |
 | `--skip-test`   | Save without the test                                                      |
 | `--yes-run`     | Test without asking; refused for a package that is not pinned              |
+| `--scope <scope>` | `user` (your own `config.yaml`, the default) or `project` (see below)    |
 
 A key in the snippet is stored in `~/.continuous/.env` and the file gets `${{ secrets.<SERVER>_<KEY> }}`. A value the README leaves for you to fill in (`YOUR_TOKEN`, VS Code's `${input:...}`) gets an empty line in `~/.continuous/.env` to fill in; the test waits until it has a value, or pass `--skip-test`. The file keeps its comments and key order, a file that does not parse is left alone and the error names the line, and a name already in use is refused with a free name to use instead. Adding a server does not trust it or approve its tools: calls still ask as your permission levels say.
+
+### Share a server with the project
+
+`--scope project` writes the server to `.continuous/mcpServers/<name>.yaml` in the current folder instead of your own `config.yaml`, so it can be committed with the project. Secrets stay references: each person who opens the folder sets the value in their own `~/.continuous/.env` or secure storage. Like every project server, it does not start until that person trusts the folder.
+
+```bash
+continuous mcp add 'npx -y @modelcontextprotocol/server-memory@2025.4.25' --scope project
+```
+
+### Add a server from a JSON object
+
+`continuous mcp add-json <name> '<json>'` takes one server object, as `claude mcp add-json` does, and saves it under the name you give. It goes through the same review, checks, question and test as `add`, and takes the same flags.
+
+```bash
+continuous mcp add-json memory '{"command":"npx","args":["-y","@modelcontextprotocol/server-memory@2025.4.25"]}'
+```
+
+### List, test and remove saved servers
+
+| Command                          | What it does                                                                                                                                                                                                                           |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `continuous mcp list [--json]`   | Lists the servers in your `config.yaml` and in this project's `.continuous/mcpServers/*.yaml`, with the command or URL and the names of the secrets they use, never their values. Starts nothing.                                         |
+| `continuous mcp test <name>`     | Tests a saved server the way `add` does: it asks first, lists the tools, resources and prompts, never calls a tool, and exits `1` on a failure. Secrets are read from `~/.continuous/.env`; one kept only in the editor's secure storage cannot be read from the terminal. |
+| `continuous mcp remove <name>`   | Removes the server from `config.yaml` (comments kept), or deletes the project file that held only that server. The secrets it used are kept, since another server may use them.                                                           |
+
+When a name is in both your `config.yaml` and the project, pass `--scope user` or `--scope project` to `test` and `remove`. JSON files in `.continuous/mcpServers/` are loaded by the editor but are not listed or changed by these commands.
 
 ## How to Configure MCP Servers
 
