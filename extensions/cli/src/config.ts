@@ -89,6 +89,20 @@ export function anthropicTtl(
 }
 
 /**
+ * The model config a subagent's requests are built from: its cache lifetime is
+ * `cacheBehavior.subagentTtl` (C85), 5 minutes unless that says otherwise,
+ * because a run's requests come seconds apart. "inherit" keeps the model's own
+ * `cacheBehavior.ttl` (or the CLI's Auto default). Only the lifetime changes:
+ * whether the model caches at all is decided as for any other request, and
+ * CONTINUOUS_FORCE_CACHE_5M=1 still wins in the adapters.
+ */
+export function subagentCacheModel(model: ModelConfig): ModelConfig {
+  const policy = model.cacheBehavior?.subagentTtl ?? "5m";
+  if (policy === "inherit") return model;
+  return { ...model, cacheBehavior: { ...model.cacheBehavior, ttl: policy } };
+}
+
+/**
  * Once per process: when an adapter drops a request field a model refused
  * (the request-field policy, plans/ROADMAP.md C58), say so once, with the
  * config line that makes the choice permanent. The exit summary lists them

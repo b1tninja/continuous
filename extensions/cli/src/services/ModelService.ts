@@ -12,7 +12,7 @@ import { readUserToolPermissions } from "core/util/userToolPermissions.js";
 import { applyWebConfig } from "core/util/webConfig.js";
 
 import { AuthConfig, getModelName } from "../auth/workos.js";
-import { createLlmApi, getLlmApi } from "../config.js";
+import { createLlmApi, getLlmApi, subagentCacheModel } from "../config.js";
 import { logger } from "../util/logger.js";
 
 import { BaseService, ServiceWithDependencies } from "./BaseService.js";
@@ -535,7 +535,8 @@ export class ModelService
       return [];
     }
     return subagentModels?.map((model) => ({
-      llmApi: createLlmApi(model, modelState.authConfig),
+      // A subagent's own cache lifetime (cacheBehavior.subagentTtl)
+      llmApi: createLlmApi(subagentCacheModel(model), modelState.authConfig),
       model,
       assistant: modelState.assistant,
       authConfig: modelState.authConfig,

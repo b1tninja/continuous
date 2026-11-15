@@ -12,6 +12,10 @@
  * `fetchFn`, so tests record requests and nothing leaves the machine.
  */
 import {
+  ANTHROPIC_FALLBACK_VERSION,
+  ANTHROPIC_LIST_VERSION,
+} from "./anthropicApiVersion.js";
+import {
   hasOpenAICompatDefault,
   openAICompatDefaultBase,
 } from "./openaiCompatBases.js";
@@ -27,8 +31,10 @@ import {
 } from "./providerModelLookup.js";
 
 export const ANTHROPIC_DEFAULT_BASE = "https://api.anthropic.com/v1";
-export const ANTHROPIC_LIST_VERSION = "2026-10-21";
-export const ANTHROPIC_FALLBACK_VERSION = "2023-06-01";
+export {
+  ANTHROPIC_FALLBACK_VERSION,
+  ANTHROPIC_LIST_VERSION,
+} from "./anthropicApiVersion.js";
 
 /** Providers the add-model form can test: the OpenAI-compatible ones and Anthropic. */
 export function hasConnectionTest(provider: string): boolean {

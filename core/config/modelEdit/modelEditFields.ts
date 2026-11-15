@@ -455,6 +455,15 @@ export const MODEL_EDIT_FIELDS: readonly ModelEditField[] = [
     options: ["auto", "5m", "1h"],
   },
   {
+    path: ["cacheBehavior", "subagentTtl"],
+    section: "context",
+    label: "Subagent cache lifetime",
+    kind: "enum",
+    options: ["5m", "1h", "auto", "inherit"],
+    help: "For subagent runs on this model. Inherit follows the chat's lifetime.",
+    defaultText: "5m",
+  },
+  {
     path: ["pricing", "input"],
     section: "context",
     label: "Input price (USD per million tokens)",
