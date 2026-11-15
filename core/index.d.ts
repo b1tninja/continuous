@@ -1387,6 +1387,13 @@ export interface PromptLog {
   route?: string;
   prompt: string;
   completion: string;
+  /**
+   * Set when the prompt was dropped in memory for a newer request
+   * (core/util/promptLogs.ts): its UTF-8 size and SHA-256, which feedback
+   * sends in place of the text.
+   */
+  promptBytes?: number;
+  promptSha256?: string;
 }
 
 export type MessageModes = "chat" | "agent" | "plan" | "background";

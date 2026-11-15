@@ -25,7 +25,7 @@ The VS Code extension and the terminal agent keep everything on your machine: on
 
 | Name                       | What it holds                                                               | Reset                                                       |
 | -------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `sessions/`                | Chat sessions of both products, and the loops saved with them: `<id>.jsonl` (the extension's append-only log, with tool outputs and images in `<id>/blobs/`) or `<id>.json` (the CLI, or the extension with "Save chats as an append-only log" off)               | `continuous sessions clean`, `continuous clean` (older than 30 days by default), or delete |
+| `sessions/`                | Chat sessions of both products, and the loops saved with them: `<id>.jsonl` (the extension's append-only log, with tool outputs and images in `<id>/blobs/`) or `<id>.json` (the CLI, or the extension with "Save chats as an append-only log" off)               | `continuous sessions prune --older-than <age>` (to the trash), `continuous sessions clean`, `continuous clean` (older than 30 days by default), or delete |
 | `sessions-trash/`          | Deleted sessions, kept 7 days so they can be restored: `<id>/trashed.json` (when, and the list entry) and `<id>/files/` (the `.jsonl` with its `blobs/`, or the `.json`). See [Deleted sessions](#deleted-sessions) | Removed by itself after 7 days; **Empty trash** on the History page, `continuous sessions trash --empty --yes`, or delete |
 | `command-output/`          | The full output of agent terminal commands whose output was longer than the model sees, as written by the command (not masked); read back by `read_command_output` | Removed by itself after 7 days, or delete |
 | `logs/`                    | `cn.log` (terminal agent), `core.log`, `prompt.log`, and `prompts/` when the debug prompt log is on | `continuous clean` (14 days), or delete |
@@ -85,6 +85,31 @@ Deleting a chat on the History page, or in the terminal agent's session picker (
 - The trash is beside `sessions/`, so cleanup, the session list and the pickers never see a deleted chat as a live one.
 - A chat that another window or a running terminal agent has open (see `sessions-open/`) is not moved until you confirm, because that window may save it again. The session the terminal agent is in cannot be deleted from its own picker.
 - **Clear chats** on the History page deletes every chat and empties the trash; it cannot be undone.
+
+### Prune old sessions
+
+Nothing deletes a session by itself: there is no retention period, and a session stays until you remove it. To thin the list, move every session last used before an age to the trash:
+
+```bash
+continuous sessions prune --older-than 90d          # list them, then ask
+continuous sessions prune --older-than 90d --yes    # move them without asking
+continuous sessions prune --older-than 6w --dry-run # list only
+```
+
+- "Last used" is the last write to the session file (or its creation date, if that is later).
+- It lists each session with its id, title, date and size first, then asks. Without a terminal to ask in (a script, CI), it moves nothing unless `--yes` is given. With `--json` it reports and moves only with `--yes`.
+- Each session goes to `sessions-trash/` with its stored outputs, exactly as a deletion on the History page does, so it can be restored for 7 days with `continuous sessions restore <id>`. After that the trash removes it, as for any deleted chat.
+- A session open in another window or used by a running agent (see `sessions-open/`) is left alone and reported, also one that is opened between the list and the move.
+
+### Sessions that are not saved
+
+`continuous -p --no-session-persistence` keeps the run's session in memory only: nothing is written to `sessions/`, so the run cannot be resumed. A session it resumes with `--resume` is read and left unchanged. The flag works only with `-p`.
+
+### What a session holds
+
+A session holds the conversation as it was, secrets included, because it must load back exactly for `--resume` and the History page. It is not masked on disk; `/export` and `continuous export` mask what they write (see [Export a session](/cli/export)).
+
+A session file holds no request prompts. In memory only the newest request keeps its full prompt, for the thumbs up and down buttons; when a newer request replaces it, the older one keeps its size and SHA-256 instead. Feedback on a reply sends the full prompt only for the newest request, and for every other request a `[prompt not sent: older request, <bytes> bytes, sha256 <hash>]` line in its place. The debug prompt log (`--debug-prompt-log`, off by default) is the only place every prompt is kept in full.
 
 ## In each project
 

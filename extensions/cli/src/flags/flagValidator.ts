@@ -21,6 +21,8 @@ export interface ValidationOptions {
   // Session flags
   resume?: boolean | string;
   fork?: string;
+  /** Commander's --no-session-persistence: false when given. */
+  sessionPersistence?: boolean;
 
   // Permission flags
   allow?: string[];
@@ -150,6 +152,24 @@ function validateSessionFlags(options: ValidationOptions): ValidationError[] {
 }
 
 /**
+ * Validate that --no-session-persistence only works with -p/--print: an
+ * interactive session that is not saved is lost on exit without a word
+ */
+function validateSessionPersistenceFlag(
+  options: ValidationOptions,
+): ValidationError[] {
+  return options.sessionPersistence === false && !options.print
+    ? [
+        {
+          code: "NO_SESSION_PERSISTENCE_REQUIRES_PRINT",
+          message:
+            "Error: --no-session-persistence can only be used with -p/--print",
+        },
+      ]
+    : [];
+}
+
+/**
  * Validate config path exists (basic check)
  */
 function validateConfigPath(options: ValidationOptions): ValidationError[] {
@@ -214,6 +234,7 @@ export function validateFlags(options: ValidationOptions): ValidationResult {
     validateFormatValue,
     validateModeFlags,
     validateSessionFlags,
+    validateSessionPersistenceFlag,
     validateConfigPath,
     validatePermissionFlags,
   ];

@@ -25,6 +25,7 @@ These belong to `continuous` itself, not to a subcommand.
 | `--thinking <mode>`      | How the terminal UI shows the model's reasoning: `fold` (the default), `expanded` or `hide`. See [`/thinking`](/cli/slash-commands) |
 | `--resume [sessionId]`   | Continue a session. With an id, that session. Without one, a picker with the newest session of this folder selected; with `-p`, the newest session of this folder, or of any folder with a notice. A value that is not shaped like a session id is read as the prompt. Cannot be combined with `--fork` |
 | `--fork <sessionId>`     | Start a new session from a copy of an existing one: its history, mode, model, task plan and prompt cache record. The plan file, Loop state, checkpoints and usage are not copied |
+| `--no-session-persistence` | Keep this run's session in memory only: nothing is written to `sessions/`, so it cannot be resumed. A session resumed with `--resume` is read and left as it was. Only with `-p`. See [Sessions that are not saved](/reference/storage-and-reset#sessions-that-are-not-saved) |
 | `--trust-project-hooks`  | Run this project's hooks for this run without asking and without recording trust. See [Hooks](/ide-extensions/agent/hooks-trust)     |
 | `--trust-project-config` | Use this project's own configuration files for this run without asking. See [Workspace trust](/customize/workspace-trust)            |
 | `--beta-subagent-tool`   | Offer the beta Subagent tool to the model                                                                                            |
@@ -273,6 +274,23 @@ Remove the full prompts earlier releases kept in saved sessions, stored outputs 
 | `--dev-data-days <age>`             | Dev data lines older than this go. Default `90d`                             |
 | `--logs-days <age>`                 | Log files older than this go. Default `14d`                                  |
 | `--delete-backups-older-than <age>` | With `--yes`, also delete backup folders older than this. Default: keep them |
+
+### `sessions prune`
+
+Move every session last used before an age to the trash, where each can be restored for 7 days with `continuous sessions restore <id>`. It lists them first (id, title, last used, size), then asks; without a terminal it moves nothing unless `--yes` is given. Nothing is deleted, and nothing is pruned by itself. Sessions open in a window or agent are left alone. See [Prune old sessions](/reference/storage-and-reset#prune-old-sessions).
+
+| Flag                 | Meaning                                                                 |
+| -------------------- | ----------------------------------------------------------------------- |
+| `--older-than <age>` | Required. Last used longer ago than this: `90d`, `2w`, `12h`, or a number of days |
+| `--yes`              | Move them without asking                                                |
+| `--dry-run`          | List only, even with `--yes`                                            |
+| `--json`             | Machine-readable output; moves only with `--yes`                        |
+
+It exits 0, 1 when a session could not be moved, and 2 for an age it cannot read.
+
+### `sessions trash` and `sessions restore <id>`
+
+`sessions trash` lists the sessions deleted in the last 7 days (`--json` for machine-readable output; `--empty --yes` deletes them for good). `sessions restore <id>` puts one back in the session list.
 
 ### `reviewer eval`
 
