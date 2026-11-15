@@ -39,6 +39,7 @@ import {
 } from "../../util/paths";
 import { localPathOrUriToPath } from "../../util/pathToUri";
 import { IdeInfoService } from "../../util/IdeInfoService";
+import { configRetirementWarnings } from "../../util/retirementStartup";
 import { TTS } from "../../util/tts";
 import { getWorkspaceContinueRuleDotFiles } from "../getWorkspaceContinueRuleDotFiles";
 import { loadContinueConfigFromJson } from "../load";
@@ -246,6 +247,21 @@ export default async function doLoadConfig(options: {
 
   // Rectify model selections for each role
   newConfig = rectifySelectedModelsFromGlobalContext(newConfig, profileId);
+
+  // Config check: a configured model that is deprecated, retired or retiring
+  // soon warns once per notice (not on every load), from the checked-in
+  // table and the lifecycle the provider's own list last returned.
+  for (const message of configRetirementWarnings(
+    Object.values(newConfig.modelsByRole ?? {})
+      .flat()
+      .map((llm) => ({
+        provider: llm?.providerName,
+        model: llm?.model,
+        title: llm?.title,
+      })),
+  )) {
+    void ide.showToast("warning", message);
+  }
 
   // Add things from MCP servers
   const mcpManager = MCPManagerSingleton.getInstance();

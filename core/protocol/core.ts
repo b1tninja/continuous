@@ -652,6 +652,17 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
     { notice?: RetirementNotice },
   ];
   "model/dismissRetirementNotice": [{ provider: string; model: string }, void];
+  /**
+   * The notices of several configured models at once (the picker, Settings >
+   * Models): same sources as `model/retirementNotice`, not filtered by a
+   * dismissal of the chip. No network call.
+   */
+  "model/retirementNotices": [
+    { models: { provider: string; model: string }[] },
+    {
+      notices: { provider: string; model: string; notice: RetirementNotice }[];
+    },
+  ];
   "ollama/showHint": [
     { provider?: string; apiBase?: string; model: string },
     { serverParses?: boolean; toolsAdvertised?: boolean },
