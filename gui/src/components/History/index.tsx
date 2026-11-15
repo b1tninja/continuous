@@ -22,6 +22,7 @@ import {
 import { setDialogMessage, setShowDialog } from "../../redux/slices/uiSlice";
 import { refreshSessionMetadata } from "../../redux/thunks/session";
 import { getFontSize, getPlatform } from "../../util";
+import { clearDraftsExcept } from "../../util/drafts";
 import { ROUTES } from "../../util/navigation";
 import {
   currentWorkspaceDirs,
@@ -161,6 +162,8 @@ export function History() {
 
             // actual update + refresh
             await ideMessenger.request("history/clear", undefined);
+            // The sessions' unsent drafts go with them
+            clearDraftsExcept([]);
             void dispatch(refreshSessionMetadata({}));
 
             // start a new session
