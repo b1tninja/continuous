@@ -70,6 +70,7 @@ export const WEBVIEW_TO_CORE_PASS_THROUGH: (keyof ToCoreFromWebviewProtocol)[] =
     "mcp/startAuthentication",
     "mcp/removeAuthentication",
     "mcp/setServerEnabled",
+    "mcp/approveTools",
     "mcp/listTemplates",
     "mcp/parsePaste",
     "mcp/analyzeLaunch",

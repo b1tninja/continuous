@@ -448,6 +448,7 @@ export async function unrollBlocks(
     | "rulesByMode"
     | "toolPermissions"
     | "terminal"
+    | "web"
     | "modelCatalog"
     | "modelCatalogRefreshHours"
   >)[] = ["models", "context", "data", "mcpServers", "prompts", "docs"];

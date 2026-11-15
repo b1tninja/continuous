@@ -560,6 +560,8 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
     void,
   ];
   "mcp/setServerEnabled": [{ id: string; enabled: boolean }, void];
+  /** Approve MCP tools waiting for approval (TR4); returns the names pinned */
+  "mcp/approveTools": [{ id: string; tools: string[] | "all" }, string[]];
   "mcp/getPrompt": [
     {
       serverName: string;

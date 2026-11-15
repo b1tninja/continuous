@@ -33,7 +33,8 @@
   "policy": {
     "serve": [],
     "permissionsYaml": {
-      "allow": ["*"]
+      "allow": ["*"],
+      "background": { "mcpTools": ["notes"] }
     }
   },
   "expectations": [

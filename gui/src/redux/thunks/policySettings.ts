@@ -46,6 +46,7 @@ export const loadPolicySettings = createAsyncThunk<void, void, ThunkApiType>(
           builtin: settings.builtin ?? {},
           floor: settings.floor ?? [],
           planMcpTools: settings.planMcpTools ?? [],
+          backgroundMcpTools: settings.backgroundMcpTools ?? [],
           trustedMcpServers: Object.keys(settings.mcpServers ?? {}),
           questionDelivery: settings.questions?.delivery,
           planAllowTerminal: settings.planAllowTerminal,
