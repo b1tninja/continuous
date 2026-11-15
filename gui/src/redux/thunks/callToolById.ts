@@ -14,6 +14,7 @@ import { ContinueError, ContinueErrorReason } from "core/util/errors";
 
 import { callClientTool } from "../../util/clientTools/callClientTool";
 import { allowOutsideWorkspaceOf } from "../../util/outsideEdits";
+import { runawayActionForLevel } from "../../util/runawayAction";
 import { selectSelectedChatModel } from "../slices/configSlice";
 import {
   acceptToolCall,
@@ -107,6 +108,8 @@ export const callToolById = createAsyncThunk<
       ...(allowOutsideWorkspaceOf(getState())
         ? { allowOutsideWorkspace: true }
         : {}),
+      // Output that looks like a runaway: stopped, unless Tools lets it run
+      runawayAction: runawayActionForLevel(getState().ui?.policyLevels?.tools),
     });
     if (result.status === "error") {
       throw new Error(result.error);

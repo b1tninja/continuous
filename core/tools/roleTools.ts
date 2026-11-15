@@ -82,6 +82,16 @@ export const BUILT_IN_TOOL_CLASS: Record<BuiltInToolNames, ToolClass> = {
 };
 
 /**
+ * Tools named outside BuiltInToolNames (definitions/commandOutput.ts): reading
+ * a command's kept output is the session's own state, so the planner (which
+ * never runs commands) may have it; ending a command is the terminal's.
+ */
+export const COMMAND_OUTPUT_TOOL_CLASS: Record<string, ToolClass> = {
+  read_command_output: "session",
+  stop_command: "terminal",
+};
+
+/**
  * The CLI's built-in tools, by the names the CLI gives them. A test in the CLI
  * holds this table to `ALL_BUILT_IN_TOOLS`.
  */
@@ -259,6 +269,7 @@ export function classOfTool(
   }
   return (
     (BUILT_IN_TOOL_CLASS as Record<string, ToolClass | undefined>)[tool.name] ??
+    COMMAND_OUTPUT_TOOL_CLASS[tool.name] ??
     CLI_TOOL_CLASS[tool.name] ??
     "unclassified"
   );

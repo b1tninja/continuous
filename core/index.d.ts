@@ -1347,6 +1347,20 @@ export interface ContextItem {
   uri?: ContextItemUri;
   hidden?: boolean;
   status?: string;
+  /**
+   * A command's output in numbers, for the meter beside it, and where its
+   * full output is (run_terminal_command; commandOutputBuffer.ts).
+   */
+  commandOutput?: {
+    id?: string;
+    bytes: number;
+    lines: number;
+    bytesPerSecond: number;
+    runaway?: string;
+    outputPath?: string;
+    /** The same file as a file:// URI, for the editor to open. */
+    outputUri?: string;
+  };
 }
 
 export interface ContextItemWithId extends ContextItem {
@@ -2173,6 +2187,11 @@ export interface ToolExtras {
    * path instead of treating it as not a target.
    */
   allowOutsideWorkspace?: boolean;
+  /**
+   * What run_terminal_command does when a command's output looks like a
+   * runaway, from the Tools policy level ("stop" or "keep-running").
+   */
+  runawayAction?: "stop" | "keep-running";
 }
 
 export interface McpToolMeta {

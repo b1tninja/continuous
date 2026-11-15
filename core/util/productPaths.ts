@@ -96,6 +96,8 @@ export const PRODUCT_STATE_PATHS = [
   "worktrees",
   "bedrock-catalog",
   "model-catalog",
+  // the full output of long commands (commandOutputStore.ts); written, never read as config
+  "command-output",
   // the terminal agent's compiled-code cache, `cache/compile`
   "cache",
   "input_history.json",

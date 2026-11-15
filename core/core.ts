@@ -2360,8 +2360,15 @@ export class Core {
 
     on(
       "tools/call",
-      async ({ data: { toolCall, workspaceDirs, allowOutsideWorkspace } }) =>
-        this.handleToolCall(toolCall, workspaceDirs, allowOutsideWorkspace),
+      async ({
+        data: { toolCall, workspaceDirs, allowOutsideWorkspace, runawayAction },
+      }) =>
+        this.handleToolCall(
+          toolCall,
+          workspaceDirs,
+          allowOutsideWorkspace,
+          runawayAction,
+        ),
     );
 
     this.registerPolicyHandlers();
@@ -2519,6 +2526,7 @@ export class Core {
     toolCall: ToolCall,
     workspaceDirs?: string[],
     allowOutsideWorkspace?: boolean,
+    runawayAction?: "stop" | "keep-running",
   ) {
     const { config } = await this.configHandler.loadConfig();
     if (!config) {
@@ -2571,6 +2579,7 @@ export class Core {
         toolCallId: toolCall.id,
         onPartialOutput,
         codeBaseIndexer: this.codeBaseIndexer,
+        ...(runawayAction ? { runawayAction } : {}),
       });
     } catch (e) {
       trail.outcome({

@@ -5,8 +5,8 @@ import {
   InputModifiers,
   PromptLog,
 } from "core";
-import { describe, expect, it, vi } from "vitest";
 import { DROPPED_PROMPT_MARKER } from "core/util/promptLogs";
+import { describe, expect, it, vi } from "vitest";
 import { createMockStore, getEmptyRootState } from "../../util/test/mockStore";
 import { streamResponseThunk } from "./streamResponse";
 
@@ -760,6 +760,8 @@ describe("streamResponseThunk", () => {
           arguments: JSON.stringify({ query: "test function" }),
         },
       },
+      // Cautious, the default Tools level: a runaway command is stopped
+      runawayAction: "stop",
     });
 
     // Verify that multiple compilation calls were made (due to tool call continuation)

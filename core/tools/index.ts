@@ -1,6 +1,6 @@
 import { ConfigDependentToolParams, Tool } from "..";
-import { isRecommendedAgentModel } from "../llm/toolSupport";
 import { isWebSearchConfigured } from "../context/providers/webSearchBackend";
+import { isRecommendedAgentModel } from "../llm/toolSupport";
 import { historyAgeingEnabled } from "../util/contextAgeing";
 import * as toolDefinitions from "./definitions";
 
@@ -9,6 +9,8 @@ export const getBaseToolDefinitions = () => [
   toolDefinitions.readFileTool,
   toolDefinitions.createNewFileTool,
   toolDefinitions.runTerminalCommandTool,
+  toolDefinitions.readCommandOutputTool,
+  toolDefinitions.stopCommandTool,
   toolDefinitions.globSearchTool,
   toolDefinitions.viewDiffTool,
   toolDefinitions.readCurrentlyOpenFileTool,
