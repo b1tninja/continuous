@@ -27,6 +27,7 @@ type MockResponseHandlers = Partial<{
 
 const DEFAULT_MOCK_CORE_RESPONSES: MockResponses = {
   fileExists: true,
+  "instructionFiles/state": { withheld: [], notices: [] },
   getCurrentFile: {
     isUntitled: false,
     contents: "Current file contents",
