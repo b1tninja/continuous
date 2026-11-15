@@ -9,6 +9,7 @@ import type { RootState } from "../redux/store";
 import {
   currentCompactionPlan,
   isLocalModel,
+  preparedAppliesAtTurn,
   usablePreparedCompaction,
 } from "../redux/thunks/prepareCompaction";
 
@@ -17,11 +18,13 @@ import {
  * section 6.5, row C108). A message that would take the prompt past the force
  * threshold (decision D3: 85% of the window on a local server, 90% on cloud)
  * makes C101's block drop cut the oldest turns, and everything after the head
- * is read again: about 390k tokens, 85 s on the owner's Strata. With no
- * summary ready to apply instead, the message waits and the person chooses:
+ * is read again: about 390k tokens, 85 s on the owner's Strata. Unless the
+ * next turn applies a prepared summary on its own (pre-warmed, or cloud),
+ * the message waits and the person chooses:
  *
- *  - Compact now, with the estimate: the summary is made, then the message
- *    is sent on the compacted conversation. The default: Enter chooses it.
+ *  - Compact now, with the estimate: a prepared summary is saved at once
+ *    (or one is made), then the message is sent on the compacted
+ *    conversation. The default: Enter chooses it.
  *  - Continue anyway: the message is sent and the drop happens. Not on a
  *    key repeat and not the default, so holding Enter cannot choose it; the
  *    plan's later turns are not held again.
@@ -36,6 +39,8 @@ export interface CompactionHoldDecision {
   /** The prompt with the new message */
   totalTokens: number;
   forceAtTokens: number;
+  /** A summary is ready, so Compact now needs no summary request */
+  prepared: boolean;
 }
 
 /** Rough tokens of a draft: four characters each, as the meter estimates. */
@@ -62,12 +67,7 @@ export function compactionHoldFor(
   if (!plan) return undefined;
   if (state.session.compactionHoldContinued === plan.id) return undefined;
   // A ready summary is applied at this turn instead (applyPreparedCompactionForTurn)
-  if (
-    !state.session.preparedCompaction?.dismissed &&
-    usablePreparedCompaction(state, state.session.history.length - 1)
-  ) {
-    return undefined;
-  }
+  if (preparedAppliesAtTurn(state)) return undefined;
   const shares = isLocalModel(model)
     ? COMPACTION_THRESHOLDS.local
     : COMPACTION_THRESHOLDS.cloud;
@@ -79,6 +79,10 @@ export function compactionHoldFor(
     rereadTokens: plan.tokens.span + plan.tokens.tail + Math.max(0, newTokens),
     totalTokens,
     forceAtTokens,
+    prepared: !!usablePreparedCompaction(
+      state,
+      state.session.history.length - 1,
+    ),
   };
 }
 

@@ -75,3 +75,16 @@ The window is counted with an estimate. For Qwen models the estimate uses the Ll
 When a request still re-reads much more than the part that changed, the cache-miss notice above the input names the first part of the prompt that differed from the previous request, for example `message 2 (your first message) changed: a user message`, or says that the prompt only grew and the server dropped its cache (another conversation used it, the model was unloaded, or the cache ran out of room). The webview's developer console has a `[prompt cache]` debug line per request with the positions and sizes, never the text.
 
 The reused count comes from the response's `prompt_tokens_details.cached_tokens`, or llama.cpp's `timings.cache_n`. When the stream has neither and the server is Strata, Continuous reads Strata's `/metrics` once after the request for its `reused` count. Nothing is polled, and nothing is sent anywhere but the configured server.
+
+### Planned compaction and the pre-warm
+
+Past 70% of the window, the summary of the older turns is made in the background while you are idle (`contextManagement.plannedCompaction`, on by default for local servers). A line above the input says when it is ready. On a local server it waits for you: **Compact now** applies it, keeping the newest turns word for word, and the next message reads the summary and those turns once (about 12 s for 58k tokens on Strata). If the conversation reaches 85% first, your message waits and **Compact now (summary ready), then send** applies it at once; **Continue anyway** drops the oldest block instead. Nothing is re-read without you choosing it.
+
+**Pre-warm (experimental, off by default).** With `contextManagement.prewarm: local`, once the summary is ready and you are still idle, the conversation as it will be after compacting is sent once to a Strata or llama.cpp server with a one-token reply, so the server has read it before your next message. That message then applies the summary with nothing to read again, and the line says "prepared and pre-warmed". On Strata the request carries `strata_prefix: {"messages": 2}`, which pins the server's checkpoint at the end of the summary, and it is skipped when `/v1/status` reports less free memory than it could take (about 7 GB per 390k tokens of the conversation it replaces, plus the checkpoints). Typing or sending stops it. Turn it on only after checking it on your server:
+
+1. In a new, small conversation (not one whose cache you need), set the model's `contextLength` to about 40000 for the check, so the plan starts early. Keep Strata's `--prompt-cache` at 3 or more (the default is 6).
+2. Chat until the context meter passes 70% and leave the window idle for 10 s. The line says "Compaction prepared", then "prepared and pre-warmed".
+3. Open the server's `/metrics`: the newest request has `output_tokens` 1, and Strata's log has no `strata_prefix … ignored` line.
+4. Send a message. Its `/metrics` entry should show `reused` about the pre-warm's `prompt_tokens` and `prompt_read` about the size of the new message.
+5. Edit the newest turn and send again: `reused` should be about the size of the system prompt and the summary, not 16,384.
+6. Start typing during a pre-warm: the request is cancelled and sent again at the next pause.

@@ -160,7 +160,8 @@ export const contextManagementSchema = z.object({
   /**
    * Once the background summary is ready, read the compacted prompt on the
    * server while the person is idle, so applying the compaction does not
-   * re-read it: "local" (default) on Strata and llama.cpp, "off" never.
+   * re-read it. Experimental: "off" (default) until the Strata live check,
+   * "local" on Strata and llama.cpp.
    * "always" is reserved for cloud providers too, which are not pre-warmed
    * yet; it acts as "local".
    */

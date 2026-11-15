@@ -1686,8 +1686,9 @@ export interface ModelContextManagement {
    */
   plannedCompaction?: boolean;
   /**
-   * Pre-warm the compacted prompt once its summary is ready (C106): "local"
-   * (the default) on Strata and llama.cpp servers, "off" never. "always"
+   * Pre-warm the compacted prompt once its summary is ready (C106):
+   * experimental, "off" by default until the Strata live check; "local" on
+   * Strata and llama.cpp servers. "always"
    * would add cloud providers, which is not built yet (C109), so it acts as
    * "local" for now.
    */

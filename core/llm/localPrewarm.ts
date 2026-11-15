@@ -49,8 +49,12 @@ import {
 
 type FetchFn = typeof fetch;
 
-/** `contextManagement.prewarm` unset: pre-warm local servers only (D6). */
-export const DEFAULT_PREWARM: PrewarmSetting = "local";
+/**
+ * `contextManagement.prewarm` unset. D6 says "local"; it is "off" for this
+ * release because the Strata request fields have not had their live check
+ * (see the C106 PR). Turn it on with `prewarm: "local"` after that check.
+ */
+export const DEFAULT_PREWARM: PrewarmSetting = "off";
 
 /** The model's `contextManagement.prewarm`, or the default. */
 export function prewarmSetting(model: {

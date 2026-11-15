@@ -128,14 +128,17 @@ const tool: Tool = {
 function modelAt(
   apiBase: string,
   server: MockStrata,
-  contextManagement?: { prewarm?: "off" | "local" | "always" },
+  /** Pre-warm is off by default this release, so the tests turn it on */
+  contextManagement: { prewarm?: "off" | "local" | "always" } = {
+    prewarm: "local",
+  },
 ) {
   const llm = new OpenAI({
     model: "qwen3.6-35b",
     apiBase,
     apiKey: "k",
     contextLength: 524_288,
-    ...(contextManagement && { contextManagement }),
+    contextManagement,
   });
   (llm as any).openaiAdapter = {
     chatCompletionStream: async function* (body: any, signal: AbortSignal) {
@@ -301,7 +304,10 @@ describe("when it is not sent", () => {
     expect(server.requests).toHaveLength(0);
   });
 
-  it("follows contextManagement.prewarm: off, local, always", async () => {
+  it("follows contextManagement.prewarm: unset, off, local, always", async () => {
+    expect(await prewarm(modelAt(LOCAL, server, {}))).toMatchObject({
+      reason: "off",
+    });
     expect(
       await prewarm(modelAt(LOCAL, server, { prewarm: "off" })),
     ).toMatchObject({ reason: "off" });
@@ -368,8 +374,11 @@ describe("when it is not sent", () => {
 });
 
 describe("the parts", () => {
-  it("reads the setting, defaulting to local", () => {
-    expect(prewarmSetting({})).toBe("local");
+  it("reads the setting, off by default until the Strata live check", () => {
+    expect(prewarmSetting({})).toBe("off");
+    expect(prewarmSetting({ contextManagement: { prewarm: "local" } })).toBe(
+      "local",
+    );
     expect(prewarmSetting({ contextManagement: { prewarm: "off" } })).toBe(
       "off",
     );

@@ -417,10 +417,32 @@ export async function prewarmPreparedCompaction(args: {
 }
 
 /**
- * At the start of the person's next turn: a ready summary for the current
- * plan is saved at once, before their message is added (decision D3, "apply
- * at the next turn"). Pre-warmed, the server already holds the compacted
- * prompt, so nothing is re-read. Returns whether it was applied.
+ * The prepared summary the next turn saves on its own, if any: ready for the
+ * current plan, not put off with Not now, and either pre-warmed (the local
+ * server already read the compacted prompt, so nothing is read again) or on
+ * a cloud provider (where the next request writes the cache anyway). On a
+ * local server without a pre-warm it waits instead, so nothing is re-read
+ * unexpectedly at the prepare threshold: Compact now applies it, and so does
+ * the forced-path hold's Compact now once the prompt reaches the force
+ * threshold (util/compactionHold.ts).
+ */
+export function preparedAppliesAtTurn(
+  state: RootState,
+): { index: number; summary: string } | undefined {
+  const prepared = state.session.preparedCompaction;
+  if (!prepared || prepared.dismissed) return undefined;
+  const model = selectSelectedChatModel(state);
+  if (!model) return undefined;
+  if (isLocalModel(model) && prepared.prewarm?.status !== "done") {
+    return undefined;
+  }
+  return usablePreparedCompaction(state, state.session.history.length - 1);
+}
+
+/**
+ * At the start of the person's next turn: the summary `preparedAppliesAtTurn`
+ * names is saved, before their message is added (decision D3, "apply at the
+ * next turn"). Returns whether it was applied.
  */
 export function applyPreparedCompactionForTurn(
   dispatch: AppThunkDispatch,
@@ -428,12 +450,7 @@ export function applyPreparedCompactionForTurn(
 ): boolean {
   // A plain function, not a thunk: a turn with nothing to apply dispatches
   // nothing
-  const state = getState();
-  if (state.session.preparedCompaction?.dismissed) return false;
-  const usable = usablePreparedCompaction(
-    state,
-    state.session.history.length - 1,
-  );
+  const usable = preparedAppliesAtTurn(getState());
   if (!usable) return false;
   dispatch(applyPreparedSummary(usable));
   return true;

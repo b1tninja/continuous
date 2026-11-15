@@ -41,6 +41,7 @@ export const streamResponseThunk = createAsyncThunk<
           setCompactionHold({
             planId: hold.plan.id,
             rereadTokens: hold.rereadTokens,
+            prepared: hold.prepared,
             editorState,
             modifiers,
             ...(index !== undefined && { index }),

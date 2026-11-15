@@ -1,10 +1,12 @@
 import { act, createEvent, fireEvent, screen } from "@testing-library/react";
 import type { ModelDescription } from "core";
 import { describe, expect, it, vi } from "vitest";
+import strataMetrics from "core/llm/__fixtures__/strata/metrics-2026-11-15-live.trimmed.json";
 import { MockIdeMessenger } from "../../context/MockIdeMessenger";
 import { EMPTY_CONFIG, updateConfig } from "../../redux/slices/configSlice";
 import {
   newSession,
+  notePrewarmOff,
   type PreparedCompaction,
   setCompactionHold,
   setPreparedCompaction,
@@ -52,8 +54,15 @@ const historyOf = (exchanges: number) =>
     },
   ]).flat();
 
-async function setup(ui: React.ReactElement, exchanges = 10) {
+async function setup(
+  ui: React.ReactElement,
+  exchanges = 10,
+  metrics?: unknown,
+) {
   const ideMessenger = new MockIdeMessenger();
+  if (metrics !== undefined) {
+    ideMessenger.responses["llm/strataMetrics"] = metrics;
+  }
   const store = setupStore({ ideMessenger });
   const view = await renderWithProviders(ui, {
     store,
@@ -101,7 +110,7 @@ async function setup(ui: React.ReactElement, exchanges = 10) {
 }
 
 describe("the prepared notice", () => {
-  it("names the summarised turns and says it applies at the next turn", async () => {
+  it("names the summarised turns and, not pre-warmed, leaves it to Compact now", async () => {
     const t = await setup(<CompactionPreparedNotice />);
     expect(screen.queryByTestId("compaction-prepared-notice")).toBeNull();
     const plan = await t.prepare();
@@ -110,11 +119,33 @@ describe("the prepared notice", () => {
       plan.spanStart,
       plan.spanEnd,
     );
+    const text = (await screen.findByTestId("compaction-prepared-notice"))
+      .textContent;
+    expect(text).toContain(
+      `Compaction prepared (summary of turns ${first}–${last} ready); Compact now applies it (not pre-warmed).`,
+    );
+    // Off by default this release, and said so once
+    expect(text).toContain("Pre-warm is off (contextManagement.prewarm).");
+    expect(t.getState().session.prewarmOffNoted).toBe(plan.id);
+  });
+
+  it("says pre-warm is off for one plan only, not again later", async () => {
+    const t = await setup(<CompactionPreparedNotice />);
+    await act(async () => {
+      t.store.dispatch(notePrewarmOff("cp-an-earlier-plan"));
+    });
+    await t.prepare();
     expect(
       (await screen.findByTestId("compaction-prepared-notice")).textContent,
-    ).toContain(
-      `Compaction prepared (summary of turns ${first}–${last} ready); it applies at the next turn without re-reading.`,
-    );
+    ).not.toContain("Pre-warm is off");
+  });
+
+  it("says how long Compact now takes when the estimate knows", async () => {
+    const t = await setup(<CompactionPreparedNotice />, 10, strataMetrics);
+    await t.prepare();
+    expect(
+      (await screen.findByTestId("compaction-prepared-notice")).textContent,
+    ).toMatch(/Compact now applies it in about \d+ s \(not pre-warmed\)\./);
   });
 
   it("says pre-warmed once the server has read it", async () => {

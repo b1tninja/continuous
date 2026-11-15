@@ -93,7 +93,25 @@ describe("compactionHoldFor", () => {
     );
   });
 
-  it("does not hold when a summary is ready: it is applied instead", () => {
+  it("does not hold when a pre-warmed summary is ready: it is applied instead", () => {
+    const state = stateWith(12);
+    const plan = currentCompactionPlan(state)!;
+    state.session.preparedCompaction = {
+      sessionId: "s1",
+      planId: plan.id,
+      spanStart: plan.spanStart,
+      spanEnd: plan.spanEnd,
+      status: "ready",
+      summary: "S",
+      prewarm: { status: "done" },
+    };
+    expect(compactionHoldFor(state, 0)).toBeUndefined();
+    // ...unless the person said Not now to it
+    state.session.preparedCompaction.dismissed = true;
+    expect(compactionHoldFor(state, 0)).toMatchObject({ prepared: true });
+  });
+
+  it("holds with a summary ready but not pre-warmed, offering it at once", () => {
     const state = stateWith(12);
     const plan = currentCompactionPlan(state)!;
     state.session.preparedCompaction = {
@@ -104,10 +122,10 @@ describe("compactionHoldFor", () => {
       status: "ready",
       summary: "S",
     };
-    expect(compactionHoldFor(state, 0)).toBeUndefined();
-    // ...unless the person said Not now to it
-    state.session.preparedCompaction.dismissed = true;
-    expect(compactionHoldFor(state, 0)).toBeDefined();
+    expect(compactionHoldFor(state, 0)).toMatchObject({ prepared: true });
+    expect(compactionHoldFor(stateWith(12), 0)).toMatchObject({
+      prepared: false,
+    });
   });
 
   it("does not hold again for a plan answered with Continue anyway", () => {
@@ -195,7 +213,7 @@ describe("the send path", () => {
     expect(compiles).toHaveLength(1);
   });
 
-  it("applies a ready summary at the turn instead of holding", async () => {
+  it("applies a pre-warmed summary at the turn instead of holding", async () => {
     const { s, compiles, state } = store();
     const plan = currentCompactionPlan(state())!;
     s.dispatch(
@@ -206,6 +224,7 @@ describe("the send path", () => {
         spanEnd: plan.spanEnd,
         status: "ready",
         summary: "The summary.",
+        prewarm: { status: "done" },
       }),
     );
     const length = state().session.history.length;
@@ -223,4 +242,59 @@ describe("the send path", () => {
     expect(item.conversationSummaryHistoryLength).toBe(length);
     expect(compiles).toHaveLength(1);
   });
+
+  it.each([
+    {
+      name: "a local server without a pre-warm",
+      model: strata,
+      applies: false,
+    },
+    {
+      name: "a cloud provider, which writes the cache anyway",
+      model: {
+        ...strata,
+        apiBase: "https://api.example.com/v1",
+        contextManagement: { plannedCompaction: true },
+      },
+      applies: true,
+    },
+  ])(
+    "at 79% (prepared, below force), $name: applied at the next turn is $applies",
+    async ({ model, applies }) => {
+      const s = createMockStore(stateWith(11, model));
+      s.mockIdeMessenger.responseHandlers["llm/compileChat"] = (async (
+        data: any,
+      ) => ({
+        compiledChatMessages: data.messages,
+        didPrune: false,
+        contextPercentage: 0.8,
+      })) as any;
+      s.mockIdeMessenger.llmStreamChat = vi.fn(async function* () {
+        return undefined;
+      }) as any;
+      const state = () => s.getState() as RootState;
+      const plan = currentCompactionPlan(state())!;
+      s.dispatch(
+        setPreparedCompaction({
+          sessionId: "s1",
+          planId: plan.id,
+          spanStart: plan.spanStart,
+          spanEnd: plan.spanEnd,
+          status: "ready",
+          summary: "The summary.",
+        }),
+      );
+      await s.dispatch(
+        streamResponseThunk({
+          editorState: text("Next"),
+          modifiers: { useCodebase: false, noContext: true },
+          holdBeforeForcedReread: true,
+        }) as any,
+      );
+      expect(state().session.compactionHold).toBeUndefined();
+      expect(state().session.history.some((h) => h.conversationSummary)).toBe(
+        applies,
+      );
+    },
+  );
 });

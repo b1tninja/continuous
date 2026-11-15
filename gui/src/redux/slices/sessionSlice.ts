@@ -277,6 +277,8 @@ export interface CompactionHoldState {
   planId: string;
   /** Tokens after the head the forced drop would read again */
   rereadTokens: number;
+  /** A summary is ready: Compact now saves it with no request */
+  prepared?: boolean;
   editorState: JSONContent;
   modifiers: InputModifiers;
   index?: number;
@@ -433,6 +435,8 @@ type SessionState = {
   compactionHold?: CompactionHoldState;
   /** The plan whose hold was answered with Continue anyway: not held again. */
   compactionHoldContinued?: string;
+  /** The plan whose prepared notice said pre-warm is off: said once a session. */
+  prewarmOffNoted?: string;
   /** Pre-edit file snapshots for "Restore to here"; see core/util/checkpoints.ts */
   checkpoints: TurnCheckpoint[];
   /** The agent's task list, saved with the session; see core/util/taskPlan.ts */
@@ -1255,6 +1259,7 @@ export const sessionSlice = createSlice({
       state.preparedCompaction = undefined;
       state.compactionHold = undefined;
       state.compactionHoldContinued = undefined;
+      state.prewarmOffNoted = undefined;
       state.usage = payload?.usage;
       // A different conversation shares nothing with the cached one: its size,
       // timing, misses and what Auto learned all start over. Each conversation
@@ -1831,6 +1836,10 @@ export const sessionSlice = createSlice({
     ) => {
       state.compactionHold = payload;
     },
+    /** The prepared notice said pre-warm is off, for this plan. */
+    notePrewarmOff: (state, { payload }: PayloadAction<string>) => {
+      state.prewarmOffNoted ??= payload;
+    },
     /** Continue anyway: the plan's later turns are not held again. */
     continueAfterCompactionHold: (
       state,
@@ -2010,6 +2019,7 @@ export const {
   dismissPreparedCompaction,
   setCompactionHold,
   continueAfterCompactionHold,
+  notePrewarmOff,
 } = sessionSlice.actions;
 
 export const { selectIsGatheringContext } = sessionSlice.selectors;

@@ -33,6 +33,8 @@ const strata: ModelDescription = {
   underlyingProviderName: "openai",
   apiBase: "http://127.0.0.1:8086/v1",
   contextLength: 100_000,
+  // Off by default this release (DEFAULT_PREWARM), so the tests turn it on
+  contextManagement: { prewarm: "local" },
 };
 
 const editorState: JSONContent = {
@@ -261,6 +263,17 @@ describe("the pre-warm (C106)", () => {
     },
   ])("is not sent with $name", async ({ model }) => {
     const t = setup(model);
+    preparer = t.preparer;
+    await vi.advanceTimersByTimeAsync(PREPARE_IDLE_MS);
+    await vi.waitFor(() =>
+      expect(t.getState().session.preparedCompaction?.status).toBe("ready"),
+    );
+    await vi.advanceTimersByTimeAsync(PREPARE_IDLE_MS);
+    expect(t.prewarms).toHaveLength(0);
+  });
+
+  it("is not sent with prewarm unset: off by default until the live check", async () => {
+    const t = setup({ ...strata, contextManagement: undefined });
     preparer = t.preparer;
     await vi.advanceTimersByTimeAsync(PREPARE_IDLE_MS);
     await vi.waitFor(() =>

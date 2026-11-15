@@ -62,7 +62,9 @@ export function CompactionHoldNotice() {
             else send();
           }}
         >
-          Compact now, then send
+          {hold.prepared
+            ? "Compact now (summary ready), then send"
+            : "Compact now, then send"}
         </button>
         <button
           type="button"
