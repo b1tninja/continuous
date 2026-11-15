@@ -116,6 +116,20 @@ describe("selectTools", () => {
     ]);
   });
 
+  it("the meta-tool description is identical before and after an activation", () => {
+    const mcp = fromFixture(2);
+    const before = run(mcp);
+    const after = run(mcp, { activatedNames: [before.deferred[3].name] });
+    const text = (r: typeof before) =>
+      r.tools.find((t) => t.function.name === "search_tools")!.function
+        .description;
+    expect(text(after)).toBe(text(before));
+    // the search index still leaves out what is already in the list
+    expect(after.deferred.map((d) => d.name)).not.toContain(
+      before.deferred[3].name,
+    );
+  });
+
   it("chat mode offers nothing", () => {
     expect(run(fromFixture(2), { mode: "chat" }).tools).toEqual([]);
   });

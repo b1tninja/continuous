@@ -11,9 +11,11 @@ import {
   newSession,
   setAllSessionMetadata,
   setIsSessionMetadataLoading,
+  setLoadingSessionId,
+  setSessionLoadNotice,
   updateSessionMetadata,
 } from "../slices/sessionSlice";
-import { RootState, ThunkApiType } from "../store";
+import { AppThunkDispatch, RootState, ThunkApiType } from "../store";
 import { saveSessionToCore } from "../util/sessionDelta";
 import {
   currentWorkspaceDirs,
@@ -153,9 +155,77 @@ export const updateSession = createAsyncThunk<void, Session, ThunkApiType>(
   },
 );
 
-/*
- this is only used for the custom focusContinueSessionId command at the moment
-*/
+/** Shown when a session the person picked or left open is gone */
+export const MISSING_SESSION_NOTICE =
+  "That session is no longer available: it may have been deleted or moved to the trash.";
+/** Shown when the session left open could not be read at start-up */
+export const UNREADABLE_SESSION_NOTICE =
+  "The previous session could not be loaded. Last Session tries again.";
+
+/**
+ * What core answers for a session it does not hold (deleted, in the trash):
+ * an empty session with the placeholder title (core/util/history.ts
+ * loadWithStatus). Only a session with messages is ever saved.
+ */
+export function isMissingSession(session: Session): boolean {
+  return (
+    session.history.length === 0 &&
+    (!session.title || session.title === NEW_SESSION_TITLE)
+  );
+}
+
+type FetchedSession =
+  | { status: "loaded"; session: Session }
+  | { status: "failed"; error: unknown }
+  /** The person moved on (a new session, another one) before it arrived */
+  | { status: "dropped" };
+
+/**
+ * Fetches a saved session while `loadingSessionId` marks it as in flight, so
+ * the chat shows the resuming view (ResumingSessionBody). Any `newSession`,
+ * or a load of another session, takes the mark, and then the result is
+ * dropped instead of replacing what the person is doing. A failure leaves
+ * the mark for the caller to clear or to keep for its next try.
+ */
+async function fetchSessionToLoad(
+  sessionId: string,
+  fetch: () => Promise<Session>,
+  dispatch: AppThunkDispatch,
+  getState: () => RootState,
+): Promise<FetchedSession> {
+  dispatch(setLoadingSessionId(sessionId));
+  const isStillWanted = () => getState().session.loadingSessionId === sessionId;
+  try {
+    const session = await fetch();
+    return isStillWanted()
+      ? { status: "loaded", session }
+      : { status: "dropped" };
+  } catch (error) {
+    return isStillWanted()
+      ? { status: "failed", error }
+      : { status: "dropped" };
+  }
+}
+
+/**
+ * The session is gone: an empty chat and a short note. An empty chat on the
+ * gone session's id gets a fresh id, so its first save cannot reuse it.
+ */
+function showMissingSession(
+  sessionId: string,
+  dispatch: AppThunkDispatch,
+  getState: () => RootState,
+  notice: string,
+) {
+  const { session } = getState();
+  if (session.id === sessionId || session.history.length === 0) {
+    dispatch(newSession());
+  } else {
+    dispatch(setLoadingSessionId(undefined));
+  }
+  dispatch(setSessionLoadNotice(notice));
+}
+
 export const loadSession = createAsyncThunk<
   void,
   {
@@ -165,7 +235,10 @@ export const loadSession = createAsyncThunk<
   ThunkApiType
 >(
   "session/load",
-  async ({ sessionId, saveCurrentSession: save }, { extra, dispatch }) => {
+  async (
+    { sessionId, saveCurrentSession: save },
+    { extra, dispatch, getState },
+  ) => {
     if (save) {
       // save the session in the background
       void dispatch(
@@ -175,7 +248,30 @@ export const loadSession = createAsyncThunk<
         }),
       );
     }
-    const session = await getSession(extra.ideMessenger, sessionId);
+    const fetched = await fetchSessionToLoad(
+      sessionId,
+      () => getSession(extra.ideMessenger, sessionId),
+      dispatch,
+      getState,
+    );
+    if (fetched.status === "dropped") {
+      return;
+    }
+    if (fetched.status === "failed") {
+      dispatch(setLoadingSessionId(undefined));
+      throw fetched.error;
+    }
+    const session = fetched.session;
+    // Picked from the list but gone now (trashed or deleted in another
+    // window). An id the list does not hold (a tab's new session) opens
+    // empty, as before.
+    const wasListed = getState().session.allSessionMetadata.some(
+      (m) => m.sessionId === sessionId,
+    );
+    if (wasListed && isMissingSession(session)) {
+      showMissingSession(sessionId, dispatch, getState, MISSING_SESSION_NOTICE);
+      return;
+    }
     dispatch(newSession(session));
 
     // Restore selected chat model from session, if present
@@ -229,28 +325,36 @@ async function listSessionMetadata(
 }
 
 /**
- * Loads the first of `candidates` that can be read and makes it the current
- * session; answers whether one was loaded.
+ * Loads the first of `candidates` that can be read and is not gone, and
+ * makes it the current session. "dropped" when the person moved on while it
+ * loaded; "none" when none could be loaded (the loading mark stays on the
+ * last one tried, so a retry can tell it is still wanted).
  */
 async function loadFirstSession(
   candidates: string[],
   ideMessenger: IIdeMessenger,
-  dispatch: (action: any) => any,
-): Promise<boolean> {
+  dispatch: AppThunkDispatch,
+  getState: () => RootState,
+): Promise<"loaded" | "dropped" | "none"> {
   for (const id of candidates) {
-    let session: Session;
-    try {
-      session = await getSession(ideMessenger, id);
-    } catch {
+    const fetched = await fetchSessionToLoad(
+      id,
+      () => getSession(ideMessenger, id),
+      dispatch,
+      getState,
+    );
+    if (fetched.status === "dropped") return "dropped";
+    if (fetched.status === "failed" || isMissingSession(fetched.session)) {
       continue;
     }
+    const session = fetched.session;
     dispatch(newSession(session));
     if (session.chatModelTitle) {
       void dispatch(selectChatModelForProfile(session.chatModelTitle));
     }
-    return true;
+    return "loaded";
   }
-  return false;
+  return "none";
 }
 
 /**
@@ -280,16 +384,46 @@ export const loadLastSession = createAsyncThunk<void, void, ThunkApiType>(
       dispatch(newSession());
       return;
     }
-    if (await loadFirstSession(candidates, extra.ideMessenger, dispatch)) {
+    const first = await loadFirstSession(
+      candidates,
+      extra.ideMessenger,
+      dispatch,
+      getState,
+    );
+    if (first !== "none") {
       return;
     }
-    // The extension may still be starting: one more try after a second
+    // The extension may still be starting: one more try after a second,
+    // unless the person moved on in the meantime (the mark is not ours then)
+    const lastTried = candidates[candidates.length - 1];
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    if (!(await loadFirstSession(candidates, extra.ideMessenger, dispatch))) {
+    if (getState().session.loadingSessionId !== lastTried) {
+      return;
+    }
+    const second = await loadFirstSession(
+      candidates,
+      extra.ideMessenger,
+      dispatch,
+      getState,
+    );
+    if (second === "none") {
       dispatch(newSession());
     }
   },
 );
+
+/**
+ * Whether the person has started or picked something since the webview
+ * opened on `preferredId`: a late start-up load must not replace it.
+ */
+function movedOnFrom(session: RootState["session"], preferredId: string) {
+  return (
+    session.id !== preferredId ||
+    session.history.length > 0 ||
+    (session.loadingSessionId !== undefined &&
+      session.loadingSessionId !== preferredId)
+  );
+}
 
 /**
  * When the webview starts: the session it had open (`preferredId`) when that
@@ -297,6 +431,11 @@ export const loadLastSession = createAsyncThunk<void, void, ThunkApiType>(
  * otherwise nothing (the empty session stays). The stored id is shared by
  * every window, so without this check a window could open another
  * workspace's conversation.
+ *
+ * The resuming view is up already when start-up expected this window to
+ * reopen the session (ParallelListeners, resumingSession.ts), marked by
+ * `loadingSessionId`. Nothing is loaded once the person has moved on (typed,
+ * started a new session, opened another).
  */
 export const restoreWorkspaceSession = createAsyncThunk<
   void,
@@ -306,14 +445,34 @@ export const restoreWorkspaceSession = createAsyncThunk<
   "session/restoreForWorkspace",
   async ({ preferredId }, { extra, dispatch, getState }) => {
     if (!preferredId) return;
+    if (movedOnFrom(getState().session, preferredId)) return;
+    const resuming = getState().session.loadingSessionId === preferredId;
     let session: Session;
     try {
       session = await getSession(extra.ideMessenger, preferredId);
     } catch {
+      if (resuming && !movedOnFrom(getState().session, preferredId)) {
+        showMissingSession(
+          preferredId,
+          dispatch,
+          getState,
+          UNREADABLE_SESSION_NOTICE,
+        );
+      }
       // Not saved (an empty session) or gone: left as it is, as before
       return;
     }
     const workspaceDirs = await workspaceDirsOf(extra.ideMessenger);
+    if (movedOnFrom(getState().session, preferredId)) return;
+    if (resuming && isMissingSession(session)) {
+      showMissingSession(
+        preferredId,
+        dispatch,
+        getState,
+        MISSING_SESSION_NOTICE,
+      );
+      return;
+    }
     if (sessionBelongsToWorkspace(session.workspaceDirectory, workspaceDirs)) {
       dispatch(newSession(session));
       if (session.chatModelTitle) {
@@ -321,20 +480,27 @@ export const restoreWorkspaceSession = createAsyncThunk<
       }
       return;
     }
-    // A conversation already under way is left alone
-    if (getState().session.history.length > 0) return;
-    // Another workspace's session: the one left last in this workspace
+    // Another workspace's session: not this one, so no resuming view for it
+    if (resuming) dispatch(setLoadingSessionId(undefined));
+    // The one left last in this workspace instead
     const remembered =
       getState().session.lastSessionIdByWorkspace?.[
         workspaceKey(workspaceDirs)
       ];
-    if (
-      remembered &&
-      remembered !== preferredId &&
-      (await loadFirstSession([remembered], extra.ideMessenger, dispatch))
-    ) {
-      return;
+    if (remembered && remembered !== preferredId) {
+      const result = await loadFirstSession(
+        [remembered],
+        extra.ideMessenger,
+        dispatch,
+        getState,
+      );
+      if (result !== "none") return;
+      if (getState().session.loadingSessionId === remembered) {
+        dispatch(setLoadingSessionId(undefined));
+      }
     }
+    // A conversation already under way is left alone
+    if (movedOnFrom(getState().session, preferredId)) return;
     if (getState().session.id === preferredId) {
       // A new id, so this window's first save cannot write over the other
       // workspace's session
