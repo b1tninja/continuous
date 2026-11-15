@@ -1,4 +1,11 @@
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { IdeMessengerContext } from "../context/IdeMessenger";
 import { useOpenRouterPrices } from "./useOpenRouterPrices";
 
@@ -14,14 +21,14 @@ import {
 } from "../redux/slices/profilesSlice";
 import {
   addContextItemsAtIndex,
-  newSession,
   setHasReasoningEnabled,
   setIsSessionMetadataLoading,
-  setMode,
+  setLoadingSessionId,
 } from "../redux/slices/sessionSlice";
 import { setTTSActive } from "../redux/slices/uiSlice";
 
 import { modelSupportsReasoning } from "core/llm/autodetect";
+import { expectsStartupResume } from "../pages/gui/resumingSession";
 import { cancelStream } from "../redux/thunks/cancelStream";
 import { handleApplyStateUpdate } from "../redux/thunks/handleApplyStateUpdate";
 import {
@@ -37,6 +44,7 @@ import {
 import { isJetBrains } from "../util";
 import { setLocalStorage } from "../util/localStorage";
 import { migrateLocalStorage } from "../util/migrateLocalStorage";
+import { currentWorkspaceDirs } from "../util/sessionWorkspace";
 import { useWebviewListener } from "./useWebviewListener";
 
 /** Coalesces quick queue edits into one save */
@@ -60,6 +68,28 @@ function ParallelListeners() {
   const sessionId = useAppSelector((state) => state.session.id);
   const lastSessionId = useAppSelector((store) => store.session.lastSessionId);
   const [initialSessionId] = useState(sessionId || lastSessionId);
+  const persistedTitle = useAppSelector((store) => store.session.title);
+  const sessionWorkspaceDirectory = useAppSelector(
+    (store) => store.session.sessionWorkspaceDirectory,
+  );
+
+  // The saved session is only fetched once the config has loaded, which can
+  // take a while. When this window will reopen it (a session of this
+  // workspace, restoreWorkspaceSession), mark it as loading before the first
+  // paint, so the chat shows that rather than the conversation starters.
+  useLayoutEffect(() => {
+    if (
+      sessionId &&
+      initialSessionId === sessionId &&
+      expectsStartupResume({
+        persistedTitle,
+        sessionWorkspaceDirectory,
+        workspaceDirs: currentWorkspaceDirs(),
+      })
+    ) {
+      dispatch(setLoadingSessionId(sessionId));
+    }
+  }, []);
 
   // Save queued messages with the session as soon as they change, not at the
   // end of the turn, so a reload or crash mid-turn does not lose them

@@ -252,6 +252,23 @@ type SessionState = {
   lastSessionId?: string;
   /** The session left last in each workspace, by `workspaceKey` */
   lastSessionIdByWorkspace?: Record<string, string>;
+  /**
+   * The folder the open session belongs to: its saved `workspaceDirectory`,
+   * or this window's first folder for a new one. Persisted with `id`, so at
+   * start-up the webview can tell, before asking the IDE, whether the stored
+   * session is one this window will reopen (restoreWorkspaceSession).
+   */
+  sessionWorkspaceDirectory?: string;
+  /**
+   * Set while a saved session is being fetched from the IDE. A large session
+   * can take a while, and until it arrives `history` is empty, so the chat
+   * shows a resuming view instead of the conversation starters. Any
+   * `newSession` clears it, so a slow load the user has moved on from is
+   * dropped rather than replacing what they are doing.
+   */
+  loadingSessionId?: string;
+  /** A short note when a session could not be opened (missing, trashed) */
+  sessionLoadNotice?: string;
   isSessionMetadataLoading: boolean;
   allSessionMetadata: BaseSessionMetadata[];
   history: ChatHistoryItemWithMessageId[];
@@ -1059,6 +1076,11 @@ export const sessionSlice = createSlice({
     },
     newSession: (state, { payload }: PayloadAction<Session | undefined>) => {
       state.lastSessionId = state.id;
+      state.loadingSessionId = undefined;
+      state.sessionLoadNotice = undefined;
+      state.sessionWorkspaceDirectory = payload
+        ? payload.workspaceDirectory
+        : (currentWorkspaceDirs()[0] ?? "");
       // Only a session with messages is saved, so only one can be reopened
       if (state.history.length > 0) {
         state.lastSessionIdByWorkspace = rememberLastSession(
@@ -1181,6 +1203,18 @@ export const sessionSlice = createSlice({
     },
     updateSessionTitle: (state, { payload }: PayloadAction<string>) => {
       state.title = payload;
+    },
+    setLoadingSessionId: (
+      state,
+      { payload }: PayloadAction<string | undefined>,
+    ) => {
+      state.loadingSessionId = payload;
+    },
+    setSessionLoadNotice: (
+      state,
+      { payload }: PayloadAction<string | undefined>,
+    ) => {
+      state.sessionLoadNotice = payload;
     },
     setIsSessionMetadataLoading: (
       state,
@@ -1706,6 +1740,8 @@ export const {
   streamUpdate,
   newSession,
   updateSessionTitle,
+  setLoadingSessionId,
+  setSessionLoadNotice,
   addHighlightedCode,
   addPromptCompletionPair,
   setActive,

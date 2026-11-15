@@ -42,6 +42,8 @@ const saveSubsetFilters = [
     "lastSessionId",
     "lastSessionIdByWorkspace",
     "title",
+    // Lets start-up tell whether the stored session is this workspace's
+    "sessionWorkspaceDirectory",
 
     // Persist edit mode in case closes in middle
     "mode",
