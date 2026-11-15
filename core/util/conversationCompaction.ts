@@ -7,6 +7,7 @@ import {
 } from "..";
 import { HistoryManager } from "./history";
 import { stripImages } from "./messageContent";
+import { summaryMessageText } from "./summaryMessage";
 
 export interface CompactionParams {
   sessionId: string;
@@ -72,6 +73,8 @@ export async function compactConversation(
   updatedHistory[index] = {
     ...updatedHistory[index],
     conversationSummary: summary,
+    // Reasoning minted before this point saw the summarised turns (C104)
+    conversationSummaryHistoryLength: session.history.length,
   };
 
   // Update the session with the new history. The saved prompt cache record
@@ -152,11 +155,12 @@ export async function summarizeConversation({
     }
   });
 
-  // If there's a previous summary, include it as a user message at the beginning
+  // If there's a previous summary, include it as a user message at the
+  // beginning, as the chat sends it (gui constructMessages, C104)
   if (summaryContent) {
     messages.unshift({
       role: "user",
-      content: `Previous conversation summary:\n\n${summaryContent}`,
+      content: summaryMessageText(summaryContent),
     });
   }
 

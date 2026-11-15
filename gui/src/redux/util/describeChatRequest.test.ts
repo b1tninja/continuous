@@ -162,13 +162,20 @@ describe("IDE prefix stability (C62 a)", () => {
     ).toBe("tools.builtin@agent");
   });
 
-  it("BASELINE offender: a compaction summary is appended to the system message", () => {
-    expect(
-      firstChangedVsPrev(
-        manifests["ide-compacted"],
-        manifests["ide-agent-claude"],
-      ),
-    ).toBe("summary.compaction");
+  it("a compaction summary is the first user message, after an unchanged system message (C104)", () => {
+    const compacted = manifests["ide-compacted"];
+    const before = manifests["ide-agent-claude"];
+    // The tools and the system message are the same segments as before
+    expect(firstChangedVsPrev(compacted, before)).toBe("summary.compaction");
+    const summary = compacted.find((x) => x.id === "summary.compaction");
+    expect(summary).toMatchObject({
+      region: "first-user",
+      stability: "session",
+    });
+    expect(summary?.exposedTo).toBeUndefined();
+    const head = (xs: typeof before) =>
+      xs.filter((x) => x.region === "tools" || x.region === "system");
+    expect(head(compacted)).toEqual(head(before));
   });
 
   it("makes the plan's offenders visible per scenario", () => {
@@ -186,10 +193,7 @@ describe("IDE prefix stability (C62 a)", () => {
       "mode-switch",
       "scoped-rule-appended",
     ]);
-    expect(visible("ide-compacted")).toEqual([
-      "mode-switch",
-      "summary-in-system",
-    ]);
+    expect(visible("ide-compacted")).toEqual(["mode-switch"]);
   });
 
   it("a scoped rule listed before a global one still comes after it (C62)", () => {
