@@ -1,0 +1,64 @@
+---
+title: "Stop, Resume and recovering a turn"
+---
+
+No single key stops a running reply, starts a new chat over running work or clears what you typed. A key opens a short question, `Enter` answers it, and `Esc` keeps going. The key that opened the question, pressed again or held down, never answers it.
+
+## Stop a reply
+
+| How | What happens |
+| --- | --- |
+| Click **Stop** under the input | Stops at once. A pointer click is deliberate, so it does not ask. |
+| `Esc` in an empty chat input while the reply streams | Asks **Stop the response?** `Enter` stops, `Esc` keeps going. |
+| `Enter` or `Space` on the **Stop** button | Asks first, as `Esc` does. |
+| **Continuous: Stop Response** in the Command Palette | Asks in the chat panel. Bind a key to the command in Keyboard Shortcuts if you want one; it still asks. |
+
+With text in the input, `Esc` does what it always did (it returns focus to the editor in VS Code and closes the sidebar in JetBrains). An `Enter` pressed within 0.3 seconds of the question opening, held down or with a modifier, does not answer it. The question closes as "keep going" when the reply ends while it is open.
+
+A stopped reply keeps:
+
+- what the model wrote before the stop, marked as stopped
+- the text in your input, which is not sent and not cleared
+- the session on disk, saved with the stopped turn, so the turn is still there after Reload Window
+
+Stop also ends running terminal commands and stops a running loop; the loop's item goes back to pending.
+
+## Resume
+
+**Resume response**, under a stopped, failed or interrupted turn, asks the model to carry on from the partial reply. **Continuous: Resume Response** in the Command Palette does the same. Resume also appears on a session you reopen from History.
+
+## Start a new chat while the agent works
+
+`Ctrl+L` (`Cmd+L` on macOS) still starts a new chat from a focused chat input. When a reply streams, a tool call waits for approval, a tool runs or a loop runs, it first asks **Stop the agent and start a new chat?**, naming what is running. The same question comes before:
+
+- **New Session**
+- opening another chat from History
+- switching, closing or archiving the open session tab
+
+`Enter` (or **Stop and start new**) stops the work the way **Stop** does and then switches. The chat you leave is saved with its reply marked stopped, so Resume works when you open it again. `Esc` (or **Keep working**) leaves everything as it was. Pressing `Ctrl+L` again while the question is open does nothing.
+
+With nothing running nothing is asked, and there is no "don't ask again" setting: the question only comes up while work runs. Text you have typed is never lost on a switch. It moves to the new chat when that chat is empty, and otherwise stays with the chat it was typed in, which shows it again when you return.
+
+## Edit an earlier message
+
+Editing an earlier message and sending it replaces that message and everything after it. The replaced part is kept:
+
+1. Before the edit runs, the whole conversation is saved as a chat of its own, named `<title> (before edit)`. It is listed in History, opens like any other chat, and Delete moves it to the trash, where it can be restored for 7 days.
+2. A line above the input says **Edited. The 8 messages are kept in "Build question (before edit)".** with **Undo** and **View**.
+3. **Undo** puts the conversation from before the edit back in the open chat. The edited version is not thrown away: the copy now holds it, as `<title> (undone edit)`. Undo restores the conversation only; files the edited turn changed are restored with **Restore to here**.
+4. **View** opens the copy.
+
+The line goes away when you send the next message, dismiss it or open another chat. The copy stays in History.
+
+## Terminal agent
+
+In `continuous` (the terminal UI) the same rules apply:
+
+| Key | What happens |
+| --- | --- |
+| `Esc` while the agent works | Asks **Stop the response?** `Enter` stops, `Esc` keeps going, any other key closes the question and is typed as usual. Typed text is kept. |
+| `Ctrl+C` with text typed | Asks **Clear the input?** `Enter` clears it, and `Up` brings it back. |
+| `Ctrl+C` on an empty prompt while the agent works | Asks **Stop the response?** |
+| `Ctrl+C` twice within a second | Exits, as before. |
+
+Editing an earlier message (`Esc` twice, then pick the message) saves the conversation as `<title> (before edit)` before it rewinds, and says so; `/resume` opens the copy. `/clear` starts a new session and keeps the old one for `/resume`.

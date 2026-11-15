@@ -11,6 +11,8 @@ This page describes how to drive the chat from the keyboard, what a screen reade
 
 - **Focus the input:** `Ctrl+L` (`Cmd+L` on macOS) in VS Code.
 - **Leave the input:** `Escape` returns focus to the editor in VS Code. In JetBrains it closes the sidebar.
+- **Stop a reply:** `Escape` in an empty input while the reply streams asks **Stop the response?**; `Enter` stops and `Escape` keeps going. The question is an `alertdialog` that takes focus and gives it back when it closes. The **Stop** button declares `aria-keyshortcuts="Escape"`; reached with the keyboard it asks too. See [Stop, Resume and recovering a turn](/ide-extensions/agent/stop-and-resume).
+- **New chat:** `Ctrl+L` (`Cmd+L`) from the focused input starts a new chat. While the agent works it asks first, the same way.
 - **Earlier messages:** at the start of the input, `Up` recalls an earlier message; `Down` at the end moves forward again.
 - **Mention list (`@`):** `Up` and `Down` move through the list, `Enter` or `Tab` chooses the highlighted item, and `Escape` closes the list without leaving the input.
 
@@ -26,7 +28,7 @@ When the agent asks to run a command, an **Approval needed** group appears above
 
 - Focus moves to the first **Accept** button unless you are typing: a field that holds text, or a character key pressed in the last two seconds, keeps focus where it is.
 - `Ctrl+Enter` (`Cmd+Enter` on macOS) accepts the first pending command from anywhere in the chat.
-- Reject a command, or stop a running terminal command, with its **Reject** or **Stop** button. There is no keyboard shortcut for this: `Backspace` combinations delete text and never reject or stop anything.
+- Reject a command, or stop a running terminal command, with its **Reject** or **Stop** button. `Backspace` combinations delete text and never reject or stop anything; `Escape` in an empty input asks before it stops.
 - With several commands pending, **Accept all** accepts every one. Accepting or rejecting one moves focus to the next pending command's **Accept** button.
 - When the last pending command is accepted or rejected, focus goes to the chat input. If you had already moved focus somewhere else, it stays there.
 
