@@ -7,6 +7,7 @@ import { CustomScrollbarDiv } from ".";
 import { AuthProvider } from "../context/Auth";
 import { IdeMessengerContext } from "../context/IdeMessenger";
 import { LocalStorageProvider } from "../context/LocalStorage";
+import { PaletteCommandListeners } from "../hooks/usePaletteCommandListeners";
 import { useWebviewListener } from "../hooks/useWebviewListener";
 import { useAppDispatch, useAppSelector } from "../redux/hooks";
 import { setCodeToEdit } from "../redux/slices/editState";
@@ -208,6 +209,7 @@ const Layout = () => {
         <LayoutTopDiv>
           <OSRContextMenu />
           <ChatAnnouncer />
+          <PaletteCommandListeners />
           <div
             style={{
               scrollbarGutter: "stable both-edges",

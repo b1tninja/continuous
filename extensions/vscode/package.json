@@ -513,15 +513,57 @@
         "group": "Continuous"
       },
       {
-        "command": "continuous.focusContinuousInput",
+        "command": "continuous.openPermissions",
         "category": "Continuous",
-        "title": "Focus Continuous Chat",
+        "title": "Open Permissions",
         "group": "Continuous"
       },
       {
-        "command": "continuous.enterEnterpriseLicenseKey",
+        "command": "continuous.openAuditInbox",
         "category": "Continuous",
-        "title": "Enter Enterprise License Key",
+        "title": "Open the Audit Inbox",
+        "group": "Continuous"
+      },
+      {
+        "command": "continuous.openStats",
+        "category": "Continuous",
+        "title": "Open Stats",
+        "group": "Continuous"
+      },
+      {
+        "command": "continuous.startLoop",
+        "category": "Continuous",
+        "title": "Start Loop",
+        "group": "Continuous"
+      },
+      {
+        "command": "continuous.stopLoop",
+        "category": "Continuous",
+        "title": "Stop Loop",
+        "group": "Continuous"
+      },
+      {
+        "command": "continuous.stopResponse",
+        "category": "Continuous",
+        "title": "Stop Response",
+        "group": "Continuous"
+      },
+      {
+        "command": "continuous.resumeResponse",
+        "category": "Continuous",
+        "title": "Resume Response",
+        "group": "Continuous"
+      },
+      {
+        "command": "continuous.showAgents",
+        "category": "Continuous",
+        "title": "Show Agents",
+        "group": "Continuous"
+      },
+      {
+        "command": "continuous.testConnection",
+        "category": "Continuous",
+        "title": "Test Connection of the Chat Model",
         "group": "Continuous"
       },
       {
@@ -697,9 +739,6 @@
         },
         {
           "command": "continuous.newSession"
-        },
-        {
-          "command": "continuous.enterEnterpriseLicenseKey"
         },
         {
           "command": "continuous.openInNewWindow"

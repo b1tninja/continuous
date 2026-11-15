@@ -84,4 +84,11 @@ export type ToWebviewFromIdeProtocol = ToWebviewFromIdeOrCoreProtocol & {
   exitEditMode: [undefined, void];
   focusEdit: [undefined, void];
   addToChat: [AddToChatPayload, void];
+  // Command Palette actions (NI13); each answers whether it applied
+  stopResponse: [undefined, boolean];
+  resumeResponse: [undefined, boolean];
+  startLoop: [undefined, "resumed" | "chosen" | "running"];
+  stopLoop: [undefined, boolean];
+  showAgents: [undefined, boolean];
+  testConnection: [undefined, boolean];
 };

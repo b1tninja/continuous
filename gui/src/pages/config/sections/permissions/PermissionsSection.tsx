@@ -12,7 +12,7 @@ import {
   type PolicyArea,
 } from "core/tools/permissions/policy";
 import type { ToolCallTestResult } from "core/tools/permissions/testToolCall";
-import { useContext, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import Alert from "../../../../components/gui/Alert";
 import { Button } from "../../../../components/ui";
@@ -26,7 +26,11 @@ import { CustomPolicy, isBaseName } from "./custom/CustomPolicy";
 import { EditableRules, type EditorEnv } from "./EditableRules";
 import { AuditInbox } from "./audit/AuditInbox";
 import { AuditList } from "./audit/AuditList";
-import { ViewSwitch, type PermissionsView } from "./audit/ViewSwitch";
+import {
+  isPermissionsView,
+  ViewSwitch,
+  type PermissionsView,
+} from "./audit/ViewSwitch";
 import { FirstRunOverview } from "./FirstRunOverview";
 import { LocksSection } from "./Locks";
 import { PermissionsError, PermissionsSkeleton } from "./PermissionsStates";
@@ -211,7 +215,15 @@ export function PermissionsSection() {
       reload();
     }
   };
-  const [view, setView] = useState<PermissionsView>("rules");
+  // ?view=inbox|recent: a view opened from outside (the Command Palette's
+  // Open Audit Inbox)
+  const viewParam = params.get("view");
+  const [view, setView] = useState<PermissionsView>(
+    isPermissionsView(viewParam) ? viewParam : "rules",
+  );
+  useEffect(() => {
+    if (isPermissionsView(viewParam)) setView(viewParam);
+  }, [viewParam]);
   const [review, setReview] = useState<
     (ReviewRequest & { nonce: number }) | undefined
   >();
