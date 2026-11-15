@@ -65,6 +65,11 @@ import {
   type PromptCacheSessionState,
 } from "../../util/promptCache";
 import { appendFailure, type RequestFailure } from "../../util/requestFailures";
+import {
+  currentWorkspaceDirs,
+  rememberLastSession,
+  workspaceKey,
+} from "../../util/sessionWorkspace";
 import { markTurnCutOffOnLoad } from "../../util/resumeTurn";
 import { historyKey } from "../../util/selectiveCompaction";
 import { interruptSubagentRuns } from "../../util/subagents/interrupt";
@@ -239,7 +244,14 @@ export type ChatHistoryItemWithMessageId = ChatHistoryItem & {
 };
 
 type SessionState = {
+  /**
+   * The session left last, in any window: the webview's storage is shared by
+   * every window. Kept to show the reopen action; which session it reopens
+   * comes from `lastSessionIdByWorkspace`.
+   */
   lastSessionId?: string;
+  /** The session left last in each workspace, by `workspaceKey` */
+  lastSessionIdByWorkspace?: Record<string, string>;
   isSessionMetadataLoading: boolean;
   allSessionMetadata: BaseSessionMetadata[];
   history: ChatHistoryItemWithMessageId[];
@@ -1047,6 +1059,14 @@ export const sessionSlice = createSlice({
     },
     newSession: (state, { payload }: PayloadAction<Session | undefined>) => {
       state.lastSessionId = state.id;
+      // Only a session with messages is saved, so only one can be reopened
+      if (state.history.length > 0) {
+        state.lastSessionIdByWorkspace = rememberLastSession(
+          state.lastSessionIdByWorkspace,
+          workspaceKey(currentWorkspaceDirs()),
+          state.id,
+        );
+      }
 
       state.streamAborter.abort();
       state.streamAborter = new AbortController();

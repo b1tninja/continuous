@@ -40,6 +40,7 @@ const saveSubsetFilters = [
   createFilter("session", [
     "id",
     "lastSessionId",
+    "lastSessionIdByWorkspace",
     "title",
 
     // Persist edit mode in case closes in middle

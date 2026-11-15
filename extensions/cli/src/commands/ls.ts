@@ -1,37 +1,28 @@
-import { render } from "ink";
-import React from "react";
-
-import { listSessions, loadSessionById } from "../session.js";
-import { SessionSelector } from "../ui/SessionSelector.js";
+import {
+  listSessionsForWorkspace,
+  loadSessionById,
+  setResumeSessionId,
+} from "../session.js";
 import { logger } from "../util/logger.js";
 
 import { chat } from "./chat.js";
+import { pickSession } from "./resumePicker.js";
 
 interface ListSessionsOptions {
   format?: "json";
 }
 
 /**
- * Set a specific session ID for the current process
- * This allows us to load a selected session as if it were the current session
- */
-function setSessionId(sessionId: string): void {
-  // Use the same environment variable that getSessionId() checks
-  process.env.CONTINUE_CLI_TEST_SESSION_ID = sessionId.replace(
-    "continue-cli-",
-    "",
-  );
-}
-
-/**
- * List recent chat sessions and allow selection
+ * List recent chat sessions and allow selection. Sessions of the folder the
+ * CLI runs in come first (newest at the top, selected), then the other
+ * folders, each under its own header (session.ts orderSessionsForWorkspace).
  */
 export async function listSessionsCommand(
   options: ListSessionsOptions = {},
 ): Promise<void> {
   // Handle JSON format output first
   if (options.format === "json") {
-    const sessions = await listSessions();
+    const sessions = await listSessionsForWorkspace();
     console.log(
       JSON.stringify(
         {
@@ -43,6 +34,8 @@ export async function listSessionsCommand(
             firstUserMessage: session.firstUserMessage,
             isRemote: session.isRemote,
             remoteId: session.remoteId,
+            inWorkspace: session.inWorkspace ?? false,
+            workspaceGroup: session.workspaceGroup,
           })),
         },
         null,
@@ -53,7 +46,7 @@ export async function listSessionsCommand(
   }
 
   // For TUI mode, fetch more sessions than we might display so the UI can choose based on screen height
-  const sessions = await listSessions();
+  const sessions = await listSessionsForWorkspace();
 
   // Handle empty sessions case
   if (sessions.length === 0) {
@@ -63,49 +56,22 @@ export async function listSessionsCommand(
     return;
   }
 
-  // Start TUI selector
-  return new Promise<void>((resolve, reject) => {
-    const handleSelect = async (sessionId: string) => {
-      try {
-        app.unmount();
+  const sessionId = await pickSession(sessions);
+  if (!sessionId) return;
 
-        // Handle local session
-        const sessionHistory = loadSessionById(sessionId);
-        if (!sessionHistory) {
-          logger.error(`Session ${sessionId} could not be loaded.`);
-          resolve();
-          return;
-        }
+  // Handle local session
+  const sessionHistory = loadSessionById(sessionId);
+  if (!sessionHistory) {
+    logger.error(`Session ${sessionId} could not be loaded.`);
+    return;
+  }
 
-        logger.info(`Loading session: ${sessionId}`);
+  logger.info(`Loading session: ${sessionId}`);
 
-        // Set the session ID so that when chat() runs, it will load this session
-        setSessionId(sessionId);
-
-        // Start chat with resume flag to load the selected session
-        await chat(undefined, {
-          resume: true,
-          headless: false,
-        });
-
-        resolve();
-      } catch (error) {
-        logger.error("Error loading session:", error);
-        reject(error);
-      }
-    };
-
-    const handleExit = () => {
-      app.unmount();
-      resolve();
-    };
-
-    const app = render(
-      React.createElement(SessionSelector, {
-        sessions,
-        onSelect: handleSelect,
-        onExit: handleExit,
-      }),
-    );
+  // The session chat() resumes: this one, not the newest of the folder
+  setResumeSessionId(sessionId);
+  await chat(undefined, {
+    resume: true,
+    headless: false,
   });
 }

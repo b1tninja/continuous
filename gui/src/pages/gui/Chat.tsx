@@ -5,7 +5,14 @@ import {
 import { Editor, JSONContent } from "@tiptap/react";
 import { ChatHistoryItem, InputModifiers } from "core";
 import { renderChatMessage } from "core/util/messageContent";
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ErrorBoundary } from "react-error-boundary";
 import styled from "styled-components";
 import { Button, lightGray, vscBackground } from "../../components";
@@ -73,6 +80,10 @@ import { setDialogMessage, setShowDialog } from "../../redux/slices/uiSlice";
 import { RootState } from "../../redux/store";
 import { interruptStream } from "../../redux/thunks/cancelStream";
 import { getLocalStorage, setLocalStorage } from "../../util/localStorage";
+import {
+  currentWorkspaceDirs,
+  lastSessionCandidates,
+} from "../../util/sessionWorkspace";
 import { EmptyChatBody } from "./EmptyChatBody";
 import { ExploreDialogWatcher } from "./ExploreDialogWatcher";
 import { JumpToLatest } from "./JumpToLatest";
@@ -149,6 +160,24 @@ export function Chat() {
   const isInEdit = useAppSelector((store) => store.session.isInEdit);
 
   const lastSessionId = useAppSelector((state) => state.session.lastSessionId);
+  const lastSessionIdByWorkspace = useAppSelector(
+    (state) => state.session.lastSessionIdByWorkspace,
+  );
+  const allSessionMetadata = useAppSelector(
+    (state) => state.session.allSessionMetadata,
+  );
+  // "Last Session" reopens a session of this workspace (thunks/session.ts
+  // loadLastSession), so it is offered only when this workspace has one
+  const canReopenLastSession = useMemo(
+    () =>
+      lastSessionCandidates({
+        byWorkspace: lastSessionIdByWorkspace,
+        legacyLastSessionId: lastSessionId,
+        sessions: allSessionMetadata,
+        workspaceDirs: currentWorkspaceDirs(),
+      }).length > 0,
+    [lastSessionIdByWorkspace, lastSessionId, allSessionMetadata],
+  );
   const hasDismissedExploreDialog = useAppSelector(
     (state) => state.ui.hasDismissedExploreDialog,
   );
@@ -581,7 +610,7 @@ export function Chat() {
         >
           <div className="flex flex-row items-center justify-between pr-2 pb-1 pl-0.5">
             <div className="hidden xs:inline">
-              {history.length === 0 && lastSessionId && !isInEdit && (
+              {history.length === 0 && canReopenLastSession && !isInEdit && (
                 <NewSessionButton
                   onClick={async () => {
                     await dispatch(loadLastSession());

@@ -25,8 +25,8 @@ import { modelSupportsReasoning } from "core/llm/autodetect";
 import { cancelStream } from "../redux/thunks/cancelStream";
 import { handleApplyStateUpdate } from "../redux/thunks/handleApplyStateUpdate";
 import {
-  loadSession,
   refreshSessionMetadata,
+  restoreWorkspaceSession,
   saveCurrentSession,
 } from "../redux/thunks/session";
 import { updateFileSymbolsFromHistory } from "../redux/thunks/updateFileSymbols";
@@ -145,11 +145,10 @@ function ParallelListeners() {
       }
       dispatch(setConfigLoading(false));
       if (initialSessionId) {
+        // Only a session of this window's workspace: the stored id is
+        // shared by every window
         await dispatch(
-          loadSession({
-            sessionId: initialSessionId,
-            saveCurrentSession: false,
-          }),
+          restoreWorkspaceSession({ preferredId: initialSessionId }),
         );
       }
     }

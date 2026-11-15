@@ -10,9 +10,34 @@ import { SessionPreview } from "./SessionPreview.js";
 import { defaultBoxStyles } from "./styles.js";
 
 interface SessionSelectorProps {
+  /**
+   * In display order. Sessions carrying `workspaceGroup` (from
+   * `orderSessionsForWorkspace`) are shown under a header per folder; the
+   * first row is selected at the start, so with that order Enter resumes
+   * the newest session of the folder the CLI runs in.
+   */
   sessions: ExtendedSessionMetadata[];
   onSelect: (sessionId: string) => void;
   onExit: () => void;
+  /** Heading of the list; "Recent Sessions" by default */
+  title?: string;
+}
+
+/** The header shown above a session's group, or undefined when not grouped. */
+function groupHeader(session: ExtendedSessionMetadata): string | undefined {
+  if (session.workspaceGroup === undefined) return undefined;
+  return session.inWorkspace
+    ? `${session.workspaceGroup} (this folder)`
+    : session.workspaceGroup;
+}
+
+/** Which of `window` start a new group (and so have a header line above them). */
+function headerFlags(window: ExtendedSessionMetadata[]): boolean[] {
+  return window.map((session, index) => {
+    const header = groupHeader(session);
+    if (header === undefined) return false;
+    return index === 0 || groupHeader(window[index - 1]) !== header;
+  });
 }
 
 function formatTimestamp(date: Date): string {
@@ -40,6 +65,7 @@ export function SessionSelector({
   sessions,
   onSelect,
   onExit,
+  title = "Recent Sessions",
 }: SessionSelectorProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [previewSession, setPreviewSession] = useState<Session | null>(null);
@@ -66,30 +92,33 @@ export function SessionSelector({
     // - Empty line after instructions: 1 line
     // - Potential scroll indicators: up to 2 lines (1 above, 1 below)
     // Total overhead: ~9 lines
+    // - A workspace header: 1 line per group in view
     const MAGIC_NUMBER = 9;
     const availableHeight = Math.max(1, terminalHeight - MAGIC_NUMBER);
-    const maxDisplayableSessions = Math.floor(availableHeight / 3);
 
-    // If we can display all sessions, no need to scroll
-    if (sessions.length <= maxDisplayableSessions) {
-      return { displaySessions: sessions, scrollOffset: 0 };
+    const windowAt = (count: number) => {
+      // Calculate scroll offset to keep selected item visible
+      let offset = 0;
+      if (selectedIndex >= count) {
+        offset = Math.min(selectedIndex - count + 1, sessions.length - count);
+      }
+      return { offset, window: sessions.slice(offset, offset + count) };
+    };
+
+    let count = Math.max(1, Math.floor(availableHeight / 3));
+    let { offset, window } = windowAt(count);
+    // Headers take a line each: show fewer sessions until they fit
+    while (
+      count > 1 &&
+      window.length * 3 + headerFlags(window).filter(Boolean).length >
+        availableHeight
+    ) {
+      count--;
+      ({ offset, window } = windowAt(count));
     }
-
-    // Calculate scroll offset to keep selected item visible
-    let scrollOffset = 0;
-    if (selectedIndex >= maxDisplayableSessions) {
-      scrollOffset = Math.min(
-        selectedIndex - maxDisplayableSessions + 1,
-        sessions.length - maxDisplayableSessions,
-      );
-    }
-
-    const displaySessions = sessions.slice(
-      scrollOffset,
-      scrollOffset + maxDisplayableSessions,
-    );
-    return { displaySessions, scrollOffset };
+    return { displaySessions: window, scrollOffset: offset };
   }, [sessions, terminalHeight, selectedIndex]);
+  const startsGroup = headerFlags(displaySessions);
 
   useInput((input, key) => {
     if (key.upArrow || input === "k") {
@@ -129,7 +158,7 @@ export function SessionSelector({
       {/* Left side: Session list */}
       <Box {...defaultBoxStyles("blue")} width={listWidth}>
         <Text color="blue" bold>
-          Recent Sessions{" "}
+          {title}{" "}
           {sessions.length > displaySessions.length &&
             `(${selectedIndex + 1}/${sessions.length})`}
         </Text>
@@ -148,8 +177,19 @@ export function SessionSelector({
           const indicator = isSelected ? "➤ " : "  ";
           const color = isSelected ? "blue" : "white";
 
+          const header = startsGroup[index] ? groupHeader(session) : undefined;
+
           return (
             <Box key={session.sessionId} flexDirection="column">
+              {header !== undefined && (
+                <Text
+                  color={session.inWorkspace ? "green" : "cyan"}
+                  bold
+                  wrap="truncate-middle"
+                >
+                  {header}
+                </Text>
+              )}
               <Box paddingRight={3}>
                 <Text bold={isSelected} color={color} wrap="truncate-end">
                   {indicator}
@@ -158,7 +198,9 @@ export function SessionSelector({
               </Box>
               <Box marginLeft={2}>
                 <Text color="gray">
-                  {formatTimestamp(new Date(session.dateCreated))}
+                  {formatTimestamp(
+                    new Date(session.lastModified ?? session.dateCreated),
+                  )}
                   {session.isRemote ? " (remote)" : " (local)"}
                 </Text>
               </Box>

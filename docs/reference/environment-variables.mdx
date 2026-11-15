@@ -96,7 +96,7 @@ In a hook's command, `$CONTINUE_PROJECT_DIR`, `${CONTINUE_PROJECT_DIR}` and `%CO
 | `CONTINUE_USE_BEDROCK`                            | `1` makes the terminal agent's first start print `Using AWS Bedrock` and skip the API key question. Nothing else reads it: it configures no model |
 | `CONTINUOUS_IGNORE_CWD_ENV`                       | Set by the terminal agent at start, so shared code does not read a working-directory `.env`                                   |
 | `CONTINUE_CLI_AUTO_UPDATED`                       | Set by the update code on the process it restarts. Self-update is off in Continuous                                           |
-| `CONTINUE_CLI_TEST_SESSION_ID`                    | Used by `continuous ls` to open the session you picked, and by tests                                                          |
+| `CONTINUE_CLI_TEST_SESSION_ID`                    | Tests only: the id a new terminal session gets                                                                                |
 | `CONTINUE_CLI_TEST`                               | Tests only                                                                                                                    |
 | `CONTINUE_USER_ID`                                | Replaces the machine id the terminal agent uses as its user id                                                                |
 | `CONTINUE_REMOTE`                                 | Reported as an attribute of the terminal agent's optional metrics                                                             |

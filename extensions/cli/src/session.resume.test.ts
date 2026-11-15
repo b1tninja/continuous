@@ -12,6 +12,9 @@ import { resetUserNotices, setUserNoticeSink } from "./util/userNotice.js";
 // Real files in the test run's own global folder (vitest.global-dir-setup.ts)
 const dir = path.join(env.continueHome, "sessions");
 
+// The folder the sessions below were saved in, as the folder --resume runs in
+const here = { cwd: "/work/project" };
+
 function writeSession(id: string, title: string, mtime: Date): string {
   const session: Session = {
     sessionId: id,
@@ -57,7 +60,7 @@ describe("--resume and a damaged session file", () => {
   it("resumes the newest session without a notice when it is readable", () => {
     writeSession("older", "Older", new Date("2026-01-01"));
     writeSession("newest", "Newest", new Date("2026-01-03"));
-    expect(loadSession()?.sessionId).toBe("newest");
+    expect(loadSession(here)?.sessionId).toBe("newest");
     expect(notices).toEqual([]);
   });
 
@@ -66,7 +69,7 @@ describe("--resume and a damaged session file", () => {
     const damaged = writeDamaged("newest", new Date("2026-01-03"));
     const bytes = fs.readFileSync(damaged, "utf8");
 
-    const session = loadSession();
+    const session = loadSession(here);
 
     expect(session?.sessionId).toBe("older");
     const kept = fs.readdirSync(dir).filter((n) => n.includes(".corrupt-"));
@@ -86,7 +89,7 @@ describe("--resume and a damaged session file", () => {
     notices.length = 0;
     resetUserNotices();
     setUserNoticeSink((text) => notices.push(text));
-    expect(loadSession()?.sessionId).toBe("older");
+    expect(loadSession(here)?.sessionId).toBe("older");
     expect(notices).toEqual([]);
     expect(
       fs.readdirSync(dir).filter((n) => n.includes(".corrupt-")),
@@ -95,7 +98,7 @@ describe("--resume and a damaged session file", () => {
 
   it("says so when the only session is damaged", () => {
     writeDamaged("only", new Date("2026-01-03"));
-    expect(loadSession()).toBeNull();
+    expect(loadSession(here)).toBeNull();
     expect(notices).toHaveLength(1);
     expect(notices[0]).toContain("The newest session could not be read");
     expect(notices[0]).toContain("starting a new one");
@@ -122,7 +125,7 @@ describe("--resume and a damaged session file", () => {
     const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     try {
       writeDamaged("only", new Date("2026-01-03"));
-      loadSession();
+      loadSession(here);
       expect(err).toHaveBeenCalledTimes(1);
       expect(String(err.mock.calls[0][0])).toContain(
         "The newest session could not be read",
@@ -189,7 +192,7 @@ describe("--resume and the extension's session log", () => {
     const newest = new Date("2026-01-03");
     fs.utimesSync(file, newest, newest);
 
-    const session = loadSession();
+    const session = loadSession(here);
     expect(session?.sessionId).toBe("from-ide");
     expect(session?.title).toBe("From the IDE");
     expect(session?.history[1].message.content).toBe(output);

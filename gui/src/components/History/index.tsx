@@ -10,6 +10,7 @@ import React, {
 } from "react";
 import Shortcut from "../gui/Shortcut";
 
+import { ChevronDownIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
 import { XMarkIcon } from "@heroicons/react/24/solid";
 import { useNavigate } from "react-router-dom";
 import { IdeMessengerContext } from "../../context/IdeMessenger";
@@ -22,6 +23,10 @@ import { setDialogMessage, setShowDialog } from "../../redux/slices/uiSlice";
 import { refreshSessionMetadata } from "../../redux/thunks/session";
 import { getFontSize, getPlatform } from "../../util";
 import { ROUTES } from "../../util/navigation";
+import {
+  currentWorkspaceDirs,
+  groupHistoryByWorkspace,
+} from "../../util/sessionWorkspace";
 import ConfirmationDialog from "../dialogs/ConfirmationDialog";
 import { Button } from "../ui";
 import { HistoryTableRow } from "./HistoryTableRow";
@@ -128,6 +133,22 @@ export function History() {
     return groupSessionsByDate(active);
   }, [active]);
 
+  // The default view: one group per workspace folder, this window's first
+  // with its newest session on top (util/sessionWorkspace.ts). By date is
+  // the list as it was before.
+  const [groupBy, setGroupBy] = useState<"workspace" | "date">("workspace");
+  const workspaceGroups = useMemo(
+    () => groupHistoryByWorkspace(active, currentWorkspaceDirs()),
+    [active],
+  );
+  // This workspace's group starts open, the others closed (the first one
+  // open when this window has no session of its own); a search opens all
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const hasCurrentGroup = workspaceGroups[0]?.isCurrent ?? false;
+  const isGroupOpen = (key: string, isCurrent: boolean, index: number) =>
+    searchTerm !== "" ||
+    (openGroups[key] ?? (isCurrent || (!hasCurrentGroup && index === 0)));
+
   const showClearSessionsDialog = () => {
     dispatch(
       setDialogMessage(
@@ -194,26 +215,117 @@ export function History() {
           </div>
         )}
 
+        {active.length > 0 && (
+          <div
+            className="mt-1 ml-2 flex items-center gap-2 text-xs text-description"
+            role="group"
+            aria-label="Group sessions"
+          >
+            <span>Group by</span>
+            {(["workspace", "date"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                aria-pressed={groupBy === mode}
+                data-testid={`history-group-by-${mode}`}
+                onClick={() => setGroupBy(mode)}
+                className={`cursor-pointer rounded border-none px-1.5 py-0.5 text-xs ${
+                  groupBy === mode
+                    ? "bg-input text-foreground"
+                    : "bg-transparent text-description"
+                }`}
+              >
+                {mode === "workspace" ? "Folder" : "Date"}
+              </button>
+            ))}
+          </div>
+        )}
+
         <table className="flex w-full flex-1 flex-col">
           <tbody className="">
-            {sessionGroups.map((group, groupIndex) => (
-              <Fragment key={group.label}>
-                <tr
-                  className={`user-select-none sticky mb-3 ml-2 flex h-6 justify-start text-left text-base font-bold opacity-75 ${
-                    groupIndex === 0 ? "mt-2" : "mt-8"
-                  }`}
-                >
-                  <td colSpan={3}>{group.label}</td>
-                </tr>
-                {group.sessions.map((session, sessionIndex) => (
-                  <HistoryTableRow
-                    key={session.sessionId}
-                    sessionMetadata={session}
-                    index={sessionIndex}
-                  />
-                ))}
-              </Fragment>
-            ))}
+            {groupBy === "date" &&
+              sessionGroups.map((group, groupIndex) => (
+                <Fragment key={group.label}>
+                  <tr
+                    className={`user-select-none sticky mb-3 ml-2 flex h-6 justify-start text-left text-base font-bold opacity-75 ${
+                      groupIndex === 0 ? "mt-2" : "mt-8"
+                    }`}
+                  >
+                    <td colSpan={3}>{group.label}</td>
+                  </tr>
+                  {group.sessions.map((session, sessionIndex) => (
+                    <HistoryTableRow
+                      key={session.sessionId}
+                      sessionMetadata={session}
+                      index={sessionIndex}
+                    />
+                  ))}
+                </Fragment>
+              ))}
+            {groupBy === "workspace" &&
+              (() => {
+                let rowIndex = 0;
+                return workspaceGroups.map((group, groupIndex) => {
+                  const open = isGroupOpen(
+                    group.key,
+                    group.isCurrent,
+                    groupIndex,
+                  );
+                  const first = rowIndex;
+                  rowIndex += group.sessions.length;
+                  return (
+                    <Fragment key={`workspace-${group.key}`}>
+                      <tr
+                        className={`user-select-none sticky mb-3 ml-2 flex h-6 justify-start text-left text-base font-bold ${
+                          groupIndex === 0 ? "mt-2" : "mt-6"
+                        }`}
+                        data-testid="history-workspace-group"
+                      >
+                        <td colSpan={3} className="min-w-0 flex-1">
+                          <button
+                            type="button"
+                            aria-expanded={open}
+                            title={
+                              group.path || "Sessions saved without a folder"
+                            }
+                            data-testid={`history-workspace-toggle-${groupIndex}`}
+                            onClick={() =>
+                              setOpenGroups((groups) => ({
+                                ...groups,
+                                [group.key]: !open,
+                              }))
+                            }
+                            className="flex max-w-full cursor-pointer items-center gap-1 border-none bg-transparent p-0 text-left text-base font-bold text-foreground opacity-75"
+                          >
+                            {open ? (
+                              <ChevronDownIcon className="h-3 w-3 flex-shrink-0" />
+                            ) : (
+                              <ChevronRightIcon className="h-3 w-3 flex-shrink-0" />
+                            )}
+                            <span className="truncate">{group.label}</span>
+                            {group.isCurrent && (
+                              <span className="flex-shrink-0 text-xs font-normal text-description">
+                                this workspace
+                              </span>
+                            )}
+                            <span className="flex-shrink-0 text-xs font-normal text-description">
+                              ({group.sessions.length})
+                            </span>
+                          </button>
+                        </td>
+                      </tr>
+                      {open &&
+                        group.sessions.map((session, i) => (
+                          <HistoryTableRow
+                            key={session.sessionId}
+                            sessionMetadata={session}
+                            index={first + i}
+                          />
+                        ))}
+                    </Fragment>
+                  );
+                });
+              })()}
           </tbody>
         </table>
         {archived.length > 0 && (
