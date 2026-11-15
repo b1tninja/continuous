@@ -2,11 +2,14 @@ import type { Editor } from "@tiptap/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   clearDraft,
+  enterDraftSession,
   isEmptyDraft,
   loadDraft,
   MAIN_DRAFT_INPUT,
+  markDraftShown,
   restoredDraftNotice,
   saveDraft,
+  wasDraftShown,
 } from "../../../util/drafts";
 
 /** How long typing pauses before the draft is saved. */
@@ -18,7 +21,8 @@ export const DRAFT_SAVE_DEBOUNCE_MS = 500;
  * of the earlier message being edited.
  *
  * - When the session is opened (or the panel reloads), its draft comes back
- *   with a notice.
+ *   with a notice. The input remounting in the same page (Settings and
+ *   back) brings back a draft that was already on screen without one.
  * - Typing saves it, 500 ms after the last change; hiding or closing the page
  *   saves at once.
  * - Sending clears it (`clearNow`).
@@ -52,6 +56,7 @@ export function useDraftPersistence(options: {
     const isMain = inputId === MAIN_DRAFT_INPUT;
     const previous = lastSession.current;
     lastSession.current = sessionId;
+    enterDraftSession(sessionId);
 
     // An earlier message's own content: a draft equal to it is no draft
     const baseline = isMain ? undefined : JSON.stringify(editor.getJSON());
@@ -61,7 +66,12 @@ export function useDraftPersistence(options: {
       const draft = loadDraft(sessionId, inputId);
       if (draft) {
         editor.commands.setContent(draft.content, { emitUpdate: false });
-        setNotice(restoredDraftNotice(draft));
+        setNotice(
+          wasDraftShown(sessionId, inputId)
+            ? undefined
+            : restoredDraftNotice(draft),
+        );
+        markDraftShown(sessionId, inputId);
       } else {
         setNotice(undefined);
         if (isMain && previous) {
@@ -70,6 +80,7 @@ export function useDraftPersistence(options: {
             // Nothing to carry
           } else if (isSessionEmpty.current) {
             saveDraft(sessionId, inputId, carried);
+            markDraftShown(sessionId, inputId);
             clearDraft(previous, inputId);
           } else {
             // Kept under the session it was typed in, even when it came in
@@ -87,8 +98,8 @@ export function useDraftPersistence(options: {
       const json = editor.getJSON();
       if (baseline !== undefined && JSON.stringify(json) === baseline) {
         clearDraft(sessionId, inputId);
-      } else {
-        saveDraft(sessionId, inputId, json);
+      } else if (saveDraft(sessionId, inputId, json)) {
+        markDraftShown(sessionId, inputId);
       }
     };
     const flush = () => {

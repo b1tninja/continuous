@@ -60,7 +60,11 @@ export interface ProviderSetupConnection {
      * (not by `describeProviderConnections`). Never the value itself.
      */
     storedIn?: { secure: boolean; env: boolean };
-  };
+  }; /**
+   * How the AWS profile of a Bedrock connection signs in, from the key names
+   * of its section in ~/.aws/config; filled in by core. Never a value.
+   */
+  awsProfileKind?: import("./awsProfileKind").AwsProfileKind;
 }
 
 export interface ProviderSetupInfo {

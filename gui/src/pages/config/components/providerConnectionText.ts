@@ -48,6 +48,29 @@ export function connectionLabel(c: ProviderSetupConnection): string {
 
 export type AuthTone = "ok" | "warning";
 
+/** The profile and how it signs in, as core read it from ~/.aws/config. */
+function awsProfileText(
+  profile: string,
+  kind: ProviderSetupConnection["awsProfileKind"],
+): string {
+  switch (kind) {
+    case "sso":
+      return `AWS SSO profile ${profile}`;
+    case "process":
+      return `AWS profile ${profile} (credential_process)`;
+    case "assumeRole":
+      return `AWS profile ${profile} (assumes a role)`;
+    case "webIdentity":
+      return `AWS profile ${profile} (web identity token)`;
+    case "static":
+      return `AWS profile ${profile} (access keys in ~/.aws/config)`;
+    case "credentialsFile":
+      return `AWS profile ${profile} (access keys in ~/.aws/credentials)`;
+    default:
+      return `AWS profile ${profile}`;
+  }
+}
+
 /** How the connection signs in, and whether that needs attention. */
 export function authLabel(c: ProviderSetupConnection): {
   text: string;
@@ -82,7 +105,7 @@ export function authLabel(c: ProviderSetupConnection): {
   if (isBedrock(c.provider)) {
     return {
       text: c.connection.profile
-        ? `AWS profile ${c.connection.profile}`
+        ? awsProfileText(c.connection.profile, c.awsProfileKind)
         : "AWS default credentials (environment, SSO or ~/.aws)",
       tone: "ok",
     };
