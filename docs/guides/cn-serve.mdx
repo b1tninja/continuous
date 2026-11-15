@@ -37,6 +37,10 @@ Setting it in the environment keeps it out of the process list. A token in the q
 
 An approval that arrives over a server with no token has no authenticated person behind it, so the audit trail records it as the system's (`by: system`). With a token it is recorded as `by: person`, as before.
 
+### What the agent may run
+
+The server runs headless, at your own policy levels (the ones in `permissions.yaml`, or the defaults). A tool call that would ask is refused, because nobody is at a prompt: the model gets a result that says so, and the server's stderr gets one line per tool naming the flags that allow it. Write `--auto` or `--policy` before the word `serve` to let more run, as in `continuous --policy handsOff serve`. At start-up the server prints one line on stderr with the levels it runs at. Until 2.18.0 the server allowed `Bash` and every unlisted tool; `CONTINUOUS_HEADLESS_LEGACY_ALLOW=1` restores that for one release.
+
 ### When the server refuses to start
 
 `continuous serve` does not start with an option it cannot honour. It prints one line on stderr saying what was refused and what to change, and exits with status `2` (the usage-error status, as in `continuous secrets scan`). The line never contains a token. The cases are a non-loopback `--host` with no token (pass `--token` or set `CONTINUOUS_SERVE_TOKEN`, or use `--host 127.0.0.1`) and a token shorter than 16 characters. Check it in a script with `continuous serve --host 0.0.0.0; echo $?`.
