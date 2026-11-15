@@ -8,7 +8,10 @@ import { prependPrompt } from "src/util/promptProcessor.js";
 
 import { startRunLimits } from "../budget/runLimits.js";
 import { runEnvironmentInstallSafe } from "../environment/environmentHandler.js";
-import { processCommandFlags } from "../flags/flagProcessor.js";
+import {
+  announceHeadlessPolicy,
+  processCommandFlags,
+} from "../flags/flagProcessor.js";
 import { loopWaveRunning } from "../loop/loopSession.js";
 import { toolPermissionManager } from "../permissions/permissionManager.js";
 import { isSafeMode } from "../safeMode.js";
@@ -121,6 +124,8 @@ export async function serve(prompt?: string, options: ServeOptions = {}) {
 
   // Initialize services with tool permission overrides
   const { permissionOverrides } = processCommandFlags(options);
+  // One stderr line: the levels this server runs at, and that an ask is refused
+  announceHeadlessPolicy(options);
 
   await initializeServices({
     options,

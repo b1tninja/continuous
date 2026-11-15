@@ -20,4 +20,5 @@ export * from "./schemas/mcp/json.js";
 export * from "./schemas/models.js";
 export * from "./toolDialect.js";
 export * from "./schemas/policy.js";
+export * from "./schemas/web.js";
 export * from "./validation.js";

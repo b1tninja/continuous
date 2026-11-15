@@ -1,11 +1,8 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
-import * as YAML from "yaml";
 import {
   DEFAULT_FETCH_DEADLINE_MS,
   DEFAULT_MAX_BODY_BYTES,
 } from "./boundedBody";
-import { getContinueGlobalPath } from "./paths";
+import { getWebConfig, readUserWebInputs, resolveWebConfig } from "./webConfig";
 
 /**
  * The person's own limits for fetched web pages, read straight from their
@@ -25,14 +22,6 @@ export interface FetchLimits {
 const MAX_CEILING = 64 * 1024 * 1024;
 const MAX_DEADLINE_S = 300;
 
-interface Cached {
-  mtimeMs: number;
-  size: number;
-  value: FetchLimits;
-}
-
-const cache = new Map<string, Cached>();
-
 function wholeNumber(value: unknown, max: number): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value >= 1
     ? Math.min(value, max)
@@ -49,26 +38,19 @@ export function parseFetchLimits(environment: unknown): FetchLimits {
   };
 }
 
-// TODO(WB27): when the `web:` config section lands, read `web.limits.maxBytes`
-// and `web.limits.timeoutSeconds` here (personal file, tighten-only from a
-// workspace), keeping the two keys below as aliases. Every web path (fetch
-// tool, `@url`, favicon page, search, `@google`) takes its limits from this
-// function, so this is the one place the new keys plug in.
-export function readUserFetchLimits(
-  file = path.join(getContinueGlobalPath(), "config.yaml"),
-): FetchLimits {
-  try {
-    const stat = fs.statSync(file);
-    const hit = cache.get(file);
-    if (hit && hit.mtimeMs === stat.mtimeMs && hit.size === stat.size) {
-      return hit.value;
-    }
-    const root = YAML.parse(fs.readFileSync(file, "utf8").replace(/^﻿/, ""));
-    const value = parseFetchLimits(root?.toolPermissions?.auto?.environment);
-    cache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, value });
-    return value;
-  } catch {
-    cache.delete(file);
-    return parseFetchLimits(undefined);
-  }
+/**
+ * The limits in force for @url and the fetch tool: `web.limits.maxBytes` and
+ * `web.limits.timeoutSeconds` (core/util/webConfig.ts), with the old
+ * `toolPermissions.auto.environment` keys as aliases. With a `file`, that file
+ * alone is the person's config (tests, `config check <file>`).
+ */
+export function readUserFetchLimits(file?: string): FetchLimits {
+  const limits = file
+    ? resolveWebConfig({ ...readUserWebInputs(file), env: process.env }).config
+        .limits
+    : getWebConfig().limits;
+  return {
+    maxBytes: limits.maxBytes,
+    deadlineMs: limits.timeoutSeconds * 1000,
+  };
 }
