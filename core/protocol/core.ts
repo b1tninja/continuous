@@ -43,6 +43,7 @@ import type { ModeModelsInput } from "../config/yaml/saveModeModels";
 import type { RulesByModeInput } from "../config/yaml/saveRulesByMode";
 import type { CommunityPrice } from "../llm/communityCatalog";
 import type { DetectedLocalServer } from "../llm/localServers";
+import type { PrewarmResult } from "../llm/localPrewarm";
 import type { CatalogModel } from "../llm/openRouterCatalog";
 import type { SubagentLoadResult } from "../subagents/loadSubagents";
 import type { ApprovalSettings } from "../tools/permissions/approval";
@@ -1041,4 +1042,27 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
     },
     { summary: string } | { error: string; aborted: boolean },
   ];
+  /**
+   * The compaction pre-warm (C106): `messages` and `options` are the request
+   * the chat will send once the prepared summary is saved, built by
+   * buildChatRequest on that session. Core compiles them as "llm/compileChat"
+   * does and sends them to the selected chat model with `max_tokens: 1` (and
+   * Strata's `strata_prefix` pin at the end of the summary). Aborted by an
+   * "abort" message whose message id is `requestId`. Never throws.
+   */
+  "llm/prewarm": [
+    {
+      messages: ChatMessage[];
+      options: LLMFullCompletionOptions;
+      promptTokens: number;
+      liveTokens?: number;
+      requestId: string;
+    },
+    PrewarmResult,
+  ];
+  /**
+   * The selected chat model's Strata `/metrics`, for the Compact now
+   * estimate's speeds (one read-only GET). Undefined for any other server.
+   */
+  "llm/strataMetrics": [undefined, unknown];
 };

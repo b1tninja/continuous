@@ -340,7 +340,7 @@ describe("prompt cache options in the chat request", () => {
     });
     expect(cache()?.misses).toBeUndefined();
     expect(cache()?.ledger?.[0].missCauses).toEqual([
-      "the conversation was shortened (compaction or truncation)",
+      "the conversation was shortened (a compaction, or the oldest messages left out to fit)",
     ]);
   });
 

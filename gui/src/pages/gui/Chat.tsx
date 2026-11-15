@@ -22,6 +22,8 @@ import { NewSessionButton } from "../../components/mainInput/belowMainInput/NewS
 import ThinkingBlockPeek from "../../components/mainInput/belowMainInput/ThinkingBlockPeek";
 import ContinueInputBox from "../../components/mainInput/ContinueInputBox";
 import { CacheMissNotice } from "../../components/mainInput/CacheMissNotice";
+import { CompactionHoldNotice } from "../../components/mainInput/CompactionHoldNotice";
+import { CompactionPreparedNotice } from "../../components/mainInput/CompactionPreparedNotice";
 import { CachingOffNotice } from "../../components/mainInput/CachingOffNotice";
 import { ToolDialectNotice } from "../../components/mainInput/ToolDialectNotice";
 import { ColdCacheNotice } from "../../components/mainInput/ColdCacheNotice";
@@ -284,7 +286,15 @@ export function Chat() {
           }),
         );
       } else {
-        void dispatch(streamResponseThunk({ editorState, modifiers, index }));
+        void dispatch(
+          streamResponseThunk({
+            editorState,
+            modifiers,
+            index,
+            // A new message from the input may wait before a forced re-read
+            holdBeforeForcedReread: index === undefined,
+          }),
+        );
 
         if (editorToClearOnSend) {
           editorToClearOnSend.commands.clearContent(false);
@@ -602,6 +612,8 @@ export function Chat() {
       </StepsDiv>
       <JumpToLatest paused={autoScrollPaused} scrollToLatest={scrollToLatest} />
       <div className={"relative shrink-0"}>
+        <CompactionHoldNotice />
+        <CompactionPreparedNotice />
         <CacheMissNotice />
         <ColdCacheNotice />
         <SessionLoadNotice />

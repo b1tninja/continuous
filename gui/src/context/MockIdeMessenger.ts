@@ -125,6 +125,13 @@ const DEFAULT_MOCK_CORE_RESPONSES: MockResponses = {
     didPrune: false,
     contextPercentage: 0.5,
   },
+  // No local server in tests: the pre-warm (C106) is skipped
+  "llm/prewarm": {
+    status: "skipped",
+    reason: "unsupported-server",
+    detail: "No server in tests",
+  },
+  "llm/strataMetrics": undefined,
   "context/getContextItems": [
     {
       id: {

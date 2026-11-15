@@ -431,11 +431,10 @@ describe("planned compaction: Compact now", () => {
 
   function compactHook(t: ReturnType<typeof setup>) {
     const wrapper = ({ children }: PropsWithChildren) =>
-      createElement(
-        IdeMessengerProvider,
-        { messenger: t.messenger },
-        createElement(Provider, { store: t.store as any }, children),
-      );
+      createElement(IdeMessengerProvider, {
+        messenger: t.messenger,
+        children: createElement(Provider, { store: t.store as any, children }),
+      });
     return renderHook(() => useCompactConversation(), { wrapper }).result
       .current;
   }
@@ -450,15 +449,16 @@ describe("planned compaction: Compact now", () => {
     const plan = t.getState().session.compactionPlan!;
     const compact = compactHook(t);
     const last = t.getState().session.history.length - 1;
-    t.messenger.responseHandlers["history/load"] = (async () => ({
-      ...t.getState().session,
-      history: t.getState().session.history,
-    })) as any;
+    const length = t.getState().session.history.length;
     await expect(compact(last)).resolves.toBe(true);
     expect(t.calls).toHaveLength(1);
-    expect(t.compactCalls).toEqual([
-      { index: plan.spanEnd - 1, sessionId: "s1", summary: "The summary." },
-    ]);
+    // Saved here, as the turn that applies it does (C108), not through core
+    expect(t.compactCalls).toEqual([]);
+    const item = t.getState().session.history[plan.spanEnd - 1];
+    expect(item.conversationSummary).toBe("The summary.");
+    expect(item.conversationSummaryHistoryLength).toBe(length);
+    expect(t.getState().session.history).toHaveLength(length);
+    expect(t.getState().session.preparedCompaction).toBeUndefined();
   });
 
   it("without a prepared summary, compacts as before", async () => {

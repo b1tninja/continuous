@@ -1,4 +1,9 @@
 import type { ChatHistoryItem } from "..";
+import {
+  CONTEXT_THRESHOLDS,
+  type ContextClass,
+  type ContextThresholdShares,
+} from "../llm/contextThresholds";
 
 /**
  * Planned compaction (plans/research/cache-friendly-context-trimming.md,
@@ -24,29 +29,25 @@ import type { ChatHistoryItem } from "..";
  * conversation falls back below the prepare threshold.
  */
 
-/** When to prepare and force a compaction, as shares of the real window. */
-export interface CompactionThresholds {
-  /** Plan and prepare the summary once the context reaches this share. */
-  prepare: number;
-  /** Past this share the summary is needed now (or the oldest are dropped). */
-  force: number;
-  /** The verbatim tail: at most this share of the window ... */
-  tailShare: number;
-  /** ... and at most this many tokens. */
-  tailCap: number;
-}
+/**
+ * When to prepare and force a compaction, as shares of the real window: the
+ * planner's columns of decision D3 (`prepare`, `force`, `tailShare`,
+ * `tailMaxTokens`).
+ */
+export type CompactionThresholds = Pick<
+  ContextThresholdShares,
+  "prepare" | "force" | "tailShare" | "tailMaxTokens"
+>;
 
 /**
  * Decision D3. Local is a server on this machine or network (`isLocalApiBase`,
- * or a server that answered `/props`); cloud is everything else. C101 exports
- * the block-drop side of the same table from `core/llm/contextThresholds.ts`.
+ * or a server that answered `/props`); cloud is everything else. The table is
+ * `core/llm/contextThresholds.ts`'s (C101), the one source for the block drop
+ * and the planner, so the two cannot disagree on where "force" is.
  */
 export const COMPACTION_THRESHOLDS: Readonly<
-  Record<"local" | "cloud", Readonly<CompactionThresholds>>
-> = {
-  local: { prepare: 0.7, force: 0.85, tailShare: 0.15, tailCap: 64_000 },
-  cloud: { prepare: 0.75, force: 0.9, tailShare: 0.1, tailCap: 64_000 },
-};
+  Record<ContextClass, Readonly<CompactionThresholds>>
+> = CONTEXT_THRESHOLDS;
 
 /** The first user request is quoted verbatim in the summary below this size. */
 export const FIRST_USER_QUOTE_MAX_TOKENS = 2_000;
@@ -167,13 +168,13 @@ export function planCompaction(
   };
 }
 
-/** The verbatim tail's budget: min(tailShare of the window, tailCap). */
+/** The verbatim tail's budget: min(tailShare of the window, tailMaxTokens). */
 export function tailBudget(
   input: Pick<PlanCompactionInput, "window" | "thresholds">,
 ): number {
   return Math.min(
     Math.floor(input.window * input.thresholds.tailShare),
-    input.thresholds.tailCap,
+    input.thresholds.tailMaxTokens,
   );
 }
 

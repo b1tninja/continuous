@@ -13,12 +13,17 @@ import {
 import {
   ChatMessage,
   CompletionOptions,
+  LLMFullCompletionOptions,
   LLMOptions,
   Tool,
 } from "../../index.js";
 import { renderChatMessage } from "../../util/messageContent.js";
 import { BaseLLM } from "../index.js";
-import { isMissingEndpointError, withThinkingOff } from "../localServers.js";
+import {
+  isLocalApiBase,
+  isMissingEndpointError,
+  withThinkingOff,
+} from "../localServers.js";
 import {
   messagesFromChatCompletionChunk,
   fromResponsesChunk,
@@ -511,6 +516,18 @@ class OpenAI extends BaseLLM {
         body.frequency_penalty = undefined;
       }
       body.max_completion_tokens = undefined;
+    }
+
+    // Strata's pin (the compaction pre-warm, C106): only to a local server,
+    // which is where Strata runs; a cloud API may refuse a field it does not know
+    const strataPrefix = (options as LLMFullCompletionOptions | undefined)
+      ?.strataPrefix;
+    if (strataPrefix && this.apiBase && isLocalApiBase(this.apiBase)) {
+      // Not an OpenAI field, so not in the SDK's type
+      body = {
+        ...body,
+        strata_prefix: strataPrefix,
+      } as unknown as ChatCompletionCreateParams;
     }
 
     if (body.tools?.length) {

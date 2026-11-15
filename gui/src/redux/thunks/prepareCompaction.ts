@@ -1,6 +1,7 @@
-import { createAsyncThunk } from "@reduxjs/toolkit";
+import { createAsyncThunk, createNextState } from "@reduxjs/toolkit";
 import type { ModelDescription } from "core";
 import { computeContextBreakdown } from "core/llm/contextBreakdown";
+import { prewarmAllowed, prewarmSetting } from "core/llm/localPrewarm";
 import { isLocalApiBase } from "core/llm/localServers";
 import {
   COMPACTION_THRESHOLDS,
@@ -10,6 +11,10 @@ import {
   planCompaction,
   type PlanCompactionInput,
 } from "core/util/compactionPlan";
+import {
+  type CompactionPlanSizes,
+  planSizesFrom,
+} from "core/util/compactionEstimate";
 import { renderChatMessage } from "core/util/messageContent";
 import { useEffect } from "react";
 import { useStore } from "react-redux";
@@ -18,13 +23,25 @@ import {
   type CompactionPrefix,
   compactionPrefix,
 } from "../../util/compactionPrefix";
-import { selectSelectedChatModel } from "../slices/configSlice";
 import {
+  INITIAL_PROMPT_CACHE_STATE,
+  resolvePromptCache,
+} from "../../util/promptCache";
+import { selectSelectedChatModel } from "../slices/configSlice";
+import { selectCacheSetting } from "../selectors/selectCacheSetting";
+import {
+  applyPreparedSummary,
+  applySummaryToSession,
   type PreparedCompaction,
   setCompactionPlan,
   setPreparedCompaction,
 } from "../slices/sessionSlice";
-import type { AppThunkDispatch, RootState, ThunkApiType } from "../store";
+import type {
+  AppThunkDispatch,
+  RootState,
+  ThunkApiType,
+  ThunkExtrasType,
+} from "../store";
 import { buildChatRequest } from "../util/buildChatRequest";
 import { describeChatRequest } from "../util/describeChatRequest";
 
@@ -86,6 +103,47 @@ export function compactionPlanInput(
 ): Omit<PlanCompactionInput, "previous"> | undefined {
   const model = selectSelectedChatModel(state);
   if (!model || !plannedCompactionEnabled(model)) return undefined;
+  return measuredConversation(state);
+}
+
+/**
+ * The sizes Compact now works with (C107's estimate): the current plan's, or
+ * with no plan (below the prepare threshold, or planned compaction off)
+ * everything after the newest summary as the span and no tail, which is what
+ * Compact now summarises then. Undefined with no model or window.
+ */
+export function compactionSizes(
+  state: RootState,
+): CompactionPlanSizes | undefined {
+  const plan = currentCompactionPlan(state);
+  if (plan) {
+    return planSizesFrom({
+      headTokens: plan.tokens.head,
+      spanTokens: plan.tokens.span,
+      tailTokens: plan.tokens.tail,
+    });
+  }
+  const input = measuredConversation(state);
+  if (!input) return undefined;
+  const span = input.itemTokens.reduce((a, b) => a + b, 0);
+  return planSizesFrom({
+    headTokens: input.headTokens,
+    spanTokens: span,
+    tailTokens: 0,
+  });
+}
+
+/**
+ * Each item's size and the head's, estimated as the context meter does and
+ * scaled to the provider's count for the last request: on a local server
+ * that count is the one C102's usage calibration learns from, so the plan
+ * is sized in the server's tokens.
+ */
+function measuredConversation(
+  state: RootState,
+): Omit<PlanCompactionInput, "previous"> | undefined {
+  const model = selectSelectedChatModel(state);
+  if (!model) return undefined;
   const window = model.contextLength;
   if (!window || window <= 0) return undefined;
 
@@ -206,15 +264,180 @@ function withQuotedRequest(
 }
 
 /**
- * Where the pre-warm of `[head][summary][tail]` plugs in (C106): called once
- * when a summary is ready. Nothing for now.
+ * The session as it will be once `summary` is saved on item `index`: what
+ * the next real request is built from (applySummaryToSession, the same
+ * function the reducer runs).
  */
-export function prewarmPreparedCompaction(_args: {
+export function stateAfterCompaction(
+  state: RootState,
+  index: number,
+  summary: string,
+): RootState {
+  return {
+    ...state,
+    session: createNextState(state.session, (draft) => {
+      applySummaryToSession(draft as RootState["session"], index, summary);
+    }),
+  };
+}
+
+/**
+ * The request the chat will send after the summary is saved, up to the
+ * person's next message: buildChatRequest on that session, with the cache
+ * options streamNormalInput adds. The task list goes after the next message,
+ * so it is not part of it.
+ */
+export function compactedRequest(
+  state: RootState,
+  index: number,
+  summary: string,
+  now = Date.now(),
+): CompactionPrefix | undefined {
+  const after = stateAfterCompaction(state, index, summary);
+  try {
+    const request = buildChatRequest(after, after.session.history, now);
+    const cache = resolvePromptCache(
+      request.model,
+      selectCacheSetting(after),
+      after.session.promptCache ?? INITIAL_PROMPT_CACHE_STATE,
+      now,
+      after.session.mode,
+    );
+    return {
+      messages: request.messages,
+      options: { ...request.completionOptions, ...cache.options },
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** A tool call waiting for approval or still running: the turn is not over. */
+function turnUnfinished(state: RootState): boolean {
+  const last = state.session.history[state.session.history.length - 1];
+  return !!last?.toolCallStates?.some(
+    (t) =>
+      t.status === "generating" ||
+      t.status === "generated" ||
+      t.status === "calling",
+  );
+}
+
+/** Rough tokens of a summary, before the provider has counted it. */
+const summaryTokens = (summary: string) => Math.ceil(summary.length / 4);
+
+/**
+ * The pre-warm of `[head][summary][tail]` (C106): once a summary is ready and
+ * the person is still idle, the compacted request is sent to the local
+ * server with one output token (core/llm/localPrewarm.ts), so applying the
+ * summary at the next turn re-reads nothing. Only for a local model and
+ * `contextManagement.prewarm` other than "off". `signal` is the preparer's:
+ * typing, sending or a tool call aborts it, and the next idle tries again.
+ */
+export async function prewarmPreparedCompaction(args: {
   plan: CompactionPlan;
   prepared: PreparedCompaction;
   dispatch: AppThunkDispatch;
   getState: () => RootState;
-}): void {}
+  extra: ThunkExtrasType;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const { plan, prepared, dispatch, getState, extra, signal } = args;
+  const state = getState();
+  const model = selectSelectedChatModel(state);
+  if (!model || prepared.summary === undefined || prepared.dismissed) return;
+  if (!prewarmAllowed(prewarmSetting(model), isLocalModel(model))) return;
+  if (signal?.aborted || chatIsBusy(state) || turnUnfinished(state)) return;
+  const request = compactedRequest(state, plan.spanEnd - 1, prepared.summary);
+  if (!request) return;
+
+  const requestId = uuidv4();
+  const current = () => {
+    const now = getState().session.preparedCompaction;
+    return now?.planId === prepared.planId && now.status === "ready"
+      ? now
+      : undefined;
+  };
+  dispatch(
+    setPreparedCompaction({
+      ...prepared,
+      prewarm: { status: "running", requestId },
+    }),
+  );
+  const onAbort = () => extra.ideMessenger.post("abort", undefined, requestId);
+  signal?.addEventListener("abort", onAbort);
+  try {
+    const response = await extra.ideMessenger.request("llm/prewarm", {
+      messages: request.messages,
+      options: request.options,
+      promptTokens:
+        plan.tokens.head + summaryTokens(prepared.summary) + plan.tokens.tail,
+      liveTokens: plan.tokens.total,
+      requestId,
+    });
+    const now = current();
+    if (!now || now.prewarm?.requestId !== requestId) return;
+    const result = response.status === "success" ? response.content : undefined;
+    if (signal?.aborted || result?.status !== "sent") {
+      // Aborted: forgotten, so the next idle tries again. Skipped: kept with
+      // why, so the notice can say it and it is not asked again.
+      const skipped =
+        !signal?.aborted &&
+        result?.status === "skipped" &&
+        result.reason !== "aborted";
+      dispatch(
+        setPreparedCompaction({
+          ...now,
+          prewarm:
+            skipped && result?.status === "skipped"
+              ? { status: "skipped", detail: result.detail }
+              : undefined,
+        }),
+      );
+      return;
+    }
+    dispatch(setPreparedCompaction({ ...now, prewarm: { status: "done" } }));
+  } catch (e) {
+    // The IDE could not be asked: as a skip, so it is not asked again
+    const now = current();
+    if (now?.prewarm?.requestId === requestId) {
+      dispatch(
+        setPreparedCompaction({
+          ...now,
+          prewarm: {
+            status: "skipped",
+            detail: e instanceof Error ? e.message : String(e),
+          },
+        }),
+      );
+    }
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
+/**
+ * At the start of the person's next turn: a ready summary for the current
+ * plan is saved at once, before their message is added (decision D3, "apply
+ * at the next turn"). Pre-warmed, the server already holds the compacted
+ * prompt, so nothing is re-read. Returns whether it was applied.
+ */
+export function applyPreparedCompactionForTurn(
+  dispatch: AppThunkDispatch,
+  getState: () => RootState,
+): boolean {
+  // A plain function, not a thunk: a turn with nothing to apply dispatches
+  // nothing
+  const state = getState();
+  if (state.session.preparedCompaction?.dismissed) return false;
+  const usable = usablePreparedCompaction(
+    state,
+    state.session.history.length - 1,
+  );
+  if (!usable) return false;
+  dispatch(applyPreparedSummary(usable));
+  return true;
+}
 
 export type PrepareCompactionResult =
   | "ready"
@@ -241,7 +464,19 @@ export const prepareCompaction = createAsyncThunk<
   if (!model || !plan) return "no-plan";
   const existing = state.session.preparedCompaction;
   if (existing?.planId === plan.id && existing.sessionId === state.session.id) {
-    return existing.status === "ready" ? "already-prepared" : "busy";
+    if (existing.status !== "ready") return "busy";
+    // A pre-warm stopped by activity is tried again at the next idle
+    if (!existing.prewarm) {
+      await prewarmPreparedCompaction({
+        plan,
+        prepared: existing,
+        dispatch,
+        getState,
+        extra,
+        signal: args?.signal,
+      });
+    }
+    return "already-prepared";
   }
 
   const requestId = uuidv4();
@@ -302,7 +537,14 @@ export const prepareCompaction = createAsyncThunk<
       preparedAt: Date.now(),
     };
     dispatch(setPreparedCompaction(prepared));
-    prewarmPreparedCompaction({ plan, prepared, dispatch, getState });
+    await prewarmPreparedCompaction({
+      plan,
+      prepared,
+      dispatch,
+      getState,
+      extra,
+      signal,
+    });
     return "ready";
   } finally {
     signal?.removeEventListener("abort", onAbort);

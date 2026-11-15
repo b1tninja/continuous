@@ -633,9 +633,15 @@ function llmToSerializedModelDescription(llm: ILLM): ModelDescription {
     isFromAutoDetect: llm.isFromAutoDetect,
     toolOverrides: llm.toolOverrides,
     ...(llm.routeNames && { routes: llm.routeNames }),
-    ...(llm.contextManagement?.plannedCompaction !== undefined && {
+    ...((llm.contextManagement?.plannedCompaction !== undefined ||
+      llm.contextManagement?.prewarm !== undefined) && {
       contextManagement: {
-        plannedCompaction: llm.contextManagement.plannedCompaction,
+        ...(llm.contextManagement.plannedCompaction !== undefined && {
+          plannedCompaction: llm.contextManagement.plannedCompaction,
+        }),
+        ...(llm.contextManagement.prewarm !== undefined && {
+          prewarm: llm.contextManagement.prewarm,
+        }),
       },
     }),
   };

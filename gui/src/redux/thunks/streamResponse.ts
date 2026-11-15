@@ -2,9 +2,12 @@ import { createAsyncThunk, unwrapResult } from "@reduxjs/toolkit";
 import { JSONContent } from "@tiptap/core";
 import { InputModifiers } from "core";
 
+import { compactionHoldFor, draftTokens } from "../../util/compactionHold";
 import { selectSelectedChatModel } from "../slices/configSlice";
+import { setCompactionHold } from "../slices/sessionSlice";
 import { ThunkApiType } from "../store";
 import { addUserInputToHistory } from "./addUserInputToHistory";
+import { applyPreparedCompactionForTurn } from "./prepareCompaction";
 import { checkpointSession } from "./session";
 import { streamNormalInput } from "./streamNormalInput";
 import { streamThunkWrapper } from "./streamThunkWrapper";
@@ -15,11 +18,41 @@ export const streamResponseThunk = createAsyncThunk<
     editorState: JSONContent;
     modifiers: InputModifiers;
     index?: number;
+    /**
+     * The person's own message from the chat input: it may wait before a
+     * forced re-read (util/compactionHold.ts). Loops and resumed turns are
+     * never held.
+     */
+    holdBeforeForcedReread?: boolean;
   },
   ThunkApiType
 >(
   "chat/streamResponse",
-  async ({ editorState, modifiers, index }, { dispatch, extra, getState }) => {
+  async (
+    { editorState, modifiers, index, holdBeforeForcedReread },
+    { dispatch, extra, getState },
+  ) => {
+    const atEnd =
+      index === undefined || index >= getState().session.history.length;
+    if (holdBeforeForcedReread && atEnd) {
+      const hold = compactionHoldFor(getState(), draftTokens(editorState));
+      if (hold) {
+        dispatch(
+          setCompactionHold({
+            planId: hold.plan.id,
+            rereadTokens: hold.rereadTokens,
+            editorState,
+            modifiers,
+            ...(index !== undefined && { index }),
+          }),
+        );
+        return;
+      }
+    }
+    // A summary prepared for this conversation is saved before the message
+    // is added, so this turn is the switch-over (C105, C106, D3)
+    if (atEnd) applyPreparedCompactionForTurn(dispatch, getState);
+
     await dispatch(
       streamThunkWrapper(async () => {
         const state = getState();

@@ -1,0 +1,11 @@
+## New
+
+- **A prepared compaction applies at your next message.** When planned compaction has made its summary in the background, a quiet line above the input says so: "Compaction prepared (summary of turns 1–80 ready); it applies at the next turn without re-reading." Your next message saves the summary first and keeps the newest turns word for word. **Compact now** applies it at once; **Not now** keeps the conversation as it is (Compact now can still use the summary).
+- **Pre-warm on Strata and llama.cpp.** Once the summary is ready and you are still idle, the conversation as it will be after compacting is sent to the server once with a one-token reply, so the server reads it while nobody waits and your next message reads nothing again. The line then says "prepared and pre-warmed". On Strata the request pins the server's checkpoint at the end of the summary, so a later edit in the newest turns falls back to there instead of the start. Typing or sending stops the pre-warm; it is tried again at the next pause. It is skipped, and the line says why, when Strata reports less free memory than the pre-warm could take. `contextManagement.prewarm` (`"local"` by default, or `"off"`) turns it off. Cloud providers are not pre-warmed.
+- **The cost of Compact now.** The context meter's details show an estimate next to **Compact now**: in dollars on a cloud model, and in seconds on a Strata server (from its `/metrics`).
+- **A hold before a forced re-read.** When your message would take the conversation past the point where the oldest turns are dropped to fit (85% of the window on a local server, 90% on cloud), and no summary is ready, the message waits and the line offers **Compact now, then send** (with the estimate) or **Continue anyway**. Enter chooses Compact now; Continue anyway needs a click or Tab then Enter, and a held-down key chooses nothing.
+
+## Behaviour changes
+
+- A planned compaction's verbatim tail is capped at 65,536 tokens (it was 64,000), the same table as the block drop.
+- The cache-miss reasons name compaction correctly: a summary no longer changes the system prompt, so "the system prompt changed" now says "the base prompt or a rule", and a shorter prompt is "a compaction, or the oldest messages left out to fit".
