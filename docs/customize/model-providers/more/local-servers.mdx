@@ -51,3 +51,19 @@ models:
 ```
 
 `<MODEL_ID>` is an `id` from the server's `/v1/models`. Add `capabilities: [tool_use]` when the model supports tool calls, for agent mode.
+
+## Why a turn re-reads the whole prompt
+
+A local server keeps the previous request's prompt and answer in its cache and reuses the longest prefix the next request shares with it. A request that only adds messages reads just the new part: on a 400k-token session, about 23 s. A request that changes anything earlier makes the server read everything after the change again: at 400k tokens that is four to five minutes.
+
+Where the change lands depends on the chat template. Qwen's template, which Strata and llama.cpp serve for the Qwen 3 models, puts the tool list first and the system message right after it, so a change to the system message is read as a change to the start of the conversation. Strata then reports that it reused about 16k tokens (one cache block: the tools) and read the rest.
+
+Continuous builds every request as an extension of the previous one. The intended exceptions read the conversation again once: switching mode or model, applying a tool change (see [Changing tools during a session](/customize/deep-dives/prompt-caching#changing-tools-during-a-session)), compacting, and removing parts with **Choose what to keep**. Three ways the client changed earlier parts of the prompt were fixed after a session on 2026-11-15 in which 2 of 12 requests accounted for 99.8% of the prompt tokens read:
+
+- A rule scoped to files (`globs`, `regex`) that a later message or tool result matched was added to the system message, in front of the whole conversation. Now the system message carries the rules that always apply and the ones the first message matched; a rule a later message or tool result matches is sent with that message, as a `<rule>` block after its content, and stays there.
+- The rules in the system message followed the order the config listed them in, which a config reload can change. Two rules that swap places leave the prompt the same length but different after the tools. Rules are now sorted by file, name and text.
+- **Try again** after a failed request (including the automatic retry after a timeout) re-sent the turn before it, or turned the tool result it was answering into an empty message. It now sends the failed request again unchanged. If the server dropped the failed request's cache (as it may when the client gives up while the prompt is still being read), the retry still reads the prompt once.
+
+When a request still re-reads much more than the part that changed, the cache-miss notice above the input names the first part of the prompt that differed from the previous request, for example `message 2 (your first message) changed: a user message`, or says that the prompt only grew and the server dropped its cache (another conversation used it, the model was unloaded, or the cache ran out of room). The webview's developer console has a `[prompt cache]` debug line per request with the positions and sizes, never the text.
+
+The reused count comes from the response's `prompt_tokens_details.cached_tokens`, or llama.cpp's `timings.cache_n`. When the stream has neither and the server is Strata, Continuous reads Strata's `/metrics` once after the request for its `reused` count. Nothing is polled, and nothing is sent anywhere but the configured server.

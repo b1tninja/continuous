@@ -134,6 +134,7 @@ class MessageTypes {
             "mcp/startAuthentication",
             "mcp/removeAuthentication",
             "mcp/setServerEnabled",
+            "mcp/approveTools",
             "mcp/getPrompt",
             "context/getContextItems",
             "context/getSymbolsForFiles",

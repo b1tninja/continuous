@@ -36,6 +36,7 @@ export const PRODUCT_LOADED_FILES = {
   "trusted-hooks.json": "which hooks the user trusted",
   "trusted-project.json": "which project configuration the user trusted",
   "mcp-tool-pins.json": "the pinned MCP tool definitions",
+  "mcp-tool-hold.json": "when hiding unapproved MCP tools started",
   "settings.json": "hook settings",
   "settings.local.json": "hook settings (project-local)",
   ".env": "keys and the API base",
