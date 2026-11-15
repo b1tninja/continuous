@@ -1,5 +1,10 @@
 import { createAsyncThunk, unwrapResult } from "@reduxjs/toolkit";
-import { LLMFullCompletionOptions } from "core";
+import { LLMFullCompletionOptions, Usage } from "core";
+import {
+  describePromptDivergence,
+  promptDivergenceLogLine,
+  promptParts,
+} from "core/llm/promptDivergence";
 import { getRuleId } from "core/llm/rules/getSystemMessageWithRules";
 import { totalInputTokens } from "core/llm/utils/cacheStats";
 import { ToCoreProtocol } from "core/protocol";
@@ -20,7 +25,12 @@ import {
   modelUsesLocalPrefixCache,
   promptCacheStatus,
   resolvePromptCache,
+  type PromptCacheKey,
 } from "../../util/promptCache";
+import {
+  requestPartsKey,
+  requestPartsMemory,
+} from "../../util/promptPartsMemory";
 import { splitPromptProgress } from "../../util/promptProgress";
 import { selectCacheSetting } from "../selectors/selectCacheSetting";
 import { selectSelectedChatModel } from "../slices/configSlice";
@@ -247,6 +257,17 @@ export const streamNormalInput = createAsyncThunk<
       completionOptions = { ...completionOptions, maxTokens: localMaxTokens };
     }
 
+    // What changed since the previous request of this conversation, so a
+    // local server's cache miss can say which message it was (docs: local
+    // servers, "Why a turn re-reads the whole prompt"). Hashes, no text.
+    const divergence = localCache
+      ? requestPartsMemory.note(
+          requestPartsKey(state.session.id, selectedChatModel.title),
+          promptParts(compiledChatMessages, completionOptions),
+          taskListMessage ? 1 : 0,
+        )
+      : undefined;
+
     dispatch(setIsPruned(didPrune));
     dispatch(setContextPercentage(contextPercentage));
     // This request carries what "Choose what to keep" left: from here an
@@ -283,6 +304,112 @@ export const streamNormalInput = createAsyncThunk<
       let lastUsage: { promptTokens?: number; completionTokens?: number } = {};
       let checkpointAt = Date.now();
       let checkpointChars = 0;
+      /**
+       * The cache checks and the session's ledger for the request's usage.
+       * `readTokens` is the server's cached count: from the usage, or for a
+       * local Strata server that left it out, from its /metrics (K4).
+       */
+      const recordUsage = (
+        usage: Usage,
+        key: PromptCacheKey,
+        usageProvider: string,
+        usageModel: string,
+        readTokens: number,
+      ) => {
+        const total = totalInputTokens(usageProvider, usageModel, usage);
+        if (total > 0) {
+          let missCauses: string[] | undefined;
+          if (cachingWasOn) {
+            const request = {
+              before: cacheStateBefore,
+              key,
+              requestAt: localCache
+                ? start
+                : (cacheResolution.nextState.lastRequestAt ?? start),
+              ...(localCache && {
+                lifetimeMs: localCacheWarmMs(selectedChatModel),
+              }),
+              readTokens: readTokens,
+              totalInputTokens: total,
+            };
+            const miss = detectCacheMiss({
+              ...request,
+              pruned: didPrune,
+              aged: didAge,
+            });
+            if (miss) {
+              // Which part of the prompt changed since the previous
+              // request, when the app knows: named first
+              missCauses = divergence
+                ? [describePromptDivergence(divergence), ...miss.causes]
+                : miss.causes;
+              dispatch(
+                recordCacheMiss({
+                  readTokens: miss.readTokens,
+                  expectedTokens: miss.expectedTokens,
+                  causes: missCauses,
+                }),
+              );
+            } else {
+              // Not a fault, but the cache was not read either: a model
+              // switch or a shortened conversation. Recorded so the
+              // session summary can count it as an expected rebuild.
+              missCauses = expectedRebuildCauses({
+                ...request,
+                aged: didAge,
+              });
+            }
+          }
+          // One in-memory record per request, for the session's own
+          // statistics. Counts and timings only.
+          dispatch(
+            recordCacheRequest(
+              buildLedgerEntry({
+                at: start,
+                mode: state.session.mode,
+                provider: usageProvider,
+                model: usageModel,
+                cachingOn: !!cachingWasOn,
+                ttl: cacheResolution.nextState.lastTtl,
+                oneHour: modelSupportsOneHourCache(selectedChatModel),
+                usage: usage,
+                pruned: didPrune,
+                missCauses,
+                historyItems,
+              }),
+            ),
+          );
+          dispatch(setPromptCacheInputTokens(total));
+          dispatch(setPromptCacheKey(key));
+          if (localCache) {
+            dispatch(setPromptCacheRequestAt(start));
+            // Only a read of some size says much about the speed
+            const speed = usage.promptTokensPerSecond;
+            const read = total - readTokens;
+            if (speed && read >= 1000) dispatch(setPromptReadSpeed(speed));
+          }
+        }
+        if (divergence && localCache && total > 0) {
+          // Positions and sizes only, never text
+          console.debug(
+            promptDivergenceLogLine(divergence, {
+              readTokens,
+              promptTokens: total,
+            }),
+          );
+        }
+      };
+      // A local server's usage without a cached count waits for the end of
+      // the stream, where core may add Strata's own record (serverCache)
+      let deferredUsage:
+        | {
+            usage: Usage;
+            key: PromptCacheKey;
+            provider: string;
+            model: string;
+          }
+        | undefined;
+
       let next = await gen.next();
       while (!next.done) {
         // A request that was replaced (Stop, a retry, a new turn) stops here
@@ -353,81 +480,22 @@ export const streamNormalInput = createAsyncThunk<
             const usageProvider =
               message.routeProvider ?? selectedChatModel.provider;
             const usageModel = message.routeModel ?? selectedChatModel.model;
-            const total = totalInputTokens(
-              usageProvider,
-              usageModel,
-              message.usage,
-            );
-            if (total > 0) {
-              let missCauses: string[] | undefined;
-              if (cachingWasOn) {
-                const request = {
-                  before: cacheStateBefore,
-                  key,
-                  requestAt: localCache
-                    ? start
-                    : (cacheResolution.nextState.lastRequestAt ?? start),
-                  ...(localCache && {
-                    lifetimeMs: localCacheWarmMs(selectedChatModel),
-                  }),
-                  readTokens:
-                    message.usage.promptTokensDetails?.cachedTokens ?? 0,
-                  totalInputTokens: total,
-                };
-                const miss = detectCacheMiss({
-                  ...request,
-                  pruned: didPrune,
-                  aged: didAge,
-                });
-                if (miss) {
-                  missCauses = miss.causes;
-                  dispatch(
-                    recordCacheMiss({
-                      readTokens: miss.readTokens,
-                      expectedTokens: miss.expectedTokens,
-                      causes: miss.causes,
-                    }),
-                  );
-                } else {
-                  // Not a fault, but the cache was not read either: a model
-                  // switch or a shortened conversation. Recorded so the
-                  // session summary can count it as an expected rebuild.
-                  missCauses = expectedRebuildCauses({
-                    ...request,
-                    aged: didAge,
-                  });
-                }
-              }
-              // One in-memory record per request, for the session's own
-              // statistics. Counts and timings only.
-              dispatch(
-                recordCacheRequest(
-                  buildLedgerEntry({
-                    at: start,
-                    mode: state.session.mode,
-                    provider: usageProvider,
-                    model: usageModel,
-                    cachingOn: !!cachingWasOn,
-                    ttl: cacheResolution.nextState.lastTtl,
-                    oneHour: modelSupportsOneHourCache(selectedChatModel),
-                    usage: message.usage,
-                    pruned: didPrune,
-                    missCauses,
-                    historyItems,
-                  }),
-                ),
+            const cached = message.usage.promptTokensDetails?.cachedTokens;
+            if (localCache && cached === undefined) {
+              deferredUsage = {
+                usage: message.usage,
+                key,
+                provider: usageProvider,
+                model: usageModel,
+              };
+            } else {
+              recordUsage(
+                message.usage,
+                key,
+                usageProvider,
+                usageModel,
+                cached ?? 0,
               );
-              dispatch(setPromptCacheInputTokens(total));
-              dispatch(setPromptCacheKey(key));
-              if (localCache) {
-                dispatch(setPromptCacheRequestAt(start));
-                // Only a read of some size says much about the speed
-                const speed = message.usage.promptTokensPerSecond;
-                const read =
-                  total -
-                  (message.usage.promptTokensDetails?.cachedTokens ?? 0);
-                if (speed && read >= 1000) dispatch(setPromptReadSpeed(speed));
-              }
             }
             dispatch(
               addRequestUsageToSession({
@@ -447,6 +515,25 @@ export const streamNormalInput = createAsyncThunk<
 
       if (next.done) {
         void checkToolDialectLeak(getState(), dispatch, extra.ideMessenger);
+      }
+      if (deferredUsage) {
+        const serverCache = next.done ? next.value?.serverCache : undefined;
+        recordUsage(
+          // The ledger counts what the server reused, as for a usage with it
+          serverCache
+            ? {
+                ...deferredUsage.usage,
+                promptTokensDetails: {
+                  ...deferredUsage.usage.promptTokensDetails,
+                  cachedTokens: serverCache.reused,
+                },
+              }
+            : deferredUsage.usage,
+          deferredUsage.key,
+          deferredUsage.provider,
+          deferredUsage.model,
+          serverCache?.reused ?? 0,
+        );
       }
 
       // Attach prompt log and end thinking for reasoning models
@@ -548,6 +635,8 @@ export const streamNormalInput = createAsyncThunk<
       tools: state1.config.config.tools,
       planMcpTools: state1.ui.policyExtras.planMcpTools,
       trustedMcpServers: state1.ui.policyExtras.trustedMcpServers,
+      backgroundMcpTools: state1.ui.policyExtras.backgroundMcpTools,
+      approvalWaived: state1.ui.policyLevels.tools === "idgaf",
     });
 
     // A tool turned off while the cache was warm is still offered; a call to

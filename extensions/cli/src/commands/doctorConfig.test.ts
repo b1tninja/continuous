@@ -566,3 +566,33 @@ describe("doctor topics", () => {
     expect(lines.join("\n")).toMatch(/network\s/);
   });
 });
+
+describe("web settings", () => {
+  it("notes the old fetch keys on the config file, each time it runs", () => {
+    write(
+      path.join(globalDir, "config.yaml"),
+      `${GOOD_CONFIG}toolPermissions:\n  auto:\n    environment:\n      fetchMaxBytes: 4096\n`,
+    );
+    for (let i = 0; i < 2; i++) {
+      const report = collect();
+      const config = report.files.find((f) => f.id === "config")!;
+      expect(config.state).toBe("ok");
+      expect(config.warnings.map((w) => w.message)).toEqual([
+        "toolPermissions.auto.environment.fetchMaxBytes is deprecated: use web.limits.maxBytes in your config.yaml instead. The old key still works for now.",
+      ]);
+      expect(renderDoctorConfig(report).join("\n")).toContain(
+        "note: toolPermissions.auto.environment.fetchMaxBytes is deprecated",
+      );
+    }
+  });
+
+  it("has nothing to say about a web: section", () => {
+    write(
+      path.join(globalDir, "config.yaml"),
+      `${GOOD_CONFIG}web:\n  robots: respect\n  limits:\n    maxBytes: 4096\n`,
+    );
+    const config = collect().files.find((f) => f.id === "config")!;
+    expect(config.state).toBe("ok");
+    expect(config.warnings).toEqual([]);
+  });
+});
