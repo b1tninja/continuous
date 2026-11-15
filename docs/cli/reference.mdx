@@ -23,7 +23,7 @@ These belong to `continuous` itself, not to a subcommand.
 | `--silent`               | Strip `<think>` blocks and extra whitespace from the output. Only with `-p`                                                          |
 | `--include-reasoning`    | With `-p --format stream-json`: also write each reply's reasoning as a `reasoning` line. See [Headless output](/cli/headless-output) |
 | `--thinking <mode>`      | How the terminal UI shows the model's reasoning: `fold` (the default), `expanded` or `hide`. See [`/thinking`](/cli/slash-commands) |
-| `--resume`               | Continue the most recent session. Cannot be combined with `--fork`                                                                   |
+| `--resume [sessionId]`   | Continue a session. With an id, that session. Without one, a picker with the newest session of this folder selected; with `-p`, the newest session of this folder, or of any folder with a notice. A value that is not shaped like a session id is read as the prompt. Cannot be combined with `--fork` |
 | `--fork <sessionId>`     | Start a new session from a copy of an existing one: its history, mode, model, task plan and prompt cache record. The plan file, Loop state, checkpoints and usage are not copied |
 | `--trust-project-hooks`  | Run this project's hooks for this run without asking and without recording trust. See [Hooks](/ide-extensions/agent/hooks-trust)     |
 | `--trust-project-config` | Use this project's own configuration files for this run without asking. See [Workspace trust](/customize/workspace-trust)            |

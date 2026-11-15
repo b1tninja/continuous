@@ -65,10 +65,13 @@ cn -p "Write a README" --silent
 The CLI automatically saves your chat history for each terminal session. You can resume where you left off:
 
 ```bash
-# Resume the last session in this terminal
+# Choose a session to resume; the newest one of this folder is selected
 cn --resume
 
-# List recent sessions and choose one to resume
+# Resume a given session
+cn --resume <sessionId>
+
+# List sessions grouped by folder and choose one to resume
 cn ls
 
 # List sessions in JSON format (for scripting)
@@ -79,7 +82,7 @@ cn ls --json
 
 - `-p`: Run in headless mode (no TUI)
 - `--config <path>`: Specify agent configuration path
-- `--resume`: Resume the last session for this terminal
+- `--resume [sessionId]`: Resume a session: that id, or pick one (headless: the newest session of this folder)
 - `<prompt>`: Optional prompt to start with
 
 ## Environment Variables
@@ -105,7 +108,7 @@ The CLI adds no attribution to commits or pull request text. To ask for it, set 
 ## Commands
 
 - `cn`: Start an interactive chat session
-- `cn ls`: List recent sessions with TUI selector to choose one to resume
+- `cn ls`: List recent sessions, grouped by folder with this folder first, and choose one to resume
 - `cn serve`: Start HTTP server mode
 
 ### Session Listing (`cn ls`)

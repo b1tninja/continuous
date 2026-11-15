@@ -20,6 +20,7 @@ import { projectCommand } from "./commands/project.js";
 import { registerExportCommand } from "./commands/registerExportCommand.js";
 import { registerLocalCommands } from "./commands/registerLocalCommands.js";
 import { registerRecoveryCommands } from "./commands/registerRecoveryCommands.js";
+import { prepareResume, RESUME_FLAG_HELP } from "./commands/resumePicker.js";
 import { review } from "./commands/review.js";
 import { registerReviewerCommand } from "./commands/reviewEval.js";
 import { sandboxCommand } from "./commands/sandbox.js";
@@ -172,7 +173,7 @@ addReasoningFlags(addRunLimitOptions(addCommonOptions(program)))
     "--silent",
     "Strip <think></think> tags and excess whitespace from output. Only works with -p/--print flag.",
   )
-  .option("--resume", "Resume from last session")
+  .option("--resume [sessionId]", RESUME_FLAG_HELP)
   .option("--fork <sessionId>", "Fork from an existing session ID")
   .option(
     "--beta-subagent-tool",
@@ -271,6 +272,9 @@ addReasoningFlags(addRunLimitOptions(addCommonOptions(program)))
         }
       }
     }
+
+    // --resume <id>, or the session picker (commands/resumePicker.ts)
+    prompt = await prepareResume(options, prompt);
 
     // In headless mode, ensure we have a prompt unless using --agent flag or --resume flag
     // Agent files can provide their own prompts, and resume can work without new input

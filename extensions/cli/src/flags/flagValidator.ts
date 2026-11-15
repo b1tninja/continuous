@@ -19,7 +19,7 @@ export interface ValidationOptions {
   config?: string;
 
   // Session flags
-  resume?: boolean;
+  resume?: boolean | string;
   fork?: string;
 
   // Permission flags

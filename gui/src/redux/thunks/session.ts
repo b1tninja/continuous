@@ -14,6 +14,12 @@ import {
 } from "../slices/sessionSlice";
 import { RootState, ThunkApiType } from "../store";
 import { saveSessionToCore } from "../util/sessionDelta";
+import {
+  currentWorkspaceDirs,
+  lastSessionCandidates,
+  sessionBelongsToWorkspace,
+  workspaceKey,
+} from "../../util/sessionWorkspace";
 import { updateSelectedModelByRole } from "../thunks/updateSelectedModelByRole";
 
 const MAX_TITLE_LENGTH = 100;
@@ -139,34 +145,136 @@ export const selectChatModelForProfile = createAsyncThunk<
   },
 );
 
-export const loadLastSession = createAsyncThunk<void, void, ThunkApiType>(
-  "session/loadLast",
-  async (_, { extra, dispatch, getState }) => {
-    let lastSessionId = getState().session.lastSessionId;
+/** This window's workspace folders, from the IDE (the webview's copy as a fallback). */
+async function workspaceDirsOf(ideMessenger: IIdeMessenger): Promise<string[]> {
+  try {
+    const dirs = await ideMessenger.ide.getWorkspaceDirs();
+    if (Array.isArray(dirs)) return dirs.filter(Boolean);
+  } catch {
+    // the webview's copy below
+  }
+  return currentWorkspaceDirs();
+}
 
-    // const lastSessionResult = await extra.ideMessenger.request("history/list", {
-    //   limit: 1,
-    // });
-    // if (lastSessionResult.status === "success") {
-    //   lastSessionId = lastSessionResult.content.at(0)?.sessionId;
-    // }
+/** The history list, or none when it cannot be read. */
+async function listSessionMetadata(
+  ideMessenger: IIdeMessenger,
+): Promise<BaseSessionMetadata[]> {
+  const result = await ideMessenger.request("history/list", {});
+  return result.status === "success" ? result.content : [];
+}
 
-    if (!lastSessionId) {
-      dispatch(newSession());
-      return;
-    }
-
+/**
+ * Loads the first of `candidates` that can be read and makes it the current
+ * session; answers whether one was loaded.
+ */
+async function loadFirstSession(
+  candidates: string[],
+  ideMessenger: IIdeMessenger,
+  dispatch: (action: any) => any,
+): Promise<boolean> {
+  for (const id of candidates) {
     let session: Session;
     try {
-      session = await getSession(extra.ideMessenger, lastSessionId);
+      session = await getSession(ideMessenger, id);
     } catch {
-      // retry again after 1 sec
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      session = await getSession(extra.ideMessenger, lastSessionId);
+      continue;
     }
     dispatch(newSession(session));
     if (session.chatModelTitle) {
       void dispatch(selectChatModelForProfile(session.chatModelTitle));
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Reopens the last session of THIS workspace (util/sessionWorkspace.ts
+ * lastSessionCandidates): the webview's storage is shared by every window,
+ * so the single `lastSessionId` may belong to another workspace. A new
+ * session when the workspace has none.
+ */
+export const loadLastSession = createAsyncThunk<void, void, ThunkApiType>(
+  "session/loadLast",
+  async (_, { extra, dispatch, getState }) => {
+    const state = getState().session;
+    // Nothing was ever left: a new session at once, without asking the IDE
+    if (!state.lastSessionId && !state.lastSessionIdByWorkspace) {
+      dispatch(newSession());
+      return;
+    }
+    const workspaceDirs = await workspaceDirsOf(extra.ideMessenger);
+    const sessions = await listSessionMetadata(extra.ideMessenger);
+    const candidates = lastSessionCandidates({
+      byWorkspace: state.lastSessionIdByWorkspace,
+      legacyLastSessionId: state.lastSessionId,
+      sessions,
+      workspaceDirs,
+    });
+    if (candidates.length === 0) {
+      dispatch(newSession());
+      return;
+    }
+    if (await loadFirstSession(candidates, extra.ideMessenger, dispatch)) {
+      return;
+    }
+    // The extension may still be starting: one more try after a second
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    if (!(await loadFirstSession(candidates, extra.ideMessenger, dispatch))) {
+      dispatch(newSession());
+    }
+  },
+);
+
+/**
+ * When the webview starts: the session it had open (`preferredId`) when that
+ * is a session of this workspace, otherwise the last one of this workspace,
+ * otherwise nothing (the empty session stays). The stored id is shared by
+ * every window, so without this check a window could open another
+ * workspace's conversation.
+ */
+export const restoreWorkspaceSession = createAsyncThunk<
+  void,
+  { preferredId: string | undefined },
+  ThunkApiType
+>(
+  "session/restoreForWorkspace",
+  async ({ preferredId }, { extra, dispatch, getState }) => {
+    if (!preferredId) return;
+    let session: Session;
+    try {
+      session = await getSession(extra.ideMessenger, preferredId);
+    } catch {
+      // Not saved (an empty session) or gone: left as it is, as before
+      return;
+    }
+    const workspaceDirs = await workspaceDirsOf(extra.ideMessenger);
+    if (sessionBelongsToWorkspace(session.workspaceDirectory, workspaceDirs)) {
+      dispatch(newSession(session));
+      if (session.chatModelTitle) {
+        void dispatch(selectChatModelForProfile(session.chatModelTitle));
+      }
+      return;
+    }
+    // A conversation already under way is left alone
+    if (getState().session.history.length > 0) return;
+    // Another workspace's session: the one left last in this workspace
+    const remembered =
+      getState().session.lastSessionIdByWorkspace?.[
+        workspaceKey(workspaceDirs)
+      ];
+    if (
+      remembered &&
+      remembered !== preferredId &&
+      (await loadFirstSession([remembered], extra.ideMessenger, dispatch))
+    ) {
+      return;
+    }
+    if (getState().session.id === preferredId) {
+      // A new id, so this window's first save cannot write over the other
+      // workspace's session
+      dispatch(newSession());
     }
   },
 );
