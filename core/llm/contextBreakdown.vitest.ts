@@ -6,6 +6,7 @@ import {
   IMAGE_TOKENS,
   reservedTokensFor,
 } from "./contextBreakdown";
+import { contextLimits } from "./contextThresholds";
 import { getTokenCountingBufferSafety } from "./countTokens";
 import { makeSegment } from "./promptSegments";
 
@@ -250,9 +251,21 @@ describe("computeContextBreakdown", () => {
       contextLength: 200_000,
       maxTokens: 8192,
     });
-    expect(b.reservedTokens).toBe(2000);
-    expect(b.pruneAtTokens).toBe(198_000);
-    expect(b.freeTokens).toBe(200_000 - 2000 - b.usedTokens);
+    // The safety buffer and the configured reply limit, up to 10% of the window
+    expect(b.reservedTokens).toBe(1000 + 8192);
+    // A block is dropped past 90% of the window on a hosted provider...
+    expect(b.pruneAtTokens).toBe(180_000);
+    // ...and past 85% on a local server
+    expect(
+      computeContextBreakdown({
+        segments,
+        history,
+        contextLength: 200_000,
+        maxTokens: 8192,
+        contextClass: "local",
+      }).pruneAtTokens,
+    ).toBe(170_000);
+    expect(b.freeTokens).toBe(200_000 - 9192 - b.usedTokens);
     expect(b.fraction).toBeCloseTo(b.usedTokens / 200_000);
     const shares =
       b.categories.reduce((a, c) => a + c.share, 0) +
@@ -328,11 +341,23 @@ describe("reservedTokensFor", () => {
   it.each([8192, 32_000, 200_000, 1_000_000])(
     "keeps the same reserve as core's compileChatMessages for a %i window",
     (window) => {
-      expect(reservedTokensFor(window, 4096)).toBe(
-        Math.round(getTokenCountingBufferSafety(window) + 1000),
-      );
+      for (const maxTokens of [500, 4096, 64_000]) {
+        expect(reservedTokensFor(window, maxTokens)).toBe(
+          Math.round(
+            getTokenCountingBufferSafety(window) +
+              contextLimits(window, maxTokens, "cloud").reserve,
+          ),
+        );
+      }
+      // At most 10% of the window, at least 1,000 unless the limit is lower
       expect(reservedTokensFor(window, 500)).toBe(
         Math.round(getTokenCountingBufferSafety(window) + 500),
+      );
+      expect(reservedTokensFor(window, 10 * window)).toBe(
+        Math.round(
+          getTokenCountingBufferSafety(window) +
+            Math.max(1000, Math.floor(window * 0.1)),
+        ),
       );
     },
   );

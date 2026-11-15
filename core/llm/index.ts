@@ -32,6 +32,7 @@ import {
   RequestOptions,
   TabAutocompleteOptions,
   TemplateType,
+  Tool,
   ToolOverride,
   Usage,
 } from "../index.js";
@@ -55,6 +56,7 @@ import {
 import { withExponentialBackoff } from "../util/withExponentialBackoff.js";
 import {
   promptProgressOf,
+  reportsFullPromptTokens,
   strataRequestCache,
   streamsPromptProgress,
   withThinkingOff,
@@ -83,11 +85,14 @@ import {
   correctedContextLength,
   correctionFromOverflow,
   learnContextCorrection,
+  learnTokenCalibration,
   parseContextOverflow,
 } from "./contextOverflow.js";
+import { contextClassFor } from "./contextThresholds.js";
 import {
   compileChatMessages,
   countTokens,
+  estimatePromptTokens,
   pruneRawPromptFromTop,
 } from "./countTokens.js";
 import { providerRequiresAlternation } from "./normalizeTurns.js";
@@ -1155,6 +1160,31 @@ export abstract class BaseLLM implements ILLM {
     if (factor !== undefined) learnContextCorrection(model, factor);
   }
 
+  /**
+   * The usage hook: when a local server answered and counted the prompt,
+   * fold its count over our estimate of the same prompt into the model's
+   * calibration, so the next request is pruned against the real window
+   * (contextOverflow.ts, decision D2). Only servers known to count the whole
+   * prompt, cached part included (Strata, llama.cpp, vLLM): any other local
+   * server keeps only the overflow correction. Hosted providers are left as
+   * they are until their ratios are measured (C110).
+   */
+  private async _learnFromUsage(
+    model: string,
+    sent: ChatMessage[],
+    tools: Tool[] | undefined,
+    usage: Usage | undefined,
+  ): Promise<void> {
+    if (!usage?.promptTokens || !this.apiBase) return;
+    if (contextClassFor(this.apiBase) !== "local") return;
+    if (!(await reportsFullPromptTokens(this.apiBase, this.apiKey))) return;
+    learnTokenCalibration(
+      model,
+      usage.promptTokens,
+      estimatePromptTokens(model, sent, tools),
+    );
+  }
+
   compileChatMessages(
     message: ChatMessage[],
     options: LLMFullCompletionOptions,
@@ -1165,7 +1195,8 @@ export abstract class BaseLLM implements ILLM {
     return compileChatMessages({
       modelName: completionOptions.model,
       msgs: message,
-      // Smaller after the provider refused a prompt our estimate said fitted
+      // Smaller after the provider refused a prompt our estimate said
+      // fitted; larger once a local server's usage shows we over-count
       knownContextLength: correctedContextLength(
         this._contextLength,
         completionOptions.model,
@@ -1175,6 +1206,7 @@ export abstract class BaseLLM implements ILLM {
       tools: options.tools,
       ageing: this._ageing(),
       requiresAlternation: providerRequiresAlternation(this.providerName),
+      contextClass: contextClassFor(this.apiBase),
     });
   }
 
@@ -1504,6 +1536,7 @@ export abstract class BaseLLM implements ILLM {
         tools: optionsWithOverrides.tools,
         ageing: this._ageing(),
         requiresAlternation: providerRequiresAlternation(this.providerName),
+        contextClass: contextClassFor(this.apiBase),
       });
 
       messages = compiledChatMessages;
@@ -1714,6 +1747,15 @@ export abstract class BaseLLM implements ILLM {
   On the other hand, adding thinking and redacted_thinking blocks are ignored on subsequent
   requests when not using tools, so it's the simplest option to always add to history.
   */
+
+    if (!signal.aborted) {
+      await this._learnFromUsage(
+        completionOptions.model,
+        messages,
+        optionsWithOverrides.tools,
+        usage,
+      );
+    }
 
     // K4: a local Strata server that did not say in the stream how much of
     // the prompt it took from its cache says it in /metrics, read once now
