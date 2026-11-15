@@ -2,7 +2,7 @@
 title: "VS Code settings and commands"
 ---
 
-What the extension adds to VS Code, taken from `extensions/vscode/package.json` (version 2.14.0 at the time of writing): 19 settings, 39 commands and 21 keybindings. Settings are under **Settings, Extensions, Continuous**, or `continuous.*` in VS Code's own `settings.json`. Keys are written for Windows and Linux; on macOS `ctrl` is `cmd` unless the table says otherwise.
+What the extension adds to VS Code, taken from `extensions/vscode/package.json`: 19 settings and 21 keybindings as of version 2.14.0, and 49 commands as of 2.24.0. Settings are under **Settings, Extensions, Continuous**, or `continuous.*` in VS Code's own `settings.json`. Keys are written for Windows and Linux; on macOS `ctrl` is `cmd` unless the table says otherwise.
 
 ## Settings
 
@@ -66,15 +66,25 @@ All are in the **Continuous** category of the command palette.
 
 | Command id                                          | Title                                         |
 | --------------------------------------------------- | --------------------------------------------- |
-| `continuous.focusContinuousInput`                   | Add Highlighted Code to Context and Clear Chat; also Focus Continuous Chat |
+| `continuous.focusContinuousInput`                   | Add Highlighted Code to Context and Clear Chat |
 | `continuous.focusContinuousInputWithoutClear`       | Add to Chat                                   |
 | `continuous.focusEdit`                              | Add to Edit                                   |
 | `continuous.exitEditMode`                           | Exit Edit Mode                                |
 | `continuous.newSession`                             | New Session                                   |
+| `continuous.cleanUpOldSessions`                     | Clean up old sessions                         |
 | `continuous.viewHistory`                            | View History                                  |
 | `continuous.shareSession`                           | Share Current Chat Session as Markdown        |
 | `continuous.openConfigPage`                         | Open Settings                                 |
 | `continuous.openModelSetup`                         | Manage Models and Providers                   |
+| `continuous.openPermissions`                        | Open Permissions                              |
+| `continuous.openAuditInbox`                         | Open the Audit Inbox                          |
+| `continuous.openStats`                              | Open Stats                                    |
+| `continuous.stopResponse`                           | Stop Response                                 |
+| `continuous.resumeResponse`                         | Resume Response                               |
+| `continuous.startLoop`                              | Start Loop                                    |
+| `continuous.stopLoop`                               | Stop Loop                                     |
+| `continuous.showAgents`                             | Show Agents                                   |
+| `continuous.testConnection`                         | Test Connection of the Chat Model             |
 | `continuous.openInNewWindow`                        | Open in new window                            |
 | `continuous.applyCodeFromChat`                      | Apply code from chat                          |
 | `continuous.acceptDiff`                             | Accept Diff                                   |
@@ -105,11 +115,18 @@ All are in the **Continuous** category of the command palette.
 | `continuous.docsReIndex`                            | Docs Force Re-Index                           |
 | `continuous.viewLogs`                               | View Logs                                     |
 | `continuous.clearConsole`                           | Clear Console                                 |
-| `continuous.enterEnterpriseLicenseKey`              | Enter Enterprise License Key                  |
 
 Four titles carry the category twice in this version, so the palette shows them as **Continuous: Continuous: Force Autocomplete**, **...: Force Next Edit**, **...: Accept Jump Suggestion** and **...: Reject Jump Suggestion**.
 
-**Enter Enterprise License Key** is an upstream command. Continuous has no licence; the command has nothing to unlock.
+The commands from **Open Permissions** to **Test Connection of the Chat Model** do what the same control in the panel does, and have no default key:
+
+- **Open Permissions** and **Open the Audit Inbox** open the Permissions settings page, the second at its Inbox view. **Open Stats** opens the Stats page.
+- **Stop Response** is the Stop button: it cancels the reply and ends running terminal commands. **Resume Response** is the Resume button under a stopped, failed or interrupted turn.
+- **Start Loop** resumes a stopped loop that has work left, as the loop's Resume does; otherwise it picks Loop in the mode picker, and the plan the next message presents starts the loop. **Stop Loop** is the loop's Stop: it stops after the running item, or ends a parallel wave's workers.
+- **Show Agents** opens the session's agents list above the input and moves focus to it.
+- **Test Connection of the Chat Model** opens the selected chat model's settings at Connection, where **Test connection** is.
+
+When there is nothing to act on (no reply running, no loop, no agents, no chat model), the command says so in a notification.
 
 ## Related
 

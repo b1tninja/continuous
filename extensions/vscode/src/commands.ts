@@ -4,10 +4,10 @@ import * as fs from "node:fs";
 import { ContextMenuConfig, ILLM, ModelInstaller } from "core";
 import { CompletionProvider } from "core/autocomplete/CompletionProvider";
 import { ConfigHandler } from "core/config/ConfigHandler";
-import { EXTENSION_NAME } from "core/util/constants";
 import { Core } from "core/core";
 import { isModelInstaller } from "core/llm";
 import { NextEditLoggingService } from "core/nextEdit/NextEditLoggingService";
+import { EXTENSION_NAME } from "core/util/constants";
 import { startLocalLemonade } from "core/util/lemonadeHelper";
 import { startLocalOllama } from "core/util/ollamaHelper";
 import {
@@ -36,6 +36,7 @@ import { ContinueConsoleWebviewViewProvider } from "./ContinueConsoleWebviewView
 import { ContinueGUIWebviewViewProvider } from "./ContinueGUIWebviewViewProvider";
 import { processDiff } from "./diff/processDiff";
 import { VerticalDiffManager } from "./diff/vertical/manager";
+import { paletteCommands } from "./paletteCommands";
 import EditDecorationManager from "./quickEdit/EditDecorationManager";
 import { QuickEdit, QuickEditShowParams } from "./quickEdit/QuickEditQuickPick";
 import {
@@ -685,6 +686,15 @@ const getCommandsMap: (
       });
       quickPick.show();
     },
+    ...paletteCommands({
+      showPanel: async () => {
+        focusGUI();
+        return sidebar.isReady || waitForSidebarReady(sidebar, 5000, 100);
+      },
+      request: (messageType, data) =>
+        sidebar.webviewProtocol.request(messageType, data),
+      info: (message) => void vscode.window.showInformationMessage(message),
+    }),
     "continuous.navigateTo": (path: string, toggle: boolean) => {
       sidebar.webviewProtocol?.request("navigateTo", { path, toggle });
       focusGUI();
@@ -745,40 +755,6 @@ const getCommandsMap: (
             );
           }
         });
-    },
-    "continuous.enterEnterpriseLicenseKey": async () => {
-      const licenseKey = await vscode.window.showInputBox({
-        prompt: "Enter your enterprise license key",
-        password: true,
-        ignoreFocusOut: true,
-        placeHolder: "License key",
-      });
-
-      if (!licenseKey) {
-        return;
-      }
-
-      try {
-        const isValid = core.invoke("mdm/setLicenseKey", {
-          licenseKey,
-        });
-
-        if (isValid) {
-          void vscode.window.showInformationMessage(
-            "Enterprise license key successfully validated and saved. Reloading window.",
-          );
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          await vscode.commands.executeCommand("workbench.action.reloadWindow");
-        } else {
-          void vscode.window.showErrorMessage(
-            "Invalid license key. Please check your license key and try again.",
-          );
-        }
-      } catch (error) {
-        void vscode.window.showErrorMessage(
-          `Failed to set enterprise license key: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
     },
     "continuous.toggleNextEditEnabled": async () => {
       const config = vscode.workspace.getConfiguration(EXTENSION_NAME);

@@ -13,7 +13,11 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { SubagentCard } from "../../pages/gui/ToolCallDiv/SubagentCard";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import { selectAgentsSnapshot } from "../../redux/selectors/selectAgents";
-import { archiveAgents, restoreAgents } from "../../redux/slices/uiSlice";
+import {
+  archiveAgents,
+  restoreAgents,
+  setAgentsPanelFocusRequested,
+} from "../../redux/slices/uiSlice";
 import { findToolCallById } from "../../redux/util";
 import {
   isLoopWorkerLive,
@@ -542,6 +546,21 @@ export function AgentsList() {
   const opened = openId
     ? snapshot.nodes.find((n) => n.id === openId)
     : undefined;
+
+  // Show Agents in the Command Palette: open the list and focus its toggle
+  const focusRequested = useAppSelector(
+    (s) => s.ui.agentsPanelFocusRequested === true,
+  );
+  const hasAgents = snapshot.nodes.length > 0;
+  useEffect(() => {
+    if (!focusRequested || !hasAgents) return;
+    dispatch(setAgentsPanelFocusRequested(false));
+    setListOpen(true);
+    setOpenId(undefined);
+    document
+      .querySelector<HTMLElement>('[data-testid="agents-toggle"]')
+      ?.focus();
+  }, [focusRequested, hasAgents, dispatch]);
 
   // Back to the list: focus the row that was opened
   useEffect(() => {
