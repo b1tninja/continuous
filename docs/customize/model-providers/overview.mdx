@@ -75,10 +75,10 @@ You can add models to your `config.yaml` file like this:
 
 ```yaml
 models:
-  - name: Claude 4 Sonnet
+  - name: Claude Sonnet 5.5
     provider: anthropic # Choose provider from the lists above
-    model: claude-sonnet-4-20250514 # Specific model name
-    apiKey: ${{ secrets.OPENAI_API_KEY }}
+    model: claude-sonnet-5-5 # Specific model name
+    apiKey: ${{ secrets.ANTHROPIC_API_KEY }}
     roles:
       - chat
       - edit
