@@ -14,6 +14,7 @@ import * as path from "node:path";
 
 import { maskDeep } from "core/tools/permissions/audit/mask.js";
 import { getGlobalDirPath, GLOBAL_DIR_NAME } from "core/util/paths.js";
+import { resolveWebConfig } from "core/util/webConfig.js";
 
 import {
   collectControls,
@@ -176,6 +177,16 @@ function configControl(
   };
 }
 
+/** The old web keys a config file still uses, as notes on that file. */
+function webDeprecationWarnings(value: unknown): FileProblem[] {
+  if (!isMapping(value)) return [];
+  const root = value as Record<string, any>;
+  return resolveWebConfig({
+    user: root.web,
+    userLegacy: root.toolPermissions?.auto?.environment,
+  }).deprecations.map((d) => ({ message: d.message }));
+}
+
 /** Collects the report. Read-only; see doctorControls.ts for the controls. */
 export function collectDoctorConfig(
   input: DoctorConfigInput = {},
@@ -192,6 +203,7 @@ export function collectDoctorConfig(
     config.state = "broken";
     config.errors.push({ message: "does not exist" });
   }
+  config.warnings.push(...webDeprecationWarnings(config.value));
   const permissionsFile = path.join(globalDir, "permissions.yaml");
   const permissions = checkPermissionsYaml(permissionsFile);
   const files: FileReport[] = [
