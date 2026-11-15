@@ -30,9 +30,12 @@ import { referenceIn } from "./valueHints";
   ~/.continuous/.env) and the file gets `${{ secrets.NAME }}`; no value
   appears in the result.
 
-  Trust is not written here. Where the trust decision lives (permissions.yaml
-  through the rule editor, plans/research/area-injection-tool-exposure-web.md
-  section 13.3) is an open owner question.
+  Trust is not written here. The decision record of 2026-11-15 (injection
+  13.4-1) puts MCP trust in permissions.yaml, through the rule editor
+  (`mcpServers.<name>: trusted`), so the writer only saves the definition.
+  The wizard's one trust decision is the consent to run the probe. Pin at
+  Add (MCPW16) records the approved tool list through #901's approval API
+  once that merges.
 */
 
 export interface PlannedSecret {
