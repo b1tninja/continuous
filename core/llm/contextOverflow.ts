@@ -38,9 +38,16 @@ const PATTERNS: { re: RegExp; actual?: number; max?: number }[] = [
     actual: 1,
     max: 2,
   },
+  // vLLM-served models, Bedrock GPT OSS among them: "Input length (515073)
+  // exceeds model's maximum context length (131072)." (live, 2026-11-14)
+  {
+    re: /input length\s*\(([\d,]+)\)\s*exceeds[^(]*?maximum context length\s*\(([\d,]+)\)/i,
+    actual: 1,
+    max: 2,
+  },
   // Bedrock Converse, other families: "Input is too long for requested model"
   {
-    re: /input is too long|too many input tokens|context[_ ]length[_ ]exceeded|exceeds? the (?:model'?s )?(?:maximum )?context (?:window|length)/i,
+    re: /input is too long|too many input tokens|context[_ ]length[_ ]exceeded|exceeds? (?:the )?(?:model'?s )?(?:maximum )?context (?:window|length)/i,
   },
 ];
 
