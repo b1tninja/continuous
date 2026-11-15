@@ -431,11 +431,10 @@ describe("planned compaction: Compact now", () => {
 
   function compactHook(t: ReturnType<typeof setup>) {
     const wrapper = ({ children }: PropsWithChildren) =>
-      createElement(
-        IdeMessengerProvider,
-        { messenger: t.messenger },
-        createElement(Provider, { store: t.store as any }, children),
-      );
+      createElement(IdeMessengerProvider, {
+        messenger: t.messenger,
+        children: createElement(Provider, { store: t.store as any, children }),
+      });
     return renderHook(() => useCompactConversation(), { wrapper }).result
       .current;
   }
