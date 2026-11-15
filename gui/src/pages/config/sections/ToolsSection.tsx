@@ -28,13 +28,14 @@ import {
 } from "../../../components/ui";
 import { useAuth } from "../../../context/Auth";
 import { IdeMessengerContext } from "../../../context/IdeMessenger";
-import { useWarmCacheNote } from "../../../hooks/useWarmCacheNote";
+import { useToolChangeNote } from "../../../hooks/useToolChangeNote";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks";
 import { updateConfig } from "../../../redux/slices/configSlice";
 import { ConfigHeader } from "../components/ConfigHeader";
 import { ImportClineMcpButton } from "../components/ImportClineMcp";
 import { PolicyCard } from "../../../components/PolicyControls";
 import { ToolPoliciesGroup } from "../components/ToolPoliciesGroup";
+import { ToolChangeNotice } from "../../../components/toolChanges/ToolChangeNotice";
 import { ShadowReviewControl } from "./ShadowReviewControl";
 import { TerminalEnvironmentControl } from "./TerminalEnvironmentControl";
 
@@ -77,7 +78,7 @@ function MCPServerPreview({
   const editBlock = useEditBlock();
 
   const dispatch = useAppDispatch();
-  const warmCacheNote = useWarmCacheNote();
+  const warmCacheNote = useToolChangeNote();
   const updateMCPServerStatus = (status: MCPServerStatus["status"]) => {
     // optimistic config update
     dispatch(
@@ -516,6 +517,7 @@ export function ToolsSection() {
         </div>
       )}
       <div className="mb-4 space-y-6">
+        <ToolChangeNotice />
         <PolicyCard />
         <ShadowReviewControl />
         <TerminalEnvironmentControl />

@@ -261,6 +261,7 @@ describe("streamResponseThunk - tool calls", () => {
       "symbols/updateFromContextItems/pending",
       "session/updateHistoryItemAtIndex",
       "chat/streamNormalInput/pending",
+      "session/setSentToolList",
       "session/setAppliedRulesAtIndex",
       "session/setActive",
       "session/setInlineErrorMessage",
@@ -280,6 +281,7 @@ describe("streamResponseThunk - tool calls", () => {
       "session/resetNextCodeBlockToApplyIndex",
       "session/streamUpdate",
       "chat/streamNormalInput/pending",
+      "session/setSentToolList",
       "session/setAppliedRulesAtIndex",
       "session/setActive",
       "session/setInlineErrorMessage",
@@ -446,6 +448,7 @@ describe("streamResponseThunk - tool calls", () => {
       ...initialState,
       session: {
         ...initialState.session,
+        sentToolList: expect.anything(),
         history: [
           {
             contextItems: [],
@@ -729,6 +732,7 @@ describe("streamResponseThunk - tool calls", () => {
       "symbols/updateFromContextItems/pending",
       "session/updateHistoryItemAtIndex",
       "chat/streamNormalInput/pending",
+      "session/setSentToolList",
       "session/setAppliedRulesAtIndex",
       "session/setActive",
       "session/setInlineErrorMessage",
@@ -748,6 +752,7 @@ describe("streamResponseThunk - tool calls", () => {
       "session/resetNextCodeBlockToApplyIndex",
       "session/streamUpdate",
       "chat/streamNormalInput/pending",
+      "session/setSentToolList",
       "session/setAppliedRulesAtIndex",
       "session/setActive",
       "session/setInlineErrorMessage",
@@ -1085,6 +1090,10 @@ describe("streamResponseThunk - tool calls", () => {
         payload: undefined,
       },
       {
+        type: "session/setSentToolList",
+        payload: expect.anything(),
+      },
+      {
         type: "session/setAppliedRulesAtIndex",
         payload: {
           appliedRules: [],
@@ -1345,6 +1354,7 @@ describe("streamResponseThunk - tool calls", () => {
       ...initialState,
       session: {
         ...initialState.session,
+        sentToolList: expect.anything(),
         history: [
           {
             contextItems: [],
@@ -1637,6 +1647,10 @@ describe("streamResponseThunk - tool calls", () => {
           requestStatus: "pending",
         },
         payload: undefined,
+      },
+      {
+        type: "session/setSentToolList",
+        payload: expect.anything(),
       },
       {
         type: "session/setAppliedRulesAtIndex",
@@ -1935,6 +1949,10 @@ describe("streamResponseThunk - tool calls", () => {
         payload: undefined,
       },
       {
+        type: "session/setSentToolList",
+        payload: expect.anything(),
+      },
+      {
         type: "session/setAppliedRulesAtIndex",
         payload: {
           appliedRules: [],
@@ -2136,6 +2154,7 @@ describe("streamResponseThunk - tool calls", () => {
       ...initialState,
       session: {
         ...initialState.session,
+        sentToolList: expect.anything(),
         title: "Session summary",
         history: [
           {

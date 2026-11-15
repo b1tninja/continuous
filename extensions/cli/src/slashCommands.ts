@@ -34,6 +34,10 @@ import {
 } from "./session.js";
 import { telemetryService } from "./telemetry/telemetryService.js";
 import { buildImportSkillPrompt } from "./tools/skills.js";
+import {
+  applyCliToolChangesNow,
+  cliPendingToolChangesLine,
+} from "./tools/toolListHold.js";
 import { SlashCommandResult } from "./ui/hooks/useChat.types.js";
 import {
   getThinkingDisplay,
@@ -261,6 +265,16 @@ function handleThinking(args: string[]) {
   return { output: `Thinking display: ${mode}` };
 }
 
+/** `/tools`: tool changes waiting for a cold cache; `/tools apply` applies them. */
+function handleTools(args: string[]) {
+  const sub = args.join(" ").trim();
+  if (!sub) return { output: cliPendingToolChangesLine() };
+  if (sub === "apply") return { output: applyCliToolChangesNow() };
+  return {
+    output: `Unknown /tools option "${sub}"; use /tools or /tools apply`,
+  };
+}
+
 function handleSessions() {
   return { openSessionSelector: true };
 }
@@ -412,6 +426,7 @@ const commandHandlers: Record<string, CommandHandler> = {
   "import-skill": (args) => handleImportSkill(args),
   sessions: handleSessions,
   thinking: handleThinking,
+  tools: handleTools,
   export: handleExport,
   import: handleImport,
 };

@@ -214,6 +214,10 @@ describe("streamResponseThunk", () => {
         payload: undefined,
       },
       {
+        type: "session/setSentToolList",
+        payload: expect.anything(),
+      },
+      {
         type: "session/setAppliedRulesAtIndex",
         payload: {
           index: 1,
@@ -434,6 +438,7 @@ describe("streamResponseThunk", () => {
       ...initialState,
       session: {
         ...initialState.session,
+        sentToolList: expect.anything(),
         streamAborter: expect.any(AbortController),
         title: "Session summary",
         isPruned: false,
@@ -605,6 +610,7 @@ describe("streamResponseThunk", () => {
       "symbols/updateFromContextItems/pending",
       "session/updateHistoryItemAtIndex",
       "chat/streamNormalInput/pending",
+      "session/setSentToolList",
       "session/setAppliedRulesAtIndex",
       "session/setActive",
       "session/setInlineErrorMessage",
@@ -624,6 +630,7 @@ describe("streamResponseThunk", () => {
       "session/resetNextCodeBlockToApplyIndex",
       "session/streamUpdate",
       "chat/streamNormalInput/pending",
+      "session/setSentToolList",
       "session/setAppliedRulesAtIndex",
       "session/setActive",
       "session/setInlineErrorMessage",
@@ -778,6 +785,7 @@ describe("streamResponseThunk", () => {
       ...stateWithToolSettings,
       session: {
         ...stateWithToolSettings.session,
+        sentToolList: expect.anything(),
         history: [
           {
             contextItems: [],
@@ -1023,6 +1031,10 @@ describe("streamResponseThunk", () => {
         payload: undefined,
       },
       {
+        type: "session/setSentToolList",
+        payload: expect.anything(),
+      },
+      {
         type: "session/setAppliedRulesAtIndex",
         payload: {
           appliedRules: [],
@@ -1248,6 +1260,7 @@ describe("streamResponseThunk", () => {
       ...abortState,
       session: {
         ...abortState.session,
+        sentToolList: expect.anything(),
         history: [
           {
             contextItems: [],

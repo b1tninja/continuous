@@ -61,6 +61,7 @@ import {
   validateToolCallArgsPresent,
 } from "../tools/index.js";
 import { cliRoleRefusal, cliToolRole } from "../tools/roleGate.js";
+import { cliWithheldRefusal } from "../tools/toolListHold.js";
 import { PreprocessedToolCall, ToolCall } from "../tools/types.js";
 import { recordCacheTally } from "../util/cacheTally.js";
 import { logger } from "../util/logger.js";
@@ -391,6 +392,18 @@ async function decideToolApproval(
       denialReason: "policy",
       denialMessage: roleRefusal,
     };
+  }
+  // Withheld, not removed (C88): turned off while the prompt cache was warm,
+  // so still offered until it goes cold, and refused here
+  const withheld = cliWithheldRefusal(toolCall.name, true);
+  if (withheld) {
+    trace.verdict = {
+      decision: "deny",
+      by: "system",
+      source: "withheld",
+      reason: withheld,
+    };
+    return { approved: false, denialReason: "policy", denialMessage: withheld };
   }
   // IDGAF: the CLI's own ask and exclude do not stop the call (runsAtIdgaf)
   const idgaf = callRunsAtIdgaf(toolCall, mode);
@@ -830,7 +843,23 @@ export async function preprocessStreamedToolCalls(
         availableTools.find((t) => t.name === toolCall.name) ??
         TOOL_ALIASES.find((t) => t.name === toolCall.name);
       if (!tool) {
-        throw new Error(`Tool ${toolCall.name} not found`);
+        // A withheld tool whose server is gone says so (C88)
+        const gone = cliWithheldRefusal(toolCall.name, false);
+        if (gone) {
+          recordCliDecision(
+            toolCall,
+            {
+              verdict: {
+                decision: "deny",
+                by: "system",
+                source: "withheld",
+                reason: gone,
+              },
+            },
+            { approved: false, denialMessage: gone },
+          );
+        }
+        throw new Error(gone ?? `Tool ${toolCall.name} not found`);
       }
 
       validateToolCallArgsPresent(toolCall, tool);

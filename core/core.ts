@@ -2462,8 +2462,32 @@ export class Core {
           sessionId,
           agent,
           history,
+          withheld,
         },
       }) => {
+        // Withheld while the prompt cache is warm (C88): refused whatever the
+        // rules say, and written to the audit trail with the reason
+        if (withheld) {
+          const refused = {
+            policy: "disabled" as const,
+            source: "tool-setting" as const,
+            reason: withheld,
+          };
+          recordPolicyDecision(
+            getAuditTrail(),
+            {
+              session: sessionId,
+              callId,
+              toolName,
+              parsedArgs,
+              approval,
+              agent,
+            },
+            basePolicy,
+            refused,
+          );
+          return refused;
+        }
         const { config } = await this.configHandler.loadConfig();
         if (!config) {
           throw new Error("Config not loaded");

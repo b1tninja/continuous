@@ -10,6 +10,7 @@ import { formatCacheSummary, summarizeLedger } from "../../util/cacheLedger";
 import { selectSelectedChatModel } from "../../redux/slices/configSlice";
 import {
   restoreCacheTipsForModel,
+  setApplyToolChangesAtOnce,
   setPromptCacheSetting,
 } from "../../redux/slices/uiSlice";
 import { cacheExportText } from "../../util/cacheExport";
@@ -46,6 +47,8 @@ const CHOICES: (PromptCacheSetting | "config")[] = [
 const RESTORE_TIPS = "restore-tips";
 /** Not a setting either: copies the session's cache record to the clipboard. */
 const COPY_RECORD = "copy-record";
+/** Switches whether a tool list change waits for a cold cache (C80). */
+const TOOL_CHANGES = "tool-changes";
 
 const RING_RADIUS = 5;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
@@ -148,6 +151,9 @@ export function PromptCacheButton() {
   const sessionState = useAppSelector((s) => s.session.promptCache);
   const isStreaming = useAppSelector((s) => s.session.isStreaming);
   const dismissedTips = useAppSelector((s) => s.ui.dismissedCacheTips);
+  const toolChangesAtOnce = useAppSelector(
+    (s) => !!s.ui.applyToolChangesAtOnce,
+  );
 
   const state = sessionState ?? { escalated: false };
   // Asking at the moment of the last request always finds the entry alive (when
@@ -192,8 +198,13 @@ export function PromptCacheButton() {
           | PromptCacheSetting
           | "config"
           | typeof RESTORE_TIPS
-          | typeof COPY_RECORD,
+          | typeof COPY_RECORD
+          | typeof TOOL_CHANGES,
       ) => {
+        if (choice === TOOL_CHANGES) {
+          dispatch(setApplyToolChangesAtOnce(!toolChangesAtOnce));
+          return;
+        }
         if (choice === COPY_RECORD) {
           void navigator.clipboard
             .writeText(
@@ -289,6 +300,23 @@ export function PromptCacheButton() {
               </div>
             </ListboxOption>
           )}
+          <ListboxOption
+            value={TOOL_CHANGES}
+            data-testid="prompt-cache-option-tool-changes"
+          >
+            <div className="flex flex-col">
+              <span>
+                {toolChangesAtOnce
+                  ? "Let tool changes wait for a cold cache"
+                  : "Apply tool changes at once"}
+              </span>
+              <span className="text-xs text-description-muted">
+                {toolChangesAtOnce
+                  ? "Now turning a tool or MCP server on or off re-reads the conversation at once"
+                  : "Now a tool or MCP server change waits while the cache is warm and the conversation is large"}
+              </span>
+            </div>
+          </ListboxOption>
           {dismissedCount > 0 && (
             <ListboxOption
               value={RESTORE_TIPS}

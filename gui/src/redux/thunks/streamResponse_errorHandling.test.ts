@@ -343,6 +343,10 @@ describe("streamResponseThunk", () => {
         payload: undefined,
       },
       {
+        type: "session/setSentToolList",
+        payload: expect.anything(),
+      },
+      {
         type: "session/setAppliedRulesAtIndex",
         payload: {
           appliedRules: [],
@@ -529,6 +533,7 @@ describe("streamResponseThunk", () => {
       ...initialState,
       session: {
         ...initialState.session,
+        sentToolList: expect.anything(),
         title: "Hello",
         history: [
           {
@@ -685,6 +690,10 @@ describe("streamResponseThunk", () => {
         payload: undefined,
       },
       {
+        type: "session/setSentToolList",
+        payload: expect.anything(),
+      },
+      {
         type: "session/setAppliedRulesAtIndex",
         payload: {
           appliedRules: [],
@@ -834,6 +843,7 @@ describe("streamResponseThunk", () => {
       ...initialState,
       session: {
         ...initialState.session,
+        sentToolList: expect.anything(),
         // the failed turn was saved, which titles the session
         title: "Hello",
         streamAborter: expect.any(AbortController),

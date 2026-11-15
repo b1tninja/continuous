@@ -47,6 +47,7 @@ import {
   setPromptProgress,
   setPromptReadSpeed,
   setRecoveryHold,
+  setSentToolList,
   setToolGenerated,
   streamUpdate,
 } from "../slices/sessionSlice";
@@ -81,6 +82,8 @@ import {
   refuseTruncatedToolCalls,
 } from "./preprocessToolCallArgs";
 import { refuseRoleCalls } from "./refuseRoleCalls";
+import { refuseWithheldCalls } from "./refuseWithheldCalls";
+import { withheldTools } from "../../util/toolListHold";
 import { checkpointSession } from "./session";
 import { streamResponseAfterToolCall } from "./streamResponseAfterToolCall";
 
@@ -124,8 +127,19 @@ export const streamNormalInput = createAsyncThunk<
       appliedRules,
       appliedRuleIndex,
       systemToolsFramework,
+      toolList,
+      thinkingCut,
     } = buildChatRequest(state);
     dumpPromptSegments(state);
+    // What this request offers: while the cache is warm, the next one offers
+    // the same list and a change to it waits (C80)
+    dispatch(
+      setSentToolList({
+        key: toolList.key,
+        tools: toolList.tools,
+        thinkingCut,
+      }),
+    );
     let completionOptions: LLMFullCompletionOptions = builtOptions;
 
     // Prompt caching: the toolbar choice for this model, or when there is none
@@ -535,6 +549,19 @@ export const streamNormalInput = createAsyncThunk<
       planMcpTools: state1.ui.policyExtras.planMcpTools,
       trustedMcpServers: state1.ui.policyExtras.trustedMcpServers,
     });
+
+    // A tool turned off while the cache was warm is still offered; a call to
+    // it is refused, and says why (C88)
+    await refuseWithheldCalls(
+      dispatch,
+      extra.ideMessenger,
+      selectPendingToolCalls(getState()),
+      withheldTools(toolList, state1.config.config.tools),
+      {
+        sessionId: state1.session.id,
+        agent: mainAuditAgent(state1.session.id, state1.session.mode),
+      },
+    );
 
     // 2. Pre-process args to catch invalid args before checking policies
     const state2 = getState();

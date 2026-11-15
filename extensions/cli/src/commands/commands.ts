@@ -128,6 +128,12 @@ export const SYSTEM_SLASH_COMMANDS: SystemCommand[] = [
     category: "system",
   },
   {
+    name: "tools",
+    description:
+      "Tool changes waiting for the prompt cache to go cold: /tools, or /tools apply to apply them now",
+    category: "system",
+  },
+  {
     name: "skills",
     description: "List all available skills",
     category: "system",

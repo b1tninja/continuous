@@ -74,6 +74,11 @@ import {
 import { StreamCallbacks } from "./streamChatResponse.types.js";
 import { taskListBlockForRequest } from "./taskListBlock.js";
 import { hintToolDialectLeak } from "./toolDialectLeak.js";
+import {
+  historyForHeldTools,
+  holdRequestTools,
+  noteHeldToolsUsage,
+} from "./toolListHoldStep.js";
 
 function updateFinalResponse(
   content: string,
@@ -740,10 +745,18 @@ export async function streamChatResponse(
       fixedUse,
     );
 
-    // Recompute tools on each iteration to handle mode changes during streaming
-    const rawTools = await getRequestTools(isHeadless);
+    // Recompute tools on each iteration to handle mode changes during
+    // streaming; while the prompt cache is warm a change to them waits (C80)
+    const mainRequest = !fixedUse && persistSession;
+    const held = holdRequestTools({
+      rawTools: await getRequestTools(isHeadless),
+      model,
+      historyLength: chatHistory.length,
+      main: mainRequest,
+      callbacks,
+    });
     const tools = applyChatCompletionToolOverrides(
-      rawTools,
+      held.tools,
       model.chatOptions?.toolOverrides,
     );
 
@@ -781,7 +794,15 @@ export async function streamChatResponse(
     const { content, toolCalls, shouldContinue, usage, reasoning } =
       await processStreamingResponse({
         isHeadless,
-        chatHistory: loopRequestHistory(chatHistory, isCompacting),
+        // Reasoning minted under an earlier tool list is left out on the
+        // models that refuse it (core thinkingCutAfterToolChange)
+        chatHistory: loopRequestHistory(
+          historyForHeldTools(
+            chatHistory,
+            preCompactionResult.wasCompacted ? undefined : held.thinkingCut,
+          ),
+          isCompacting,
+        ),
         model,
         llmApi,
         abortController,
@@ -793,6 +814,7 @@ export async function streamChatResponse(
       }).finally(() => callbacks?.onModelStreaming?.(false));
 
     options.onRequest?.();
+    if (mainRequest && !isCompacting) noteHeldToolsUsage(model, usage);
 
     // The reply's whole reasoning, once: after the request's usage and
     // before the reply's message is reported
