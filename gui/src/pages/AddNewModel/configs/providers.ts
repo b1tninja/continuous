@@ -140,13 +140,7 @@ export const providers: Partial<Record<string, ProviderInfo>> = {
       models.cometapiO4Mini,
       models.cometapiO3Pro,
       // Anthropic Claude family
-      models.cometapiClaude45Sonnet,
       models.cometapiClaude45Haiku,
-      models.cometapiClaudeOpus41,
-      models.cometapiClaudeOpus41Thinking,
-      models.cometapiClaudeSonnet4,
-      models.cometapiClaudeSonnet4Thinking,
-      models.cometapiClaude37SonnetLatest,
       // Google Gemini family
       models.cometapiGemini25Pro,
       models.cometapiGemini25Flash,

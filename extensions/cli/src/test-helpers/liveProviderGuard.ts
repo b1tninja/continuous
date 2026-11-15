@@ -86,6 +86,8 @@ export function scrubProviderCredentials(
   env.AWS_CONFIG_FILE = path.join(nowhere, "config");
   env.AWS_SHARED_CREDENTIALS_FILE = path.join(nowhere, "credentials");
   env.AWS_EC2_METADATA_DISABLED = "true";
+  // gcp-metadata (google-auth-library) must not probe the GCE metadata server
+  env.METADATA_SERVER_DETECTION = "none";
   return removed;
 }
 

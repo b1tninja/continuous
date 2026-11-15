@@ -216,14 +216,25 @@ export function PermissionsSection() {
     }
   };
   // ?view=inbox|recent: a view opened from outside (the Command Palette's
-  // Open Audit Inbox)
+  // Open Audit Inbox). The parameter is taken out of the URL once applied, so
+  // the next run of the command changes the URL again and lands on that view
+  // even after the person switched views by hand.
   const viewParam = params.get("view");
   const [view, setView] = useState<PermissionsView>(
     isPermissionsView(viewParam) ? viewParam : "rules",
   );
   useEffect(() => {
-    if (isPermissionsView(viewParam)) setView(viewParam);
-  }, [viewParam]);
+    if (!isPermissionsView(viewParam)) return;
+    setView(viewParam);
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("view");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [viewParam, setParams]);
   const [review, setReview] = useState<
     (ReviewRequest & { nonce: number }) | undefined
   >();
