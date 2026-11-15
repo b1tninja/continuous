@@ -1,6 +1,7 @@
 // Valid config tab names
 export type ConfigTab =
   | "models"
+  | "providers"
   | "rules"
   | "tools"
   | "permissions"
@@ -27,6 +28,7 @@ export const buildConfigRoute = (tab?: ConfigTab): string => {
 // Typed config route builders for common tabs
 export const CONFIG_ROUTES = {
   MODELS: buildConfigRoute("models"),
+  PROVIDERS: buildConfigRoute("providers"),
   RULES: buildConfigRoute("rules"),
   TOOLS: buildConfigRoute("tools"),
   PERMISSIONS: buildConfigRoute("permissions"),

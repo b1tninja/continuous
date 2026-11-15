@@ -6,6 +6,7 @@ import {
   Cog6ToothIcon,
   CubeIcon,
   PlusIcon,
+  ServerStackIcon,
 } from "@heroicons/react/24/outline";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -351,6 +352,15 @@ function ModelSelect() {
     openSetup();
   }
 
+  function onClickProviders(e: MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+
+    closeDropDown(buttonRef.current);
+
+    void navigate(CONFIG_ROUTES.PROVIDERS);
+  }
+
   function onClickConfigureModels(e: React.MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
@@ -364,7 +374,14 @@ function ModelSelect() {
   const selectedKeyNotSet = modelHasMissingSecret(selectedModel);
 
   return (
-    <Listbox onChange={(val: string) => chooseModel(val)}>
+    <Listbox
+      onChange={(val: string) =>
+        // Enter on the Providers... row opens the page, as a click does
+        val === "providers"
+          ? navigate(CONFIG_ROUTES.PROVIDERS)
+          : chooseModel(val)
+      }
+    >
       <div className="relative flex min-w-0">
         <ListboxButton
           data-testid="model-select-button"
@@ -493,6 +510,18 @@ function ModelSelect() {
                 <span className="flex flex-row items-center text-2xs text-description">
                   <PlusIcon className="mr-1.5 h-3.5 w-3.5" />
                   Manage models...
+                </span>
+              </ListboxOption>
+              <ListboxOption
+                key={options.length + 1}
+                onClick={onClickProviders}
+                value={"providers" as any}
+                fontSizeModifier={-2}
+                className="px-2 py-2"
+              >
+                <span className="flex flex-row items-center text-2xs text-description">
+                  <ServerStackIcon className="mr-1.5 h-3.5 w-3.5" />
+                  Providers...
                 </span>
               </ListboxOption>
 

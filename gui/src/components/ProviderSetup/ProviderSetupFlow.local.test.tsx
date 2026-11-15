@@ -159,6 +159,35 @@ describe("ProviderSetupFlow: local server", () => {
     });
   });
 
+  it("opened at the checklist (Manage models), lists the configured server's models", async () => {
+    const { messenger, fetches } = messengerWith({
+      ...EMPTY_SETUP,
+      connections: [
+        {
+          provider: "openai",
+          connection: { apiBase: "http://127.0.0.1:8083/v1" },
+          account: "strata",
+          models: [{ name: "Old", model: "old-model" }],
+          key: { state: "none" },
+        },
+      ],
+    });
+    await renderWithProviders(
+      <ProviderSetupFlow
+        initialProvider="openai"
+        initialConnection={{ apiBase: "http://127.0.0.1:8083/v1" }}
+        initialStep="models"
+        onDone={vi.fn()}
+      />,
+      { mockIdeMessenger: messenger },
+    );
+    expect(screen.getByText("Step 2 of 3")).toBeTruthy();
+    await screen.findByLabelText(STRATA_MODEL.name);
+    const openaiFetches = fetches.filter((f) => f.provider === "openai");
+    expect(openaiFetches).toHaveLength(1);
+    expect(openaiFetches[0].apiBase).toMatch(/^http:\/\/127\.0\.0\.1:8083\/v1/);
+  });
+
   it("chooses a usual address with one click", async () => {
     const { messenger } = messengerWith();
     const { user } = await renderWithProviders(

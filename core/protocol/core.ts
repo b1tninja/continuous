@@ -497,6 +497,15 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
     },
     { account?: string; converted: number; error?: string },
   ];
+  /**
+   * Take one provider connection's models out of the selected config (and
+   * their names out of modeModels). The account in providers.yaml, the
+   * catalog models and stored keys are kept.
+   */
+  "config/removeProviderConnection": [
+    import("../config/providerSetup").RemoveProviderConnectionRequest,
+    import("../config/providerSetup").RemoveProviderConnectionResult,
+  ];
   /** Add a model that uses a provider instance to the selected config. */
   "config/addConnectedModel": [
     { connection: string; model: string; name?: string; roles?: string[] },
