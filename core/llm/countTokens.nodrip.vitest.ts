@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "../index.js";
 import { contextLimits, type ContextClass } from "./contextThresholds";
 import { compileChatMessages, estimatePromptTokens } from "./countTokens";
+import { SUMMARY_MESSAGE_PREFIX } from "../util/summaryMessage";
 
 // One token per character, so 300 turns of up to 20k tokens each count in
 // milliseconds and every size below is exact
@@ -56,6 +57,8 @@ interface Simulation {
   growth: number;
   block: number;
   forceAt: number;
+  /** Requests whose first message after the system message was the summary. */
+  summaryKept: number;
 }
 
 /**
@@ -69,6 +72,8 @@ function simulate(
   maxTokens: number,
   turns: number,
   seed: number,
+  /** A compacted conversation: a summary of this size after the system message. */
+  summaryTokens = 0,
 ): Simulation {
   const rand = random(seed);
   const between = (low: number, high: number) =>
@@ -78,6 +83,12 @@ function simulate(
   const msgs: ChatMessage[] = [
     { role: "system", content: text(nextId++, 16_000) },
   ];
+  if (summaryTokens > 0) {
+    msgs.push({
+      role: "user",
+      content: SUMMARY_MESSAGE_PREFIX + "x".repeat(summaryTokens),
+    });
+  }
   const sim: Simulation = {
     firstKept: [],
     changedAt: [],
@@ -87,6 +98,7 @@ function simulate(
     growth: 0,
     block: limits.block,
     forceAt: limits.forceAt,
+    summaryKept: 0,
   };
   const sizes = new Map<number, number>();
   let previous: number[] = [];
@@ -100,7 +112,11 @@ function simulate(
       supportsImages: false,
       contextClass: cls,
     });
-    const ids = compiledChatMessages.slice(1).map(idOf);
+    const head = compiledChatMessages[1]?.content;
+    const hasSummary =
+      typeof head === "string" && head.startsWith(SUMMARY_MESSAGE_PREFIX);
+    if (hasSummary) sim.summaryKept++;
+    const ids = compiledChatMessages.slice(hasSummary ? 2 : 1).map(idOf);
     const size = estimatePromptTokens(MODEL, compiledChatMessages);
     sim.sent.push(size);
     sim.largest = Math.max(sim.largest, size);
@@ -221,5 +237,59 @@ describe("compileChatMessages drops whole blocks, never a few messages", () => {
         expect(sim.sent[i]).toBeGreaterThan(sim.sent[i - 1]);
       }
     }
+  });
+
+  it("keeps a compaction summary at the head and drops the oldest turns after it", () => {
+    const summaryTokens = 30_000;
+    const sim = simulate("local", 524_288, 4096, 300, 7, summaryTokens);
+    // The summary is in every request, right after the system message
+    expect(sim.summaryKept).toBe(sim.firstKept.length);
+    // The oldest turn after it went first, and the cut only moved forward
+    expect(sim.firstKept.at(-1)).toBeGreaterThan(1);
+    for (let i = 1; i < sim.firstKept.length; i++) {
+      expect(sim.firstKept[i]).toBeGreaterThanOrEqual(sim.firstKept[i - 1]);
+    }
+    // Each move still drops a block of turns: the summary does not count
+    // toward one, so it is never what a block is made of
+    expect(sim.dropped.length).toBeGreaterThan(0);
+    for (const tokens of sim.dropped) {
+      expect(tokens).toBeGreaterThan(sim.block - LARGEST_MESSAGE);
+    }
+    expect(sim.largest).toBeLessThanOrEqual(sim.forceAt);
+  });
+
+  it("drops the first tail turn of a compacted conversation over the threshold, not the summary", () => {
+    const summary = SUMMARY_MESSAGE_PREFIX + "x".repeat(40_000);
+    const msgs: ChatMessage[] = [
+      { role: "system", content: text(0, 16_000) },
+      { role: "user", content: summary },
+    ];
+    for (let i = 1; i <= 30; i++) {
+      msgs.push({
+        role: i % 2 ? "assistant" : "user",
+        content: text(i, 15_000),
+      });
+    }
+    msgs.push({ role: "user", content: text(99, 500) });
+    const limits = contextLimits(524_288, 4096, "local");
+    expect(estimatePromptTokens(MODEL, msgs)).toBeGreaterThan(limits.forceAt);
+    const { compiledChatMessages, didPrune } = compileChatMessages({
+      modelName: MODEL,
+      msgs,
+      knownContextLength: 524_288,
+      maxTokens: 4096,
+      supportsImages: false,
+      contextClass: "local",
+    });
+    expect(didPrune).toBe(true);
+    expect(compiledChatMessages[1].content).toBe(summary);
+    const ids = compiledChatMessages.slice(2).map(idOf);
+    expect(ids).not.toContain(1);
+    expect(ids.at(-1)).toBe(99);
+    // One block after the summary is gone: 131k tokens, the first nine messages
+    expect(Math.min(...ids)).toBe(10);
+    expect(
+      estimatePromptTokens(MODEL, compiledChatMessages),
+    ).toBeLessThanOrEqual(limits.forceAt);
   });
 });

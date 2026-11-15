@@ -56,6 +56,7 @@ import {
 import { withExponentialBackoff } from "../util/withExponentialBackoff.js";
 import {
   promptProgressOf,
+  reportsFullPromptTokens,
   strataRequestCache,
   streamsPromptProgress,
   withThinkingOff,
@@ -1163,17 +1164,20 @@ export abstract class BaseLLM implements ILLM {
    * The usage hook: when a local server answered and counted the prompt,
    * fold its count over our estimate of the same prompt into the model's
    * calibration, so the next request is pruned against the real window
-   * (contextOverflow.ts, decision D2). Hosted providers are left as they are
-   * until their ratios are measured (C110).
+   * (contextOverflow.ts, decision D2). Only servers known to count the whole
+   * prompt, cached part included (Strata, llama.cpp, vLLM): any other local
+   * server keeps only the overflow correction. Hosted providers are left as
+   * they are until their ratios are measured (C110).
    */
-  private _learnFromUsage(
+  private async _learnFromUsage(
     model: string,
     sent: ChatMessage[],
     tools: Tool[] | undefined,
     usage: Usage | undefined,
-  ): void {
+  ): Promise<void> {
     if (!usage?.promptTokens || !this.apiBase) return;
     if (contextClassFor(this.apiBase) !== "local") return;
+    if (!(await reportsFullPromptTokens(this.apiBase, this.apiKey))) return;
     learnTokenCalibration(
       model,
       usage.promptTokens,
@@ -1744,12 +1748,14 @@ export abstract class BaseLLM implements ILLM {
   requests when not using tools, so it's the simplest option to always add to history.
   */
 
-    this._learnFromUsage(
-      completionOptions.model,
-      messages,
-      optionsWithOverrides.tools,
-      usage,
-    );
+    if (!signal.aborted) {
+      await this._learnFromUsage(
+        completionOptions.model,
+        messages,
+        optionsWithOverrides.tools,
+        usage,
+      );
+    }
 
     // K4: a local Strata server that did not say in the stream how much of
     // the prompt it took from its cache says it in /metrics, read once now

@@ -198,6 +198,21 @@ describe("the usage calibration (local servers)", () => {
     expect(contextCorrectionFor("m")).toBe(1);
   });
 
+  it("ignores a sample outside 0.7 to 1.5 times the current ratio", () => {
+    learnTokenCalibration(QWEN, real, estimated);
+    const ratio = tokenCalibrationFor(QWEN)!;
+    expect(learnTokenCalibration(QWEN, 69_000, 100_000 / ratio)).toBe(ratio);
+    expect(learnTokenCalibration(QWEN, 151_000, 100_000 / ratio)).toBe(ratio);
+    // Just inside the range, it counts
+    expect(
+      learnTokenCalibration(QWEN, 149_000, 100_000 / ratio),
+    ).toBeGreaterThan(ratio);
+  });
+
+  it("takes the first sample as it is, clamped", () => {
+    expect(learnTokenCalibration("first", 300, 100_000)).toBe(MIN_CALIBRATION);
+  });
+
   it("is per model", () => {
     learnTokenCalibration(QWEN, real, estimated);
     expect(contextCorrectionFor("other")).toBe(1);
@@ -221,9 +236,9 @@ describe("the usage calibration (local servers)", () => {
     learnTokenCalibration(QWEN, 0.7 * 100_000, 100_000);
     expect(contextCorrectionFor(QWEN)).toBe(1);
     // A higher ratio from usage still applies on top of it
-    for (let i = 0; i < 20; i++) learnTokenCalibration(QWEN, 150_000, 100_000);
+    for (let i = 0; i < 40; i++) learnTokenCalibration(QWEN, 110_000, 100_000);
     expect(contextCorrectionFor(QWEN)).toBeCloseTo(
-      1.5 * CORRECTION_HEADROOM,
+      1.1 * CORRECTION_HEADROOM,
       2,
     );
   });
