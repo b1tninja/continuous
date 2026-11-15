@@ -3,9 +3,9 @@ import { useStore } from "react-redux";
 import { IdeMessengerContext } from "../context/IdeMessenger";
 import { useAppDispatch, useAppSelector } from "../redux/hooks";
 import {
+  applyPreparedSummary,
   deleteCompaction,
   setCompactionLoading,
-  setPreparedCompaction,
 } from "../redux/slices/sessionSlice";
 import type { RootState } from "../redux/store";
 import { usablePreparedCompaction } from "../redux/thunks/prepareCompaction";
@@ -25,9 +25,18 @@ export const useCompactConversation = () => {
 
     // Planned compaction: a summary prepared in the background for the
     // current plan is saved as it is, at the plan's boundary, with no request.
-    // The newest turns after it stay word for word.
+    // The newest turns after it stay word for word. It is saved here, as the
+    // turn that applies it does (applyPreparedSummary), so the session is
+    // exactly the one the pre-warm (C106) built its request from.
     const prepared = usablePreparedCompaction(store.getState(), requestedIndex);
-    const index = prepared?.index ?? requestedIndex;
+    if (prepared) {
+      dispatch(applyPreparedSummary(prepared));
+      await dispatch(
+        saveCurrentSession({ openNewSession: false, generateTitle: false }),
+      );
+      return true;
+    }
+    const index = requestedIndex;
 
     try {
       // Set loading state
@@ -36,15 +45,12 @@ export const useCompactConversation = () => {
       // While the prompt cache is warm, the summary request is the conversation
       // plus the summary prompt, so it reads the cache. Otherwise it is sent
       // as it always was.
-      const prefix = prepared
-        ? undefined
-        : compactionPrefix(store.getState(), index, Date.now());
+      const prefix = compactionPrefix(store.getState(), index, Date.now());
 
       const result = await ideMessenger.request("conversation/compact", {
         index,
         sessionId: currentSessionId,
         ...(prefix && { prefix }),
-        ...(prepared && { summary: prepared.summary }),
       });
       // request() does not throw: a failure comes back as status "error".
       // Unchecked, a failed compaction reloaded the unchanged session and
@@ -57,9 +63,9 @@ export const useCompactConversation = () => {
         return false;
       }
 
-      if (prepared) dispatch(setPreparedCompaction(undefined));
-      // Reload the current session to refresh the conversation state
-      dispatch(
+      // Reload the current session to refresh the conversation state. Awaited,
+      // so a message sent next (the forced-path hold) goes on the summary
+      await dispatch(
         loadSession({
           sessionId: currentSessionId,
           saveCurrentSession: false,

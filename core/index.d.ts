@@ -1577,6 +1577,11 @@ export interface ChatHistoryItem {
 export interface LLMFullCompletionOptions extends BaseCompletionOptions {
   log?: boolean;
   model?: string;
+  /**
+   * Per request, never from config: sent as `strata_prefix` to a local
+   * OpenAI-compatible server (the compaction pre-warm, C106).
+   */
+  strataPrefix?: StrataPrefix;
 }
 
 export type ToastType = "info" | "error" | "warning";
@@ -1680,7 +1685,28 @@ export interface ModelContextManagement {
    * prepare threshold. Unset: on for a local server, off otherwise.
    */
   plannedCompaction?: boolean;
+  /**
+   * Pre-warm the compacted prompt once its summary is ready (C106):
+   * experimental, "off" by default until the Strata live check; "local" on
+   * Strata and llama.cpp servers. "always"
+   * would add cloud providers, which is not built yet (C109), so it acts as
+   * "local" for now.
+   */
+  prewarm?: PrewarmSetting;
 }
+
+/** `contextManagement.prewarm` (decision D6). */
+export type PrewarmSetting = "off" | "local" | "always";
+
+/**
+ * Strata's `strata_prefix` request field: the checkpoint at the end of the
+ * first `messages` messages (or `tokens` tokens, or `chars` characters of
+ * message `message`) is pinned. Only one pin per engine.
+ */
+export type StrataPrefix =
+  | { messages: number }
+  | { tokens: number }
+  | { message: number; chars: number };
 
 export interface LLMOptions {
   model: string;

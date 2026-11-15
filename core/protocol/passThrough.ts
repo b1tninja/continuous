@@ -116,6 +116,8 @@ export const WEBVIEW_TO_CORE_PASS_THROUGH: (keyof ToCoreFromWebviewProtocol)[] =
     "chatDescriber/describe",
     "conversation/compact",
     "conversation/summarize",
+    "llm/prewarm",
+    "llm/strataMetrics",
     "stats/getTokensPerDay",
     "stats/getTokensPerModel",
     // Codebase

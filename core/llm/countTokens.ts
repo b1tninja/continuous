@@ -16,7 +16,7 @@ import {
 import { normalizeTurns, type TurnRepair } from "./normalizeTurns.js";
 
 import { renderChatMessage } from "../util/messageContent.js";
-import { SUMMARY_MESSAGE_PREFIX } from "../util/summaryMessage.js";
+import { isSummaryMessage } from "../util/summaryMessage.js";
 import { isTaskPlanBlockText } from "../util/taskPlan.js";
 import { AsyncEncoder, LlamaAsyncEncoder } from "./asyncEncoder.js";
 import { ageRequest, type AgeingState } from "../util/contextAgeing.js";
@@ -407,17 +407,6 @@ function pruneRawPromptFromTop(
     tokensForCompletion -
     getTokenCountingBufferSafety(contextLength);
   return pruneStringFromTop(modelName, maxTokens, prompt);
-}
-
-/** The user message that carries a compaction summary (C104). */
-function isSummaryMessage(message: ChatMessage | undefined): boolean {
-  if (message?.role !== "user") return false;
-  const content = message.content;
-  const text =
-    typeof content === "string"
-      ? content
-      : content.find((part) => part.type === "text")?.text;
-  return !!text?.startsWith(SUMMARY_MESSAGE_PREFIX);
 }
 
 /**

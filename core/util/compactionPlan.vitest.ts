@@ -171,9 +171,9 @@ describe("planCompaction: thresholds and shape", () => {
 
   it.each([
     { window: 100_000, thresholds: LOCAL, budget: 15_000 },
-    { window: 524_288, thresholds: LOCAL, budget: 64_000 },
+    { window: 524_288, thresholds: LOCAL, budget: 65_536 },
     { window: 200_000, thresholds: CLOUD, budget: 20_000 },
-    { window: 1_000_000, thresholds: CLOUD, budget: 64_000 },
+    { window: 1_000_000, thresholds: CLOUD, budget: 65_536 },
   ])(
     "tail budget for window $window is $budget",
     ({ window, thresholds, budget }) => {

@@ -272,6 +272,7 @@ import { streamDiffLines } from "./edit/streamDiffLines";
 import { shouldIgnore } from "./indexing/shouldIgnore";
 import { walkDirCache } from "./indexing/walkDir";
 import { LLMLogger } from "./llm/logger";
+import { localPrewarm, strataMetrics } from "./llm/localPrewarm";
 import { llmStreamChat } from "./llm/streamChat";
 import { BeforeAfterDiff } from "./nextEdit/context/diffFormatting";
 import { processSmallEdit } from "./nextEdit/context/processSmallEdit";
@@ -1123,6 +1124,40 @@ export class Core {
       } finally {
         this.messageAbortControllers.release(id, abortController);
       }
+    });
+
+    // The compaction pre-warm (C106): the compacted request with one output
+    // token, so the local server reads it while the person is away
+    on("llm/prewarm", async (msg) => {
+      const id = msg.data.requestId;
+      const abortController = this.addMessageAbortController(id);
+      try {
+        const llm = (await this.configHandler.loadConfig()).config
+          ?.selectedModelByRole.chat;
+        if (!llm) {
+          return {
+            status: "skipped" as const,
+            reason: "failed" as const,
+            detail: "No chat model selected",
+          };
+        }
+        return await localPrewarm({
+          llm,
+          messages: msg.data.messages,
+          options: msg.data.options,
+          promptTokens: msg.data.promptTokens,
+          liveTokens: msg.data.liveTokens,
+          signal: abortController.signal,
+        });
+      } finally {
+        this.messageAbortControllers.release(id, abortController);
+      }
+    });
+
+    on("llm/strataMetrics", async () => {
+      const llm = (await this.configHandler.loadConfig()).config
+        ?.selectedModelByRole.chat;
+      return strataMetrics(llm?.apiBase, llm?.apiKey);
     });
   }
 
