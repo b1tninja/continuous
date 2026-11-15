@@ -49,6 +49,30 @@ describe("authLabel", () => {
     ).toBe("AWS profile p");
     expect(authLabel(conn({ provider: "ollama" })).text).toBe("No key");
   });
+
+  it("says how the AWS profile signs in when core read it from ~/.aws/config", () => {
+    const profile = (awsProfileKind: any) =>
+      authLabel(
+        conn({
+          provider: "bedrock",
+          connection: { profile: "work" },
+          awsProfileKind,
+        }),
+      ).text;
+    expect(profile("sso")).toBe("AWS SSO profile work");
+    expect(profile("process")).toBe("AWS profile work (credential_process)");
+    expect(profile("assumeRole")).toBe("AWS profile work (assumes a role)");
+    expect(profile("webIdentity")).toBe(
+      "AWS profile work (web identity token)",
+    );
+    expect(profile("static")).toBe(
+      "AWS profile work (access keys in ~/.aws/config)",
+    );
+    expect(profile("credentialsFile")).toBe(
+      "AWS profile work (access keys in ~/.aws/credentials)",
+    );
+    expect(profile(undefined)).toBe("AWS profile work");
+  });
 });
 
 describe("connectionLabel", () => {
