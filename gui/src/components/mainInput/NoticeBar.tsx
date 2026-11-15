@@ -21,7 +21,7 @@ export function NoticeBar(props: {
         data-testid={`${props.testId}-dismiss`}
         aria-label="Dismiss"
         onClick={props.onDismiss}
-        className="ml-auto min-h-6 cursor-pointer border-none bg-transparent px-2 text-description hover:text-foreground"
+        className="ml-auto min-h-6 cursor-pointer border-none bg-transparent px-2 text-xs text-description hover:text-foreground"
       >
         Dismiss
       </button>

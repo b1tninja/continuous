@@ -37,6 +37,10 @@ import {
   runsAtIdgaf,
   type CoreVerdict,
 } from "../permissions/coreRules.js";
+import {
+  headlessAskRefusal,
+  noteHeadlessRefusal,
+} from "../permissions/headlessPolicy.js";
 import { checkToolPermission } from "../permissions/permissionChecker.js";
 import { toolPermissionManager } from "../permissions/permissionManager.js";
 import {
@@ -264,6 +268,12 @@ async function coreRulesVerdict(
       args: toolCall.arguments,
       cliPermission,
       evaluateToolCallPolicy: toolCall.tool?.evaluateToolCallPolicy,
+      ...(toolCall.preprocessResult?.processedArgs
+        ? { processedArgs: toolCall.preprocessResult.processedArgs }
+        : {}),
+      ...(toolCall.tool?.ownAskReason
+        ? { ownAskReason: toolCall.tool.ownAskReason }
+        : {}),
       assistantPermissions: permissions,
       approval,
       autoReview,
@@ -451,10 +461,11 @@ async function decideToolApproval(
         return held;
       }
       if (isHeadless) {
+        noteHeadlessRefusal(toolCall.name);
         return {
           approved: false,
           denialReason: "policy",
-          denialMessage: `${verdict.reason ?? "This call needs approval."} Running headless, so it was refused.`,
+          denialMessage: headlessAskRefusal(toolCall.name, verdict.reason),
         };
       }
       trace.askedPerson = true;
@@ -474,8 +485,13 @@ async function decideToolApproval(
       return held;
     }
     if (isHeadless) {
-      // "ask" tools are excluded in headless so can only get here by policy evaluation
-      return { approved: false, denialReason: "policy" };
+      // Nobody to ask (CO2): refused, with how to allow it
+      noteHeadlessRefusal(toolCall.name);
+      return {
+        approved: false,
+        denialReason: "policy",
+        denialMessage: headlessAskRefusal(toolCall.name),
+      };
     }
     trace.askedPerson = true;
     const userApproved = await requestUserPermission(toolCall, callbacks);

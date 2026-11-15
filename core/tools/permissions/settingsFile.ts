@@ -37,6 +37,12 @@ export interface PolicyFileSettings extends PolicySettings {
    * "server/tool", "server/*" or "server" (plans/research/tr-owner-decisions.md, 1).
    */
   planMcpTools?: string[];
+  /**
+   * MCP tools that unattended runs (headless `cn -p` and `cn serve`, Loop
+   * workers, background agents) may use: "server/tool", "server/*" or
+   * "server" (`background.mcpTools`; TR1, TR25). None by default.
+   */
+  backgroundMcpTools?: string[];
   /** Offer the terminal in Plan mode (the CLI; it still asks). Default false. */
   planAllowTerminal?: boolean;
   /** The person's custom set of levels and the preset it started from (`levels.custom`). */
@@ -78,6 +84,7 @@ export const POLICY_FILE_KEYS = [
   "floor",
   "mcpServers",
   "sandbox",
+  "background",
 ] as const;
 
 const BUILTIN_IDS = new Set<string>(BUILTIN_RULES.map((r) => r.id));
@@ -156,6 +163,11 @@ export function parsePolicyFile(text: string | undefined): PolicyFileRead {
   }
   if (Array.isArray(raw.plan?.mcpTools)) {
     settings.planMcpTools = raw.plan.mcpTools.filter(
+      (t: unknown): t is string => typeof t === "string" && t.length > 0,
+    );
+  }
+  if (Array.isArray(raw.background?.mcpTools)) {
+    settings.backgroundMcpTools = raw.background.mcpTools.filter(
       (t: unknown): t is string => typeof t === "string" && t.length > 0,
     );
   }

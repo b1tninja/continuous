@@ -1,11 +1,19 @@
+import { headlessLegacyAllow } from "./headlessPolicy.js";
 import { ToolPermissionPolicy } from "./types.js";
 
 /**
  * Default permission policies for all built-in tools.
  * These policies are applied in order - first match wins.
+ *
+ * A headless run takes the same lists as the terminal UI (CO2): Bash and
+ * unlisted tools ask, and an ask is refused there because nobody can answer
+ * it (headlessPolicy.ts). The old headless lists, which allowed Bash and
+ * every unlisted tool, come back only with the one-release escape hatch
+ * `CONTINUOUS_HEADLESS_LEGACY_ALLOW=1`.
  */
 export function getDefaultToolPolicies(
   isHeadless = false,
+  legacyHeadless: boolean = headlessLegacyAllow(),
 ): ToolPermissionPolicy[] {
   const policies: ToolPermissionPolicy[] = [
     // Write tools
@@ -30,8 +38,8 @@ export function getDefaultToolPolicies(
     { tool: "Search", permission: "allow" },
   ];
 
-  // MCP and Bash are ask in TUI mode, auto in headless
-  if (isHeadless) {
+  // MCP and Bash ask, headless too; allowed headless only under the hatch
+  if (isHeadless && legacyHeadless) {
     policies.push({ tool: "Bash", permission: "allow" });
     policies.push({ tool: "*", permission: "allow" });
   } else {

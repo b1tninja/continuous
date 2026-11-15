@@ -21,7 +21,11 @@ import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import { selectSelectedChatModel } from "../../redux/slices/configSlice";
 import { newSession } from "../../redux/slices/sessionSlice";
 import { setDialogMessage, setShowDialog } from "../../redux/slices/uiSlice";
-import { streamResponseThunk } from "../../redux/thunks/streamResponse";
+import {
+  inputHasText,
+  retryFailedRequest,
+  retryPlanFor,
+} from "../../redux/thunks/retryFailedRequest";
 import { analyzeError } from "../../util/errorAnalysis";
 import {
   describeTransientFailure,
@@ -153,36 +157,13 @@ const StreamErrorDialog = ({ error }: StreamErrorProps) => {
     dispatch(setDialogMessage(undefined));
   };
 
+  // Sends what failed again without rewriting the conversation
+  // (retryFailedRequest): a failed new message is back in the input
   const resubmit = () => {
-    let index = -1;
-    for (let i = history.length - 1; i >= 0; i--) {
-      if (
-        history[i].message.role === "user" ||
-        history[i].message.role === "tool"
-      ) {
-        index = i;
-        break;
-      }
-    }
-
-    if (!mainEditor) {
-      console.error("Main editor not found, cannot resubmit message.");
-      return;
-    }
-
-    const editorState =
-      index === -1 ? mainEditor.getJSON() : history[index].editorState;
-
-    void dispatch(
-      streamResponseThunk({
-        editorState,
-        modifiers: {
-          noContext: true,
-          useCodebase: false,
-        },
-        index: index === -1 ? 0 : index,
-      }),
-    );
+    const input = mainEditor?.getJSON();
+    const plan = retryPlanFor(history, inputHasText(input));
+    void dispatch(retryFailedRequest({ input }));
+    if (plan.kind === "send-input") mainEditor?.commands.clearContent(false);
     closeDialog();
   };
 

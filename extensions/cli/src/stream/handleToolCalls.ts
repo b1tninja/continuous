@@ -7,6 +7,7 @@ import {
   liftAtIdgaf,
   runsAtIdgaf,
 } from "src/permissions/coreRules.js";
+import { headlessLegacyAllow } from "src/permissions/headlessPolicy.js";
 import { checkToolPermission } from "src/permissions/permissionChecker.js";
 import { effectiveLevels } from "src/permissions/policyLevels.js";
 import { withReadOnlyMcp } from "src/permissions/readOnlyMcp.js";
@@ -417,6 +418,11 @@ function safeRunsAtIdgaf(
   }
 }
 
+/** Headless, an "ask" tool is offered in normal mode unless the legacy hatch is on. */
+function offersAskToolsHeadless(mode: string | undefined): boolean {
+  return mode !== "plan" && !headlessLegacyAllow();
+}
+
 export async function getRequestTools(isHeadless: boolean) {
   const availableTools = await getAllAvailableTools(isHeadless);
 
@@ -442,14 +448,20 @@ export async function getRequestTools(isHeadless: boolean) {
       safeRunsAtIdgaf(levels, mode, tool),
     );
 
-    // Headless runs have no one to ask, so "ask" tools are normally not offered.
-    // With --auto-review the reviewer model answers instead of a person, so they are.
-    // Under Loop mode an item's "ask" call is held as a question for the
-    // person (src/loop/loopHolds.ts), so they are offered too.
+    // An "ask" tool is offered headless too (CO2): the levels and the rules
+    // can still allow a given call (a read-only command, an allow rule, a
+    // looser --policy), and a call that would ask is refused with a result
+    // that says how to allow it. With --auto-review the reviewer answers;
+    // under Loop mode an ask is held as a question for the person
+    // (src/loop/loopHolds.ts). Plan mode headless and the legacy hatch keep
+    // the old rule: an "ask" tool is not offered.
     if (
       result.permission === "allow" ||
       (result.permission === "ask" &&
-        (!isHeadless || isAutoReviewEnabled() || loopItemRunning()))
+        (!isHeadless ||
+          offersAskToolsHeadless(mode) ||
+          isAutoReviewEnabled() ||
+          loopItemRunning()))
     ) {
       allowedTools.push(tool);
     }

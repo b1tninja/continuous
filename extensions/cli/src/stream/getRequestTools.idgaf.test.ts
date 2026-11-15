@@ -55,8 +55,13 @@ beforeEach(() => {
 });
 
 describe("getRequestTools at IDGAF", () => {
-  it("control: below IDGAF a headless run is not offered ask or excluded tools", async () => {
-    expect(names(await getRequestTools(true))).toEqual(["Read", "Subagent"]);
+  it("control: below IDGAF a headless run is offered ask tools (CO2), never excluded ones", async () => {
+    expect(names(await getRequestTools(true))).toEqual([
+      "Read",
+      "Edit",
+      "Write",
+      "Subagent",
+    ]);
   });
 
   it("headless: offers the tools that ask and the ones a Never rule excludes", async () => {
