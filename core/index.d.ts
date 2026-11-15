@@ -2250,6 +2250,13 @@ export interface Tool {
     kind: "changed" | "added" | "launch";
     summary: string;
   };
+  /**
+   * An MCP tool the person has not approved (TR4): its server was never
+   * approved, or the tool appeared or changed since. It is not offered to the
+   * model until it is approved (Settings > Tools); at IDGAF it is offered and
+   * its first call pins it.
+   */
+  mcpPendingApproval?: "new" | "added" | "changed";
 }
 
 /**

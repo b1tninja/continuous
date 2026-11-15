@@ -11,7 +11,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import type { InternalMcpOptions } from "../..";
+import type { McpPendingApproval } from "../../tools/roleTools";
 import { getContinueGlobalPath } from "../../util/paths";
+import { pendingFromReport, serverUsedInHistory } from "./mcpApprovalHold";
 import {
   canonicalJson,
   checkToolPins,
@@ -287,6 +289,11 @@ export function summarizeToolChanges(
 
 export interface PinEvaluation {
   report: ToolPinReport;
+  /**
+   * Tools that are not offered until the person approves them (TR4): every
+   * tool of a server never approved, and the tools added or changed since.
+   */
+  pending: Map<string, McpPendingApproval>;
   /** Tools that must ask again (changed or added since approval). Empty for new/unchanged. */
   flagged: Map<
     string,
@@ -302,6 +309,7 @@ export async function evaluatePins(
   launch?: LaunchSpec,
 ): Promise<PinEvaluation> {
   const report = await checkToolPins(key, tools, store, sha256Hex);
+  const pending = pendingFromReport(report, tools);
   const flagged: PinEvaluation["flagged"] = new Map();
   const approved = (await store.get(key)) as PersistedPin | undefined;
   if (launch && approved?.launch && approved.launch.hash !== launch.hash) {
@@ -315,7 +323,7 @@ export async function evaluatePins(
         summary: `launch definition changed: ${what}${now}`,
       });
     }
-    return { report, flagged };
+    return { report, pending, flagged };
   }
   if (report.status === "changed") {
     const summary = summarizeToolChanges(
@@ -328,7 +336,83 @@ export async function evaluatePins(
     }
     for (const n of report.added) flagged.set(n, { kind: "added", summary });
   }
-  return { report, flagged };
+  return { report, pending, flagged };
+}
+
+/**
+ * The person approved these tools (Settings > Tools, `/mcp approve`): pin
+ * their current definitions, one tool at a time, so approving one never
+ * accepts another. A server with no record gets one holding only these
+ * tools. Tools the server no longer lists are dropped from the record.
+ * Returns the names that were pinned. The launch definition is recorded on a
+ * new record only; a changed launch is still accepted by an approved call.
+ */
+export async function approveTools(
+  key: string,
+  tools: McpToolDefinition[],
+  store: ToolPinStore,
+  names: readonly string[] | "all",
+  now: Date = new Date(),
+  launch?: LaunchSpec,
+): Promise<string[]> {
+  const wanted =
+    names === "all"
+      ? tools
+      : tools.filter((t) => (names as readonly string[]).includes(t.name));
+  if (!wanted.length) return [];
+  const existing = (await store.get(key)) as PersistedPin | undefined;
+  const next: PersistedPin = existing
+    ? {
+        ...existing,
+        tools: { ...existing.tools },
+        parts: { ...(existing.parts ?? {}) },
+        approvedAt: now.toISOString(),
+      }
+    : {
+        serverId: key,
+        tools: {},
+        parts: {},
+        approvedAt: now.toISOString(),
+        ...(launch ? { launch } : {}),
+      };
+  const pinned: string[] = [];
+  for (const t of wanted) {
+    const h = hashToolDefinition(t, sha256Hex);
+    if (next.tools[t.name] === h) continue;
+    next.tools[t.name] = h;
+    next.parts![t.name] = toolParts(t);
+    pinned.push(t.name);
+  }
+  const live = new Set(tools.map((t) => t.name));
+  for (const n of Object.keys(next.tools)) {
+    if (!live.has(n)) {
+      delete next.tools[n];
+      delete next.parts![n];
+    }
+  }
+  if (pinned.length || !existing) await store.set(next);
+  return pinned;
+}
+
+/**
+ * Upgrade (TR4): a server with no record, one of whose tools was called in
+ * the history the person had before this release, is pinned whole as it is
+ * now, which is what its first approved call did before. Returns whether it
+ * was. `called` is from `calledToolNames`.
+ */
+export async function adoptFromHistory(
+  key: string,
+  server: string,
+  tools: McpToolDefinition[],
+  store: ToolPinStore,
+  called: ReadonlySet<string>,
+  launch?: LaunchSpec,
+  now: Date = new Date(),
+): Promise<boolean> {
+  if (!tools.length || (await store.get(key))) return false;
+  if (!serverUsedInHistory(server, tools, called)) return false;
+  await approveTools(key, tools, store, "all", now, launch);
+  return true;
 }
 
 /** What an approval changed beyond the one tool, for the notice. */

@@ -548,6 +548,8 @@ export const streamNormalInput = createAsyncThunk<
       tools: state1.config.config.tools,
       planMcpTools: state1.ui.policyExtras.planMcpTools,
       trustedMcpServers: state1.ui.policyExtras.trustedMcpServers,
+      backgroundMcpTools: state1.ui.policyExtras.backgroundMcpTools,
+      approvalWaived: state1.ui.policyLevels.tools === "idgaf",
     });
 
     // A tool turned off while the cache was warm is still offered; a call to
