@@ -229,6 +229,12 @@ export interface CoreVerdict {
   reviewer?: AutoReviewReply["reviewer"];
   /** IDGAF ran the call past this objection (core's idgafOverride) */
   idgafOverride?: IdgafOverride;
+  /**
+   * The ask came from the tool's own check (a Fetch URL carrying a long
+   * encoded value), for a tool whose own asks bind (`ownAskReason`). It is
+   * kept at the default levels, as the IDE keeps it.
+   */
+  ownCheck?: true;
 }
 
 export interface CoreRulesInput {
@@ -240,7 +246,18 @@ export interface CoreRulesInput {
   evaluateToolCallPolicy?: (
     base: ToolPolicy,
     args: Record<string, unknown>,
+    processedArgs?: Record<string, unknown>,
   ) => ToolPolicy;
+  /**
+   * What the tool's preprocess worked out (Fetch: whether the host is
+   * non-public), handed to core the way the IDE hands it `preprocessArgs`.
+   */
+  processedArgs?: Record<string, unknown>;
+  /**
+   * Set for a tool whose own asks stand at the default levels
+   * (Tool.ownAskReason): why its check asks for these arguments.
+   */
+  ownAskReason?: (args: Record<string, unknown>) => string | undefined;
   assistantPermissions: CoreToolPermissions | undefined;
   reviewer?: ChatLike | null;
   autoReview?: boolean;
@@ -337,7 +354,10 @@ export async function evaluateWithCoreRules(
   const basePolicy = toToolPolicy(cliPermission);
   // The CLI has no IDE to resolve a path, so the real path (links followed)
   // and whether it is inside the working folder are worked out here.
-  const processedArgs = pathArgsFor(!!mcp, toolName, parsedArgs, input.cwd);
+  const processedArgs = mergeArgs(
+    input.processedArgs,
+    pathArgsFor(!!mcp, toolName, parsedArgs, input.cwd),
+  );
 
   if (useReviewer) {
     const reply: AutoReviewReply = await autoReviewToolCall(
@@ -409,6 +429,25 @@ export async function evaluateWithCoreRules(
     shell: resolveShell().kind,
     ...taint,
   });
+  return rulesVerdict(input, basePolicy, result, processedArgs);
+}
+
+/** The tool's preprocess result and the path facts, as one `processedArgs`. */
+function mergeArgs(
+  fromTool: Record<string, unknown> | undefined,
+  paths: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  return fromTool || paths ? { ...fromTool, ...paths } : undefined;
+}
+
+/** Core's rules result as the CLI's verdict. */
+function rulesVerdict(
+  input: CoreRulesInput,
+  basePolicy: ToolPolicy,
+  result: ToolPolicyResult,
+  processedArgs: Record<string, unknown> | undefined,
+): CoreVerdict {
+  const ownAsk = ownCheckAsked(input, basePolicy, result, processedArgs);
   return {
     decision:
       result.policy === "disabled"
@@ -416,12 +455,43 @@ export async function evaluateWithCoreRules(
         : result.policy === "allowedWithPermission"
           ? "ask"
           : "allow",
-    reason: result.reason,
     by: "rules",
     source: result.source,
     ...(result.rule ? { rule: result.rule } : {}),
     ...(result.idgafOverride ? { idgafOverride: result.idgafOverride } : {}),
+    ...(ownAsk
+      ? {
+          reason: result.reason ?? input.ownAskReason?.(input.args),
+          ownCheck: true as const,
+        }
+      : { reason: result.reason }),
   };
+}
+
+/**
+ * The tool's own check turned the CLI's allow into an ask, and nothing else
+ * decided (no rule, protection or level): the ask the IDE shows at the
+ * default levels and the CLI used to drop (WB26).
+ */
+function ownCheckAsked(
+  input: CoreRulesInput,
+  basePolicy: ToolPolicy,
+  result: ToolPolicyResult,
+  processedArgs: Record<string, unknown> | undefined,
+): boolean {
+  if (!input.ownAskReason || basePolicy !== "allowedWithoutPermission") {
+    return false;
+  }
+  if (
+    result.policy !== "allowedWithPermission" ||
+    result.source !== undefined
+  ) {
+    return false;
+  }
+  return (
+    input.evaluateToolCallPolicy?.(basePolicy, input.args, processedArgs) ===
+    "allowedWithPermission"
+  );
 }
 
 /**
@@ -491,6 +561,7 @@ export function keepCoreVerdict(
   if (!verdict) return undefined;
   if (
     verdict.decision === "deny" ||
+    verdict.ownCheck ||
     verdict.source === "floor" ||
     verdict.source === "protected-path" ||
     verdict.source === "safety-floor" ||

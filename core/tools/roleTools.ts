@@ -163,6 +163,23 @@ export interface RoleOptions {
   trust?: PlanMcpTrust;
   /** The user opted the terminal back into Plan mode (`plan.allowTerminal`) */
   allowPlanTerminal?: boolean;
+  /**
+   * Nobody is watching this run (a headless `cn -p` or `cn serve`, a Loop
+   * worker): it gets MCP tools only when the person listed them, whatever its
+   * role (TR1, TR25). The background role is unattended by definition.
+   */
+  unattended?: boolean;
+  /**
+   * The MCP tools the person lets unattended runs use, from their own
+   * permissions.yaml (`background.mcpTools`): "server/tool", "server/*" or
+   * "server".
+   */
+  unattendedMcpTools?: readonly string[];
+  /**
+   * Tool use is IDGAF: a tool waiting for approval is offered, and its first
+   * call pins it (the owner's rule: IDGAF never asks and never refuses).
+   */
+  approvalWaived?: boolean;
 }
 
 export function roleClasses(
@@ -231,7 +248,29 @@ export interface RoleToolRef {
     readOnlyHint: boolean;
     /** The server came with the open folder, not from the person's own config */
     fromWorkspace?: boolean;
+    /**
+     * The tool is not approved yet (TR4): its server was never approved
+     * ("new"), it appeared since the approval ("added") or its definition
+     * changed ("changed"). It is not offered until the person approves it.
+     */
+    pendingApproval?: McpPendingApproval;
   };
+}
+
+export type McpPendingApproval = "new" | "added" | "changed";
+
+/** Whether a "server/tool", "server/*" or "server" list names this tool. */
+export function mcpListNames(
+  list: readonly string[] | undefined,
+  server: string,
+  tool: string,
+): boolean {
+  return !!list?.some(
+    (entry) =>
+      entry === server ||
+      entry === `${server}/*` ||
+      entry === `${server}/${tool}`,
+  );
 }
 
 function listedForPlan(
@@ -239,12 +278,40 @@ function listedForPlan(
   server: string,
   tool: string,
 ): boolean {
-  return !!trust?.tools?.some(
-    (entry) =>
-      entry === server ||
-      entry === `${server}/*` ||
-      entry === `${server}/${tool}`,
-  );
+  return mcpListNames(trust?.tools, server, tool);
+}
+
+/** Why an MCP tool is kept from this run before any class is looked at. */
+type McpGate = "pending" | "unattended";
+
+function isUnattended(role: ToolRole, options: RoleOptions): boolean {
+  return role === "background" || !!options.unattended;
+}
+
+/**
+ * The MCP part of the table (TR4, TR25), applied to every role: a tool that is
+ * not approved is not offered (IDGAF waives it), and an unattended run gets
+ * only the tools the person listed for it. A listed tool of a server that was
+ * never approved is offered to the unattended run, since the list is the
+ * person's approval by name; a tool added or changed since an approval stays
+ * held until the person approves it, listed or not.
+ */
+function mcpGate(
+  role: ToolRole,
+  tool: RoleToolRef,
+  options: RoleOptions,
+): McpGate | undefined {
+  const mcp = tool.mcp;
+  if (!mcp || options.approvalWaived) return undefined;
+  const unattended = isUnattended(role, options);
+  const listed =
+    unattended &&
+    mcpListNames(options.unattendedMcpTools, mcp.server, mcp.tool);
+  if (unattended && !listed) return "unattended";
+  if (mcp.pendingApproval && !(listed && mcp.pendingApproval === "new")) {
+    return "pending";
+  }
+  return undefined;
 }
 
 /** True only when the user, not the server, said the tool reads and changes nothing. */
@@ -280,6 +347,7 @@ export function isToolAllowedForRole(
   tool: RoleToolRef,
   options: RoleOptions = {},
 ): boolean {
+  if (mcpGate(role, tool, options)) return false;
   return roleClasses(role, options).includes(classOfTool(tool, options.trust));
 }
 
@@ -316,6 +384,17 @@ export function roleRefusal(
   const lead = `The ${tool.name} tool is not available in ${where}, so it was not run.`;
   const tail =
     "Do not retry it or reach the same result another way. Use the tools you were given, then say what you could not do.";
+  const gate = mcpGate(role, tool, options);
+  if (gate === "pending") {
+    const what =
+      tool.mcp?.pendingApproval === "changed"
+        ? "its definition changed since the user approved it"
+        : "the user has not approved it yet";
+    return `The ${tool.name} tool was not run: ${what}, and a new or changed MCP tool is not available until the user approves it. ${tail}`;
+  }
+  if (gate === "unattended") {
+    return `${lead} A run nobody is watching only uses the MCP tools the user listed for it (background.mcpTools in their permissions.yaml). ${tail}`;
+  }
   if (tool.mcp && role === "planner") {
     return `${lead} Plan mode only uses MCP tools the user has marked read-only in their own settings; a server's own read-only claim is not enough. ${tail}`;
   }
