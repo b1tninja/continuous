@@ -633,6 +633,11 @@ function llmToSerializedModelDescription(llm: ILLM): ModelDescription {
     isFromAutoDetect: llm.isFromAutoDetect,
     toolOverrides: llm.toolOverrides,
     ...(llm.routeNames && { routes: llm.routeNames }),
+    ...(llm.contextManagement?.plannedCompaction !== undefined && {
+      contextManagement: {
+        plannedCompaction: llm.contextManagement.plannedCompaction,
+      },
+    }),
   };
 }
 

@@ -183,6 +183,7 @@ class MessageTypes {
             "getDiffLines",
             "chatDescriber/describe",
             "conversation/compact",
+            "conversation/summarize",
             "stats/getTokensPerDay",
             "stats/getTokensPerModel",
             // Codebase

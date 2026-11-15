@@ -26,6 +26,7 @@ import {
   LLMOptions,
   MessageOption,
   ModelCapability,
+  ModelContextManagement,
   ModelInstaller,
   PromptLog,
   PromptTemplate,
@@ -280,6 +281,8 @@ export abstract class BaseLLM implements ILLM {
   /** Tool overrides for this model */
   toolOverrides?: ToolOverride[];
 
+  contextManagement?: ModelContextManagement;
+
   lastRequestId: string | undefined;
 
   private _llmOptions: LLMOptions;
@@ -407,6 +410,7 @@ export abstract class BaseLLM implements ILLM {
     this.sourceFile = options.sourceFile;
     this.isFromAutoDetect = options.isFromAutoDetect;
     this.toolOverrides = options.toolOverrides;
+    this.contextManagement = options.contextManagement;
   }
 
   /** What the limits were resolved from, to apply a newer provider answer. */

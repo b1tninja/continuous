@@ -102,6 +102,7 @@ The `models` section defines the language models used in your configuration. Mod
   - `autoCompactTokens`: Compact once input reaches this many tokens.
   - `subagent`: Budget when the model runs as a sub-agent: `contextLength`, `autoCompactRatio`, `autoCompactTokens`.
   - `requestBodyHints`: Extra request body fields for `oneShot` requests (the compaction summary) and `conversation` requests (all other chat requests).
+  - `plannedCompaction`: IDE only. Once the conversation passes 70% of the context window (75% on a cloud provider), the point where a compaction would cut is fixed, and after 10 seconds without typing or a reply streaming the summary of everything before it is made in the background, so **Compact now** applies it at once and keeps the newest turns word for word. Typing or sending stops it, and it is tried again at the next pause. On by default for a server on this machine or network, off for cloud providers; `false` turns it off.
 
 - `embedOptions`: If the model includes role `embed`, these settings apply for embeddings:
 

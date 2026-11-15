@@ -28,6 +28,16 @@ export interface CompactionParams {
     messages: ChatMessage[];
     options: LLMFullCompletionOptions;
   };
+  /** Cancels the summary request (a background summary, on activity). */
+  signal?: AbortSignal;
+}
+
+export interface ApplyCompactionParams extends CompactionParams {
+  /**
+   * A summary made earlier for exactly this span (planned compaction, C105):
+   * saved as it is, with no summary request.
+   */
+  summary?: string;
 }
 
 /** Added when the tools are in the request, since they cannot be forbidden. */
@@ -41,17 +51,53 @@ const COMPACTION_PROMPT =
 /**
  * Compacts conversation history up to a specified index by generating a summary.
  * This helper function extracts the compaction logic from the main core handler.
+ * With `summary`, that summary is saved and no request is sent.
  *
  * @param params - Object containing sessionId, index, historyManager, and currentModel
  * @returns Promise<void> - Updates the session with the conversation summary
  */
-export async function compactConversation({
+export async function compactConversation(
+  params: ApplyCompactionParams,
+): Promise<void> {
+  const { sessionId, index, historyManager } = params;
+  const summary = params.summary ?? (await summarizeConversation(params));
+  const session = historyManager.load(sessionId);
+  if (!session.history[index]) {
+    throw new Error(`No message ${index} in this session to compact at`);
+  }
+
+  // Update the target message with the conversation summary. Every message
+  // stays in the session: the summary only changes what is sent.
+  const updatedHistory = [...session.history];
+  updatedHistory[index] = {
+    ...updatedHistory[index],
+    conversationSummary: summary,
+  };
+
+  // Update the session with the new history. The saved prompt cache record
+  // described the old, longer conversation; the next request builds a new one.
+  const updatedSession = {
+    ...session,
+    history: updatedHistory,
+    promptCache: undefined,
+  };
+
+  historyManager.save(updatedSession);
+}
+
+/**
+ * The summary of the session's history up to and including `index`, without
+ * saving anything: what "Compact" stores, and what a background summary
+ * (planned compaction) prepares ahead of time.
+ */
+export async function summarizeConversation({
   sessionId,
   index,
   historyManager,
   currentModel,
   conversationPrefix,
-}: CompactionParams): Promise<void> {
+  signal = new AbortController().signal,
+}: CompactionParams): Promise<string> {
   // Get the current session
   const session = historyManager.load(sessionId);
   const historyUpToIndex = session.history.slice(0, index + 1);
@@ -119,7 +165,6 @@ export async function compactConversation({
     content: COMPACTION_PROMPT,
   };
 
-  const signal = new AbortController().signal;
   let response;
   if (conversationPrefix) {
     // The tools stay in the request because they are part of the cached prefix,
@@ -131,7 +176,10 @@ export async function compactConversation({
         ...conversationPrefix.messages,
         {
           ...compactionPrompt,
-          content: COMPACTION_PROMPT + TEXT_ONLY_NOTE,
+          content:
+            COMPACTION_PROMPT +
+            TEXT_ONLY_NOTE +
+            spanNote(session.history, index),
         },
       ],
       signal,
@@ -145,20 +193,29 @@ export async function compactConversation({
     {},
   );
 
-  // Update the target message with the conversation summary
-  const updatedHistory = [...session.history];
-  updatedHistory[index] = {
-    ...updatedHistory[index],
-    conversationSummary: stripImages(response.content),
-  };
+  return stripImages(response.content);
+}
 
-  // Update the session with the new history. The saved prompt cache record
-  // described the old, longer conversation; the next request builds a new one.
-  const updatedSession = {
-    ...session,
-    history: updatedHistory,
-    promptCache: undefined,
-  };
+/** How much of a quoted message the span note shows. */
+const SPAN_QUOTE_CHARS = 200;
 
-  historyManager.save(updatedSession);
+/**
+ * For a summary of only the start of the conversation (planned compaction:
+ * the prefix is the whole conversation, so its cache is read, but the newest
+ * turns stay verbatim after the summary): where the summary ends. Empty when
+ * the whole conversation is summarised.
+ */
+export function spanNote(history: ChatHistoryItem[], index: number): string {
+  if (index >= history.length - 1) return "";
+  const last = stripImages(history[index].message.content)
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, SPAN_QUOTE_CHARS);
+  const where = last
+    ? `the message that begins "${last}"`
+    : `message ${index + 1} of the conversation`;
+  return (
+    `\n\nSummarise only the conversation up to and including ${where}. ` +
+    "The messages after it stay in the conversation word for word, after the summary, so leave them out of the summary."
+  );
 }
