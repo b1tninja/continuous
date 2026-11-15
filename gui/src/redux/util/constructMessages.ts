@@ -24,6 +24,7 @@ import {
 import { convertToolCallStatesToSystemCallsAndOutput } from "core/tools/systemMessageTools/convertSystemTools";
 import { SystemMessageToolsFramework } from "core/tools/systemMessageTools/types";
 import { sendAttachmentsOnce } from "core/util/contextReferences";
+import { summaryMessageText } from "core/util/summaryMessage";
 import {
   maskRemovedToolResults,
   removedToolResultLabels,
@@ -130,14 +131,27 @@ function rulesForMessages(
   baseSystemMessage: string | undefined,
   configRules: RuleWithSource[],
   rulePolicies: RulePolicies,
-): { systemMessage: string; appliedRules: RuleMetadata[] } {
+  /**
+   * The messages a compaction summarised, in front of `msgs`. The rules are
+   * decided over the whole conversation, so the system message and the kept
+   * messages are the same bytes as before the compaction. A rule that a
+   * summarised message was the first to match is returned in `spanNotes`, to
+   * travel with the summary.
+   */
+  span: MessageWithContextItems[] = [],
+): {
+  systemMessage: string;
+  appliedRules: RuleMetadata[];
+  spanNotes: string;
+} {
   // In a fixed order, not the config's: a reload can list the same rules in
   // another order (a colocated rules.md that changed goes to the end of the
   // list until the next full scan), and two rules that swap places leave the
   // prompt the same length but different after the tools
   const availableRules = [...configRules].sort(compareRules);
-  const firstIndex = msgs.findIndex((m) => m.message.role === "user");
-  const first = firstIndex >= 0 ? msgs[firstIndex] : undefined;
+  const all = [...span, ...msgs];
+  const firstIndex = all.findIndex((m) => m.message.role === "user");
+  const first = firstIndex >= 0 ? all[firstIndex] : undefined;
   const system = getSystemMessageWithRules({
     baseSystemMessage,
     availableRules,
@@ -155,7 +169,8 @@ function rulesForMessages(
     ),
   );
   const later: RuleMetadata[] = [];
-  msgs.forEach((item, index) => {
+  const spanNotes: string[] = [];
+  all.forEach((item, index) => {
     if (index <= firstIndex) return;
     const role = item.message.role;
     if (role !== "user" && role !== "tool") return;
@@ -172,6 +187,10 @@ function rulesForMessages(
       later.push(meta);
     }
     const notes = matched.map(ruleNoteText).join("\n\n");
+    if (index < span.length) {
+      spanNotes.push(notes);
+      return;
+    }
     item.message =
       role === "tool"
         ? {
@@ -189,44 +208,39 @@ function rulesForMessages(
   return {
     systemMessage: system.systemMessage,
     appliedRules: [...system.appliedRules, ...later],
+    spanNotes: spanNotes.join("\n\n"),
   };
 }
-
-/** Starts the conversation summary appended to the system message. */
-export const SUMMARY_MARKER = "\n\nPrevious conversation summary:";
 
 interface MessageWithContextItems {
   ctxItems: ContextItemWithId[];
   message: ChatMessage;
 }
-export function constructMessages(
-  history: ChatHistoryItem[],
-  baseSystemMessage: string | undefined,
-  availableRules: RuleWithSource[],
-  rulePolicies: RulePolicies,
-  useSystemToolsFramework?: SystemMessageToolsFramework,
-): {
-  messages: ChatMessage[];
-  appliedRules: RuleMetadata[];
-  appliedRuleIndex: number;
-} {
-  // Find the most recent conversation summary and filter history accordingly
-  let summaryContent = "";
-  let filteredHistory = history;
 
+/** The newest item that carries a conversation summary, or -1. */
+export function summaryIndexOf(history: ChatHistoryItem[]): number {
   for (let i = history.length - 1; i >= 0; i--) {
-    const summary = history[i].conversationSummary;
-    if (summary) {
-      summaryContent = summary;
-      // Only include messages that come AFTER the message with the summary
-      filteredHistory = history.slice(i + 1);
-      break;
-    }
+    if (history[i].conversationSummary) return i;
   }
+  return -1;
+}
 
+/**
+ * The messages a stretch of history is sent as, before rules and the system
+ * message: what "Choose what to keep" removed as stubs, repeated attachments
+ * as stubs, tool results after their calls.
+ */
+function historyToMessages(
+  history: ChatHistoryItem[],
+  useSystemToolsFramework: SystemMessageToolsFramework | undefined,
+): {
+  msgs: MessageWithContextItems[];
+  appliedRuleIndex: number;
+  removedToolResults: Map<string, string>;
+} {
   // What the person removed with "Choose what to keep" is sent as stubs
   // (core/util/contextRemoval.ts); a removed old turn is left out whole.
-  const removedToolResults = removedToolResultLabels(filteredHistory, (state) =>
+  const removedToolResults = removedToolResultLabels(history, (state) =>
     describeToolCall(
       state.toolCall?.function?.name ?? "tool",
       state.parsedArgs ?? state.toolCall?.function?.arguments,
@@ -234,9 +248,7 @@ export function constructMessages(
   );
   // A file attached again with the same content is sent once, at its first
   // attachment; later copies are a one-line stub (contextReferences.ts)
-  const historyCopy = sendAttachmentsOnce(
-    filteredHistory.map(withRemovedParts),
-  );
+  const historyCopy = sendAttachmentsOnce(history.map(withRemovedParts));
 
   const msgs: MessageWithContextItems[] = [];
   let appliedRuleIndex = -1;
@@ -371,6 +383,37 @@ export function constructMessages(
       }
     }
   }
+  return { msgs, appliedRuleIndex, removedToolResults };
+}
+
+export function constructMessages(
+  history: ChatHistoryItem[],
+  baseSystemMessage: string | undefined,
+  availableRules: RuleWithSource[],
+  rulePolicies: RulePolicies,
+  useSystemToolsFramework?: SystemMessageToolsFramework,
+): {
+  messages: ChatMessage[];
+  appliedRules: RuleMetadata[];
+  appliedRuleIndex: number;
+} {
+  // The newest conversation summary: only the items after it are sent
+  const summaryAt = summaryIndexOf(history);
+  const summaryContent =
+    summaryAt >= 0 ? (history[summaryAt].conversationSummary ?? "") : "";
+  const { msgs, appliedRuleIndex, removedToolResults } = historyToMessages(
+    summaryAt >= 0 ? history.slice(summaryAt + 1) : history,
+    useSystemToolsFramework,
+  );
+  // What the summary replaced, as it was sent before the compaction: only
+  // the rules are decided from it
+  const span =
+    summaryAt >= 0
+      ? historyToMessages(
+          history.slice(0, summaryAt + 1),
+          useSystemToolsFramework,
+        ).msgs
+      : [];
 
   // Rules (C62, and docs: "Why a turn re-reads the whole prompt"). The
   // system message carries the rules that always apply and those the first
@@ -379,28 +422,41 @@ export function constructMessages(
   // later request. Putting it in the system message instead rewrote the
   // front of the conversation: a local server's chat template puts the
   // system message right after the tools, so the whole conversation was
-  // read again, minutes at 400k tokens.
-  const { systemMessage, appliedRules } = rulesForMessages(
+  // read again, minutes at 400k tokens. After a compaction the first
+  // message is still the conversation's first, so the system message does
+  // not change; a rule a summarised message matched goes with the summary.
+  const { systemMessage, appliedRules, spanNotes } = rulesForMessages(
     msgs,
     baseSystemMessage,
     availableRules,
     rulePolicies,
+    span,
   );
 
-  // Append conversation summary to system message if it exists
-  let finalSystemMessage = systemMessage;
+  // The summary is the first message after the system message, never part
+  // of it (C104, plans/research/cache-friendly-context-trimming.md D4): a
+  // compaction then leaves the tools and the system message the same bytes,
+  // so the provider's cached head survives it (an Anthropic or Bedrock
+  // breakpoint on the system prompt, Strata's system-prompt checkpoint), and
+  // only the summary and what follows it are read again.
   if (summaryContent) {
-    finalSystemMessage = systemMessage
-      ? `${systemMessage}${SUMMARY_MARKER}\n\n ${summaryContent}`
-      : `Previous conversation summary:\n\n ${summaryContent}`;
+    msgs.unshift({
+      ctxItems: [],
+      message: {
+        role: "user",
+        content: summaryMessageText(
+          spanNotes ? `${summaryContent}\n\n${spanNotes}` : summaryContent,
+        ),
+      },
+    });
   }
 
-  if (finalSystemMessage.trim()) {
+  if (systemMessage.trim()) {
     msgs.unshift({
       ctxItems: [],
       message: {
         role: "system",
-        content: finalSystemMessage,
+        content: systemMessage,
       },
     });
   }

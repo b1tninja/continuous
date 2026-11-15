@@ -191,6 +191,34 @@ export function thinkingCutAfterToolChange(args: {
   return args.listChanged ? args.historyLength : args.previous;
 }
 
+/**
+ * Where reasoning stops being sent after a compaction, on a model with the
+ * prefix check. A thinking block is bound to everything in front of it, so
+ * reasoning in the turns a compaction kept was minted with the summarised
+ * turns before it and is a 400 to send back after the summary ("keep-tail
+ * compaction"). Where the summary sits does not change that: in the system
+ * message (before C104) it changed `system`, after the head it changes the
+ * messages. Reasoning minted after the compaction is valid. Undefined when
+ * the model keeps its reasoning or there is no summary.
+ */
+export function thinkingCutAfterCompaction(args: {
+  modelId: string | undefined;
+  /** The history index of the item that carries the newest summary, or -1 */
+  summaryIndex: number;
+  /** The history length when that summary was made, if it was recorded */
+  historyLengthAtCompaction?: number;
+}): number | undefined {
+  if (!toolChangeDropsThinking(args.modelId) || args.summaryIndex < 0) {
+    return undefined;
+  }
+  // A session compacted before the length was recorded: the turns kept then
+  // cannot be told apart from later ones, and nothing more is cut
+  return Math.max(
+    args.summaryIndex + 1,
+    args.historyLengthAtCompaction ?? args.summaryIndex + 1,
+  );
+}
+
 /** Whether two lists would be the same `tools[]` bytes. */
 export function sameToolList<T>(
   a: readonly T[],
