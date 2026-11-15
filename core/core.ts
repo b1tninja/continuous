@@ -131,6 +131,7 @@ import { deputyWorkspace } from "./tools/permissions/workspaceRoots";
 import { ChatDescriber } from "./util/chatDescriber";
 import { compactConversation } from "./util/conversationCompaction";
 import { GlobalContext } from "./util/GlobalContext";
+import { getFetchLog } from "./util/fetchRecord";
 import historyManager, { damagedSessionNotice } from "./util/history";
 import { probeStatusFor } from "./util/measuredFacts";
 import { liveFromFetched } from "./util/modelRetirement";
@@ -1119,6 +1120,8 @@ export class Core {
       getAuditTrail().answer(data.callId, data.approved);
       void this.shadowIde.answered(data.callId, data.approved);
     });
+
+    on("web/fetchLog", async ({ data }) => getFetchLog().list(data?.session));
   }
 
   /**
@@ -2670,11 +2673,13 @@ export class Core {
         workspaceDirs: inWorkspace,
         ...(allowOutsideWorkspace ? { allowOutsideWorkspace } : {}),
         llm: config.selectedModelByRole.chat,
-        // The model picks the URL of fetch_url_content: the global request
-        // headers go only to the configured model endpoints, not to any host
-        // it names. Other tools (HTTP tools, search) keep the global options.
+        // The model picks the URL of fetch_url_content, and the search
+        // endpoint is a third-party site: the global request headers go only
+        // to the configured model endpoints, not to those hosts. Other tools
+        // (HTTP tools) keep the global options.
         fetch:
-          tool.function.name === BuiltInToolNames.FetchUrlContent
+          tool.function.name === BuiltInToolNames.FetchUrlContent ||
+          tool.function.name === BuiltInToolNames.SearchWeb
             ? modelToolFetch(config)
             : (url, init) =>
                 fetchwithRequestOptions(url, init, config.requestOptions),

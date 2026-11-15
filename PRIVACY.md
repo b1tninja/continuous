@@ -63,7 +63,7 @@ These are requests to AWS beyond the Bedrock requests themselves. Neither happen
 - **Web search**: the `search_web` tool and `@web` exist only if you set `CONTINUOUS_WEB_SEARCH_URL` to a search endpoint you run or choose (optional `CONTINUOUS_WEB_SEARCH_KEY`, sent to that endpoint only). See [web search](docs/customize/web-search.mdx).
 - **Ollama's model library**: Ollama's provider setup contacts `ollama.com` (the public model library page) with a plain GET, no key, no account and no prompt, only after you choose Download or Refresh there. It is never fetched at start-up or on a timer, and the Model information updates setting does not change that.
 - **MCP servers** you add, and their sign-in pages.
-- **Pages you name**: `@url`, the `fetch_url` tool and docs indexing fetch the sites you point them at, directly from your machine.
+- **Pages you name**: `@url`, the fetch tool (`fetch_url_content` in the IDE, `Fetch` in the terminal agent) and docs indexing fetch the sites you point them at, directly from your machine. `@url` also reads the site's favicon. The `headers` from your `requestOptions` are not sent to these sites (its proxy and certificate settings are used), no cookie is sent, and a redirect to a private or link-local address (such as the cloud metadata service) is refused. Each request is recorded in the session's fetch log in memory and as one line in the local audit trail, with query values masked; nothing about it leaves your machine.
 - **Docs on GitHub**: a docs entry on github.com uses the GitHub API.
 - **Chromium**: one download, only if you accept the install prompt.
 

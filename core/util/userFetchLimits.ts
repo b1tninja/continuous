@@ -49,6 +49,11 @@ export function parseFetchLimits(environment: unknown): FetchLimits {
   };
 }
 
+// TODO(WB27): when the `web:` config section lands, read `web.limits.maxBytes`
+// and `web.limits.timeoutSeconds` here (personal file, tighten-only from a
+// workspace), keeping the two keys below as aliases. Every web path (fetch
+// tool, `@url`, favicon page, search, `@google`) takes its limits from this
+// function, so this is the one place the new keys plug in.
 export function readUserFetchLimits(
   file = path.join(getContinueGlobalPath(), "config.yaml"),
 ): FetchLimits {

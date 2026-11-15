@@ -4,6 +4,7 @@ Staging note for the next release. Fold it into that release's `<tag>.md` (the r
 
 ## New
 
+- Every fetched page (the fetch tool, `Fetch` in `cn`, and `@url`) starts with one provenance line: final URL, status, size, time, SHA-256 prefix, `robots.txt` verdict (not checked yet) and the rule that allowed it. Every web request, refused ones included, goes to an in-memory fetch log for the session and to the audit trail as a `fetch` line with query values masked.
 - Changing tools while the prompt cache is warm no longer rebuilds the cache without asking. Turning a tool, a tool group or an MCP server on or off, or a server that connects late or changes its tools, now waits until the cache goes cold when re-reading the conversation would cost a significant amount. The Tools page says what applying it now would cost and offers Apply now, Apply when the cache goes cold (the default) or Start a new session with it; a line above the input shows what is waiting. In the `cn` command line, `/tools` lists waiting changes and `/tools apply` applies them. See "Changing tools during a session" in the prompt caching docs.
 
 ## Behaviour changes
@@ -14,6 +15,10 @@ Staging note for the next release. Fold it into that release's `<tag>.md` (the r
 - On models with preserved thinking's prefix check (Claude Fable 5.2 and Mythos 5.2, and depending on the account Fable 5.1, Mythos 5.1, Opus 5.5, Sonnet 5.5 and Haiku 5.5), the reasoning from before a tool list change is no longer sent back once the change applies, because those models refuse it.
 
 ## Fixes
+
+- **Security: `@url` followed redirects to private addresses and sent your gateway headers to any site.** A public page named with `@url` could redirect to the cloud metadata service (`169.254.169.254`) or another private or loopback address, and Continuous followed it (up to 20 hops) and gave the reply to the model. `@url` also sent every `requestOptions.headers` value, often a gateway or proxy token, to whatever site you named, and `@web`, the `search_web` tool and `@google` sent them to the search service. Now `@url`, the favicon lookup and the search paths go through the same guard as the fetch tool: at most five redirects, every hop checked again, a redirect to a non-public or link-local address refused, the connection pinned to the address that was checked (no DNS rebinding), and the global headers sent only to your model endpoints. Upgrade if you use `@url` on a machine that can reach a metadata service or an internal network, or if your `requestOptions.headers` carry a credential.
+- The fetch guard now treats every IANA special-purpose block that is not globally reachable as private (documentation, benchmarking, `192.0.0.0/24`, `2001:db8::/32`, `100::/64` and others, from the registry itself), refuses a redirect whose address carries a credential, and drops `Authorization` and `Cookie` when a redirect changes origin.
+- Favicons must be raster images of at most 256 KiB, fetched within 5 seconds; an SVG icon is no longer embedded. The search response is capped at the fetch size limit with a deadline, and search and fetch errors give the HTTP status without quoting the response body.
 
 - An unsent message no longer comes back with the "Restored your unsent message" notice after a trip to Settings (or another page of the panel) and back; the text returns quietly. The notice still shows after a window reload, an extension update or a crash, and when you return to a session after opening another.
 - **Open the Audit Inbox** lands on the Inbox each time it runs, also after you switched the Permissions page to another view by hand.

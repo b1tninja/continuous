@@ -842,6 +842,16 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
     ),
     import("../tools/permissions/audit/auditOverview").AuditOverview,
   ];
+  /**
+   * The fetch log (plans/research/web-fetch-deep-dive.md, section 7.8): one
+   * record per web request this core made, newest first, with the final URL,
+   * status, bytes, SHA-256 and the rule applied. No bodies. With a session,
+   * only the requests made by that session's tool calls.
+   */
+  "web/fetchLog": [
+    { session?: string } | undefined,
+    import("../util/fetchRecord").FetchRecord[],
+  ];
   /** Run one call through the real evaluator and explain it. Nothing runs. */
   "policy/test": [
     Omit<

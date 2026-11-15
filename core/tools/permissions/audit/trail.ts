@@ -1,5 +1,6 @@
 import {
   decisionDraft,
+  fetchDraft,
   outcomeDraft,
   policyDraft,
   settingDraft,
@@ -9,6 +10,7 @@ import {
   type AuditAgent,
   type AuditPolicy,
   type DecisionInput,
+  type FetchAuditInput,
   type OutcomeInput,
   type PolicyInput,
   type SettingInput,
@@ -255,6 +257,26 @@ export class AuditTrail {
       const result = this.writer.write(taintDraft(input));
       if (!result.ok) this.fail(result.error);
     });
+  }
+
+  /**
+   * A web request (fetch tool, `@url`, favicon, search). Written under the
+   * session of the call that made it when that call's decision is still
+   * waiting for its outcome, else under the fetch session.
+   */
+  fetch(input: FetchAuditInput): void {
+    this.guard(() => {
+      const session =
+        input.session ??
+        (input.callId ? this.sessionOf(input.callId) : undefined);
+      const result = this.writer.write(fetchDraft({ ...input, session }));
+      if (!result.ok) this.fail(result.error);
+    });
+  }
+
+  /** The session of a call whose decision was written and whose outcome was not. */
+  sessionOf(callId: string): string | undefined {
+    return this.pending.get(callId)?.input.session;
   }
 
   /** Delete files past the retention. Never throws. */
