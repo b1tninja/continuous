@@ -37,11 +37,20 @@ describe("parseContextOverflow", () => {
     ).toEqual({ actualTokens: 1100000, maxTokens: 1048576 });
   });
 
+  it("reads vLLM's wording, as Bedrock GPT OSS sent it live", () => {
+    expect(
+      parseContextOverflow(
+        'The model returned the following errors: Mantle streaming error for requestId 3eeff274: ErrorEvent { error: APIError { type: "BadRequestError", code: Some(400), message: "Input length (515073) exceeds model\'s maximum context length (131072).", param: None } }',
+      ),
+    ).toEqual({ actualTokens: 515073, maxTokens: 131072 });
+  });
+
   it("recognises an overflow that gives no counts", () => {
     for (const message of [
       "ValidationException: Input is too long for requested model.",
       "context_length_exceeded",
       "The request exceeds the model's maximum context length",
+      "Input exceeds model's maximum context length",
     ]) {
       expect(parseContextOverflow(message)).toEqual({});
     }
