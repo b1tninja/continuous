@@ -100,6 +100,12 @@ export class ScriptedLlm {
             tools: body.tools ?? [],
           });
           const turn = self.turns.shift() ?? textTurn("(script ended)");
+          // A held turn may stream part of its reply before it waits
+          for (const c of (turn as { prefix?: ChatCompletionChunk[] }).prefix ??
+            []) {
+            if (signal?.aborted) return;
+            yield c;
+          }
           const chunks = typeof turn === "function" ? await turn(signal) : turn;
           for (const c of chunks) {
             if (signal?.aborted) return;
@@ -134,6 +140,18 @@ export function heldTurn(chunks: ChatCompletionChunk[]) {
     /** Whether the request's signal was aborted while it was held. */
     wasAborted: () => state.aborted,
   };
+}
+
+/**
+ * A turn that streams `partial` and then holds, as a reply that is still
+ * being written when the person stops it.
+ */
+export function partialHeldTurn(partial: string, rest: string) {
+  const held = heldTurn(textTurn(rest));
+  const turn = Object.assign(held.turn, {
+    prefix: [chunk({ content: partial })],
+  });
+  return { ...held, turn };
 }
 
 export const testModel = {

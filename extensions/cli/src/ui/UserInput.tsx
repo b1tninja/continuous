@@ -20,6 +20,7 @@ import type { LoopFrameInfo } from "./components/loopFrame.js";
 import { LoopFrameTop } from "./components/LoopFrameTop.js";
 import { FileSearchUI } from "./FileSearchUI.js";
 import { useClipboardMonitor } from "./hooks/useClipboardMonitor.js";
+import { useExitGuards } from "./hooks/useExitGuards.js";
 import {
   CONFIRM_TEXT,
   confirmKeyAction,
@@ -865,6 +866,7 @@ const UserInput: React.FC<UserInputProps> = ({
       escapeEvents.emit("user-escape");
       onInterrupt?.();
     }
+    if (action === "confirm" && kind === "exit") exitNow();
     if (action === "confirm" && kind === "clear") {
       // Up brings it back
       if (textBuffer.text.trim()) inputHistory.addEntry(textBuffer.text);
@@ -873,16 +875,15 @@ const UserInput: React.FC<UserInputProps> = ({
     return true;
   };
 
-  // Ctrl+C never acts on its own. With text typed it asks to clear it (as
-  // a shell's Ctrl+C clears the line); on an empty prompt while the agent
-  // works it asks to stop. A second Ctrl+C within a second still exits.
-  const handleCtrlC = () => {
-    if (textBuffer.text.trim()) {
-      confirm.open("clear");
-    } else if ((isWaitingForResponse || isCompacting) && onInterrupt) {
-      confirm.open("stop");
-    }
-  };
+  // Ctrl+C and Ctrl+D ask before they clear, stop or exit (useExitGuards)
+  const { handleCtrlC, handleCtrlD, exitNow } = useExitGuards({
+    confirm,
+    text: () => textBuffer.text,
+    isWaitingForResponse,
+    isCompacting,
+    onInterrupt,
+    exit,
+  });
 
   useInput((input, key) => {
     // Don't handle any input when disabled
@@ -904,6 +905,7 @@ const UserInput: React.FC<UserInputProps> = ({
         showFileSearch,
         cycleModes,
         onCtrlC: handleCtrlC,
+        onCtrlD: handleCtrlD,
         textBuffer,
         onTextBufferUpdate: handleTextBufferUpdate,
       })

@@ -10,7 +10,30 @@ import { useEffect, useRef, useState } from "react";
  * answers yes.
  */
 
-export type PendingConfirm = "stop" | "clear";
+export type PendingConfirm = "stop" | "clear" | "exit";
+
+/**
+ * Ctrl+C events closer together than this are a held key's auto-repeat, not
+ * a second press: they never count toward the two-press exit.
+ */
+export const KEY_REPEAT_MS = 60;
+
+/** How long after a first Ctrl+C a second one counts (the two-stage exit). */
+export const DOUBLE_PRESS_MS = 1000;
+
+/**
+ * What a Ctrl+C is while work runs: a held key's repeat (ignored), the second
+ * press of a double press (asks to exit) or a first press.
+ */
+export function classifyCtrlC(
+  last: number,
+  now: number,
+): "repeat" | "second" | "first" {
+  const gap = now - last;
+  if (last && gap < KEY_REPEAT_MS) return "repeat";
+  if (last && gap <= DOUBLE_PRESS_MS) return "second";
+  return "first";
+}
 
 /**
  * An Enter this soon after the question opened does not answer it: one that
@@ -22,6 +45,7 @@ export const CONFIRM_ARM_MS = 300;
 export const CONFIRM_TEXT: Record<PendingConfirm, string> = {
   stop: "Stop the response? enter to stop · esc to keep going (what it wrote so far and your text are kept)",
   clear: "Clear the input? enter to clear · esc to keep it (up brings it back)",
+  exit: "Exit and stop the agent? enter to exit · esc to stay (the conversation so far is saved)",
 };
 
 export interface ConfirmKey {

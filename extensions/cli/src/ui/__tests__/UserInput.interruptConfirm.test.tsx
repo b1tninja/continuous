@@ -3,6 +3,7 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { messageQueue } from "../../stream/messageQueue.js";
+import { gracefulExit } from "../../util/exit.js";
 import {
   CONFIRM_ARM_MS,
   confirmKeyAction,
@@ -14,6 +15,8 @@ import { UserInput } from "../UserInput.js";
  * terminal): Esc or Ctrl+C asks, Enter answers yes, and the opening key
  * pressed again or held never does.
  */
+
+vi.mock("../../util/exit.js", () => ({ gracefulExit: vi.fn() }));
 
 const ESC = "\u001b";
 const ENTER = "\r";
@@ -65,6 +68,7 @@ describe("UserInput asks before stopping or clearing", () => {
     vi.useFakeTimers();
     // Ctrl+C also signals the process for the two-stage exit
     vi.spyOn(process, "kill").mockImplementation(() => true);
+    vi.mocked(gracefulExit).mockClear();
   });
 
   afterEach(() => {
@@ -210,6 +214,98 @@ describe("UserInput asks before stopping or clearing", () => {
       expect(process.kill).toHaveBeenCalledWith(process.pid, "SIGINT");
     } finally {
       unmount();
+    }
+  });
+
+  it("a double Ctrl+C while the agent works asks to exit instead of exiting", async () => {
+    const { onInterrupt, stdin, lastFrame, unmount } = renderInput({
+      isWaitingForResponse: true,
+    });
+    try {
+      await press(stdin, CTRL_C);
+      await vi.advanceTimersByTimeAsync(200);
+      await press(stdin, CTRL_C);
+      expect(lastFrame()).toContain("Exit and stop the agent?");
+      // Neither press reached the process's two-stage exit
+      expect(process.kill).not.toHaveBeenCalled();
+      expect(gracefulExit).not.toHaveBeenCalled();
+
+      // Esc stays
+      await press(stdin, ESC);
+      expect(lastFrame()).not.toContain("Exit and stop the agent?");
+      expect(gracefulExit).not.toHaveBeenCalled();
+
+      // Asked again, Enter exits, stopping the turn first
+      await vi.advanceTimersByTimeAsync(2000);
+      await press(stdin, CTRL_C);
+      await vi.advanceTimersByTimeAsync(200);
+      await press(stdin, CTRL_C);
+      await vi.advanceTimersByTimeAsync(CONFIRM_ARM_MS);
+      await press(stdin, ENTER);
+      expect(onInterrupt).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(gracefulExit).toHaveBeenCalledWith(0);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("a held Ctrl+C (auto-repeat) is never the second press", async () => {
+    const { stdin, lastFrame, unmount } = renderInput({
+      isWaitingForResponse: true,
+    });
+    try {
+      for (let i = 0; i < 8; i++) {
+        stdin.write(CTRL_C);
+        await vi.advanceTimersByTimeAsync(30);
+      }
+      expect(lastFrame()).not.toContain("Exit and stop the agent?");
+      expect(gracefulExit).not.toHaveBeenCalled();
+      expect(process.kill).not.toHaveBeenCalled();
+    } finally {
+      unmount();
+    }
+  });
+
+  it("idle, a double Ctrl+C still goes to the two-stage exit", async () => {
+    const { stdin, lastFrame, unmount } = renderInput({});
+    try {
+      await press(stdin, CTRL_C);
+      await vi.advanceTimersByTimeAsync(200);
+      await press(stdin, CTRL_C);
+      expect(process.kill).toHaveBeenCalledTimes(2);
+      expect(lastFrame()).not.toContain("Exit and stop the agent?");
+    } finally {
+      unmount();
+    }
+  });
+
+  it("Ctrl+D asks while the agent works or text is typed, and exits at once otherwise", async () => {
+    const working = renderInput({ isWaitingForResponse: true });
+    try {
+      await press(working.stdin, "\u0004");
+      expect(working.lastFrame()).toContain("Exit and stop the agent?");
+      expect(gracefulExit).not.toHaveBeenCalled();
+    } finally {
+      working.unmount();
+    }
+    const typed = renderInput({});
+    try {
+      await press(typed.stdin, "my draft");
+      await press(typed.stdin, "\u0004");
+      expect(typed.lastFrame()).toContain("Exit and stop the agent?");
+      expect(typed.lastFrame()).toContain("my draft");
+      expect(gracefulExit).not.toHaveBeenCalled();
+    } finally {
+      typed.unmount();
+    }
+    const idle = renderInput({});
+    try {
+      await press(idle.stdin, "\u0004");
+      await vi.advanceTimersByTimeAsync(10);
+      expect(gracefulExit).toHaveBeenCalledWith(0);
+    } finally {
+      idle.unmount();
     }
   });
 

@@ -187,7 +187,11 @@ describe("TUIChat - subagent permission prompts", () => {
         "the subagent's labelled prompt",
         ui.lastFrame,
       );
-      await type(ui.stdin, ESC);
+      // "No, and tell Continue what to do differently" (n) asks, Enter stops
+      await type(ui.stdin, "n");
+      expect(ui.lastFrame()).toContain("Stop the response?");
+      await tick(CONFIRM_ARM_MS);
+      await type(ui.stdin, ENTER);
       await waitUntil(
         () => (ui.lastFrame() ?? "").includes("Ask anything"),
         "the prompt to come back",

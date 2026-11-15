@@ -15,10 +15,44 @@ interface ControlKeysOptions {
   showSlashCommands: boolean;
   showFileSearch: boolean;
   cycleModes: (step?: 1 | -1) => Promise<unknown>;
-  /** Ctrl+C: asks before stopping a turn or clearing text (never acts) */
-  onCtrlC?: () => void;
+  /**
+   * Ctrl+C: asks before stopping a turn, clearing text or exiting over running
+   * work. True when it took the press, so the two-stage exit does not count it.
+   */
+  onCtrlC?: () => boolean;
+  /** Ctrl+D: true when it asked instead of exiting (work runs, or text is typed) */
+  onCtrlD?: () => boolean;
   textBuffer?: TextBuffer;
   onTextBufferUpdate?: () => void;
+}
+
+/**
+ * Ctrl+C and Ctrl+D. Typed text is not cleared by one Ctrl+C and work is not
+ * ended by one key: the prompt's handlers ask first and answer true when they
+ * took the key (useExitGuards). Otherwise Ctrl+C goes to the process's SIGINT
+ * handler (the two-stage exit) and Ctrl+D exits.
+ */
+function handleExitKeys(
+  input: string,
+  key: any,
+  exit: () => void,
+  onCtrlC?: () => boolean,
+  onCtrlD?: () => boolean,
+): boolean {
+  if (key.ctrl && input === "c") {
+    if (onCtrlC?.()) return true;
+    process.kill(process.pid, "SIGINT");
+    return true;
+  }
+  if (key.ctrl && input === "d") {
+    if (onCtrlD?.()) return true;
+    exit();
+    void import("../../util/exit.js").then(({ gracefulExit }) =>
+      gracefulExit(0),
+    );
+    return true;
+  }
+  return false;
 }
 
 export function handleControlKeys(options: ControlKeysOptions): boolean {
@@ -30,18 +64,13 @@ export function handleControlKeys(options: ControlKeysOptions): boolean {
     showFileSearch,
     cycleModes,
     onCtrlC,
+    onCtrlD,
     textBuffer,
     onTextBufferUpdate,
   } = options;
 
-  // Handle Ctrl+C with two-stage exit, Ctrl+D immediately exits
-  if (key.ctrl && input === "c") {
-    // Typed text is not cleared by one press: the prompt asks first
-    onCtrlC?.();
-    // Let the main process SIGINT handler handle Ctrl+C logic
-    process.kill(process.pid, "SIGINT");
-    return true;
-  }
+  // Ctrl+C: two-stage exit; Ctrl+D: exit. Both ask first when it matters
+  if (handleExitKeys(input, key, exit, onCtrlC, onCtrlD)) return true;
 
   // Handle Ctrl+V for clipboard paste (including images)
   // Note: Cmd+V often doesn't work for image pasting as terminals don't send the key event
@@ -71,12 +100,6 @@ export function handleControlKeys(options: ControlKeysOptions): boolean {
 
     // Don't consume the event - let normal text paste handling continue
     return false;
-  }
-
-  // Handle Ctrl+D to exit
-  if (key.ctrl && input === "d") {
-    exit();
-    import("../../util/exit.js").then(({ gracefulExit }) => gracefulExit(0));
   }
 
   // Handle Ctrl+L to refresh screen (clear terminal artifacts)
