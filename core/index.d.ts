@@ -1546,6 +1546,13 @@ export interface ChatHistoryItem {
   appliedRules?: RuleMetadata[];
   conversationSummary?: string;
   /**
+   * The session's history length when `conversationSummary` was made. Items
+   * from this index on were added after the compaction. On a model with
+   * preserved thinking's prefix check, reasoning minted before it is not sent
+   * again: it was produced with the summarised turns in front of it.
+   */
+  conversationSummaryHistoryLength?: number;
+  /**
    * Set on the last item kept from a turn that the person stopped or that
    * failed, or that a reload cut off. The chat offers Resume for it.
    */
