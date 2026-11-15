@@ -6,6 +6,7 @@ Staging note for the next release. Fold it into that release's `<tag>.md` (the r
 
 - `continuous --resume <sessionId>` resumes that session. `continuous ls` and the `--resume` picker group sessions by folder: this folder first with its newest session selected, then the other folders, then sessions without a folder. `ls --json` adds `inWorkspace` and `workspaceGroup`.
 - The IDE History page groups sessions by workspace folder, the open workspace first and expanded; **Group by: Date** keeps the old view.
+- `continuous acp` lists and reopens earlier sessions: `session/list` (filtered by the editor's folder, paged), `session/load`, which replays the conversation and its tool calls, and `session/resume`. It now advertises `loadSession`. Sessions saved by the terminal agent and by the IDE both open. The protocol version stays 1.
 
 ## Behaviour changes
 
