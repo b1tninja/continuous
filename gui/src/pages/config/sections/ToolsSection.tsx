@@ -152,6 +152,14 @@ function MCPServerPreview({
     });
   };
 
+  // TR4: tools the person has not approved are not offered to the model
+  const pendingTools = config.tools.filter(
+    (tool) => tool.group === server.name && tool.mcpPendingApproval,
+  );
+  const onApprove = async (tools: string[] | "all") => {
+    await ideMessenger.request("mcp/approveTools", { id: server.id, tools });
+  };
+
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => ({
       ...prev,
@@ -371,6 +379,68 @@ function MCPServerPreview({
           allToolsOff={allToolsOff}
           duplicateDetection={duplicateDetection}
         />
+        {pendingTools.length > 0 && (
+          <div
+            className="mx-2 my-2 space-y-1 rounded-sm bg-gray-50/5 px-2 py-1.5 text-xs"
+            data-testid="mcp-pending-approval"
+          >
+            <div className="text-description">
+              Not offered to the model until you approve{" "}
+              {pendingTools.length === 1 ? "it" : "them"}. Read the description
+              first: it is what the model will be told.
+            </div>
+            {pendingTools.map((tool) => (
+              <div
+                key={tool.function.name}
+                className="flex items-start justify-between gap-2"
+              >
+                <div className="min-w-0">
+                  <code>{tool.originalFunctionName ?? tool.function.name}</code>
+                  {tool.mcpPendingApproval === "changed" && (
+                    <span className="ml-1 text-warning">changed</span>
+                  )}
+                  {tool.function.description && (
+                    <div className="mt-0.5 line-clamp-3 text-gray-500">
+                      {tool.function.description}
+                    </div>
+                  )}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="my-0 shrink-0"
+                  title={warmCacheNote || undefined}
+                  data-testid="mcp-approve-tool"
+                  onClick={() =>
+                    void onApprove([
+                      tool.originalFunctionName ?? tool.function.name,
+                    ])
+                  }
+                >
+                  Approve
+                </Button>
+              </div>
+            ))}
+            {pendingTools.length > 1 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="my-0"
+                title={warmCacheNote || undefined}
+                data-testid="mcp-approve-all"
+                onClick={() =>
+                  void onApprove(
+                    pendingTools.map(
+                      (t) => t.originalFunctionName ?? t.function.name,
+                    ),
+                  )
+                }
+              >
+                Approve all {pendingTools.length}
+              </Button>
+            )}
+          </div>
+        )}
         {server.prompts.length > 0 && (
           <ResourceRow
             title="Prompts"

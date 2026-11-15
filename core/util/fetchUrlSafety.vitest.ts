@@ -149,6 +149,10 @@ describe("unresolved internal names behind a proxy (T26)", () => {
     });
     expect((await classifyFetchTarget("example.com")).nonPublic).toBe(false);
     expect((await classifyFetchTarget("wiki.corp")).nonPublic).toBe(true);
+    // a single label, even one that is also a delegated TLD (.wiki, .app)
+    expect((await classifyFetchTarget("wiki")).nonPublic).toBe(true);
+    expect((await classifyFetchTarget("app")).nonPublic).toBe(true);
+    expect((await classifyFetchTarget("wiki.")).nonPublic).toBe(true);
     // a real TLD that does not resolve here: left to the transport
     expect((await classifyFetchTarget("gone.example.org")).nonPublic).toBe(
       false,
