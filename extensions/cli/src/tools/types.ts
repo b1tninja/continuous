@@ -76,6 +76,8 @@ export interface Tool {
   mcpServer?: string;
   /** The tool's own name on that server, which the model-facing `name` may qualify */
   mcpToolName?: string;
+  /** Not approved yet (TR4): not offered until the person approves it in `/mcp` */
+  mcpPendingApproval?: "new" | "added" | "changed";
   evaluateToolCallPolicy?: (
     basePolicy: ToolPolicy,
     parsedArgs: Record<string, unknown>,
