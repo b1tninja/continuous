@@ -11,6 +11,7 @@ import { SERVICE_NAMES } from "../../services/types.js";
 import { updateSessionPlanFile, updateSessionTaskPlan } from "../../session.js";
 import { messageQueue } from "../../stream/messageQueue.js";
 import { AppRoot } from "../AppRoot.js";
+import { CONFIRM_ARM_MS } from "../hooks/useInterruptConfirm.js";
 
 /**
  * A harness for end-to-end flows through the TUI: the real AppRoot, useChat,
@@ -251,6 +252,18 @@ export async function waitUntil(
 /** Lets Ink process input and re-render. */
 export function tick(ms = 50): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Stops the running turn as a person does: Esc asks "Stop the response?" and
+ * Enter, once the question is armed, answers yes (useInterruptConfirm).
+ */
+export async function stopWithEsc(stdin: {
+  write: (s: string) => void;
+}): Promise<void> {
+  await type(stdin, ESC);
+  await tick(CONFIRM_ARM_MS);
+  await type(stdin, ENTER);
 }
 
 /** Types text and lets the input handler see it before the next key. */

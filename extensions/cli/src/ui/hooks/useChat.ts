@@ -21,6 +21,7 @@ import { ModelNoteGate, onModelInUse } from "../../services/modelInUse.js";
 import {
   createSession,
   forkIntoNewSession,
+  keepCopyBeforeEdit,
   loadSession,
   loadSessionById,
   onLoopChange,
@@ -35,7 +36,7 @@ import {
 import { telemetryService } from "../../telemetry/telemetryService.js";
 import { formatError } from "../../util/formatError.js";
 import { logger } from "../../util/logger.js";
-import { setUserNoticeSink } from "../../util/userNotice.js";
+import { setUserNoticeSink, userNotice } from "../../util/userNotice.js";
 
 import {
   handleAutoCompaction,
@@ -980,6 +981,23 @@ export function useChat({
       messageIndex,
       currentHistoryLength: chatHistory.length,
     });
+
+    // What the edit replaces is kept as a session of its own (NI7)
+    const replaced = chatHistory
+      .slice(messageIndex)
+      .filter((item) => item.message.role !== "system").length;
+    const kept = replaced > 0 ? keepCopyBeforeEdit(chatHistory) : undefined;
+    if (kept) {
+      userNotice(
+        `Edited: the ${replaced} replaced message${replaced === 1 ? " is" : "s are"} kept in "${kept.title}"; /resume opens it.`,
+        `edit-copy:${kept.sessionId}`,
+      );
+    } else if (replaced > 0) {
+      userNotice(
+        "Edited: the replaced messages could not be saved as a copy.",
+        `edit-copy-failed:${Date.now()}`,
+      );
+    }
 
     // Rewind chat history to exclude the message being edited
     const rewindedHistory = chatHistory.slice(0, messageIndex);

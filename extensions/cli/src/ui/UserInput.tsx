@@ -21,6 +21,11 @@ import { LoopFrameTop } from "./components/LoopFrameTop.js";
 import { FileSearchUI } from "./FileSearchUI.js";
 import { useClipboardMonitor } from "./hooks/useClipboardMonitor.js";
 import {
+  CONFIRM_TEXT,
+  confirmKeyAction,
+  useInterruptConfirm,
+} from "./hooks/useInterruptConfirm.js";
+import {
   handleControlKeys,
   updateTextBufferState,
 } from "./hooks/useUserInput.js";
@@ -138,6 +143,8 @@ const UserInput: React.FC<UserInputProps> = ({
   const [textBuffer] = useState(() => new TextBuffer());
   const [inputHistory] = useState(() => new InputHistory());
   const lastEscapePressRef = useRef<number>(0);
+  // Esc or Ctrl+C asks before stopping or clearing (useInterruptConfirm)
+  const confirm = useInterruptConfirm(isWaitingForResponse || isCompacting);
 
   // Stable callback for TextBuffer state changes to prevent race conditions
   const onStateChange = useCallback(() => {
@@ -759,8 +766,6 @@ const UserInput: React.FC<UserInputProps> = ({
   const handleEscapeKey = (key: any): boolean => {
     if (!key.escape) return false;
 
-    escapeEvents.emit("user-escape");
-
     // If only "!" is present, clear shell mode
     if (inputMode && showBashMode && inputText.trim() === "!") {
       textBuffer.clear();
@@ -770,15 +775,9 @@ const UserInput: React.FC<UserInputProps> = ({
       return true;
     }
 
-    // Handle escape key to interrupt compaction (higher priority)
-    if (isCompacting && onInterrupt) {
-      onInterrupt();
-      return true;
-    }
-
-    // Handle escape key to interrupt streaming
-    if (isWaitingForResponse && onInterrupt) {
-      onInterrupt();
+    // Esc during compaction or a reply asks before it stops (Enter stops)
+    if ((isCompacting || isWaitingForResponse) && onInterrupt) {
+      confirm.open("stop");
       return true;
     }
 
@@ -850,9 +849,48 @@ const UserInput: React.FC<UserInputProps> = ({
     pollInterval: 2000,
   });
 
+  /**
+   * The open question takes Enter (yes) and Esc (no); any other key closes it
+   * and is handled as usual.
+   */
+  const handlePendingConfirm = (key: any): boolean => {
+    const kind = confirm.current();
+    if (!kind) return false;
+    const action = confirmKeyAction(confirm.openedAt.current, Date.now(), key);
+    if (action === "ignore") return true;
+    confirm.close();
+    if (action === "pass") return false;
+    if (action === "confirm" && kind === "stop") {
+      // A running subagent stops with the turn (subagent/executor.ts)
+      escapeEvents.emit("user-escape");
+      onInterrupt?.();
+    }
+    if (action === "confirm" && kind === "clear") {
+      // Up brings it back
+      if (textBuffer.text.trim()) inputHistory.addEntry(textBuffer.text);
+      clearInput();
+    }
+    return true;
+  };
+
+  // Ctrl+C never acts on its own. With text typed it asks to clear it (as
+  // a shell's Ctrl+C clears the line); on an empty prompt while the agent
+  // works it asks to stop. A second Ctrl+C within a second still exits.
+  const handleCtrlC = () => {
+    if (textBuffer.text.trim()) {
+      confirm.open("clear");
+    } else if ((isWaitingForResponse || isCompacting) && onInterrupt) {
+      confirm.open("stop");
+    }
+  };
+
   useInput((input, key) => {
     // Don't handle any input when disabled
     if (disabled) {
+      return;
+    }
+
+    if (handlePendingConfirm(key)) {
       return;
     }
 
@@ -865,7 +903,7 @@ const UserInput: React.FC<UserInputProps> = ({
         showSlashCommands,
         showFileSearch,
         cycleModes,
-        clearInput,
+        onCtrlC: handleCtrlC,
         textBuffer,
         onTextBufferUpdate: handleTextBufferUpdate,
       })
@@ -1017,6 +1055,11 @@ const UserInput: React.FC<UserInputProps> = ({
   return (
     <Box flexDirection="column">
       <InterruptedBanner wasInterrupted={!!wasInterrupted} />
+      {confirm.pending && (
+        <Box paddingX={1}>
+          <Text color="yellow">{CONFIRM_TEXT[confirm.pending]}</Text>
+        </Box>
+      )}
 
       {/* The loop's state is the box's top border (label) and colour */}
       {loopFrame && <LoopFrameTop info={loopFrame} />}

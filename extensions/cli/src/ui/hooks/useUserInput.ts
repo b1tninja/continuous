@@ -15,7 +15,8 @@ interface ControlKeysOptions {
   showSlashCommands: boolean;
   showFileSearch: boolean;
   cycleModes: (step?: 1 | -1) => Promise<unknown>;
-  clearInput?: () => void;
+  /** Ctrl+C: asks before stopping a turn or clearing text (never acts) */
+  onCtrlC?: () => void;
   textBuffer?: TextBuffer;
   onTextBufferUpdate?: () => void;
 }
@@ -28,17 +29,15 @@ export function handleControlKeys(options: ControlKeysOptions): boolean {
     showSlashCommands,
     showFileSearch,
     cycleModes,
-    clearInput,
+    onCtrlC,
     textBuffer,
     onTextBufferUpdate,
   } = options;
 
   // Handle Ctrl+C with two-stage exit, Ctrl+D immediately exits
   if (key.ctrl && input === "c") {
-    // Clear input box if clearInput function is provided
-    if (clearInput) {
-      clearInput();
-    }
+    // Typed text is not cleared by one press: the prompt asks first
+    onCtrlC?.();
     // Let the main process SIGINT handler handle Ctrl+C logic
     process.kill(process.pid, "SIGINT");
     return true;

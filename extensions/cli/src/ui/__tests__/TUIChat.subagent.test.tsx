@@ -4,6 +4,7 @@ import { serviceContainer, services } from "../../services/index.js";
 import { ModelService } from "../../services/ModelService.js";
 import { SERVICE_NAMES } from "../../services/types.js";
 import { setBetaSubagentToolEnabled } from "../../tools/toolsConfig.js";
+import { CONFIRM_ARM_MS } from "../hooks/useInterruptConfirm.js";
 
 import {
   ENTER,
@@ -220,7 +221,12 @@ describe("TUIChat - subagent permission prompts", () => {
     try {
       await subTurn.started;
       await tick(100);
+      // Esc asks first; the subagent keeps working until Enter answers
       await type(ui.stdin, ESC);
+      expect(subTurn.wasAborted()).toBe(false);
+      expect(ui.lastFrame()).toContain("Stop the response?");
+      await tick(CONFIRM_ARM_MS);
+      await type(ui.stdin, ENTER);
       await waitUntil(
         () => subTurn.wasAborted(),
         "the subagent's request to be aborted",

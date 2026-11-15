@@ -1092,6 +1092,38 @@ export function forkIntoNewSession(parent: Session): Session {
   return fork;
 }
 
+/** The suffix of the copy an edit of an earlier message leaves (NI7). */
+export const BEFORE_EDIT_SUFFIX = " (before edit)";
+
+/**
+ * Before an edit of an earlier message rewinds the conversation (NI7): the
+ * conversation as it is, `history`, is saved as a session of its own,
+ * "<title> (before edit)", a fork of the current one, which goes on with the
+ * edit. /resume lists the copy, and it is trashed like any other session.
+ * Undefined when there is nothing to keep or it could not be written.
+ */
+export function keepCopyBeforeEdit(
+  history: ChatHistoryItem[],
+): Session | undefined {
+  try {
+    const current = SessionManager.getInstance().getCurrentSession();
+    const parent: Session = { ...current, history };
+    if (!hasSessionContent(parent)) return undefined;
+    const copy = forkSession(parent, { sessionId: uuidv4() });
+    const title =
+      current.title && current.title !== DEFAULT_SESSION_TITLE
+        ? current.title
+        : "Session";
+    copy.title = `${title}${BEFORE_EDIT_SUFFIX}`;
+    copy.workspaceDirectory = current.workspaceDirectory || process.cwd();
+    historyManager.save(getSessionPersistenceSnapshot(copy));
+    return copy;
+  } catch (error) {
+    logger.error("The conversation before the edit was not kept:", error);
+    return undefined;
+  }
+}
+
 type TaskPlanListener = (plan: TaskPlan | undefined) => void;
 const taskPlanListeners = new Set<TaskPlanListener>();
 
