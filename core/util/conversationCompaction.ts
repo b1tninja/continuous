@@ -73,10 +73,7 @@ export async function compactConversation(
   updatedHistory[index] = {
     ...updatedHistory[index],
     conversationSummary: summary,
-    // Reasoning minted before this point saw the summarised turns. This is
-    // the length when the summary is saved, so a prepared summary (C105)
-    // covers the turns added since it was made: their reasoning was also
-    // minted with the summarised turns in front of it.
+    // Reasoning minted before this point saw the summarised turns (C104)
     conversationSummaryHistoryLength: session.history.length,
   };
 
