@@ -287,11 +287,11 @@ describe("PreToolUse: against the permission policy", () => {
   it("ask turns an allowed call into one that needs a person", async () => {
     policy = "allow";
     hooksConfig = pre(decide("ask"));
-    // Headless has no one to ask, so it is refused by policy.
+    // Headless has no one to ask, so it is refused by policy, saying how to allow it.
     const { chatHistoryEntries, hasRejection } = await run([makeCall()], true);
     expect(executeToolCall).not.toHaveBeenCalled();
-    expect(chatHistoryEntries[0].content).toBe(
-      "Command blocked by security policy",
+    expect(String(chatHistoryEntries[0].content)).toMatch(
+      /^Command blocked by security policy: .*headless.*--policy/,
     );
     expect(hasRejection).toBe(true);
   });

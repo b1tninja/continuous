@@ -69,7 +69,8 @@ Settings
                            for none, or a text of your own; default: the CLI's own (on for Loop items
                            and the short and tailored profiles, off elsewhere)
   --level <area=level,..>  policy levels, recorded on every record; applied where the CLI has the
-                           knob today (tool-use=idgaf adds --auto, tool-use=manual removes it;
+                           knob today (tool-use=idgaf adds --auto, tool-use=manual removes it,
+                           tool-use=cautious, automatic or permissive passes --policy tools=<level>;
                            plan-edits and questions pick the loop autonomy); the rest is recorded only
   --effort <x>             reasoning effort as the family spells it (see matrix.yaml efforts)
   --max-tokens <n>         defaultCompletionOptions.maxTokens (default: the provider's)
@@ -340,6 +341,15 @@ function applyLevels(levels, scenario) {
   } else if (toolUse === "manual" && serve.includes("--auto")) {
     serve.splice(serve.indexOf("--auto"), 1);
     applied["tool-use"] = "no --auto";
+  } else if (
+    ["cautious", "automatic", "permissive"].includes(toolUse) &&
+    !serve.includes("--policy")
+  ) {
+    // Headless runs are at the person's levels since 2.18.0 (CO2); the level
+    // goes in as --policy, and --auto (IDGAF) would override it
+    if (serve.includes("--auto")) serve.splice(serve.indexOf("--auto"), 1);
+    serve.push("--policy", `tools=${toolUse}`);
+    applied["tool-use"] = `--policy tools=${toolUse}`;
   }
   let loop = scenario.loop ? { ...scenario.loop } : undefined;
   const loopLevel = levels["plan-edits"] ?? levels["questions"];

@@ -91,17 +91,25 @@ This file should be created the first time that the CLI starts.
 
 ## Headless mode permissions
 
-Headless mode (`-p` or `--print`) does not use the same defaults as the TUI.
+Headless runs (`-p` or `--print`, and `serve`) use the same defaults as the TUI, and run at the person's own policy levels: the ones saved in `permissions.yaml`, or the defaults (Careful).
 
 - **TUI**: Bash, and any tool without its own entry, asks. Edit, MultiEdit and Write ask.
-- **Headless**: Bash, and any tool without its own entry, is allowed and runs with no prompt. Edit, MultiEdit and Write still ask. With nobody to answer, a headless run stops instead of running a tool that asks.
+- **Headless**: the same lists and the same levels. Nobody can answer a question, so a call that would ask is refused. The tool result says so and names the flags that allow it, and one line on stderr per tool says the same to whoever runs the script. A call that the levels or a rule allow (a read-only command at Context use Permissive, an allow rule) runs.
+- **IDGAF**: `--policy idgaf` or `--auto` (IDGAF on the three tool areas) runs everything, headless too. Nothing asks, so nothing is refused.
 
-`--allow` grants a tool whose default is ask. `--exclude` drops a tool the headless defaults would allow.
+A headless run starts with one line on stderr that names the levels it runs at and the flag that set them.
+
+`--allow` grants a tool whose default is ask. `--auto` or `--policy <preset|area=level|file>` loosens the levels for the run. A `--policy` file is in the `permissions.yaml` format; its levels and settings stand in for the person's own.
 
 ```bash
 # Let a headless run use Write, which asks by default
 cn -p --allow Write "Write a hello world script"
 
-# Drop Bash, which headless mode allows by default
-cn -p --exclude Bash "Summarize this repository"
+# Run commands and edits without asking (a dependency change still asks, so it is refused)
+cn -p --policy handsOff "Fix the failing test"
+
+# Levels from a file kept with the pipeline
+cn -p --policy ./ci/policy.yaml "Fix the failing test"
 ```
+
+Before 2.18.0 the headless lists allowed Bash and every tool without its own entry, MCP tools included. `CONTINUOUS_HEADLESS_LEGACY_ALLOW=1` brings those lists back for one release; it is removed in the release after, so a script should pass `--auto` or `--policy` instead.
