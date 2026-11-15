@@ -283,6 +283,7 @@ import { ContinueError, ContinueErrorReason } from "./util/errors";
 import { shareSession } from "./util/historyUtils";
 import { Logger } from "./util/Logger.js";
 import { MessageAbortControllers } from "./util/messageAbortControllers";
+import { setWebAgentVersion } from "./web/webHeaders";
 
 export class Core {
   configHandler: ConfigHandler;
@@ -420,6 +421,10 @@ export class Core {
       const dataLogger = DataLogger.getInstance();
       dataLogger.core = this;
       dataLogger.ideInfoPromise = ideInfoPromise;
+      // The release the web User-Agent names (major.minor only)
+      void ideInfoPromise
+        .then((info) => setWebAgentVersion(info?.extensionVersion))
+        .catch(() => undefined);
       dataLogger.ideSettingsPromise = ideSettingsPromise;
 
       void ideSettingsPromise.then((ideSettings) => {
