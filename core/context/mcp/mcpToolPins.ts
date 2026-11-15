@@ -13,7 +13,11 @@ import * as path from "node:path";
 import type { InternalMcpOptions } from "../..";
 import type { McpPendingApproval } from "../../tools/roleTools";
 import { getContinueGlobalPath } from "../../util/paths";
-import { pendingFromReport, serverUsedInHistory } from "./mcpApprovalHold";
+import {
+  pendingFromReport,
+  serverUsedInHistory,
+  type HistoryCalls,
+} from "./mcpApprovalHold";
 import {
   canonicalJson,
   checkToolPins,
@@ -402,10 +406,10 @@ export async function approveTools(
  */
 export async function adoptFromHistory(
   key: string,
-  server: string,
+  server: { name: string; id?: string },
   tools: McpToolDefinition[],
   store: ToolPinStore,
-  called: ReadonlySet<string>,
+  called: HistoryCalls,
   launch?: LaunchSpec,
   now: Date = new Date(),
 ): Promise<boolean> {
@@ -413,6 +417,24 @@ export async function adoptFromHistory(
   if (!serverUsedInHistory(server, tools, called)) return false;
   await approveTools(key, tools, store, "all", now, launch);
   return true;
+}
+
+/**
+ * TR24: a server the person trusts pins its new and changed tools on sight.
+ * Pins the tools this evaluation found waiting and returns their names (for
+ * the notice and the audit trail); none when the server is not trusted.
+ */
+export async function approveTrustedPending(
+  key: string,
+  tools: McpToolDefinition[],
+  store: ToolPinStore,
+  pending: ReadonlyMap<string, McpPendingApproval>,
+  trusted: boolean,
+  launch?: LaunchSpec,
+  now: Date = new Date(),
+): Promise<string[]> {
+  if (!trusted || !pending.size) return [];
+  return approveTools(key, tools, store, [...pending.keys()], now, launch);
 }
 
 /** What an approval changed beyond the one tool, for the notice. */

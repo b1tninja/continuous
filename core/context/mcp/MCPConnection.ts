@@ -60,11 +60,17 @@ import {
 import { oauthOptionsFromSettings } from "./mcpOauthSettings";
 import type { McpPendingApproval } from "../../tools/roleTools";
 import { getContinueGlobalPath } from "../../util/paths";
-import { calledToolNames, pendingApprovalText } from "./mcpApprovalHold";
+import {
+  calledTools,
+  pendingApprovalText,
+  serverAutoApproves,
+  trustedServersFromPolicyFile,
+} from "./mcpApprovalHold";
 import {
   adoptFromHistory,
   adoptLegacyPin,
   approveTools,
+  approveTrustedPending,
   evaluatePins,
   getToolPinStore,
   launchSpec,
@@ -72,7 +78,7 @@ import {
   recordApproval,
   type ApprovalEvents,
 } from "./mcpToolPins";
-import { announcePins } from "./mcpPinNotices";
+import { announcePins, announceTrustedApproval } from "./mcpPinNotices";
 import { oauthScopeForMcpServer } from "./workspaceMcpPolicy";
 
 const DEFAULT_MCP_TIMEOUT = 20_000; // 20 seconds
@@ -217,10 +223,10 @@ class MCPConnection {
       if (
         await adoptFromHistory(
           pinKey(this.options),
-          this.options.name,
+          { name: this.options.name, id: this.options.id },
           this.tools,
           getToolPinStore(),
-          await calledToolNames(getContinueGlobalPath()),
+          await calledTools(getContinueGlobalPath()),
           launchSpec(this.options),
         )
       ) {
@@ -228,12 +234,33 @@ class MCPConnection {
           `MCP server ${this.options.name} was used before this version, so its current tools stay approved. A tool it adds or changes later waits for your approval.`,
         );
       }
-      const { flagged, pending } = await evaluatePins(
+      let { flagged, pending } = await evaluatePins(
         pinKey(this.options),
         this.tools,
         getToolPinStore(),
         launchSpec(this.options),
       );
+      // TR24: a server the person trusts pins what it lists on sight
+      const trustedPinned = await approveTrustedPending(
+        pinKey(this.options),
+        this.tools,
+        getToolPinStore(),
+        pending,
+        serverAutoApproves(
+          this.options,
+          trustedServersFromPolicyFile(getContinueGlobalPath()),
+        ),
+        launchSpec(this.options),
+      );
+      if (trustedPinned.length) {
+        announceTrustedApproval(this.options.name, trustedPinned, this.infos);
+        ({ flagged, pending } = await evaluatePins(
+          pinKey(this.options),
+          this.tools,
+          getToolPinStore(),
+          launchSpec(this.options),
+        ));
+      }
       this.changedTools = flagged;
       this.pendingTools = pending;
     } catch (e) {

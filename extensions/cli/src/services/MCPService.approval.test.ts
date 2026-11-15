@@ -192,3 +192,48 @@ describe("unattended runs get no MCP tools unless listed (background.mcpTools)",
     expect(offered(svc)).toEqual(["Read", "search"]);
   });
 });
+
+describe("TR24: a server trusted in permissions.yaml pins its tools on sight", () => {
+  const trust = (servers: string) => {
+    const file = path.join(dir, "permissions.yaml");
+    fs.writeFileSync(file, `mcpServers:\n${servers}`);
+    expect(loadPolicyFile(file)).toEqual([]);
+  };
+
+  it("its new tools are offered with no wait, and the notice says why", async () => {
+    trust("  docs: trusted\n");
+    const c = connectionFor();
+    const svc = await serviceWith(c);
+    expect(svc.getPendingApproval("docs", "search")).toBeUndefined();
+    expect(offered(svc)).toEqual(["Read", "search", "add"]);
+    expect(c.warnings.join(" ")).toContain("trusted in your permissions.yaml");
+    expect(Object.keys((await store.get("docs"))!.tools).sort()).toEqual([
+      "add",
+      "search",
+    ]);
+  });
+
+  it("a tool it changes later is pinned on sight too", async () => {
+    trust("  docs: trusted\n");
+    await approveTools("docs", [tool("search")], store, "all");
+    const svc = await serviceWith(
+      connectionFor([tool("search", "Now different"), tool("add")]),
+    );
+    expect(offered(svc)).toEqual(["Read", "search", "add"]);
+  });
+
+  it("an untrusted server keeps waiting", async () => {
+    trust("  other: trusted\n");
+    const svc = await serviceWith(connectionFor());
+    expect(svc.getPendingApproval("docs", "search")).toBe("new");
+    expect(offered(svc)).toEqual(["Read"]);
+  });
+
+  it("a server the folder brought is not trusted by name", async () => {
+    trust("  docs: trusted\n");
+    const c = connectionFor();
+    c.config.configSource = "workspace";
+    const svc = await serviceWith(c);
+    expect(svc.getPendingApproval("docs", "search")).toBe("new");
+  });
+});

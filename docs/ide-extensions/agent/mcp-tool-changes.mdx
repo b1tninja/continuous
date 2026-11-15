@@ -15,6 +15,15 @@ Continuous records what each MCP server told the model about its tools (names, d
 
 At IDGAF on Tool use the tools that wait are offered anyway, and the first call to one pins it, because IDGAF never asks and never refuses.
 
+A server you marked `trusted` in your own `permissions.yaml` does not wait:
+
+```yaml
+mcpServers:
+  docs: trusted
+```
+
+Its new and changed tools are pinned as soon as they are listed. A notice names them, and the audit trail records the approval as the system's (source `mcp-trusted-server`). The tool list still changes, so while the prompt cache is warm the new tools wait for it to go cold like any other change. A server that came with the open folder is never trusted this way, whatever its name. Every other server's tools wait for you.
+
 ## Approve a new or changed tool
 
 - **IDE**: Settings > Tools lists the waiting tools under their server, with the description the model will read and **Approve** (one tool) or **Approve all**.
@@ -39,7 +48,7 @@ A listed tool of a server you never approved is offered to such a run, because t
 
 ## After upgrading
 
-Tools you already use stay approved. A server was pinned on its first approved call before this release, so its tools are in `mcp-tool-pins.json` and nothing changes for them. For a server used before pinning existed, the sessions saved before the upgrade are read once, and a server one of whose tools was called there is pinned as it is now. A server nobody called waits for your approval. The moment of the upgrade is kept in `mcp-tool-hold.json` beside the pin file.
+Tools you already use stay approved. A server was pinned on its first approved call before this release, so its tools are in `mcp-tool-pins.json` and nothing changes for them. For a server used before pinning existed, the sessions saved before the upgrade are read once. A server is pinned as it is now when the history ties a call to that server and that tool: the session recorded which server the call went to, or the IDE's tool name carries the server's name. A terminal-agent call recorded only by the tool's own name (such as `search`) names no server, so it approves nothing, and that server's tools wait for you. A server nobody called waits for your approval. The moment of the upgrade is kept in `mcp-tool-hold.json` beside the pin file.
 
 The check runs when the server connects and again on every `tools/list_changed` notification, so a change made mid-session is held the same way. A tool that changes mid-session while the prompt cache is warm stays in the request's tool list until the cache goes cold, and a call to it is refused with a result that says it waits for approval.
 

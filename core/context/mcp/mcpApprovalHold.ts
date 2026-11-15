@@ -18,6 +18,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { readPolicyFile } from "../../tools/permissions/settingsFile";
 import type { McpPendingApproval } from "../../tools/roleTools";
 import { getToolNameFromMCPServer } from "../../tools/mcpToolName";
 import type { McpToolDefinition, ToolPinReport } from "./toolPinning";
@@ -77,17 +78,42 @@ export const HISTORY_SCAN_LIMITS = {
 
 /** `"name":"x","arguments"`, the shape a stored tool call's function has. */
 const CALLED_NAME = /"name"\s*:\s*"([^"\\]{1,200})"\s*,\s*"arguments"/g;
+/** A tool's URI as the IDE stores it with the call (`mcp://<server>/<tool>`). */
+const TOOL_URI = /"mcp:\/\/([^/"\\]{1,200})\/([^"\\]{1,200})"/g;
+/** A server and tool recorded beside a call (`"mcpServer":"s","mcpToolName":"t"`). */
+const SERVER_TOOL =
+  /"mcpServer"\s*:\s*"([^"\\]{1,200})"\s*,\s*"mcpToolName"\s*:\s*"([^"\\]{1,200})"/g;
 
 /**
- * The tool names called in the sessions saved before `before`, newest files
- * first, within the limits. Never throws: an unreadable file counts nothing.
+ * What the history says was called: the model-facing names, and the server
+ * and tool pairs where the session recorded which server a call went to.
  */
-export function toolNamesCalledBefore(
+export interface HistoryCalls {
+  names: Set<string>;
+  /** `server\0tool`, the server by its name or its id */
+  pairs: Set<string>;
+}
+
+const pairKey = (server: string, tool: string) => `${server}\0${tool}`;
+
+function decode(part: string): string {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return part;
+  }
+}
+
+/**
+ * The tool calls in the sessions saved before `before`, newest files first,
+ * within the limits. Never throws: an unreadable file counts nothing.
+ */
+export function toolCallsBefore(
   sessionsDir: string,
   before: Date,
   limits = HISTORY_SCAN_LIMITS,
-): Set<string> {
-  const names = new Set<string>();
+): HistoryCalls {
+  const calls: HistoryCalls = { names: new Set(), pairs: new Set() };
   let entries: { file: string; mtime: number; size: number }[] = [];
   try {
     entries = fs
@@ -104,7 +130,7 @@ export function toolNamesCalledBefore(
       })
       .filter((e) => e.mtime < before.getTime());
   } catch {
-    return names;
+    return calls;
   }
   entries.sort((a, b) => b.mtime - a.mtime);
   for (const e of entries.slice(0, limits.files)) {
@@ -115,50 +141,93 @@ export function toolNamesCalledBefore(
     } catch {
       continue;
     }
-    for (const m of text.matchAll(CALLED_NAME)) names.add(m[1]);
+    for (const m of text.matchAll(CALLED_NAME)) calls.names.add(m[1]);
+    for (const m of text.matchAll(TOOL_URI)) {
+      calls.pairs.add(pairKey(decode(m[1]), decode(m[2])));
+    }
+    for (const m of text.matchAll(SERVER_TOOL)) {
+      calls.pairs.add(pairKey(m[1], m[2]));
+    }
   }
-  return names;
+  return calls;
 }
 
-/** The names a server's tool was called by: the IDE's composed name and the CLI's bare one. */
-export function namesOfTool(server: string, tool: string): string[] {
-  return [getToolNameFromMCPServer(server, tool), tool];
+/** The names a history read alone can tie to one server: the IDE's composed name, when it carries the server. */
+export function serverNamesOfTool(server: string, tool: string): string[] {
+  const composed = getToolNameFromMCPServer(server, tool);
+  // A tool already named after its server composes to its own name, which
+  // is also what any other server's tool of that name is called in the CLI
+  return composed === tool ? [] : [composed];
 }
 
-/** Whether any tool of this server was called in the history. */
+/**
+ * Whether a tool of this server was called in the history, matched on the
+ * server and the tool together: a recorded server and tool pair (by the
+ * server's name or id), or the IDE's composed name. The CLI's bare name
+ * alone names no server, so it never counts.
+ */
 export function serverUsedInHistory(
-  server: string,
+  server: { name: string; id?: string },
   tools: McpToolDefinition[],
-  called: ReadonlySet<string>,
+  called: HistoryCalls,
 ): boolean {
-  return tools.some((t) =>
-    namesOfTool(server, t.name).some((n) => called.has(n)),
+  const ids = [server.name, ...(server.id ? [server.id] : [])];
+  return tools.some(
+    (t) =>
+      ids.some((id) => called.pairs.has(pairKey(id, t.name))) ||
+      serverNamesOfTool(server.name, t.name).some((n) => called.names.has(n)),
   );
 }
 
-let historyCache: { key: string; names: Promise<Set<string>> } | undefined =
+let historyCache: { key: string; calls: Promise<HistoryCalls> } | undefined =
   undefined;
 
 /** The history read, once per process and folder. */
-export function calledToolNames(
+export function calledTools(
   globalDir: string,
   sessionsDir: string = path.join(globalDir, "sessions"),
-): Promise<Set<string>> {
+): Promise<HistoryCalls> {
   const key = `${globalDir}\0${sessionsDir}`;
   if (historyCache?.key !== key) {
     const since = holdSince(globalDir);
     historyCache = {
       key,
-      names: Promise.resolve().then(() =>
-        toolNamesCalledBefore(sessionsDir, since),
-      ),
+      calls: Promise.resolve().then(() => toolCallsBefore(sessionsDir, since)),
     };
   }
-  return historyCache.names;
+  return historyCache.calls;
+}
+
+/**
+ * TR24: a server the person marked `trusted` in their own permissions.yaml
+ * (`mcpServers.<name>: trusted`) approves the new and changed tools it lists:
+ * they are pinned on sight. A server the open folder brought is never trusted
+ * this way, whatever its name. Every other server's tools wait.
+ */
+export function serverAutoApproves(
+  server: { name: string; configSource?: string },
+  trustedServers: readonly string[] | undefined,
+): boolean {
+  return (
+    server.configSource !== "workspace" &&
+    !!trustedServers?.includes(server.name)
+  );
+}
+
+/** The servers named `trusted` in the person's own permissions.yaml. Never throws. */
+export function trustedServersFromPolicyFile(globalDir: string): string[] {
+  try {
+    return Object.keys(
+      readPolicyFile(path.join(globalDir, "permissions.yaml")).settings
+        .mcpServers ?? {},
+    );
+  } catch {
+    return [];
+  }
 }
 
 /** For tests. */
-export function resetCalledToolNames(): void {
+export function resetCalledTools(): void {
   historyCache = undefined;
 }
 

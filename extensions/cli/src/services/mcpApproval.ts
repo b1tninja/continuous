@@ -1,12 +1,17 @@
 import {
-  calledToolNames,
+  calledTools,
   pendingApprovalText,
+  serverAutoApproves,
 } from "core/context/mcp/mcpApprovalHold.js";
-import { announcePins } from "core/context/mcp/mcpPinNotices.js";
+import {
+  announcePins,
+  announceTrustedApproval,
+} from "core/context/mcp/mcpPinNotices.js";
 import {
   adoptFromHistory,
   adoptLegacyPin,
   approveTools,
+  approveTrustedPending,
   evaluatePins,
   getToolPinStore,
   launchSpec,
@@ -17,6 +22,7 @@ import {
 import type { McpPendingApproval } from "core/tools/roleTools.js";
 import { getContinueGlobalPath } from "core/util/paths.js";
 
+import { getPolicyExtras } from "../permissions/policyLevels.js";
 import { getErrorString } from "../util/error.js";
 import { logger } from "../util/logger.js";
 
@@ -29,7 +35,7 @@ import { logger } from "../util/logger.js";
 
 /** The part of a connection this needs. */
 export interface ApprovalConnection {
-  config: { name: string };
+  config: { name: string; configSource?: string };
   tools: { name: string; description?: string }[];
   warnings: string[];
   pendingTools?: Map<string, McpPendingApproval>;
@@ -53,12 +59,38 @@ export async function refreshConnectionPins(
     await adoptLegacyPin(options, store);
     // Upgrade: a server someone used before this release stays approved
     await adoptConnectionFromHistory(connection, options);
-    const { flagged, pending } = await evaluatePins(
+    let { flagged, pending } = await evaluatePins(
       pinKey(options),
       connection.tools as never,
       store,
       launchSpec(options),
     );
+    // TR24: a server the person trusts pins what it lists on sight
+    const trustedPinned = await approveTrustedPending(
+      pinKey(options),
+      connection.tools as never,
+      store,
+      pending,
+      serverAutoApproves(
+        connection.config,
+        Object.keys(getPolicyExtras().mcpServers ?? {}),
+      ),
+      launchSpec(options),
+    );
+    if (trustedPinned.length) {
+      announceTrustedApproval(
+        connection.config.name,
+        trustedPinned,
+        connection.warnings,
+        (m) => logger.warn(m),
+      );
+      ({ flagged, pending } = await evaluatePins(
+        pinKey(options),
+        connection.tools as never,
+        store,
+        launchSpec(options),
+      ));
+    }
     connection.pinChanges = flagged;
     connection.pendingTools = pending;
   } catch (error) {
@@ -128,10 +160,10 @@ export async function adoptConnectionFromHistory(
 ): Promise<void> {
   const adopted = await adoptFromHistory(
     pinKey(options),
-    connection.config.name,
+    { name: connection.config.name },
     connection.tools as never,
     getToolPinStore(),
-    await calledToolNames(getContinueGlobalPath()),
+    await calledTools(getContinueGlobalPath()),
     launchSpec(options),
   );
   if (adopted) {

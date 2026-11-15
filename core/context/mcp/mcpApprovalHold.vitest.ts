@@ -2,19 +2,29 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const audit = vi.hoisted(() => ({ decision: vi.fn() }));
+vi.mock("../../tools/permissions/audit/global", () => ({
+  getAuditTrail: () => audit,
+}));
 
 import {
   holdMarkerPath,
   holdSince,
-  namesOfTool,
   pendingApprovalText,
+  serverAutoApproves,
+  serverNamesOfTool,
   serverUsedInHistory,
-  toolNamesCalledBefore,
+  toolCallsBefore,
+  trustedServersFromPolicyFile,
+  type HistoryCalls,
 } from "./mcpApprovalHold";
+import { announceTrustedApproval } from "./mcpPinNotices";
 import {
   adoptFromHistory,
   approveTools,
+  approveTrustedPending,
   evaluatePins,
   recordApproval,
 } from "./mcpToolPins";
@@ -29,8 +39,15 @@ const tool = (
   inputSchema: { type: "object" },
 });
 
+/** A history read: model-facing names, and `server\0tool` pairs. */
+const history = (names: string[], pairs: string[] = []): HistoryCalls => ({
+  names: new Set(names),
+  pairs: new Set(pairs),
+});
+
 let dir: string;
 beforeEach(() => {
+  audit.decision.mockClear();
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-hold-"));
 });
 afterEach(() => {
@@ -125,7 +142,7 @@ describe("upgrade: tools people already use stay approved", () => {
     expect(again.toISOString()).toBe("2026-11-20T00:00:00.000Z");
   });
 
-  it("reads the tool names called in sessions saved before the upgrade", () => {
+  it("reads the calls in sessions saved before the upgrade, with the server where one is recorded", () => {
     const sessions = path.join(dir, "sessions");
     fs.mkdirSync(sessions);
     const old = path.join(sessions, "a.json");
@@ -141,6 +158,7 @@ describe("upgrade: tools people already use stay approved", () => {
                   type: "function",
                   function: { name: "wiki_search", arguments: "{}" },
                 },
+                tool: { uri: "mcp://Docs%20Server/lookup" },
               },
             ],
           },
@@ -154,55 +172,99 @@ describe("upgrade: tools people already use stay approved", () => {
     );
     const t0 = new Date("2026-11-01T00:00:00Z");
     fs.utimesSync(old, t0, t0);
-    const names = toolNamesCalledBefore(
-      sessions,
-      new Date("2026-11-10T00:00:00Z"),
-    );
-    expect(names.has("wiki_search")).toBe(true);
+    const calls = toolCallsBefore(sessions, new Date("2026-11-10T00:00:00Z"));
+    expect(calls.names.has("wiki_search")).toBe(true);
+    expect(calls.pairs.has("Docs Server\0lookup")).toBe(true);
     // saved after the upgrade: not history the upgrade counts
-    expect(names.has("notes_add")).toBe(false);
+    expect(calls.names.has("notes_add")).toBe(false);
   });
 
   it("a missing sessions folder counts nothing", () => {
-    expect(toolNamesCalledBefore(path.join(dir, "none"), new Date()).size).toBe(
-      0,
-    );
+    const calls = toolCallsBefore(path.join(dir, "none"), new Date());
+    expect(calls.names.size + calls.pairs.size).toBe(0);
   });
 
-  it("matches the IDE's composed name and the CLI's bare name", () => {
-    expect(namesOfTool("Wiki", "search")).toEqual(["wiki_search", "search"]);
+  it("matches on the server and the tool together, never on a bare name", () => {
+    const wiki = { name: "Wiki", id: "wiki-1" };
+    // the IDE's composed name carries the server
+    expect(serverNamesOfTool("Wiki", "search")).toEqual(["wiki_search"]);
     expect(
-      serverUsedInHistory("Wiki", [tool("search")], new Set(["wiki_search"])),
+      serverUsedInHistory(wiki, [tool("search")], history(["wiki_search"])),
+    ).toBe(true);
+    // a recorded server and tool pair, by the server's name or id
+    expect(
+      serverUsedInHistory(
+        wiki,
+        [tool("search")],
+        history([], ["wiki-1\0search"]),
+      ),
     ).toBe(true);
     expect(
-      serverUsedInHistory("Wiki", [tool("search")], new Set(["search"])),
+      serverUsedInHistory(
+        wiki,
+        [tool("search")],
+        history([], ["Wiki\0search"]),
+      ),
     ).toBe(true);
+    // the same tool name recorded for another server does not count
     expect(
-      serverUsedInHistory("Wiki", [tool("search")], new Set(["other"])),
+      serverUsedInHistory(
+        wiki,
+        [tool("search")],
+        history([], ["Docs\0search"]),
+      ),
     ).toBe(false);
+    // the CLI's bare name names no server
+    expect(
+      serverUsedInHistory(wiki, [tool("search")], history(["search"])),
+    ).toBe(false);
+    // a tool already named after its server composes to its bare name: no match
+    expect(serverNamesOfTool("Wiki", "wiki_search")).toEqual([]);
+    expect(
+      serverUsedInHistory(
+        wiki,
+        [tool("wiki_search")],
+        history(["wiki_search"]),
+      ),
+    ).toBe(false);
+  });
+
+  it("a new server that reuses a bare name called before the upgrade stays waiting", async () => {
+    const store = new MemoryToolPinStore();
+    // The CLI called `search` before the upgrade; the session did not record
+    // which server answered it, so it vouches for no server
+    expect(
+      await adoptFromHistory(
+        "newcomer",
+        { name: "newcomer" },
+        [tool("search")],
+        store,
+        history(["search"]),
+      ),
+    ).toBe(false);
+    expect(
+      (await evaluatePins("newcomer", [tool("search")], store)).pending.get(
+        "search",
+      ),
+    ).toBe("new");
   });
 
   it("a server used in history and never pinned is pinned whole; one never used keeps waiting", async () => {
     const store = new MemoryToolPinStore();
     const tools = [tool("search"), tool("add")];
+    const calls = history(["wiki_search"]);
     expect(
-      await adoptFromHistory(
-        "wiki",
-        "wiki",
-        tools,
-        store,
-        new Set(["wiki_search"]),
-      ),
+      await adoptFromHistory("wiki", { name: "wiki" }, tools, store, calls),
     ).toBe(true);
     expect((await evaluatePins("wiki", tools, store)).pending.size).toBe(0);
 
     expect(
       await adoptFromHistory(
         "fresh",
-        "fresh",
+        { name: "fresh" },
         [tool("run")],
         store,
-        new Set(["wiki_search"]),
+        calls,
       ),
     ).toBe(false);
     expect(
@@ -215,10 +277,84 @@ describe("upgrade: tools people already use stay approved", () => {
     await approveTools("wiki", [tool("search")], store, "all");
     const tools = [tool("search"), tool("add")];
     expect(
-      await adoptFromHistory("wiki", "wiki", tools, store, new Set(["add"])),
+      await adoptFromHistory(
+        "wiki",
+        { name: "wiki" },
+        tools,
+        store,
+        history(["wiki_add"]),
+      ),
     ).toBe(false);
     expect((await evaluatePins("wiki", tools, store)).pending.get("add")).toBe(
       "added",
     );
+  });
+});
+
+describe("TR24: a trusted server's new and changed tools are pinned on sight", () => {
+  it("only a server named trusted in the person's own file, never one a folder brought", () => {
+    expect(serverAutoApproves({ name: "docs" }, ["docs"])).toBe(true);
+    expect(
+      serverAutoApproves({ name: "docs", configSource: "user" }, ["docs"]),
+    ).toBe(true);
+    expect(
+      serverAutoApproves({ name: "docs", configSource: "workspace" }, ["docs"]),
+    ).toBe(false);
+    expect(serverAutoApproves({ name: "web" }, ["docs"])).toBe(false);
+    expect(serverAutoApproves({ name: "docs" }, undefined)).toBe(false);
+  });
+
+  it("reads the trusted names from permissions.yaml", () => {
+    fs.writeFileSync(
+      path.join(dir, "permissions.yaml"),
+      "mcpServers:\n  docs: trusted\n  web: maybe\n",
+    );
+    expect(trustedServersFromPolicyFile(dir)).toEqual(["docs"]);
+    expect(trustedServersFromPolicyFile(path.join(dir, "none"))).toEqual([]);
+  });
+
+  it("pins the waiting tools of a trusted server, new and changed, and nothing for an untrusted one", async () => {
+    const store = new MemoryToolPinStore();
+    await approveTools("docs", [tool("search")], store, "all");
+    const now = [tool("search", "a new description"), tool("add")];
+    const { pending } = await evaluatePins("docs", now, store);
+    expect(
+      await approveTrustedPending("docs", now, store, pending, false),
+    ).toEqual([]);
+    expect((await evaluatePins("docs", now, store)).pending.size).toBe(2);
+    expect(
+      (await approveTrustedPending("docs", now, store, pending, true)).sort(),
+    ).toEqual(["add", "search"]);
+    expect((await evaluatePins("docs", now, store)).pending.size).toBe(0);
+  });
+
+  it("a trusted server seen for the first time is pinned whole on sight", async () => {
+    const store = new MemoryToolPinStore();
+    const tools = [tool("search"), tool("add")];
+    const { pending } = await evaluatePins("docs", tools, store);
+    expect(
+      (await approveTrustedPending("docs", tools, store, pending, true)).sort(),
+    ).toEqual(["add", "search"]);
+    expect((await evaluatePins("docs", tools, store)).pending.size).toBe(0);
+  });
+
+  it("records the auto-approval in the audit trail and says so", () => {
+    const sink: string[] = [];
+    const printed: string[] = [];
+    announceTrustedApproval("docs", ["add", "search"], sink, (m) =>
+      printed.push(m),
+    );
+    expect(sink[0]).toContain("trusted in your permissions.yaml");
+    expect(printed).toEqual(sink);
+    expect(audit.decision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool: "mcp:docs",
+        policy: "allow",
+        by: "system",
+        source: "mcp-trusted-server",
+      }),
+    );
+    announceTrustedApproval("docs", [], sink, (m) => printed.push(m));
+    expect(audit.decision).toHaveBeenCalledTimes(1);
   });
 });
