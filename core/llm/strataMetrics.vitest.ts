@@ -102,21 +102,27 @@ describe("strataRequestCache", () => {
     const a = await strataRequestCache(
       "http://127.0.0.1:8086/v1/",
       request,
-      fetchFn,
+      fetchFn as unknown as typeof fetch,
     );
     expect(a).toMatchObject({ id: "dd863c712151", reused: 16384 });
-    await strataRequestCache("http://127.0.0.1:8086/v1/", request, fetchFn);
+    await strataRequestCache(
+      "http://127.0.0.1:8086/v1/",
+      request,
+      fetchFn as unknown as typeof fetch,
+    );
     const paths = fetchFn.mock.calls.map(([u]) => new URL(String(u)).pathname);
     expect(paths).toEqual(["/v1/status", "/metrics", "/metrics"]);
   });
 
   it("never asks a cloud address or a server that is not Strata", async () => {
-    const fetchFn = vi.fn(async () => json({ service: "llama.cpp" }));
+    const fetchFn = vi.fn(async (_url: string | URL) =>
+      json({ service: "llama.cpp" }),
+    );
     expect(
       await strataRequestCache(
         "https://api.openai.com/v1/",
         { startedAt: 0 },
-        fetchFn,
+        fetchFn as unknown as typeof fetch,
       ),
     ).toBeUndefined();
     expect(fetchFn).not.toHaveBeenCalled();
@@ -124,7 +130,7 @@ describe("strataRequestCache", () => {
       await strataRequestCache(
         "http://127.0.0.1:8080/v1/",
         { startedAt: 0 },
-        fetchFn,
+        fetchFn as unknown as typeof fetch,
       ),
     ).toBeUndefined();
     expect(
