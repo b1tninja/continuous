@@ -329,7 +329,8 @@ function ContextPanel({
       {breakdown.pruneAtTokens !== undefined && (
         <span className="text-description-muted">
           Past {formatTokens(breakdown.pruneAtTokens)} tokens (the line on the
-          bar) the oldest messages are left out of each request.
+          bar) a block of the oldest messages is left out, all at once, so the
+          turns after it can reuse the prompt cache.
         </span>
       )}
 
