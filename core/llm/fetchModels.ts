@@ -4,6 +4,11 @@ import { networkFetch, networkFetchWith } from "../util/networkFetch.js";
 
 import { LLMClasses, llmFromProviderAndOptions } from "./llms/index.js";
 import { listOpenAICompatibleModels } from "./localServers.js";
+import {
+  modelInfoFetchBlocked,
+  pullOpenRouterCatalog,
+} from "./modelCatalogStore.js";
+import { catalogToFetchedModels } from "./openRouterCatalog.js";
 
 export interface FetchedModel {
   name: string;
@@ -24,6 +29,8 @@ export interface FetchedModel {
   createdAt?: string;
   /** True when the provider reports the model as deprecated or retired. */
   deprecated?: boolean;
+  /** ISO date the provider has scheduled the model's retirement for, when it says. */
+  retiresAt?: string;
 }
 
 const OLLAMA_EXCLUDED_CAPABILITIES = ["vision", "audio", "embedding"];
@@ -143,34 +150,18 @@ async function fetchOllamaModels(
   }
 }
 
+/**
+ * The public OpenRouter list. Downloading it also keeps the dated copy
+ * (`model-catalog/openrouter.json`), so prices are there for later without a
+ * second request.
+ */
 async function fetchOpenRouterModels(
   requestOptions?: RequestOptions,
 ): Promise<FetchedModel[]> {
+  const blocked = modelInfoFetchBlocked();
+  if (blocked) throw new Error(blocked);
   try {
-    const response = await networkFetch(
-      "https://openrouter.ai/api/v1/models",
-      undefined,
-      requestOptions,
-    );
-    if (!response.ok) {
-      throw new Error(`Failed to fetch OpenRouter models: ${response.status}`);
-    }
-
-    const data = await response.json();
-    if (!data.data || !Array.isArray(data.data)) {
-      return [];
-    }
-
-    return data.data
-      .filter((m: any) => m.id && m.name)
-      .map((m: any) => ({
-        name: m.name,
-        modelId: m.id,
-        icon: "openrouter.png",
-        contextLength: m.context_length,
-        maxTokens: m.top_provider?.max_completion_tokens,
-        supportsTools: (m.supported_parameters ?? []).includes("tools"),
-      }));
+    return catalogToFetchedModels(await pullOpenRouterCatalog(requestOptions));
   } catch (error) {
     console.error("Error fetching OpenRouter models:", error);
     return [];
@@ -181,29 +172,61 @@ function withTrailingSlash(url: string): string {
   return url.endsWith("/") ? url : `${url}/`;
 }
 
+/** Pages of 100 models read at most: a bound on a misbehaving gateway. */
+const ANTHROPIC_MAX_PAGES = 10;
+
 async function fetchAnthropicModels(
   apiKey?: string,
   apiBase?: string,
   requestOptions?: RequestOptions,
 ): Promise<FetchedModel[]> {
   const root = withTrailingSlash(apiBase || "https://api.anthropic.com/v1/");
-  const url = new URL("models", root);
-  url.searchParams.set("limit", "100");
-  const response = await networkFetch(
-    url,
-    {
-      headers: {
-        "x-api-key": apiKey ?? "",
-        "anthropic-version": "2023-06-01",
+  const rows: any[] = [];
+  let afterId: string | undefined;
+  for (let page = 0; page < ANTHROPIC_MAX_PAGES; page++) {
+    const url = new URL("models", root);
+    url.searchParams.set("limit", "100");
+    if (afterId) url.searchParams.set("after_id", afterId);
+    const response = await networkFetch(
+      url,
+      {
+        headers: {
+          "x-api-key": apiKey ?? "",
+          "anthropic-version": "2023-06-01",
+        },
       },
-    },
-    requestOptions,
-  );
-  if (!response.ok) {
-    throw new Error(`Failed to fetch Anthropic models: ${response.status}`);
+      requestOptions,
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Anthropic models: ${response.status}`);
+    }
+    const data = await response.json();
+    rows.push(...(data.data ?? []));
+    // `has_more` and `last_id` are the documented cursor: `last_id` is the
+    // `after_id` of the next page.
+    const next: unknown = data.last_id;
+    if (!data.has_more || typeof next !== "string" || next === afterId) break;
+    afterId = next;
   }
-  const data = await response.json();
-  return (data.data ?? []).map((m: any) => ({
+  return rows.map(anthropicModelToFetched);
+}
+
+/**
+ * One entry of Anthropic's `GET /v1/models` (platform.claude.com/docs/en/api/models/list):
+ * `max_input_tokens` and `max_tokens` for the window, `capabilities.image_input`
+ * for images, and `lifecycle` / `retires_at` for retirement. Each is used
+ * only when the answer carries it, so an older API version or a gateway that
+ * strips fields leaves the bundled defaults in place. Effort levels are not
+ * turned into `reasoningEfforts`: those become OpenAI-style
+ * `reasoning_effort` variants, which the Messages API does not take.
+ */
+export function anthropicModelToFetched(m: any): FetchedModel {
+  const imageInput = m.capabilities?.image_input?.supported;
+  const retiresAt =
+    typeof m.retires_at === "string" && !Number.isNaN(Date.parse(m.retires_at))
+      ? m.retires_at
+      : undefined;
+  return {
     name: m.display_name ?? m.id,
     modelId: m.id,
     icon: "anthropic.png",
@@ -213,11 +236,13 @@ async function fetchAnthropicModels(
     ),
     maxTokens: m.max_tokens ?? undefined,
     supportsTools: true,
+    ...(typeof imageInput === "boolean" ? { supportsImages: imageInput } : {}),
     createdAt: m.created_at ?? undefined,
     // `lifecycle` is only returned by newer API versions; leave unset otherwise.
     deprecated:
       typeof m.lifecycle === "string" ? m.lifecycle !== "active" : undefined,
-  }));
+    ...(retiresAt ? { retiresAt } : {}),
+  };
 }
 
 async function fetchGeminiModels(

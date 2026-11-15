@@ -59,6 +59,8 @@ export type ToolPermissionPrompt = (
   toolArgs: any,
   requestId: string,
   preview?: ToolCallPreview[],
+  /** The model's id for the call being asked about, when the caller has one */
+  toolCallId?: string,
 ) => void;
 
 export interface Tool {
@@ -72,6 +74,8 @@ export interface Tool {
   isBuiltIn: boolean;
   /** MCP server this tool belongs to, so floor rules on `mcp__server__*` apply. */
   mcpServer?: string;
+  /** The tool's own name on that server, which the model-facing `name` may qualify */
+  mcpToolName?: string;
   evaluateToolCallPolicy?: (
     basePolicy: ToolPolicy,
     parsedArgs: Record<string, unknown>,

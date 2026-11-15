@@ -204,6 +204,10 @@ describe("constructMessages", () => {
         message: thinkingMessage,
         contextItems: [],
       },
+      {
+        message: { role: "assistant", content: "Answer" },
+        contextItems: [],
+      },
     ];
 
     const { messages } = constructMessages(
@@ -213,10 +217,72 @@ describe("constructMessages", () => {
       {},
     );
 
-    // Should have system message + thinking message
-    expect(messages.length).toBe(2);
+    // Should have system message + thinking message + its answer
+    expect(messages.length).toBe(3);
     expect(messages[1].role).toBe("thinking");
     expect(messages[1].content).toBe("Thinking process...");
+  });
+
+  test("leaves out reasoning from a turn stopped before any answer", () => {
+    // Stop during reasoning keeps [user, assistant "", thinking] on screen;
+    // the next request must not carry a reasoning-only assistant turn
+    mockHistory = [
+      { message: { role: "user", content: "Question" }, contextItems: [] },
+      { message: { role: "assistant", content: "" }, contextItems: [] },
+      {
+        message: { role: "thinking", content: "Half a thought" },
+        contextItems: [],
+        interrupted: "stopped",
+      },
+      { message: { role: "user", content: "Next question" }, contextItems: [] },
+    ];
+
+    const { messages } = constructMessages(
+      mockHistory,
+      "Base System Message",
+      mockRules,
+      {},
+    );
+
+    expect(messages.map((m) => m.role)).toEqual(["system", "user", "user"]);
+  });
+
+  test("keeps reasoning that is followed by tool calls", () => {
+    mockHistory = [
+      { message: { role: "user", content: "Question" }, contextItems: [] },
+      {
+        message: { role: "thinking", content: "I should look" },
+        contextItems: [],
+      },
+      {
+        message: {
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: "call-1",
+              type: "function",
+              function: { name: "read_file", arguments: "{}" },
+            },
+          ],
+        },
+        contextItems: [],
+      },
+    ];
+
+    const { messages } = constructMessages(
+      mockHistory,
+      "Base System Message",
+      mockRules,
+      {},
+    );
+
+    expect(messages.map((m) => m.role)).toEqual([
+      "system",
+      "user",
+      "thinking",
+      "assistant",
+    ]);
   });
 
   test("should inject assistant messages with no changes", () => {

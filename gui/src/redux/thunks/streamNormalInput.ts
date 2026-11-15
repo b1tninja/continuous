@@ -1,17 +1,41 @@
-import { selectCacheSetting } from "../selectors/selectCacheSetting";
 import { createAsyncThunk, unwrapResult } from "@reduxjs/toolkit";
-import { LLMFullCompletionOptions, ModelDescription } from "core";
+import { LLMFullCompletionOptions } from "core";
 import { getRuleId } from "core/llm/rules/getSystemMessageWithRules";
+import { totalInputTokens } from "core/llm/utils/cacheStats";
 import { ToCoreProtocol } from "core/protocol";
 import { renderChatMessage } from "core/util/messageContent";
+import { buildLedgerEntry } from "../../util/cacheLedger";
+import {
+  detectCacheMiss,
+  expectedRebuildCauses,
+  expectedRoute,
+  promptCacheKey,
+} from "../../util/cacheSafeguards";
+import { sentHistoryItems } from "../../util/forkCost";
+import { localCacheWarmMs } from "../../util/localWarmWindow";
+import {
+  INITIAL_PROMPT_CACHE_STATE,
+  modelSupportsOneHourCache,
+  modelSupportsPromptCacheControl,
+  modelUsesLocalPrefixCache,
+  promptCacheStatus,
+  resolvePromptCache,
+} from "../../util/promptCache";
+import { splitPromptProgress } from "../../util/promptProgress";
+import { selectCacheSetting } from "../selectors/selectCacheSetting";
 import { selectSelectedChatModel } from "../slices/configSlice";
 import {
   abortStream,
   addPromptCompletionPair,
-  errorToolCall,
-  setActive,
-  setAppliedRulesAtIndex,
   addRequestUsageToSession,
+  clearContextRemovalUndo,
+  errorToolCall,
+  recordCacheMiss,
+  recordCacheRequest,
+  requestQueuedMessagesSend,
+  setActive,
+  setAnsweredRoute,
+  setAppliedRulesAtIndex,
   setContextPercentage,
   setInactive,
   setInlineErrorMessage,
@@ -19,35 +43,14 @@ import {
   setPromptCacheInputTokens,
   setPromptCacheKey,
   setPromptCacheRequestAt,
-  setAnsweredRoute,
-  setPromptReadSpeed,
-  setPromptProgress,
-  setRecoveryHold,
   setPromptCacheState,
-  recordCacheMiss,
-  recordCacheRequest,
-  requestQueuedMessagesSend,
+  setPromptProgress,
+  setPromptReadSpeed,
+  setRecoveryHold,
+  setSentToolList,
   setToolGenerated,
   streamUpdate,
 } from "../slices/sessionSlice";
-import {
-  resolvePromptCache,
-  INITIAL_PROMPT_CACHE_STATE,
-  modelSupportsOneHourCache,
-  modelSupportsPromptCacheControl,
-  modelUsesLocalPrefixCache,
-  promptCacheStatus,
-} from "../../util/promptCache";
-import { buildLedgerEntry } from "../../util/cacheLedger";
-import { splitPromptProgress } from "../../util/promptProgress";
-import {
-  detectCacheMiss,
-  expectedRebuildCauses,
-  expectedRoute,
-  promptCacheKey,
-} from "../../util/cacheSafeguards";
-import { localCacheWarmMs } from "../../util/localWarmWindow";
-import { totalInputTokens } from "core/llm/utils/cacheStats";
 import { ThunkApiType } from "../store";
 import { buildChatRequest } from "../util/buildChatRequest";
 import { dumpPromptSegments } from "../util/promptSegmentDump";
@@ -55,31 +58,39 @@ import { dumpPromptSegments } from "../util/promptSegmentDump";
 import { mainAuditAgent } from "core/tools/permissions/audit/identity";
 import { interceptSystemToolCalls } from "core/tools/systemMessageTools/interceptSystemToolCalls";
 
-import {
-  selectCurrentToolCalls,
-  selectPendingToolCalls,
-} from "../selectors/selectToolCalls";
 import { localOutputLimit } from "core/llm/outputLimit";
-import { callToolById } from "./callToolById";
-import { cancelStream } from "./cancelStream";
-import { applyLoopHolds, endRunAtTurnLimit } from "./loopHolds";
+import { allowOutsideWorkspaceOf } from "../../util/outsideEdits";
 import {
   selectApprovalSettings,
   selectAutoApproval,
 } from "../selectors/selectAutoApproval";
 import {
+  selectCurrentToolCalls,
+  selectPendingToolCalls,
+} from "../selectors/selectToolCalls";
+import { callToolById } from "./callToolById";
+import { cancelStream } from "./cancelStream";
+import {
   buildReviewHistory,
   evaluateToolPolicies,
 } from "./evaluateToolPolicies";
+import { applyLoopHolds, endRunAtTurnLimit } from "./loopHolds";
+import { checkToolDialectLeak } from "./noteToolDialectLeak";
+import { nudgeLeakedToolCall } from "./nudgeLeakedToolCall";
 import {
   preprocessToolCalls,
   refuseTruncatedToolCalls,
 } from "./preprocessToolCallArgs";
-import { allowOutsideWorkspaceOf } from "../../util/outsideEdits";
 import { refuseRoleCalls } from "./refuseRoleCalls";
-import { checkToolDialectLeak } from "./noteToolDialectLeak";
-import { nudgeLeakedToolCall } from "./nudgeLeakedToolCall";
+import { refuseWithheldCalls } from "./refuseWithheldCalls";
+import { withheldTools } from "../../util/toolListHold";
+import { checkpointSession } from "./session";
 import { streamResponseAfterToolCall } from "./streamResponseAfterToolCall";
+
+/** While an answer streams, it is saved this often (STOR6 checkpoints)... */
+export const CHECKPOINT_EVERY_MS = 3_000;
+/** ...or after this much of it, whichever comes first. */
+export const CHECKPOINT_EVERY_CHARS = 32 * 1024;
 
 export const streamNormalInput = createAsyncThunk<
   void,
@@ -116,8 +127,19 @@ export const streamNormalInput = createAsyncThunk<
       appliedRules,
       appliedRuleIndex,
       systemToolsFramework,
+      toolList,
+      thinkingCut,
     } = buildChatRequest(state);
     dumpPromptSegments(state);
+    // What this request offers: while the cache is warm, the next one offers
+    // the same list and a change to it waits (C80)
+    dispatch(
+      setSentToolList({
+        key: toolList.key,
+        tools: toolList.tools,
+        thinkingCut,
+      }),
+    );
     let completionOptions: LLMFullCompletionOptions = builtOptions;
 
     // Prompt caching: the toolbar choice for this model, or when there is none
@@ -167,6 +189,12 @@ export const streamNormalInput = createAsyncThunk<
       cacheStateBefore.lastKey,
     );
     const cacheKey = cacheKeyFor(routeExpected);
+    // Where this request's prompt (and the cache entry it writes) ends in the
+    // history, so a fork at that point can be priced (forkCost)
+    const historyItems = sentHistoryItems(
+      state.session.history,
+      state.session.loop,
+    );
 
     // TODO parallel tool calls will cause issues with this
     // because there will be multiple tool messages, so which one should have applied rules?
@@ -221,9 +249,17 @@ export const streamNormalInput = createAsyncThunk<
 
     dispatch(setIsPruned(didPrune));
     dispatch(setContextPercentage(contextPercentage));
+    // This request carries what "Choose what to keep" left: from here an
+    // undo would be another edit of the cached conversation
+    if (getState().session.contextRemovalUndo) {
+      dispatch(clearContextRemovalUndo());
+    }
 
     const start = Date.now();
     const streamAborter = state.session.streamAborter;
+    // The reply's stop reason, from the usage on its last chunk: it tells a
+    // tool call cut off at the output limit from one that arrived incomplete
+    let lastStopReason: string | undefined;
     try {
       let gen = extra.ideMessenger.llmStreamChat(
         {
@@ -243,9 +279,16 @@ export const streamNormalInput = createAsyncThunk<
         );
       }
 
+      // The last token counts the API sent, for the chatInteraction record
+      let lastUsage: { promptTokens?: number; completionTokens?: number } = {};
+      let checkpointAt = Date.now();
+      let checkpointChars = 0;
       let next = await gen.next();
       while (!next.done) {
-        if (!getState().session.isStreaming) {
+        // A request that was replaced (Stop, a retry, a new turn) stops here
+        // even when a newer one has set isStreaming again: its chunks would
+        // otherwise land in the newer turn's history, attached to its calls
+        if (!getState().session.isStreaming || streamAborter.signal.aborted) {
           dispatch(abortStream());
           break;
         }
@@ -267,13 +310,32 @@ export const streamNormalInput = createAsyncThunk<
         ) {
           dispatch(setRecoveryHold(false));
         }
-        if (reply.length > 0) dispatch(streamUpdate(reply));
+        if (reply.length > 0) {
+          dispatch(streamUpdate(reply));
+          // The partial answer, saved every few seconds or KB (STOR6)
+          checkpointChars += JSON.stringify(reply).length;
+          if (
+            checkpointChars >= CHECKPOINT_EVERY_CHARS ||
+            Date.now() - checkpointAt >= CHECKPOINT_EVERY_MS
+          ) {
+            checkpointChars = 0;
+            checkpointAt = Date.now();
+            void checkpointSession(getState, extra.ideMessenger);
+          }
+        }
 
         // The final chunk carries the API's token counts. Remember the input
         // size so the cache button can say what throwing the cache away costs,
         // and check that a cache that should have been warm was read.
         for (const message of next.value) {
+          if (
+            message.role === "assistant" &&
+            message.usage?.response?.stopReason
+          ) {
+            lastStopReason = message.usage.response.stopReason;
+          }
           if (message.role === "assistant" && message.usage) {
+            lastUsage = message.usage;
             const key =
               message.route && message.route !== routeExpected
                 ? cacheKeyFor(message.route)
@@ -351,6 +413,7 @@ export const streamNormalInput = createAsyncThunk<
                     usage: message.usage,
                     pruned: didPrune,
                     missCauses,
+                    historyItems,
                   }),
                 ),
               );
@@ -400,6 +463,14 @@ export const streamNormalInput = createAsyncThunk<
               modelName: selectedChatModel.title,
               modelTitle: selectedChatModel.title,
               sessionId: state.session.id,
+              // Core keeps sizes, these counts and a hash locally, not the
+              // texts (STOR4); the debug prompt log, when on, keeps the texts
+              ...(lastUsage.promptTokens !== undefined && {
+                promptTokens: lastUsage.promptTokens,
+              }),
+              ...(lastUsage.completionTokens !== undefined && {
+                completionTokens: lastUsage.completionTokens,
+              }),
               ...(!!activeTools.length && {
                 tools: activeTools.map((tool) => tool.function.name),
               }),
@@ -461,12 +532,14 @@ export const streamNormalInput = createAsyncThunk<
       );
     }
 
-    // A call cut off at the output limit must not run with partial arguments
+    // A call cut off at the output limit must not run with partial arguments;
+    // the stop reason tells a real cut from arguments that arrived incomplete
     refuseTruncatedToolCalls(
       dispatch,
       selectPendingToolCalls(getState()),
       completionOptions.maxTokens ??
         selectedChatModel.completionOptions?.maxTokens,
+      lastStopReason,
     );
 
     // A call to a tool the mode's role may not use is refused, offered or not
@@ -476,6 +549,19 @@ export const streamNormalInput = createAsyncThunk<
       planMcpTools: state1.ui.policyExtras.planMcpTools,
       trustedMcpServers: state1.ui.policyExtras.trustedMcpServers,
     });
+
+    // A tool turned off while the cache was warm is still offered; a call to
+    // it is refused, and says why (C88)
+    await refuseWithheldCalls(
+      dispatch,
+      extra.ideMessenger,
+      selectPendingToolCalls(getState()),
+      withheldTools(toolList, state1.config.config.tools),
+      {
+        sessionId: state1.session.id,
+        agent: mainAuditAgent(state1.session.id, state1.session.mode),
+      },
+    );
 
     // 2. Pre-process args to catch invalid args before checking policies
     const state2 = getState();

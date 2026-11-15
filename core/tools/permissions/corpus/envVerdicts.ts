@@ -7,7 +7,7 @@ import type { VerdictCase } from "./verdicts";
  * command, as in verdicts.ts, and with what the assignment scan must say:
  *
  * - dangerous: the name loads code or changes which program runs; asks at
- *   every level, IDGAF included
+ *   every level below IDGAF (recorded at IDGAF)
  * - sensitive: redirects configuration, credentials, network or temp files;
  *   asks below IDGAF
  * - none: no ask on the assignment (harmless, unknown, or not an assignment)

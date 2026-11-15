@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 
+import { writeFileAtomicSync } from "core/util/atomicWrite.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -32,6 +33,9 @@ vi.mock("../services/index.js", () => ({
 vi.mock("../telemetry/telemetryService.js");
 vi.mock("../telemetry/utils.js");
 vi.mock("./writeFile.js");
+vi.mock("core/util/atomicWrite.js", () => ({
+  writeFileAtomicSync: vi.fn(),
+}));
 vi.mock("fs", async () => {
   const actual = await vi.importActual("fs");
   return {
@@ -54,7 +58,7 @@ describe("editTool", () => {
     // Mock fs functions to simulate file operations
     vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.readFileSync).mockReturnValue(originalContent);
-    vi.mocked(fs.writeFileSync).mockImplementation(() => {});
+    vi.mocked(writeFileAtomicSync).mockImplementation(() => {});
     vi.mocked(fs.realpathSync).mockImplementation((path) => path.toString());
 
     // Setup utility mocks with proper return values
@@ -209,15 +213,14 @@ describe("editTool", () => {
       expect(result).toBe(
         `Successfully edited ${testFilePath}\nDiff:\nmocked diff`,
       );
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect(writeFileAtomicSync).toHaveBeenCalledWith(
         testFilePath,
         newContent,
-        "utf-8",
       );
     });
 
     it("should throw error if file write fails", async () => {
-      vi.mocked(fs.writeFileSync).mockImplementation(() => {
+      vi.mocked(writeFileAtomicSync).mockImplementation(() => {
         throw new Error("Write failed");
       });
 
@@ -365,7 +368,7 @@ describe("editTool outside the working directory by File edits level", () => {
       new_string: "Hi",
     });
     const message = await editTool.run(prepared.args);
-    expect(fs.writeFileSync).toHaveBeenCalled();
+    expect(writeFileAtomicSync).toHaveBeenCalled();
     expect(message).toContain(`Wrote outside the workspace: ${outsidePath}`);
   });
 

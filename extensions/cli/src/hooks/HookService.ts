@@ -7,6 +7,7 @@
 
 import { BaseService } from "../services/BaseService.js";
 import { logger } from "../util/logger.js";
+import { noticeBrokenConfig } from "../util/readPolicyFile.js";
 
 import { loadHooksConfig } from "./hookConfig.js";
 import { runHooks } from "./hookRunner.js";
@@ -48,6 +49,10 @@ export class HookService extends BaseService<HookServiceState> {
     }
 
     const loaded = loadHooksConfig(this.cwd);
+
+    // A settings file that does not parse is a guard that is not running.
+    // Headless runs refused to start before getting here, unless told not to.
+    loaded.broken?.forEach((file) => noticeBrokenConfig(file));
 
     if (loaded.untrustedProject) {
       // stderr, so piped output is not polluted. The model never sees this.
@@ -119,6 +124,7 @@ export class HookService extends BaseService<HookServiceState> {
    */
   async reloadConfig(): Promise<void> {
     const loaded = loadHooksConfig(this.cwd);
+    loaded.broken?.forEach((file) => noticeBrokenConfig(file));
     this.setState({
       config: loaded.hooks,
       disabled: loaded.disabled,

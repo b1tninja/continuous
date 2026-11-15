@@ -225,6 +225,10 @@ export {
 
 // export
 export { AiSdkApi } from "./apis/AiSdk.js";
+export {
+  appliesReasoningEffort,
+  REASONING_EFFORT_NOT_APPLIED,
+} from "./reasoningEffortSupport.js";
 export type { BaseLlmApi } from "./apis/base.js";
 export type {
   AiSdkConfig,
@@ -274,7 +278,11 @@ export type {
 export { isResponsesModel } from "./apis/openaiResponses.js";
 export { OPENROUTER_HEADERS } from "./apis/OpenRouter.js";
 export { extractBase64FromDataUrl, parseDataUrl } from "./util/url.js";
-export { fillMissingToolResults } from "./apis/bedrockHelpers.js";
+export {
+  CONVERSE_LEADING_USER_TEXT,
+  fillMissingToolResults,
+  repairConverseTurns,
+} from "./apis/bedrockHelpers.js";
 export {
   cleanReplyText,
   createThinkingTagSplitter,

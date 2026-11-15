@@ -34,7 +34,9 @@ export const sharedConfigSchema = z
     displayRawMarkdown: z.boolean(),
     showChatScrollbar: z.boolean(),
     continueAfterToolRejection: z.boolean(),
+    sessionLogStorage: z.boolean(),
     nudgeLeakedToolCalls: z.boolean(),
+    keepThinkingExpanded: z.boolean(),
     permissionsIntroDismissed: z.boolean(),
 
     // `tabAutocompleteOptions` in `ContinueConfig`
@@ -163,8 +165,15 @@ export function modifyAnyConfigWithSharedConfig<
       sharedConfig.continueAfterToolRejection;
   }
 
+  if (sharedConfig.sessionLogStorage !== undefined) {
+    configCopy.ui.sessionLogStorage = sharedConfig.sessionLogStorage;
+  }
+
   if (sharedConfig.nudgeLeakedToolCalls !== undefined) {
     configCopy.ui.nudgeLeakedToolCalls = sharedConfig.nudgeLeakedToolCalls;
+  }
+  if (sharedConfig.keepThinkingExpanded !== undefined) {
+    configCopy.ui.keepThinkingExpanded = sharedConfig.keepThinkingExpanded;
   }
 
   if (sharedConfig.permissionsIntroDismissed !== undefined) {

@@ -33,6 +33,7 @@ import {
   ResponseStreamEvent,
   ResponseUsage,
 } from "openai/resources/responses/responses.js";
+import { isOpenAIReasoningModel } from "./reasoningSwitch.js";
 
 const RESPONSES_MODEL_REGEX = /^(?:gpt-5|gpt-5-codex|o[0-9])/i;
 
@@ -417,9 +418,15 @@ export function toResponsesParams(
   } else if (params.tools?.length) {
     responsesParams.parallel_tool_calls = false;
   }
-  if (params.reasoning_effort) {
+  // A reasoning model is asked for its reasoning summaries (as core's
+  // Responses request does), so a client can show them; off (`none`) has
+  // none to give. Summaries cost no extra reasoning.
+  const wantsSummary =
+    isOpenAIReasoningModel(params.model) && params.reasoning_effort !== "none";
+  if (params.reasoning_effort || wantsSummary) {
     responsesParams.reasoning = {
-      effort: params.reasoning_effort,
+      ...(params.reasoning_effort && { effort: params.reasoning_effort }),
+      ...(wantsSummary && { summary: "auto" as const }),
     };
   }
 

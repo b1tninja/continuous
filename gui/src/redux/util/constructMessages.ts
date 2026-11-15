@@ -8,6 +8,7 @@ import {
   ToolResultChatMessage,
   UserChatMessage,
 } from "core";
+import { describeToolCall } from "core/llm/contextBreakdown";
 import { chatMessageIsEmpty } from "core/llm/messages";
 import { getSystemMessageWithRules } from "core/llm/rules/getSystemMessageWithRules";
 import { RulePolicies } from "core/llm/rules/types";
@@ -19,16 +20,78 @@ import {
 } from "core/tools/constants";
 import { convertToolCallStatesToSystemCallsAndOutput } from "core/tools/systemMessageTools/convertSystemTools";
 import { SystemMessageToolsFramework } from "core/tools/systemMessageTools/types";
+import { sendAttachmentsOnce } from "core/util/contextReferences";
+import {
+  maskRemovedToolResults,
+  removedToolResultLabels,
+  removedToolResultStub,
+  withRemovedParts,
+} from "core/util/contextRemoval";
 import { findLast, findLastIndex } from "core/util/findLast";
 import {
   normalizeToMessageParts,
+  renderChatMessage,
   renderContextItems,
   renderContextItemsWithStatus,
 } from "core/util/messageContent";
 import { toolCallStateToContextItems } from "../../pages/gui/ToolCallDiv/utils";
 
+/**
+ * Whether the reasoning at `index` is followed, within its turn (before the
+ * next user or tool item), by an assistant answer: text or tool calls.
+ */
+function hasAnswerAfter(history: ChatHistoryItem[], index: number): boolean {
+  for (let i = index + 1; i < history.length; i++) {
+    const { message } = withoutIncompleteToolCalls(history[i]);
+    if (message.role === "user" || message.role === "tool") return false;
+    if (
+      message.role === "assistant" &&
+      (!!message.toolCalls?.length || !!renderChatMessage(message).trim())
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // Helper function to render context items and append status information
 // Helper function to render context items and append status information
+
+/** A call the model finished naming: it has an id and a tool name. */
+function isCompleteToolCall(
+  call: { id?: string; function?: { name?: string } } | undefined,
+): boolean {
+  return !!call?.id && !!call.function?.name;
+}
+
+/**
+ * The assistant item without tool calls that have no id or no name. A turn
+ * cut off mid-call (a stream that stopped, a window that reloaded) can leave
+ * one. Providers refuse a tool result with an empty id, and Bedrock turned
+ * the call into text ahead of the next real result, which Claude refuses
+ * ("tool_use ids were found without tool_result blocks immediately after").
+ * The call and its result are left out of the request; they stay on screen.
+ */
+export function withoutIncompleteToolCalls(
+  item: ChatHistoryItem,
+): ChatHistoryItem {
+  const message = item.message;
+  const states = item.toolCallStates;
+  const calls = message.role === "assistant" ? message.toolCalls : undefined;
+  const keptStates = states?.filter((s) => isCompleteToolCall(s.toolCall));
+  const keptCalls = calls?.filter((c) => isCompleteToolCall(c));
+  const statesChanged = keptStates?.length !== states?.length;
+  const callsChanged = keptCalls?.length !== calls?.length;
+  if (!statesChanged && !callsChanged) return item;
+  return {
+    ...item,
+    ...(states && { toolCallStates: keptStates }),
+    message:
+      message.role === "assistant" && calls
+        ? { ...message, toolCalls: keptCalls?.length ? keptCalls : undefined }
+        : message,
+  };
+}
 
 /** Starts the conversation summary appended to the system message. */
 export const SUMMARY_MARKER = "\n\nPrevious conversation summary:";
@@ -62,14 +125,28 @@ export function constructMessages(
     }
   }
 
-  const historyCopy = [...filteredHistory];
+  // What the person removed with "Choose what to keep" is sent as stubs
+  // (core/util/contextRemoval.ts); a removed old turn is left out whole.
+  const removedToolResults = removedToolResultLabels(filteredHistory, (state) =>
+    describeToolCall(
+      state.toolCall?.function?.name ?? "tool",
+      state.parsedArgs ?? state.toolCall?.function?.arguments,
+    ),
+  );
+  // A file attached again with the same content is sent once, at its first
+  // attachment; later copies are a one-line stub (contextReferences.ts)
+  const historyCopy = sendAttachmentsOnce(
+    filteredHistory.map(withRemovedParts),
+  );
 
   const msgs: MessageWithContextItems[] = [];
   let appliedRuleIndex = -1;
   let index = -1;
-  for (const item of historyCopy) {
+  for (const original of historyCopy) {
     index++;
+    const item = withoutIncompleteToolCalls(original);
     if (
+      item.removedByUser?.turn ||
       item.message.role === "system" ||
       item.message.role === "tool" ||
       chatMessageIsEmpty(item.message)
@@ -101,6 +178,10 @@ export function constructMessages(
         },
       });
     } else if (item.message.role === "thinking") {
+      // Reasoning from a turn stopped or failed before any answer stays on
+      // screen but is not sent: alone it would be an assistant turn holding
+      // only reasoning, which providers reject or turn into an empty turn
+      if (!hasAnswerAfter(historyCopy, index)) continue;
       msgs.push({
         ctxItems: item.contextItems,
         message: item.message,
@@ -111,7 +192,21 @@ export function constructMessages(
         const { userMessage, assistantMessage } =
           convertToolCallStatesToSystemCallsAndOutput(
             item.message,
-            item.toolCallStates ?? [],
+            (item.toolCallStates ?? []).map((state) => {
+              const label = removedToolResults.get(state.toolCallId);
+              if (label === undefined || !state.output) return state;
+              const chars = renderContextItems(state.output).length;
+              return {
+                ...state,
+                output: [
+                  {
+                    name: "Removed",
+                    description: "",
+                    content: removedToolResultStub(label, chars),
+                  },
+                ],
+              };
+            }),
             useSystemToolsFramework,
           );
         msgs.push({
@@ -236,7 +331,10 @@ export function constructMessages(
     });
   }
 
-  const messages = msgs.map((m) => m.message);
+  const messages = maskRemovedToolResults(
+    msgs.map((m) => m.message),
+    removedToolResults,
+  ).messages;
   return {
     messages,
     appliedRules,

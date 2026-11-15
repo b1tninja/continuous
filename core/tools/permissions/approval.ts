@@ -31,7 +31,7 @@ export interface ApprovalSettings {
   levels: PolicyLevels;
   /** Built-in rules by id; absent means on (see BUILTIN_RULES) */
   builtin?: Partial<Record<BuiltinRuleId, boolean>>;
-  /** Deny rules that bind at every level, IDGAF included */
+  /** Deny rules that bind at every level below IDGAF (IDGAF runs past them and records it) */
   floor?: string[];
 }
 

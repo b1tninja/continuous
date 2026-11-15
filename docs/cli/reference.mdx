@@ -1,0 +1,349 @@
+---
+title: "Command reference"
+---
+
+Every command and flag of the terminal agent, taken from its command definitions in `extensions/cli/src`. `cn` can be written wherever `continuous` is.
+
+```text
+continuous [options] [prompt]
+continuous <command> [options]
+```
+
+With no command, `continuous` starts an interactive session; with `-p` it does a headless run. `continuous --help` and `continuous <command> --help` print the same definitions this page was written from. Where the help text still describes the upstream hub, this page says what the flag does here.
+
+## Session flags
+
+These belong to `continuous` itself, not to a subcommand.
+
+| Flag                     | Meaning                                                                                                                              |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `[prompt]`               | The first message. Piped standard input is placed before it                                                                          |
+| `-p`, `--print`          | Headless run: print the answer and exit. Needs a prompt, piped input, `--prompt`, `--agent` or `--resume`                            |
+| `--format <format>`      | Output format of a headless run. The only value is `json`. Only with `-p`                                                            |
+| `--silent`               | Strip `<think>` blocks and extra whitespace from the output. Only with `-p`                                                          |
+| `--include-reasoning`    | With `-p --format stream-json`: also write each reply's reasoning as a `reasoning` line. See [Headless output](/cli/headless-output) |
+| `--thinking <mode>`      | How the terminal UI shows the model's reasoning: `fold` (the default), `expanded` or `hide`. See [`/thinking`](/cli/slash-commands) |
+| `--resume [sessionId]`   | Continue a session. With an id, that session. Without one, a picker with the newest session of this folder selected; with `-p`, the newest session of this folder, or of any folder with a notice. A value that is not shaped like a session id is read as the prompt. Cannot be combined with `--fork` |
+| `--fork <sessionId>`     | Start a new session from a copy of an existing one: its history, mode, model, task plan and prompt cache record. The plan file, Loop state, checkpoints and usage are not copied |
+| `--trust-project-hooks`  | Run this project's hooks for this run without asking and without recording trust. See [Hooks](/ide-extensions/agent/hooks-trust)     |
+| `--trust-project-config` | Use this project's own configuration files for this run without asking. See [Workspace trust](/customize/workspace-trust)            |
+| `--beta-subagent-tool`   | Offer the beta Subagent tool to the model                                                                                            |
+| `--debug-prompt-log`     | Keep each request's full messages in `~/.continuous/logs/prompts/`: secrets masked, 50 MB in all, deleted after 14 days. Same as `CONTINUOUS_DEBUG_PROMPT_LOG=1`. Off by default |
+| `-v`, `--version`        | Print the version                                                                                                                    |
+| `-h`, `--help`           | Print help                                                                                                                           |
+
+`--trust-project-hooks` and `--trust-project-config` are separate: neither grants the other.
+
+## Common flags
+
+Defined on `continuous` and on `continuous plan build`.
+
+| Flag               | Meaning                                                                                                                                                                                         |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--config <path>`  | Use this `config.yaml` instead of `~/.continuous/config.yaml`. A hub slug (`owner/name`) is refused: `hub assistants are not supported; pass a config.yaml path`                                |
+| `--readonly`       | Start in plan mode: the edit tools are not offered. Cannot be combined with `--auto`                                                                                                            |
+| `--auto`           | Start in auto mode. The help says "all tools allowed"; the level this sets is IDGAF on Context use, Tool use and File edits, and Plan edits is raised to Permissive when it was Manual or Cautious |
+| `--auto-review`    | Experimental. A model with the `reviewer` role decides the calls that your rules leave open. Needs a [reviewer model](/customize/model-roles/reviewer). With `-p`, a call it does not allow is refused |
+| `--policy <spec>`  | Set the level of each area for this run. See [`--policy`](#--policy)                                                                                                                            |
+| `--allow <tool>`   | Allow a tool without asking. Repeatable                                                                                                                                                         |
+| `--ask <tool>`     | Ask before a tool is used. Repeatable                                                                                                                                                           |
+| `--exclude <tool>` | Do not offer a tool to the model at all. Repeatable                                                                                                                                             |
+| `--rule <rule>`    | Add a rule for this run: a file path, or the rule's text. Repeatable                                                                                                                            |
+| `--prompt <prompt>` | Text placed before the first message: a file path, or the text itself. Repeatable                                                                                                              |
+| `--agent <file>`   | Load an agent file. It must be a Markdown file (`.md` or `.markdown`)                                                                                                                           |
+| `--verbose`        | Debug logging. An interactive session prints the log file's path                                                                                                                                |
+
+`--allow`, `--ask` and `--exclude` take a tool name, or a tool name with a pattern in brackets: `--allow "Bash(npm test)"`, `--exclude Write`. The names are the terminal agent's own tool names (`Read`, `List`, `Search`, `Fetch`, `Diff`, `Edit`, `MultiEdit`, `Write`, `Bash`). The same form is used by the `allow`, `ask` and `exclude` lists of [`permissions.yaml`](/reference/permissions-yaml).
+
+Four more flags are defined and have no working use in Continuous. They are listed so that a search for them lands here:
+
+| Flag                 | Status                                                                                                   |
+| -------------------- | -------------------------------------------------------------------------------------------------------- |
+| `--mcp <slug>`       | Takes a hub slug. Continuous has no hub; add MCP servers in `config.yaml`                                |
+| `--model <slug>`     | Takes a hub slug. Continuous has no hub; add models in `config.yaml` and switch with `/model`            |
+| `--org <slug>`       | An organisation of the upstream sign-in, which was removed                                               |
+| `--beta-status-tool` | Nothing reads it                                                                                         |
+
+### `--policy`
+
+```bash
+continuous --policy acceptEdits
+continuous --policy tools=permissive,plan=manual
+continuous -p --policy careful "List the TODO comments in src/"
+```
+
+The value is one of three things:
+
+- **A preset**: `careful`, `acceptEdits`, `handsOff`, `reviewer` or `idgaf`. It sets all five levels.
+- **`area=level` pairs**, separated by commas or spaces, applied on top of the levels already in force. Areas: `context`, `tools`, `edits`, `plan`, `questions`. Levels: `manual`, `cautious`, `automatic`, `permissive`, `idgaf`.
+- **A bare level**, which sets every area to it.
+
+`yolo` is read as `idgaf`, with a one-line note on standard error. A value that is none of these stops the run with an error that lists the valid words.
+
+The flag wins over the levels saved in `permissions.yaml` and is not saved. What each level and preset means is on the [Permissions page](/ide-extensions/agent/permissions-page). `/policy` takes the same value inside a session.
+
+## Run limits
+
+Defined on `continuous` and on `continuous plan build`; `serve` takes them when they are written before the word `serve`. They apply to headless runs and to `serve`. [Run limits](/cli/run-limits) has the semantics.
+
+| Flag                       | Meaning                                                                                         |
+| -------------------------- | ----------------------------------------------------------------------------------------------- |
+| `--max-budget-usd <n>`     | Stop before a model request that would take the run's estimated spend past `n` US dollars       |
+| `--max-turns <n>`          | Stop after `n` model requests                                                                   |
+| `--max-duration <minutes>` | Stop once the run has gone on this many minutes                                                 |
+| `--budget-allow-unpriced`  | Allow `--max-budget-usd` on a model with no price. The dollar cap is then not enforced          |
+
+There is no default: with none of these and no `runLimits` in [`settings.json`](/reference/settings-json), a run is not limited.
+
+## Commands
+
+### `ls`
+
+List recent sessions and pick one to resume.
+
+| Flag     | Meaning                    |
+| -------- | -------------------------- |
+| `--json` | Print the list as JSON     |
+
+### `serve [prompt]`
+
+Start the terminal agent as an HTTP server. `continuous --help` does not list this command; it is defined as hidden. See [cn serve](/guides/cn-serve).
+
+| Flag                         | Default     | Meaning                                                                                                        |
+| ---------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------- |
+| `--port <port>`              | `8000`      | Port to listen on                                                                                              |
+| `--host <host>`              | `127.0.0.1` | Interface to listen on. Anything else listens beyond this computer and requires `--token`                      |
+| `--token <token>`            | none        | Require this bearer token on every request, at least 16 characters. Also read from `CONTINUOUS_SERVE_TOKEN`    |
+| `--allow-origin <origin...>` | none        | A browser origin that may call the server, exactly as written (`http://localhost:3000`)                        |
+| `--timeout <seconds>`        | `300`       | Inactivity timeout                                                                                             |
+
+### `acp`
+
+Run as an Agent Client Protocol agent on standard input and output, for editors that run ACP agents. It has no flags of its own. See [continuous acp](/guides/acp).
+
+### `review`
+
+Run reviews on your changes.
+
+| Flag                          | Meaning                                              |
+| ----------------------------- | ---------------------------------------------------- |
+| `--base <ref>`                | Git ref to diff against. Default: detected           |
+| `--format <format>`           | Output format                                        |
+| `--fix`                       | Apply suggested fixes                                |
+| `--patch`                     | Show patches                                         |
+| `--fail-fast`                 | Stop at the first failure                            |
+| `--review-agents <agents...>` | Run only these review agents                         |
+| `--verbose`                   | Debug logging                                        |
+
+### `plan list` and `plan build <name>`
+
+Work with the plan files Plan mode writes to `.continuous/plans`. See [Plan files](/ide-extensions/agent/plan-files).
+
+`plan list` prints each plan's status, to-dos done and total, modified time and path. It takes `--json`.
+
+`plan build <name>` runs the agent on a plan, from its first unchecked to-do. `<name>` is a plan's name or a path inside `.continuous/plans`. It takes the [common flags](#common-flags), the [run limits](#run-limits) and:
+
+| Flag            | Meaning                                              |
+| --------------- | ---------------------------------------------------- |
+| `-p`, `--print` | Headless: run to the end without an interface        |
+| `--force`       | Build a draft plan that still has open decisions     |
+
+`plan build` is not Loop mode. It is the ordinary agent with the plan as its task; see [Loop mode](/ide-extensions/agent/loop-mode#in-the-terminal-agent).
+
+### `permissions [action] [args...]`
+
+List every permission rule with its source and state, try a call against them, and edit your own rules. Actions: `list`, `test <tool> <arg...>`, `add <never|ask|always> <rule>`, `remove <rule>`, `adopt <rule> --from <file>`. The [Permissions page](/ide-extensions/agent/permissions-page) describes them.
+
+| Flag                     | Used by              | Meaning                                                        |
+| ------------------------ | -------------------- | -------------------------------------------------------------- |
+| `--json`                 | all                  | Machine-readable output                                        |
+| `--area <area>`          | `list`               | Only `context`, `tools`, `edits`, `plan` or `questions`        |
+| `--mode <mode>`          | `test`               | `agent`, `plan` or `chat`                                      |
+| `--level <area=level>`   | `test`               | Use this level for an area. Repeatable                         |
+| `--output <text>`        | `test`               | Text a tool returned, to check the notice                      |
+| `--decision <list>`      | `remove`, `adopt`    | `never`, `ask` or `always`                                     |
+| `--from <file>`          | `adopt`              | The workspace or assistant file the rule is in                 |
+| `--yes`                  | `remove`             | Confirm removing a Never rule or loosening a rule              |
+| `--yes-allow-everything` | `add`, `adopt`       | Confirm a rule that allows everything or a broad wildcard      |
+| `--dry-run`              | `add`, `remove`, `adopt` | Show the change and write nothing                          |
+| `--probe <text>`         | `add`, `adopt`       | A sample call, to show what the rule changes                   |
+
+### `audit [action] [session]`
+
+Read the audit trail of tool call decisions. Actions: `list`, `show <session>`, `inbox`, `suggest`, `shadow`, `prune`. See [Audit trail](/ide-extensions/agent/audit-trail).
+
+| Flag                 | Used by   | Meaning                                                  |
+| -------------------- | --------- | -------------------------------------------------------- |
+| `--json`             | all       | Machine-readable output                                  |
+| `--session <id>`     | filters   | Only this session                                        |
+| `--decision <d>`     | filters   | `allow`, `ask`, `deny` or `reviewer`                     |
+| `--tool <name>`      | filters   | Only this tool                                           |
+| `--agent <who>`      | filters   | Only this agent (role, id or kind)                       |
+| `--since <date>`     | filters   | From this date, inclusive                                |
+| `--until <date>`     | filters   | Up to this date, inclusive                               |
+| `--limit <n>`        | filters   | Only the last `n` calls (`shadow`: disagreements shown)  |
+| `--model <name>`     | `shadow`  | Only this reviewer model                                 |
+| `--days <n>`         | `prune`   | Delete files older than this many days                   |
+| `--dry-run`          | `prune`   | Say what would be deleted                                |
+| `--min <n>`          | `suggest` | Answers needed before a rule is suggested                |
+| `--max-age-days <n>` | `suggest` | Read at most this many days back                         |
+| `--max-mb <n>`       | `suggest` | Read at most this many megabytes                         |
+| `--max-rows <n>`     | `suggest` | Read at most this many records                           |
+| `--verbose`          | `suggest` | Also say what was not suggested, and why                 |
+
+### `project [action]`
+
+Show, trust or revoke this project's own Continuous configuration. Actions: `list`, `trust`, `revoke`. See [Workspace trust](/customize/workspace-trust).
+
+| Flag          | Meaning                               |
+| ------------- | ------------------------------------- |
+| `-y`, `--yes` | Trust without asking, for scripts     |
+
+### `hooks [action]`
+
+Show, trust or revoke this project's hooks. Actions: `list`, `trust`, `revoke`. See [Hooks](/ide-extensions/agent/hooks-trust).
+
+| Flag          | Meaning                               |
+| ------------- | ------------------------------------- |
+| `-y`, `--yes` | Trust without asking, for scripts     |
+
+### `doctor network [url...]`
+
+Diagnose proxy and certificate problems. It prints the proxy and CA settings the terminal agent would use, with credentials masked, then requests each URL the way the terminal agent does and prints the certificate chain it was given. With no URL it prints the settings only. `network` is the only topic. It exits 0 when every URL answered and 1 otherwise.
+
+```bash
+continuous doctor network https://api.anthropic.com
+```
+
+### `test-connection`
+
+Check a model endpoint: the models it lists and, with `--model`, how one model answers a tool call. For Anthropic it also says whether the model is deprecated or retiring.
+
+| Flag                   | Meaning                                                                                              |
+| ---------------------- | ---------------------------------------------------------------------------------------------------- |
+| `--provider <name>`    | Required. `openai`, `anthropic`, `ollama`, `llama.cpp` and others                                    |
+| `--api-base <url>`     | API base URL. Default: the provider's                                                                |
+| `--api-key-env <name>` | The environment variable that holds the API key. For `anthropic` the default is `ANTHROPIC_API_KEY`  |
+| `--model <id>`         | Also send one tool-call probe to this model                                                          |
+| `--json`               | Machine-readable output                                                                              |
+| `--no-record`          | Do not write the result to the local facts file                                                      |
+
+It exits 0 when connected, 1 when the test failed and 2 on bad arguments.
+
+### `secrets scan [paths...]`
+
+Scan files for secrets before they are committed or leave the machine. Values are never printed. See [Secret scanning](/ide-extensions/agent/secret-scanning).
+
+| Flag                    | Meaning                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------ |
+| `--profile <p>`         | `at-rest` (the default) or `outbound`                                                |
+| `--json`                | Machine-readable output                                                              |
+| `--staged`              | Also scan the files staged in git                                                    |
+| `--salt <s>`            | Fingerprint salt, to keep fingerprints comparable                                    |
+| `--allow <fp>`          | A fingerprint to treat as not a secret. Repeatable                                   |
+| `--no-known`            | Do not match this machine's own secret values                                        |
+| `--history`             | Scan this product's own stores (sessions, `dev_data`, logs) for secrets already on disk |
+| `--include-claude-code` | With `--history`: also read `~/.claude/projects` transcripts, read-only              |
+
+It exits 0 with no findings, 3 with findings and 2 on a usage error.
+
+### `clean`
+
+Delete this product's own sessions, `dev_data` and logs older than an age. It is a dry run unless `--yes` is given, and it never runs by itself. `input_history.json` is not touched.
+
+| Flag                 | Meaning                                                                                         |
+| -------------------- | ----------------------------------------------------------------------------------------------- |
+| `--older-than <age>` | One age for every store: `30d`, `12h`, `2w`. Default: sessions 30 days, logs 14, `dev_data` 90  |
+| `--dry-run`          | List only. This is the default                                                                  |
+| `--yes`              | Delete                                                                                          |
+| `--json`             | Machine-readable output                                                                         |
+
+### `sessions clean`
+
+Remove the full prompts earlier releases kept in saved sessions, stored outputs a chat saved as a log no longer refers to, full prompts and old lines from `dev_data`, and old logs. It is a dry run unless `--yes` is given, and it never runs by itself. Originals are kept in `cleanup-backups/<date>/`; sessions open in a window or agent are left alone. See [Clean up old sessions](/reference/storage-and-reset#clean-up-old-sessions).
+
+| Flag                                | Meaning                                                                      |
+| ----------------------------------- | ---------------------------------------------------------------------------- |
+| `--dry-run`                         | Report only. This is the default                                             |
+| `--yes`                             | Clean up                                                                     |
+| `--json`                            | Machine-readable output                                                      |
+| `--no-dev-data`                     | Leave `dev_data` alone                                                       |
+| `--no-logs`                         | Leave `logs` alone                                                           |
+| `--dev-data-days <age>`             | Dev data lines older than this go. Default `90d`                             |
+| `--logs-days <age>`                 | Log files older than this go. Default `14d`                                  |
+| `--delete-backups-older-than <age>` | With `--yes`, also delete backup folders older than this. Default: keep them |
+
+### `reviewer eval`
+
+Score a reviewer model and its guidance over a labelled set of tool calls. Nothing is sent unless `--run` is given. See [Reviewer](/customize/model-roles/reviewer).
+
+| Flag                      | Default    | Meaning                                                                            |
+| ------------------------- | ---------- | ---------------------------------------------------------------------------------- |
+| `--dataset <file>`        |            | Labelled cases, JSON or YAML                                                       |
+| `--reviewer <model-role>` | `reviewer` | Reviewer model name or role                                                        |
+| `--guidance <file>`       |            | Guidance to try: JSON, YAML or text                                                |
+| `--compare <file>`        |            | Baseline guidance file, or `default` for the built-in prompt                       |
+| `--profile <id>`          |            | Reviewer profile id, carried into the report                                       |
+| `--prompt <variant>`      |            | Reviewer prompt for the candidate: `default` or `v3`                               |
+| `--run`                   | off        | Call the model                                                                     |
+| `--no-prefilter`          |            | Leave out the check for text addressed to the reviewer, to measure the model alone |
+| `--json`                  |            | Machine-readable output                                                            |
+| `--concurrency <n>`       | `4`        | Parallel requests                                                                  |
+| `--timeout-ms <n>`        | `30000`    | Per-request timeout                                                                |
+| `--config <path>`         |            | Config file that defines the reviewer model                                        |
+| `--repeat <k>`            | `1`        | Ask each case `k` times                                                            |
+| `--max-tokens <n>`        |            | Reply ceiling: 1024 if the model reasons, else 300                                 |
+| `--outcomes <file>`       |            | Write every case's outcome as JSONL                                                |
+
+### `terminal-env show`
+
+Show whether commands inherit your environment variables and secrets. See [Terminal environment](/ide-extensions/agent/terminal-environment).
+
+### `sandbox status`
+
+Show whether the `srt` sandbox runtime could run here and the policy it would get. This is a status probe: nothing is sandboxed.
+
+| Flag                  | Meaning                                         |
+| --------------------- | ----------------------------------------------- |
+| `--json`              | Machine-readable output                         |
+| `--model-host <host>` | The model host the network allowlist names      |
+| `--workspace <dir>`   | The workspace the policy preview is for         |
+
+### `agents list`
+
+List the agents of a running `continuous serve`.
+
+| Flag              | Meaning                                                                |
+| ----------------- | ---------------------------------------------------------------------- |
+| `--json`          | Machine-readable output                                                |
+| `--url <url>`     | The server's address. Default: `http://127.0.0.1:8000`                 |
+| `--token <token>` | The server's bearer token. Also read from `CONTINUOUS_SERVE_TOKEN`     |
+
+### `dismiss-notice <model>`
+
+Hide the deprecation or retirement notice shown at start-up for an Anthropic model.
+
+## Flags before a subcommand
+
+`serve` and `acp` do not define the common flags themselves. They pick up these when written before the subcommand's name, as in `continuous --config ./ci.yaml --max-turns 40 serve`:
+
+`--config`, `--org`, `--readonly`, `--auto`, `--auto-review`, `--verbose`, `--rule`, `--mcp`, `--model`, `--prompt`, `--allow`, `--ask`, `--exclude`, `--agent`, `--beta-subagent-tool`, `--trust-project-config`, `--max-budget-usd`, `--max-turns`, `--max-duration`, `--budget-allow-unpriced`.
+
+## Exit codes
+
+| Code | Meaning                                                                                                                       |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 0    | Success                                                                                                                       |
+| 1    | Error: a failed run, an invalid combination of flags, an unknown command, or a check that did not pass (`doctor`, `test-connection`) |
+| 2    | Usage error in a subcommand (`audit`, `clean`, `plan build`, `secrets`, `test-connection`), or `permissions` asking for `--yes` |
+| 3    | `secrets scan` found something                                                                                                |
+| 20   | A run stopped at `--max-budget-usd`                                                                                           |
+| 21   | A run stopped at `--max-turns`                                                                                                |
+| 22   | A run stopped at `--max-duration`                                                                                             |
+| 130  | Interrupted with Ctrl+C outside the interactive interface                                                                     |
+
+## Related
+
+- [Slash commands](/cli/slash-commands)
+- [Environment variables](/reference/environment-variables)
+- [`settings.json`](/reference/settings-json)

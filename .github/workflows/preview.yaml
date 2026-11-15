@@ -88,6 +88,8 @@ jobs:
           npm_config_arch: ${{ matrix.npm_config_arch }}
           pre-release: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Release build: nothing restored from a cache may reach a shipped artefact (docs/ci-caching.md).
+          cache: "false"
 
       - name: Upload .vsix artifact
         uses: actions/upload-artifact@v7

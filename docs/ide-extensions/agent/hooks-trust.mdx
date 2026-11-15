@@ -10,6 +10,20 @@ Trust is recorded in `trusted-hooks.json` in the global config folder, with a fi
 
 When a command runs a script inside the workspace, the fingerprint also includes the content of that script, so editing `scripts/pre.sh` after you trusted `./scripts/pre.sh` asks again. The script is looked for in the program and the first few words after it, in each part of a `&&`, `||`, `;` or `|` chain: `./x.sh`, `bash x.sh`, `node x.js`, `python x.py`, `pwsh -File x.ps1`, `npx tsx x.ts`, with `$CLAUDE_PROJECT_DIR` expanded. `continuous hooks` lists the script files it found. This is best effort: files that a script imports or sources, scripts outside the workspace and paths built at run time are not covered.
 
+## Seeing what runs
+
+`continuous hooks` (or `continuous hooks list`) shows two things: your own hooks, each under the settings file it comes from (`~/.claude/settings.json` or the `settings.json` in the Continuous folder), and this project's hooks with whether they are trusted. Your own hooks always run. A file of yours that cannot be read as a JSON object is named, without quoting it, because none of its hooks run.
+
+## Trying a hook
+
+```text
+continuous hooks test <event> [--tool <name>] [--server <name>] [--input '<json>']
+```
+
+builds a sample input for the event (`PreToolUse` with the tool `Bash` and the command `echo hello` unless you say otherwise), finds the hook groups that match it and runs their hooks, so you can see them work before a session depends on them. No tool is run. For each group it prints whether the matcher matched, and for each hook that ran: whether it is yours or the project's, the exit code, the first line of stderr, how long it took, and its decision (block with the reason, `allow`, `ask`, or none), plus any rewritten input or added context. `--tool` and `--server` set the tool for a tool event (a `--server` lets a `mcp__<server>__<tool>` matcher match). `--input` is a JSON object merged over the sample, for example `--input '{"tool_input":{"command":"rm -rf /"}}'`; it cannot change the event name.
+
+The hooks really run, so a command hook executes (an `http` hook sends the sample input) and may have side effects. The trust rules are the same as in a session: this project's hooks run only when they are trusted (or with `--trust-project-hooks`), and when they are not, the output says how many were held back and runs nothing from them. A project hook is masked and its `allow` is ignored, as in a session. A `prompt` or `agent` hook shows as failed, because those types are not supported yet.
+
 ## A project hook cannot approve a call
 
 A hook from a project settings file can block a call or ask you to confirm it, but an `allow` answer from it is ignored (a notice is logged). Only hooks in your own settings can turn a call the CLI would ask about into an allowed one. Deny rules, always-on rules and protected paths apply after any hook either way. If you relied on a project hook to skip questions, move that hook to your own settings.
@@ -17,6 +31,17 @@ A hook from a project settings file can block a call or ask you to confirm it, b
 ## Only your own hooks
 
 Set `"managedHooksOnly": true` in your own settings (`~/.claude/settings.json` or `~/.continuous/settings.json`) and hooks that come with a repository are not read at all: not offered for trust, not run with `--trust-project-hooks`, and a `disableAllHooks` in a project file cannot switch off yours. Only a value of `true` in one of your own files counts; a project file cannot set it. `continuous hooks` says when this is in force. A path that only an administrator can write is not supported yet.
+
+## A settings file that does not parse
+
+A hook settings file that exists but is not valid JSON (a trailing comma is the usual cause) used to be skipped, and your hooks silently did not run. Now:
+
+- **`cn -p` and `cn serve`** refuse to start and exit with code 2. The message names each broken file and the line and column of the first error, never the file's contents. Fix the file, or pass `--ignore-broken-config` to continue with it ignored (a warning is still printed once).
+- **The interactive terminal agent** starts, and prints a WARNING block with the file and the error position. The hooks in that file do not apply until you fix it.
+- A broken file in the project is reported the same way, and does not stop your own hooks from loading.
+- A file that is simply absent is not an error and prints nothing.
+
+A `matcher` that is not a valid regular expression no longer switches its hook off: the hook runs on every event of that kind, and one warning per session names the matcher.
 
 ## When a hook fails
 
@@ -44,7 +69,17 @@ If a hook sets both, the stricter one applies, and a value that is not understoo
 
 `transcript_path` is empty: there is no transcript file. Some things are logged and not obeyed yet: a `Stop` hook that asks the assistant to continue, a `PreCompact` hook that blocks, and context from `SessionStart` (it is not added to the conversation). A `PermissionRequest` hook can deny a call but its `allow` does not skip the question, because the question may be one a rule insisted on. `SessionEnd` does not run on a signal or a crash.
 
-Not covered yet: the `args` form that runs a command without a shell, an `if` filter, `prompt_id`, `agent_id` and the other optional input fields, and hooks in the IDE extensions. Hooks are a guardrail, not a boundary: the search and glob tools and MCP tools do not call tool hooks.
+Not covered yet: the `args` form that runs a command without a shell, an `if` filter, `prompt_id`, `agent_id` and the other optional input fields, and hooks in the IDE extensions. Hooks are a guardrail, not a boundary. Every tool call in the terminal agent, MCP tools and the search and list tools included, fires `PreToolUse` and `PostToolUse`; hooks do not exist in the IDE extensions.
+
+## Matching a tool, and MCP tools
+
+A hook's `matcher` is a regular expression tested against `tool_name` (not anchored: `Edit` also matches `MultiEdit`; write `^Edit$` for an exact name). An empty matcher or `*` matches every call. This is how it works today and it differs from Claude Code, which treats a plain name or a `|` list as an exact match.
+
+An MCP tool fires its hooks under the tool's own name as the server reports it (`tool_name`, unchanged), and the input has one more field, `server`, the name of the MCP server. Two servers that both expose a tool called `search` are told apart by `server`. A built-in tool has no `server` field.
+
+An MCP tool can also be matched by the qualified name `mcp__<server>__<tool>`, the form Claude Code and the permission rules use (the server name is lower-cased and made safe for a name, the same way as in permission rules). A matcher that contains `mcp__` is tested against that name as well as the raw one, so `mcp__github__.*` guards every tool of the `github` server and `mcp__github__search` only its `search`. The qualified name is an extra match: a matcher that does not contain `mcp__` is tested only against the raw name, exactly as before, so a matcher for a built-in tool never starts to match an MCP server's tools.
+
+`PreToolUse`, `PostToolUse`, `PostToolUseFailure` and `PermissionRequest` carry `server` for MCP tools.
 
 ## What a hook is sent
 

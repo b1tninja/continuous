@@ -84,6 +84,17 @@ export const streamThunkWrapper = createAsyncThunk<
         dispatch(setDialogMessage(<StreamErrorDialog error={e} />));
         dispatch(setShowDialog(true));
 
+        // A failed turn is saved too, so the request and whatever was
+        // answered before the failure are on disk for Resume. Cheap now that
+        // a session file holds no prompts (core/util/promptLogs).
+        if (!getState().session.isInEdit) {
+          await dispatch(
+            saveCurrentSession({
+              openNewSession: false,
+              generateTitle: false,
+            }),
+          );
+        }
         return;
       }
     }

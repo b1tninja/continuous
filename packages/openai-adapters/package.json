@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "test": "vitest",
+    "test:perf": "vitest run --tags-filter=perf",
     "build": "tsc"
   },
   "author": "Nate Sesti and Ty Dunn",
@@ -27,7 +28,7 @@
     "@continuedev/llm-info": "file:../llm-info",
     "@google/genai": "^3.0.0",
     "@smithy/node-http-handler": "^4.14.1",
-    "ai": "^6.0.86",
+    "ai": "^7.0.166",
     "dotenv": "^18.0.9",
     "google-auth-library": "^11.3.3",
     "json-schema": "^0.4.0",

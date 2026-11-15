@@ -12,6 +12,7 @@ import { TextResourceContents } from "@modelcontextprotocol/sdk/types.js";
 import Parser from "web-tree-sitter";
 import { CodebaseIndexer } from "./indexing/CodebaseIndexer";
 import { LLMConfigurationStatuses } from "./llm/constants";
+import type { PriceSource } from "./llm/utils/calculateRequestCost";
 import type {
   SubagentRunStatus,
   SubagentToolCallSummary,
@@ -303,6 +304,21 @@ export interface ModelUsage {
   cost: number;
   /** How many of `requests` could be priced. Fewer than `requests` means `cost` is partial. */
   pricedRequests: number;
+  /**
+   * Set when some of `cost` came from a downloaded price list: where it came
+   * from and the date of the oldest list used. The figure is an estimate.
+   */
+  priceEstimate?: { source: string; fetchedAt: string };
+  /**
+   * Where the latest priced request's prices came from and as of when, for
+   * the "price source and date" line next to the cost.
+   */
+  priceSource?: PriceSource;
+  /**
+   * The latest non-standard service tier a provider reported serving
+   * (`flex`, `priority`, ...). The cost is then the standard-tier price.
+   */
+  servedTier?: string;
 }
 
 export interface SessionUsage extends Usage {
@@ -343,6 +359,32 @@ export interface SessionPromptCache {
   escalated?: boolean;
   escalatedBy?: "gap" | "requests";
 }
+
+/**
+ * What the webview sends instead of the whole session (`history/saveDelta`,
+ * STOR6): the history items and session fields changed since its last save.
+ */
+export interface SessionDelta {
+  sessionId: string;
+  /** The revision the webview's last save was answered with. */
+  baseRev: string;
+  /** The history's length now; shorter than before means items were cut. */
+  length: number;
+  /** New or changed items. Every index from the old length on must be here. */
+  items: { index: number; item: ChatHistoryItem }[];
+  /** Changed session fields; title and workspace are always sent. */
+  meta: Partial<Omit<Session, "history" | "sessionId">>;
+  /** Session fields that were removed. */
+  unset?: string[];
+}
+
+/**
+ * A save's answer. `rev` is what the next delta is sent against; null when
+ * deltas cannot be used (the session log is off). `needFull` asks for the
+ * whole session (`history/save`).
+ */
+export type SessionSaveResult =
+  { rev: string | null; needFull?: false } | { rev: null; needFull: true };
 
 export interface Session {
   sessionId: string;
@@ -390,6 +432,11 @@ export interface Session {
    * stay Plan and Agent; a plan presented while it is set starts the loop.
    */
   loopRequested?: boolean;
+  /**
+   * Optional: the session this one was forked from, and the last history item
+   * the fork kept (absent when it kept all of them). See core/util/forkSession.ts.
+   */
+  forkedFrom?: { sessionId: string; index?: number };
 }
 
 /** Where one plan item is in Loop mode. The task list shows it too. */
@@ -514,6 +561,24 @@ export interface LoopItemState {
    * LOOP_MAX_REPAIRS_PER_ITEM). To-dos a repair splits it into inherit it.
    */
   repairs?: number;
+  /**
+   * The round whose accepted re-plan added this to-do, for the R chip in the
+   * plan tree. Missing on the to-dos the loop started with and on loops saved
+   * before this field: they show no chip.
+   */
+  addedInRound?: number;
+}
+
+/** A to-do an accepted re-plan took out of the plan (LoopState.replacedItems) */
+export interface LoopReplacedItem {
+  /** The id the to-do had */
+  id: string;
+  /** Its text, when the loop could tell which plan text it had */
+  text?: string;
+  /** The round of the re-plan that took it out */
+  round: number;
+  /** The to-do that took its place; only for a repair that left exactly one */
+  replacedBy?: string;
 }
 
 /**
@@ -884,10 +949,24 @@ export interface LoopState {
   noProgressRounds: number;
   /** Items in a row that ended failed; reset by one that is done */
   consecutiveFailures?: number;
-  /** When every open item started waiting on the person (status waiting) */
+  /**
+   * When the loop started waiting on the person: every open item waits
+   * (status waiting) or a re-plan's card does (status awaiting_plan)
+   */
   waitingSince?: string;
+  /**
+   * Milliseconds the loop spent waiting on the person since `startedAt`,
+   * without the wait in progress. The time budget does not count them
+   * (loopElapsedMs). Absent in loops saved before it existed: 0.
+   */
+  waitedMs?: number;
   /** Why the last re-plan did or did not start the next round by itself */
   replanReason?: string;
+  /**
+   * To-dos accepted re-plans took out of the plan, oldest first, the last 20.
+   * Missing on loops saved before this field: the plan tree shows none.
+   */
+  replacedItems?: LoopReplacedItem[];
   /** What the loop decided for the person by their policy, oldest first (capped) */
   autoDecisions?: LoopAutoDecision[];
   /** Tool calls the person allowed from an approval question (grantKey) */
@@ -918,6 +997,15 @@ export interface LoopState {
   stopReason?: LoopStopReason;
   /** One line for the person: what stopped it */
   stopDetail?: string;
+  /** Set beside stopDetail when a budget stopped the loop: which, and how much */
+  stopBudget?: LoopStopBudget;
+}
+
+/** Which loop budget stopped it. Tokens are counted, time is milliseconds. */
+export interface LoopStopBudget {
+  kind: "tokens" | "time";
+  used: number;
+  max: number;
 }
 
 /** A message queued in the chat input; `editorState` is the editor's JSON. */
@@ -1012,7 +1100,18 @@ export interface BaseSessionMetadata {
   dateCreated: string;
   workspaceDirectory: string;
   messageCount?: number;
+  /**
+   * Bytes the session takes on disk when it was last saved (STOR8): the
+   * `.json` file, or for a log session the `.jsonl` plus the blobs it
+   * refers to.
+   */
+  fileBytes?: number;
+  /** How the session is stored; absent for entries saved before 2.22.0. */
+  storage?: SessionStorage;
 }
+
+/** `json`: one `<id>.json` rewritten whole; `log`: an append-only `<id>.jsonl` with blobs. */
+export type SessionStorage = "json" | "log";
 
 export interface RangeInFile {
   filepath: string;
@@ -1141,6 +1240,12 @@ export interface Usage {
     latencyMs?: number;
     /** An ID that identifies this call in the provider's logs and billing. */
     requestId?: string;
+    /**
+     * The service tier that served the request, as the provider names it
+     * (Bedrock `serviceTier.type`: `default`, `priority`, `flex`,
+     * `reserved`). Prices in the tables are standard-tier prices.
+     */
+    serviceTier?: string;
   };
   promptTokensDetails?: {
     cachedTokens?: number;
@@ -1242,6 +1347,20 @@ export interface ContextItem {
   uri?: ContextItemUri;
   hidden?: boolean;
   status?: string;
+  /**
+   * A command's output in numbers, for the meter beside it, and where its
+   * full output is (run_terminal_command; commandOutputBuffer.ts).
+   */
+  commandOutput?: {
+    id?: string;
+    bytes: number;
+    lines: number;
+    bytesPerSecond: number;
+    runaway?: string;
+    outputPath?: string;
+    /** The same file as a file:// URI, for the editor to open. */
+    outputUri?: string;
+  };
 }
 
 export interface ContextItemWithId extends ContextItem {
@@ -1346,6 +1465,18 @@ export interface SubagentRunState {
   error?: string;
   /** Notes for the person (a model fallback, a tool it could not have). */
   notices?: string[];
+  /**
+   * Messages to the run: the person's, sent from its record in the agents
+   * panel, and another subagent's (send_message), named by `from`. Delivered
+   * into its conversation, or not (the run ended first).
+   */
+  messages?: {
+    text: string;
+    at: number;
+    delivered: boolean;
+    /** The sending subagent's name; absent for the person */
+    from?: string;
+  }[];
   /** A call of the subagent's waiting for the person's approval. */
   pendingApproval?: {
     id: string;
@@ -1367,6 +1498,30 @@ interface Reasoning {
   text: string;
   startAt: number;
   endAt?: number;
+  /**
+   * What the provider needs back to continue from this reasoning (the CLI
+   * keeps Claude's signed and redacted thinking here, as `reasoning_details`
+   * entries). Absent when there is nothing to send back.
+   */
+  details?: Record<string, unknown>[];
+}
+
+/**
+ * How a turn ended early: Stop, a request that failed for good, or a window
+ * that closed or reloaded while it ran.
+ */
+export type TurnInterruption = "stopped" | "failed" | "reloaded";
+
+/** What "Choose what to keep" took out of one history item. */
+export interface RemovedByUser {
+  /** The whole item is left out: part of an old turn removed from the start. */
+  turn?: boolean;
+  /** Tool calls of this assistant item whose results are sent as a stub. */
+  toolResults?: string[];
+  /** Indexes into `contextItems` sent as a stub. */
+  contextItems?: number[];
+  /** Indexes of image parts of the message sent as a stub. */
+  images?: number[];
 }
 
 export interface ChatHistoryItem {
@@ -1380,6 +1535,18 @@ export interface ChatHistoryItem {
   reasoning?: Reasoning;
   appliedRules?: RuleMetadata[];
   conversationSummary?: string;
+  /**
+   * Set on the last item kept from a turn that the person stopped or that
+   * failed, or that a reload cut off. The chat offers Resume for it.
+   */
+  interrupted?: TurnInterruption;
+  /**
+   * Parts of this item the person took out of the context with "Choose what
+   * to keep" (gui SelectiveCompactDialog). Nothing is deleted: the request
+   * sends a one-line stub in their place (core/util/contextRemoval.ts), and
+   * the originals stay in the session.
+   */
+  removedByUser?: RemovedByUser;
   /**
    * Request-time only, never saved: a prompt cache point goes right after this
    * item (a fork point, such as a Loop item's first message), so a retry, a
@@ -1683,6 +1850,8 @@ export interface IdeSettings {
   userToken: string;
   continueTestEnvironment: "none" | "production" | "staging" | "local";
   pauseCodebaseIndexOnStart: boolean;
+  /** Keep each request's full prompt in the size-capped debug prompt log. Off by default. */
+  debugPromptLog?: boolean;
 }
 
 export interface FileStats {
@@ -2018,6 +2187,11 @@ export interface ToolExtras {
    * path instead of treating it as not a target.
    */
   allowOutsideWorkspace?: boolean;
+  /**
+   * What run_terminal_command does when a command's output looks like a
+   * runaway, from the Tools policy level ("stop" or "keep-running").
+   */
+  runawayAction?: "stop" | "keep-running";
 }
 
 export interface McpToolMeta {
@@ -2407,10 +2581,17 @@ export interface ContinueUIConfig {
   codeWrap?: boolean;
   showSessionTabs?: boolean;
   continueAfterToolRejection?: boolean;
+  /**
+   * Save sessions as an append-only log with large tool outputs and images
+   * stored once by hash (STOR6/STOR7) instead of rewriting a JSON file.
+   */
+  sessionLogStorage?: boolean;
   /** Ask the model once to re-issue a tool call it wrote as text (H13). Default true. */
   nudgeLeakedToolCalls?: boolean;
   /** The first-run overview on Settings > Permissions was dismissed. Never shown again. */
   permissionsIntroDismissed?: boolean;
+  /** Leave the model's thinking open after the answer starts, instead of folding it to "Thought for Ns". Default false. */
+  keepThinkingExpanded?: boolean;
 }
 
 export interface ContextMenuConfig {
@@ -3019,6 +3200,8 @@ export interface CompiledMessagesResult {
   didPrune: boolean;
   /** History ageing masked more tool results in this request (a planned cache rebuild). */
   didAge?: boolean;
+  /** What normalizeTurns repaired in the history (llm/normalizeTurns.ts); absent when nothing. */
+  repairs?: string[];
   contextPercentage: number;
   /** Tokens the context has left for the reply, after the prompt. */
   outputTokensAvailable?: number;
@@ -3026,12 +3209,20 @@ export interface CompiledMessagesResult {
 
 export interface AddToChatPayload {
   data: AddToChatPayloadItem[];
+  /** Resources the host would not add, so the chat can say why. */
+  refused?: AddToChatRefusal[];
 }
 
-interface AddToChatPayloadItem {
+export interface AddToChatPayloadItem {
   type: "file" | "folder";
+  /** A URI string, read by the `file` or `folder` provider at send time. */
   fullPath: string;
   name: string;
+}
+
+export interface AddToChatRefusal {
+  name: string;
+  reason: "secret" | "outside-workspace" | "not-found" | "unsaved";
 }
 
 export interface MessageOption {

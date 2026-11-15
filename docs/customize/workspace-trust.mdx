@@ -15,9 +15,12 @@ These files, under the folder's `.continuous/` (or the older `.continue/`) direc
 | `providers.yaml` and `models.yaml`                                | Ignored, in the editor and in the terminal agent                       |
 | `data/*.yaml`, `*.yml`                                            | Data destinations are left out                                         |
 | `worktrees.json`                                                  | Loop worktrees are still created, but their setup commands are not run |
+| `environment.json`                                                | `continuous serve` does not run its `install` command                  |
 | `*.continuousrc.json`, `*.continuerc.json` at the repository root | Not merged; a symlinked file is always ignored                         |
 
 A repository's `worktrees.json` (`setup-worktree`, `setup-worktree-unix`, `setup-worktree-windows`) holds shell commands that run in each new Loop worktree, so they run only once this exact file has been approved. If it is not approved, or changed since you approved it, the worktree is still created, the commands are skipped, and a notice names the file and how to approve it. A run with no terminal, such as `continuous serve`, skips them unless the folder was trusted before or you pass `--trust-project-config`. A `worktrees.json` in your own Continuous folder is yours and always runs. Setup commands run without your API keys and other secrets in their environment.
+
+A repository's `environment.json` has an `install` command that `continuous serve` runs in the project folder after it starts. It runs only once this exact file has been approved, or when you pass `--trust-project-config` for one run. Otherwise `serve` skips it and prints one line on stderr naming the file and how to approve it (`continuous project trust`). Editing the file asks again. To stop `serve` from running an install command at all, trusted or not, set `"environmentInstall": false` in `settings.json` in your own Continuous folder.
 
 Your own configuration always wins a name collision: a folder cannot replace a model, provider or MCP server you already have by giving it the same name. A server from a folder also does not receive the sign-in you saved for your own server at the same URL.
 
@@ -42,3 +45,7 @@ continuous --trust-project-config
 ```
 
 Trust given in VS Code and by `continuous project trust` is the same record.
+
+## git-ai
+
+The terminal agent can call [git-ai](https://github.com/git-ai-project/git-ai) around each file edit to record authorship. It is off. To turn it on, set `"gitAiIntegration": true` in `settings.json` in your own Continuous folder; a `settings.json` inside a project is never read for this. When on, `git-ai` is looked up on `PATH` skipping relative entries and anything inside the workspace, and run by its full path, so a repository cannot supply the program.

@@ -8,15 +8,13 @@ import { Plugin } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { useEditor } from "@tiptap/react";
 import { InputModifiers } from "core";
-import { modelSupportsImages } from "core/llm/autodetect";
-import { useRef } from "react";
+import { MutableRefObject, useRef } from "react";
 import { IIdeMessenger } from "../../../../context/IdeMessenger";
 import { useSubmenuContextProviders } from "../../../../context/SubmenuContextProviders";
 import { useInputHistory } from "../../../../hooks/useInputHistory";
 import useUpdatingRef from "../../../../hooks/useUpdatingRef";
 import { useAppSelector } from "../../../../redux/hooks";
 import { selectUseActiveFile } from "../../../../redux/selectors";
-import { selectSelectedChatModel } from "../../../../redux/slices/configSlice";
 import { AppDispatch } from "../../../../redux/store";
 import { exitEdit } from "../../../../redux/thunks/edit";
 import { getFontSize, isJetBrains } from "../../../../util";
@@ -26,7 +24,6 @@ import {
   getContextProviderDropdownOptions,
   getSlashCommandDropdownOptions,
 } from "./getSuggestion";
-import { handleImageFile } from "./imageUtils";
 
 export function getPlaceholderText(
   placeholder: TipTapEditorProps["placeholder"],
@@ -41,9 +38,15 @@ export function getPlaceholderText(
     : "Ask a follow-up";
 }
 
+/** True when the document holds an image anywhere. */
+function containsImage(node: JSONContent): boolean {
+  return node.type === Image.name || (node.content ?? []).some(containsImage);
+}
+
 /**
  * Checks if the editor content is valid for submission.
- * A valid submission can contain either text content or prompt/code blocks
+ * A valid submission can contain text, prompt or code blocks, or an image
+ * (a pasted screenshot with no question is a message too).
  *
  * @param json The editor JSON content
  * @returns true if the content is valid for submission, false otherwise
@@ -68,8 +71,8 @@ export function hasValidEditorContent(json: JSONContent): boolean {
     }),
   );
 
-  // Content is valid if it has either non-whitespace text or special blocks
-  return hasNonWhitespaceText || hasPromptOrCodeBlock || false;
+  // Content is valid if it has non-whitespace text, special blocks or images
+  return hasNonWhitespaceText || hasPromptOrCodeBlock || containsImage(json);
 }
 
 /**
@@ -79,11 +82,12 @@ export function createEditorConfig(options: {
   props: TipTapEditorProps;
   ideMessenger: IIdeMessenger;
   dispatch: AppDispatch;
+  /** Called after a message is submitted, so its saved draft can go */
+  onSubmittedRef?: MutableRefObject<(() => void) | undefined>;
 }) {
-  const { props, ideMessenger, dispatch } = options;
+  const { props, ideMessenger, dispatch, onSubmittedRef } = options;
 
   const { getSubmenuContextItems } = useSubmenuContextProviders();
-  const defaultModel = useAppSelector(selectSelectedChatModel);
   const isStreaming = useAppSelector((state) => state.session.isStreaming);
   const useActiveFile = useAppSelector(selectUseActiveFile);
   const historyLength = useAppSelector((store) => store.session.history.length);
@@ -93,7 +97,6 @@ export function createEditorConfig(options: {
 
   const inSubmenuRef = useRef<string | undefined>(undefined);
   const inDropdownRef = useRef(false);
-  const defaultModelRef = useUpdatingRef(defaultModel);
   const isStreamingRef = useUpdatingRef(isStreaming);
   const getSubmenuContextItemsRef = useUpdatingRef(getSubmenuContextItems);
   const availableContextProvidersRef = useUpdatingRef(
@@ -155,42 +158,8 @@ export function createEditorConfig(options: {
       UndoRedo,
       Image.extend({
         addProseMirrorPlugins() {
-          const pastePlugin = new Plugin({
-            props: {
-              handleDOMEvents: {
-                paste(view, event) {
-                  const model = defaultModelRef.current;
-                  if (!model) return;
-                  const items = event.clipboardData?.items;
-                  if (items) {
-                    for (const item of items) {
-                      const file = item.getAsFile();
-                      file &&
-                        modelSupportsImages(
-                          model.provider,
-                          model.model,
-                          model.title,
-                          model.capabilities,
-                        ) &&
-                        void handleImageFile(ideMessenger, file).then(
-                          (resp) => {
-                            if (!resp) return;
-                            const [img, dataUrl] = resp;
-                            const { schema } = view.state;
-                            const node = schema.nodes.image.create({
-                              src: dataUrl,
-                            });
-                            const tr = view.state.tr.insert(0, node);
-                            view.dispatch(tr);
-                          },
-                        );
-                    }
-                  }
-                },
-              },
-            },
-          });
-
+          // Pasted images are taken by useChatInputDrop (the same checks and
+          // result line as a drop), before ProseMirror sees the paste.
           const selectionPlugin = new Plugin({
             props: {
               decorations(state) {
@@ -217,7 +186,7 @@ export function createEditorConfig(options: {
             },
           });
 
-          return [pastePlugin, selectionPlugin];
+          return [selectionPlugin];
         },
       }).configure({
         HTMLAttributes: {
@@ -260,15 +229,6 @@ export function createEditorConfig(options: {
               });
 
               return true;
-            },
-            "Mod-Backspace": () => {
-              // If you press cmd+backspace wanting to cancel,
-              // but are inside of a text box, it shouldn't
-              // delete the text
-              if (isStreamingRef.current) {
-                return true;
-              }
-              return false;
             },
             "Shift-Enter": () =>
               this.editor.commands.first(({ commands }) => [
@@ -425,6 +385,7 @@ export function createEditorConfig(options: {
     }
 
     props.onEnter(json, modifiers, editor);
+    onSubmittedRef?.current?.();
   };
 
   return { editor, onEnter, placeholderTextRef };

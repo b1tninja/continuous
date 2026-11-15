@@ -17,21 +17,39 @@ import {
 import { processRule } from "./hubLoader.js";
 import { AGENT_FILES, rulesDirs } from "./instructionFiles.js";
 import { PermissionMode } from "./permissions/types.js";
+import { isSafeMode } from "./safeMode.js";
 import { serviceContainer } from "./services/ServiceContainer.js";
 import { ConfigServiceState, SERVICE_NAMES } from "./services/types.js";
 import { SYSTEM_MARKERS } from "./systemMessageMarkers.js";
 
+/** Longest wait for `git rev-parse`; a hung git reads as "not a repo". */
+export const GIT_CHECK_TIMEOUT_MS = 5000;
+
 /**
- * Check if current directory is a git repository
+ * Check if a directory is a git repository
  */
-function isGitRepo(): boolean {
+function isGitRepo(cwd: string): boolean {
   try {
-    execSync("git rev-parse --is-inside-work-tree", { stdio: "ignore" });
+    execSync("git rev-parse --is-inside-work-tree", {
+      stdio: "ignore",
+      cwd,
+      timeout: GIT_CHECK_TIMEOUT_MS,
+    });
     return true;
   } catch {
     return false;
   }
 }
+
+// The folder the preamble describes is the one the process started in, as it
+// was when the preamble was built at module load. Reading process.cwd() here
+// costs nothing; the git check is deferred to the first prompt, so --help and
+// other commands that never build a prompt start no git process. The review
+// and loop workers and ACP change folder before their first prompt, so the
+// check runs against this folder, not the current one, and the text is the
+// same as before.
+const startupCwd = process.cwd();
+let cachedBaseSystemMessage: string | undefined;
 
 // The CLI's preamble. The turn's own instructions (act or plan) are shared
 // with the IDE and appended by constructSystemMessage; see
@@ -41,15 +59,18 @@ function isGitRepo(): boolean {
 // cached prefix matches across sessions. The date and the git status change
 // between runs and travel in the first user message of each request instead
 // (src/environmentContext.ts).
-const baseSystemMessage = `You are an agent in the Continuous CLI. Your replies are shown in a terminal: be concise and direct, and show file names and code only where they help.
+export function getBaseSystemMessage(): string {
+  cachedBaseSystemMessage ??= `You are an agent in the Continuous CLI. Your replies are shown in a terminal: be concise and direct, and show file names and code only where they help.
 Here is useful information about the environment you are running in:
 <env>
-Working directory: ${process.cwd()}
-Is directory a git repo: ${isGitRepo()}
+Working directory: ${startupCwd}
+Is directory a git repo: ${isGitRepo(startupCwd)}
 Platform: ${process.platform}
 </env>
 
 Today's date and the git status of the working tree are in a <context name="environment"> block in the first user message.`;
+  return cachedBaseSystemMessage;
+}
 
 async function getConfigYamlRules(): Promise<string[]> {
   const configState = await serviceContainer.get<ConfigServiceState>(
@@ -79,6 +100,8 @@ function getRuleNameFromPath(filePath: string): string {
  */
 export function loadMarkdownRulesWithMetadata(): RuleObject[] {
   const rules: RuleObject[] = [];
+  // --safe: no rules folder is read
+  if (isSafeMode()) return rules;
 
   for (const dir of rulesDirs()) {
     if (!fs.existsSync(dir)) continue;
@@ -165,7 +188,8 @@ export async function constructSystemMessage(
   let agentContent = "";
 
   try {
-    for (const fileName of AGENT_FILES) {
+    // --safe: no agent file (AGENTS.md and the like) is read
+    for (const fileName of isSafeMode() ? [] : AGENT_FILES) {
       const filePath = path.join(process.cwd(), fileName);
 
       if (fs.existsSync(filePath)) {
@@ -208,7 +232,7 @@ export async function constructSystemMessage(
   }
 
   // Construct the comprehensive system message
-  let systemMessage = baseSystemMessage;
+  let systemMessage = getBaseSystemMessage();
 
   // The turn's instructions: a plan turn in plan mode, an act turn otherwise.
   // The same texts serve the IDE, so the two surfaces cannot drift apart; the

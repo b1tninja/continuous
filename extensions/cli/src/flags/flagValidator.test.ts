@@ -36,7 +36,7 @@ describe("validateFlags", () => {
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].code).toBe("INVALID_FORMAT_VALUE");
       expect(result.errors[0].message).toContain(
-        "--format currently only supports 'json'",
+        "--format supports 'json' and 'stream-json'",
       );
     });
   });

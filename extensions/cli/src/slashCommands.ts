@@ -4,14 +4,20 @@ import type { AssistantUnrolled as AssistantConfig } from "@continuedev/config-y
 import chalk from "chalk";
 import type { Session } from "core/index.js";
 import { POLICY_PRESET_ORDER } from "core/tools/permissions/policy.js";
+import { raiseConfirmation } from "core/tools/permissions/settingChanges.js";
 import historyManager from "core/util/history.js";
 import { v4 as uuidv4 } from "uuid";
 
 import { getAllSlashCommands } from "./commands/commands.js";
 import { handleInit } from "./commands/init.js";
+import { exportCurrentSession } from "./export/exportCommand.js";
 import { handleInfoSlashCommand } from "./infoScreen.js";
 import { syncRunningLoopPolicy } from "./loop/loopSession.js";
 import { handleUntaint } from "./permissions/cliTaint.js";
+import {
+  auditLevelChange,
+  rememberSavedPolicyFile,
+} from "./permissions/policyAudit.js";
 import {
   describePolicy,
   getPolicyLevels,
@@ -19,10 +25,26 @@ import {
   savePolicyFile,
   setPolicyLevels,
 } from "./permissions/policyLevels.js";
-import { getCurrentSession, updateSessionTitle } from "./session.js";
+import { services } from "./services/index.js";
+import {
+  forkIntoNewSession,
+  getCurrentSession,
+  saveSession,
+  updateSessionTitle,
+} from "./session.js";
 import { telemetryService } from "./telemetry/telemetryService.js";
 import { buildImportSkillPrompt } from "./tools/skills.js";
+import {
+  applyCliToolChangesNow,
+  cliPendingToolChangesLine,
+} from "./tools/toolListHold.js";
 import { SlashCommandResult } from "./ui/hooks/useChat.types.js";
+import {
+  getThinkingDisplay,
+  parseThinkingDisplay,
+  setThinkingDisplay,
+  THINKING_DISPLAYS,
+} from "./ui/thinkingDisplay.js";
 import {
   getSkillSlashCommandName,
   loadMarkdownSkills,
@@ -64,28 +86,35 @@ async function handleHelp(_args: string[], _assistant: AssistantConfig) {
   return { output: helpMessage };
 }
 
-async function handleFork() {
+/**
+ * Fork the current session into a new one and carry on in the fork. The fork
+ * keeps the history unchanged (so its next request can read the prompt cache
+ * the original built), the mode, the model, the task plan and the cache
+ * record; the original stays on disk as it is, and /resume reaches it.
+ */
+function handleFork(): SlashCommandResult {
   try {
-    const currentSession = getCurrentSession();
-    const forkCommand = `continuous --fork ${currentSession.sessionId}`;
-    // Try to copy to clipboard dynamically to avoid hard dependency in tests
-    try {
-      const clipboardy = await import("clipboardy");
-      await clipboardy.default.write(forkCommand);
+    const parent = getCurrentSession();
+    if (!parent.history.some((item) => item.message.role !== "system")) {
       return {
         exit: false,
-        output: chalk.gray(`${forkCommand} (copied to clipboard)`),
-      };
-    } catch {
-      return {
-        exit: false,
-        output: chalk.gray(`${forkCommand}`),
+        output: chalk.yellow("Nothing to fork yet: send a message first."),
       };
     }
+    // The original as it is now, so /resume finds every message of it
+    saveSession();
+    const fork = forkIntoNewSession(parent);
+    services.chatHistory.adoptSession(fork.sessionId);
+    return {
+      exit: false,
+      output: chalk.gray(
+        `Forked into a new session (${fork.sessionId}); you are in the fork now. The original (${parent.sessionId}) is unchanged: /resume opens it.`,
+      ),
+    };
   } catch (error: any) {
     return {
       exit: false,
-      output: chalk.red(`Failed to create fork command: ${error.message}`),
+      output: chalk.red(`Failed to fork the session: ${error.message}`),
     };
   }
 }
@@ -116,18 +145,42 @@ function handleTitle(args: string[]) {
 }
 
 function handlePolicy(args: string[]): SlashCommandResult {
-  const spec = args.join(" ").trim();
+  // `--yes` answers the question a raise asks; it is not part of the spec
+  const confirmed = args.some((a) => a === "--yes" || a === "-y");
+  const spec = args
+    .filter((a) => a !== "--yes" && a !== "-y")
+    .join(" ")
+    .trim();
   if (spec) {
     const parsed = parsePolicySpec(spec);
     if (!parsed.ok) {
       return { exit: false, output: chalk.yellow(parsed.error) };
     }
+    const before = getPolicyLevels();
+    // Lowering never asks. Moving an area up to Automatic, Permissive or IDGAF
+    // asks once, in a line that names what changes.
+    const question = raiseConfirmation(before, parsed.levels);
+    if (question && !confirmed) {
+      return {
+        exit: false,
+        output: chalk.yellow(
+          `${question} Nothing was changed. Run "/policy ${spec} --yes" to apply it.`,
+        ),
+      };
+    }
     setPolicyLevels(parsed.levels);
+    auditLevelChange(
+      before,
+      parsed.levels,
+      "cli-policy",
+      question ? "prompt" : undefined,
+    );
     if (parsed.deprecated) process.stderr.write(`${parsed.deprecated}\n`);
     syncRunningLoopPolicy();
     try {
       // Saved for the next session, and for the IDE; IDGAF is never written
       savePolicyFile();
+      rememberSavedPolicyFile();
     } catch (e: any) {
       return {
         exit: false,
@@ -195,6 +248,33 @@ async function handleImportSkill(args: string[]): Promise<SlashCommandResult> {
   };
 }
 
+/** `/thinking [fold|expanded|hide]`: shows or sets the thinking display. */
+function handleThinking(args: string[]) {
+  const value = args.join(" ").trim();
+  const choices = THINKING_DISPLAYS.join(", ");
+  if (!value) {
+    return { output: `Thinking display: ${getThinkingDisplay()} (${choices})` };
+  }
+  const mode = parseThinkingDisplay(value);
+  if (!mode) {
+    return {
+      output: `"${value}" is not a thinking display; use ${choices}`,
+    };
+  }
+  setThinkingDisplay(mode);
+  return { output: `Thinking display: ${mode}` };
+}
+
+/** `/tools`: tool changes waiting for a cold cache; `/tools apply` applies them. */
+function handleTools(args: string[]) {
+  const sub = args.join(" ").trim();
+  if (!sub) return { output: cliPendingToolChangesLine() };
+  if (sub === "apply") return { output: applyCliToolChangesNow() };
+  return {
+    output: `Unknown /tools option "${sub}"; use /tools or /tools apply`,
+  };
+}
+
 function handleSessions() {
   return { openSessionSelector: true };
 }
@@ -223,10 +303,19 @@ function isValidExportedSession(data: unknown): data is ExportedSession {
   );
 }
 
-function handleExport(_args: string[]): SlashCommandResult {
+/**
+ * `/export [path]`: a masked transcript of this session (Markdown, or HTML
+ * for a .html path). `/export --json` opens the session picker that writes
+ * the session JSON `/import` reads.
+ */
+function handleExport(args: string[]): SlashCommandResult {
+  if (args.includes("--json")) {
+    return { exit: false, openExportSelector: true };
+  }
+  const result = exportCurrentSession(args);
   return {
     exit: false,
-    openExportSelector: true,
+    output: result.ok ? chalk.green(result.message) : chalk.red(result.message),
   };
 }
 
@@ -256,7 +345,7 @@ function handleImport(args: string[]): SlashCommandResult {
       return {
         exit: false,
         output: chalk.red(
-          "Invalid session file: expected a valid Continue exported session (version 1).",
+          "Invalid session file: expected a valid Continuous exported session (version 1).",
         ),
       };
     }
@@ -336,6 +425,8 @@ const commandHandlers: Record<string, CommandHandler> = {
   skills: () => handleSkills(),
   "import-skill": (args) => handleImportSkill(args),
   sessions: handleSessions,
+  thinking: handleThinking,
+  tools: handleTools,
   export: handleExport,
   import: handleImport,
 };

@@ -831,15 +831,21 @@ const UserInput: React.FC<UserInputProps> = ({
   // State for showing image paste hint
   const [_hasImageInClipboard, _setHasImageInClipboard] = useState(false);
 
-  // Monitor clipboard for images and show helpful hints
-  const { checkNow: _checkClipboardNow } = useClipboardMonitor({
-    onImageStatusChange: (hasImage) => {
+  // Stable, so a keystroke's render does not restart the clipboard poll
+  const handleImageStatusChange = useCallback(
+    (hasImage: boolean) => {
       _setHasImageInClipboard(hasImage);
       // Also notify parent component
       if (onImageInClipboardChange) {
         onImageInClipboardChange(hasImage);
       }
     },
+    [onImageInClipboardChange],
+  );
+
+  // Monitor clipboard for images and show helpful hints
+  const { checkNow: _checkClipboardNow } = useClipboardMonitor({
+    onImageStatusChange: handleImageStatusChange,
     enabled: !disabled && inputMode,
     pollInterval: 2000,
   });

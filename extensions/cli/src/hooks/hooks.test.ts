@@ -103,13 +103,13 @@ describe("hookConfig", () => {
       expect(result).toHaveLength(2);
     });
 
-    it("handles invalid regex gracefully", () => {
+    it("runs the hook when the matcher is not a valid regex (fail closed)", () => {
       const config: HooksConfig = {
         PreToolUse: [{ matcher: "[invalid", hooks: baseGroup.hooks }],
       };
-      // Invalid regex should not match
+      // A matcher that does not compile must not disable a guard hook
       expect(getMatchingHookGroups(config, "PreToolUse", "Bash")).toHaveLength(
-        0,
+        1,
       );
     });
 

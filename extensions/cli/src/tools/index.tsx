@@ -1,3 +1,4 @@
+import { assignMcpToolNames } from "core/tools/mcpToolName.js";
 import {
   stableToolOrder,
   stableToolOrderEnabled,
@@ -30,6 +31,7 @@ import { editTool } from "./edit.js";
 import { fetchTool } from "./fetch.js";
 import { listFilesTool } from "./listFiles.js";
 import { finishItemTool, holdQuestionTool, remindMeTool } from "./loopTools.js";
+import { cliTrustedMcpServers } from "./mcpTrust.js";
 import { multiEditTool } from "./multiEdit.js";
 import { presentPlanTool } from "./presentPlan.js";
 import { readFileTool } from "./readFile.js";
@@ -159,7 +161,27 @@ export async function getAllAvailableTools(
   // MCP servers connect in no fixed order: sorting by name keeps the tool
   // list, the head of every request, the same between requests (C64).
   // CONTINUE_STABLE_TOOL_ORDER=0 keeps the connection order.
-  const mcpTools = mcpState.tools.map(convertMcpToolToContinueTool);
+  // Each MCP tool keeps its own name unless another server offers it or a
+  // built-in has it, then it is qualified by its server: two tools never share
+  // a name, so the call the person approves is the call that runs.
+  const names = assignMcpToolNames(
+    mcpState.tools.map((t) => ({
+      serverName: t.serverName ?? "",
+      toolName: t.name,
+    })),
+    {
+      bare: true,
+      reserved: new Set([
+        ...tools.map((t) => t.name),
+        ...ALL_BUILT_IN_TOOLS.map((t) => t.name),
+        ...TOOL_ALIASES.map((t) => t.name),
+      ]),
+    },
+  );
+  const trusted = cliTrustedMcpServers();
+  const mcpTools = mcpState.tools.map((t, i) =>
+    convertMcpToolToContinueTool(t, names[i], trusted),
+  );
   tools.push(
     ...(stableToolOrderEnabled(process.env.CONTINUE_STABLE_TOOL_ORDER)
       ? stableToolOrder(
@@ -177,6 +199,7 @@ export async function getAllAvailableTools(
   return applyCliToolSearch(filterCliToolsForRole(mode, tools), {
     mode: mode === "plan" ? "plan" : "agent",
     family: name,
+    history: services.chatHistory?.getHistory(),
   });
 }
 
@@ -236,11 +259,14 @@ export function convertToolToChatCompletionTool(
 
 export function convertMcpToolToContinueTool(
   mcpTool: MCPTool & { serverName?: string },
+  name: string = mcpTool.name,
+  trustedServers: ReadonlySet<string> = new Set(),
 ): Tool {
+  const serverName = mcpTool.serverName;
   return {
-    name: mcpTool.name,
-    ...(mcpTool.serverName ? { mcpServer: mcpTool.serverName } : {}),
-    displayName: mcpTool.name,
+    name,
+    ...(serverName ? { mcpServer: serverName, mcpToolName: mcpTool.name } : {}),
+    displayName: serverName ? `${serverName}: ${mcpTool.name}` : mcpTool.name,
     description: mcpTool.description ?? "",
     parameters: {
       type: "object",
@@ -250,11 +276,21 @@ export function convertMcpToolToContinueTool(
       >,
       required: mcpTool.inputSchema.required,
     },
-    // A server's own word that the tool changes nothing
-    readonly: mcpTool.annotations?.readOnlyHint === true ? true : undefined,
+    // A server's own word that the tool changes nothing, believed only for a
+    // server the person trusts (a hint from any other server is ignored)
+    readonly:
+      mcpTool.annotations?.readOnlyHint === true &&
+      !!serverName &&
+      trustedServers.has(serverName)
+        ? true
+        : undefined,
     isBuiltIn: false,
     run: async (args: any) => {
-      const result = await services.mcp?.runTool(mcpTool.name, args);
+      // Runs on the server this tool was listed under, never on whichever
+      // server answers to the name
+      const result = serverName
+        ? await services.mcp?.runTool(mcpTool.name, args, serverName)
+        : await services.mcp?.runTool(mcpTool.name, args);
       return JSON.stringify(result?.content) ?? "";
     },
   };

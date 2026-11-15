@@ -11,6 +11,11 @@ export interface ToolPermissionPolicy {
   permission: PermissionPolicy;
   /** Optional argument matching patterns. If not specified, applies to all calls to this tool */
   argumentMatches?: Record<string, any>;
+  /**
+   * A limit of the run's shape, not a permission (a subagent cannot start a
+   * subagent or write the parent's task list): IDGAF does not lift it.
+   */
+  structural?: boolean;
 }
 
 export interface ToolPermissions {

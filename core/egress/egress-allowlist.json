@@ -124,12 +124,30 @@
         "integrate.api.nvidia.com",
         "llm.kindo.ai",
         "oai.endpoints.kepler.ai.cloud.ovh.net",
-        "ollama.com",
-        "openrouter.ai",
         "registry.ollama.ai",
         "us-south.ml.cloud.ibm.com",
         "www.googleapis.com"
       ]
+    },
+    {
+      "class": "O",
+      "reason": "Ollama's public model library (ollama.com/library), a plain GET with no key: only after the person chooses Download or Refresh in Ollama's setup; never at start-up or on a timer.",
+      "hosts": ["ollama.com"]
+    },
+    {
+      "class": "D",
+      "reason": "OpenRouter's public model list (openrouter.ai/api/v1/models), a plain GET with no key and a fixed user-agent: refreshed in the background when the local copy is older than modelCatalogRefreshHours (model information updates `automatic`, the default), and on Pull now, Refresh now or `continuous models refresh`. `modelCatalog: manual` stops the background refresh; `off` stops every request.",
+      "hosts": ["openrouter.ai"]
+    },
+    {
+      "class": "D",
+      "reason": "The community model catalogue (models.dev/api.json), a plain GET with no key and the same fixed user-agent: only while a selected model (the IDE's chat or reviewer model, the terminal agent's model) has no price from a price the person entered, a provider list or the curated tables. With model information updates `automatic` (the default) the background refresher fetches it when the local copy is missing or older than modelCatalogRefreshHours; with `manual` only on Refresh now in the IDE; `off` stops every request. Reachable without opting in, so class D.",
+      "hosts": ["models.dev"]
+    },
+    {
+      "class": "R",
+      "reason": "The AWS Price List bulk file for Amazon Bedrock (pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonBedrock/current/<region>/index.json), a public GET with no credentials and the same fixed user-agent as the OpenRouter list: only when a Bedrock model is configured, for the selected model's region. Under model information updates `automatic`, on selecting a Bedrock model and in the background when the local copy is older than modelCatalogRefreshHours; under `manual`, only on Bedrock Test connection; `off` stops every request.",
+      "hosts": ["pricing.us-east-1.amazonaws.com"]
     },
     {
       "class": "S",
@@ -180,6 +198,7 @@
         "novita.ai",
         "ollama.ai",
         "openai.com",
+        "platform.claude.com",
         "platform.deepseek.com",
         "platform.inceptionlabs.ai",
         "platform.kimi.ai",

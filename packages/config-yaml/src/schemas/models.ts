@@ -171,7 +171,7 @@ export const contextManagementSchema = z.object({
 });
 export type ContextManagement = z.infer<typeof contextManagementSchema>;
 
-const templateSchema = z.enum([
+export const CHAT_TEMPLATE_VALUES = [
   "llama2",
   "alpaca",
   "zephyr",
@@ -190,7 +190,8 @@ const templateSchema = z.enum([
   "granite",
   "llama3",
   "codestral",
-]);
+] as const;
+const templateSchema = z.enum(CHAT_TEMPLATE_VALUES);
 
 export const autocompleteOptionsSchema = z.object({
   disable: z.boolean().optional(),
@@ -278,6 +279,28 @@ export const toolDialectSchema = z.enum(TOOL_DIALECT_VALUES, {
 });
 export type ToolDialectSetting = z.infer<typeof toolDialectSchema>;
 
+const perMillionTokens = z
+  .number({ error: "A price is a number of US dollars per million tokens." })
+  .nonnegative({ error: "A price cannot be negative." });
+
+/**
+ * What this model costs, in US dollars per million tokens. Used when no price
+ * table knows the model (a local or unlisted model), and ahead of the tables
+ * when set: budgets (`--max-budget-usd`) and cost displays then use it. Zero
+ * is a real price (a model on your own hardware).
+ */
+export const modelPricingSchema = z.object({
+  input: perMillionTokens,
+  output: perMillionTokens,
+  /** Absent: cache reads are priced at the input rate */
+  cacheRead: perMillionTokens.optional(),
+  /** Absent: cache writes are priced at the input rate */
+  cacheWrite: perMillionTokens.optional(),
+  /** Only US dollars for now; written for clarity, never required */
+  currency: z.literal("USD", { error: "Prices are in USD." }).optional(),
+});
+export type ModelPricing = z.infer<typeof modelPricingSchema>;
+
 const baseModelFields = {
   name: z.string(),
   model: z.string(),
@@ -308,6 +331,7 @@ const baseModelFields = {
     .record(z.string(), z.union([z.string(), z.boolean(), z.number()]))
     .optional(),
   autocompleteOptions: autocompleteOptionsSchema.optional(),
+  pricing: modelPricingSchema.optional(),
   /**
    * Further accounts serving the same model, tried in order when the one
    * before fails (at most three routes in all). A model with no connection

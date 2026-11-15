@@ -1,15 +1,31 @@
+import { getAuditTrail } from "../audit/global";
 import {
   readTaintedSessionRule,
   type TaintedSessionRule,
 } from "./taintSetting";
-import { taintKindOfCall, type SourceCall } from "./taintSources";
+import { taintLabelsOfCall, type SourceCall } from "./taintSources";
 import {
   DEFAULT_TAINT_SESSION,
   taintRegistry,
+  type TaintChange,
   type TaintClearReason,
   type TaintFact,
-  type TaintKind,
+  type TaintLabel,
 } from "./taintState";
+
+/**
+ * Every add and clear goes to the audit trail as a `taint` record. Nothing is
+ * marked while the rule is `off`, so nothing is written either. Never throws.
+ */
+export function recordTaintChange(change: TaintChange): void {
+  try {
+    getAuditTrail().taint(change);
+  } catch {
+    // the trail is best effort
+  }
+}
+
+taintRegistry.setListener(recordTaintChange);
 
 /**
  * The few functions the hosts call. Each does nothing when the person's
@@ -55,26 +71,45 @@ export interface ToolResultNote {
 export function noteToolResult(
   note: ToolResultNote,
   rule: TaintedSessionRule = readTaintedSessionRule(),
-): TaintKind | undefined {
+): TaintLabel | undefined {
   try {
     if (rule !== "ask") return undefined;
-    const kind = taintKindOfCall(note.call);
-    if (!kind) return undefined;
+    const labels = taintLabelsOfCall(note.call);
+    if (labels.length === 0) return undefined;
     const session =
       note.session ??
       taintRegistry.sessionOfCall(note.callId) ??
       DEFAULT_TAINT_SESSION;
-    taintRegistry.mark(session, kind, note.turn);
-    return kind;
+    for (const label of labels) {
+      taintRegistry.mark(session, label, note.turn, {
+        source: note.call.toolName,
+      });
+    }
+    return labels[0];
   } catch {
     return undefined;
   }
 }
 
-/** The person acknowledged the content, or started over: the session is clean again. */
+/**
+ * The person acknowledged the content, or started over: the session is clean
+ * again. `source` names the control that cleared it, for the audit record.
+ */
 export function untaintSession(
   session: string | undefined,
   reason: TaintClearReason,
-): TaintKind[] {
-  return taintRegistry.clear(session ?? DEFAULT_TAINT_SESSION, reason);
+  source?: string,
+  labels?: readonly TaintLabel[],
+): TaintLabel[] {
+  return taintRegistry.clear(
+    session ?? DEFAULT_TAINT_SESSION,
+    reason,
+    source,
+    labels,
+  );
+}
+
+/** The labels a session holds now, in their fixed order. */
+export function taintLabels(session: string | undefined): TaintLabel[] {
+  return taintRegistry.fact(session ?? DEFAULT_TAINT_SESSION)?.kinds ?? [];
 }

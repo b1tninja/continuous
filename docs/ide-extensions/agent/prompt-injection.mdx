@@ -22,4 +22,12 @@ When the [reviewer](/customize/model-roles/reviewer) judges a later call, it is 
 
 ## Where it runs
 
-The check runs on tool results in the IDE, including subagents. The terminal agent does not do it.
+The check runs on tool results in the IDE, including subagents, and in the terminal agent, which puts the same notice in front of a flagged result.
+
+## After untrusted content has come in
+
+A notice only warns the model. A separate, optional rule goes further: with `taintedSessionRule: ask` in your own `config.yaml`, once untrusted content (such as a web page or an MCP result) has entered a session, calls that send data out or change state outside the workspace ask you first, at every approval level. The setting is `toolPermissions.auto.environment.taintedSessionRule`, it is `off` by default, and it is read only from your own config file, never from a file in the project. In the terminal, `/untaint` records that you have reviewed what came in.
+
+Files in the open folder are somebody else's text too when you have not trusted the folder: a cloned repository's README, its `AGENTS.md` or a test fixture. While the rule is on, reading a file's content from a workspace folder with no [project trust](/customize/workspace-trust) record for any part of its configuration marks the session `untrusted-workspace`. Trusting any part of the folder's configuration, or starting the terminal agent with `--trust-project-config`, counts as trusting the folder. A folder listing does not mark the session.
+
+Reading a secret also marks the session, with the label `secret`: a file the protected-paths list calls secret (such as `.env`, a private key or `~/.aws/credentials`) read with a file tool, or a command that prints a credential or names such a file. A secret on its own makes only the calls that send data out ask (network, push, publish and MCP calls); another local read or a write outside the workspace moves nothing off the machine and is left as it was. Together with untrusted content, every one of those calls asks, as before. While the session holds `secret`, a host in your `trustedDomains` counts as a destination like any other: a trusted host is often one anyone can write to (a code host, a paste site, a search box), so a secret in a URL's path or query would reach them. Without a secret, trusted hosts stay exempt. At IDGAF none of this stops a call; the ask is only recorded in the audit trail.

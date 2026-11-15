@@ -17,9 +17,12 @@ import {
 } from "../../loop/loopSession.js";
 import { toolPermissionManager } from "../../permissions/permissionManager.js";
 import { services } from "../../services/index.js";
+import { ModelNoteGate, onModelInUse } from "../../services/modelInUse.js";
 import {
   createSession,
+  forkIntoNewSession,
   loadSession,
+  loadSessionById,
   onLoopChange,
   updateSessionHistory,
 } from "../../session.js";
@@ -32,6 +35,7 @@ import {
 import { telemetryService } from "../../telemetry/telemetryService.js";
 import { formatError } from "../../util/formatError.js";
 import { logger } from "../../util/logger.js";
+import { setUserNoticeSink } from "../../util/userNotice.js";
 
 import {
   handleAutoCompaction,
@@ -100,10 +104,9 @@ export function useChat({
 
     // Fork from an existing session if fork flag is used
     if (fork) {
-      const { loadSessionById, startNewSession } = require("../../session.js");
       const sessionToFork = loadSessionById(fork);
       if (sessionToFork) {
-        return startNewSession(sessionToFork.history);
+        return forkIntoNewSession(sessionToFork);
       }
       // If session not found, create a new empty session
       return createSession([]);
@@ -150,12 +153,18 @@ export function useChat({
         svc.on("stateChanged", listener);
         serviceListenerCleanupRef.current = () =>
           svc.off("stateChanged", listener);
+        // Lines the person has to see (a damaged session file, a session
+        // that is not being saved) go into the chat while the UI is up.
+        setUserNoticeSink((text) => {
+          svc.addSystemMessage(text);
+        });
       })
       .catch((error) => {
         logger.error("Failed to initialize ChatHistoryService", { error });
       });
 
     return () => {
+      setUserNoticeSink(undefined);
       serviceListenerCleanupRef.current?.();
       serviceListenerCleanupRef.current = null;
     };
@@ -164,6 +173,8 @@ export function useChat({
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   // The reply is held while recovery looks for a tool call written as text
   const [isReadingReply, setIsReadingReply] = useState(false);
+  // The reasoning of the reply now streaming, shown live; null when none
+  const [liveReasoning, setLiveReasoning] = useState<string | null>(null);
   const [responseStartTime, setResponseStartTime] = useState<number | null>(
     null,
   );
@@ -309,6 +320,31 @@ export function useChat({
   // on (src/loop/loopDriver.ts). `busy` counts the turns and messages in
   // flight, which a turn's stale closures cannot read from state.
   const busyRef = useRef(0);
+  // The model in use, in the transcript when it changes (M7): a line written
+  // while a turn streams would land inside its reply, so it waits for the
+  // turn to end
+  const modelNoteGateRef = useRef<ModelNoteGate | null>(null);
+  const pendingModelNoteRef = useRef<string | null>(null);
+  const flushModelNote = () => {
+    const note = pendingModelNoteRef.current;
+    if (!note || busyRef.current > 0) return;
+    pendingModelNoteRef.current = null;
+    setChatHistory((prev) => [
+      ...prev,
+      { message: { role: "system", content: note }, contextItems: [] },
+    ]);
+  };
+  useEffect(() => {
+    modelNoteGateRef.current = new ModelNoteGate(
+      services.model?.getState?.()?.inUse,
+    );
+    return onModelInUse((info) => {
+      const note = modelNoteGateRef.current?.next(info);
+      if (!note) return;
+      pendingModelNoteRef.current = note;
+      flushModelNote();
+    });
+  }, []);
   const sendLoopTurnRef = useRef<(prompt: string) => Promise<void>>(
     async () => {},
   );
@@ -372,6 +408,9 @@ export function useChat({
         model: turnModel,
         onShowStatusMessage,
         onRecoveryHold: setIsReadingReply,
+        onReasoning: (text: string) =>
+          setLiveReasoning((prev) => (prev ?? "") + text),
+        onReasoningDone: () => setLiveReasoning(null),
       });
       // Steering: deliver queued messages at the next tool boundary when the
       // person asked for it (Enter on an empty prompt while the agent works),
@@ -428,6 +467,7 @@ export function useChat({
       setAbortController(null);
       setIsWaitingForResponse(false);
       setIsReadingReply(false);
+      setLiveReasoning(null);
       setResponseStartTime(null);
       setInputMode(true);
 
@@ -452,6 +492,7 @@ export function useChat({
       } finally {
         busyRef.current--;
       }
+      flushModelNote();
       loopRunnerRef.current?.kick();
     }
   };
@@ -610,6 +651,7 @@ export function useChat({
     } finally {
       busyRef.current--;
     }
+    flushModelNote();
     // The loop waited for this message's turn
     loopRunnerRef.current?.kick();
   };
@@ -983,6 +1025,7 @@ export function useChat({
 
     // Handle policy creation if requested
     if (approved && createPolicy && currentRequest) {
+      let saved = false;
       try {
         const { generatePolicyRule, addPolicyToYaml } =
           await import("../../permissions/policyWriter.js");
@@ -993,6 +1036,7 @@ export function useChat({
         );
 
         await addPolicyToYaml(policyRule);
+        saved = true;
         logger.debug(`Policy created: ${policyRule}`);
 
         // Reload permissions to pick up the new policy without requiring restart
@@ -1001,7 +1045,18 @@ export function useChat({
         logger.error("Failed to create policy or reload permissions", {
           error,
         });
-        // Continue with the approval even if policy creation/reload fails
+        // Continue with the approval even if policy creation/reload fails,
+        // and say when the rule was not saved: a log line is not enough for
+        // "always".
+        if (!saved) {
+          const { policySaveFailureNotice } =
+            await import("../../permissions/policyWriter.js");
+          const notice = policySaveFailureNotice(error);
+          setChatHistory((prev) => [
+            ...prev,
+            { message: { role: "system", content: notice }, contextItems: [] },
+          ]);
+        }
       }
     }
 
@@ -1045,6 +1100,7 @@ export function useChat({
     setChatHistory: setChatHistory,
     isWaitingForResponse,
     isReadingReply,
+    liveReasoning,
     responseStartTime,
     isCompacting,
     compactionStartTime,

@@ -75,8 +75,20 @@ export const BUILT_IN_TOOL_CLASS: Record<BuiltInToolNames, ToolClass> = {
   [BuiltInToolNames.RemindMe]: "session",
   [BuiltInToolNames.RecallMaskedResult]: "session",
   [BuiltInToolNames.SearchTools]: "session",
+  [BuiltInToolNames.ListSessions]: "session",
+  [BuiltInToolNames.SendMessage]: "delegation",
   [BuiltInToolNames.CreateRuleBlock]: "rules",
   [BuiltInToolNames.RequestRule]: "rules",
+};
+
+/**
+ * Tools named outside BuiltInToolNames (definitions/commandOutput.ts): reading
+ * a command's kept output is the session's own state, so the planner (which
+ * never runs commands) may have it; ending a command is the terminal's.
+ */
+export const COMMAND_OUTPUT_TOOL_CLASS: Record<string, ToolClass> = {
+  read_command_output: "session",
+  stop_command: "terminal",
 };
 
 /**
@@ -257,6 +269,7 @@ export function classOfTool(
   }
   return (
     (BUILT_IN_TOOL_CLASS as Record<string, ToolClass | undefined>)[tool.name] ??
+    COMMAND_OUTPUT_TOOL_CLASS[tool.name] ??
     CLI_TOOL_CLASS[tool.name] ??
     "unclassified"
   );

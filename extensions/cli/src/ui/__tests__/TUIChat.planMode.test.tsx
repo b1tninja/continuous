@@ -301,7 +301,11 @@ describe("TUIChat - plan mode", () => {
         "the request after the MCP call",
         ui.lastFrame,
       );
-      expect(runTool).toHaveBeenCalledWith("lookup_issue", { id: "42" });
+      expect(runTool).toHaveBeenCalledWith(
+        "lookup_issue",
+        { id: "42" },
+        "docs",
+      );
       const result = llm.requests[1].messages.find((m) => m.role === "tool");
       expect(messageText(result!)).toContain("mcp ran");
     } finally {

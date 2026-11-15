@@ -4,7 +4,11 @@ import { MockIdeMessenger } from "../../context/MockIdeMessenger";
 import { EMPTY_CONFIG, updateConfig } from "../../redux/slices/configSlice";
 import { setPolicyLevel } from "../../redux/slices/uiSlice";
 import { setupStore } from "../../redux/store";
-import { loadPolicySettings } from "../../redux/thunks/policySettings";
+import {
+  applyPolicyPreset,
+  changePolicyLevel,
+  loadPolicySettings,
+} from "../../redux/thunks/policySettings";
 import { renderWithProviders } from "../../util/test/render";
 import { PolicyCard } from "./PolicyCard";
 import { PolicyControls, IdgafChip } from "./PolicyControls";
@@ -122,13 +126,15 @@ describe("PolicyControls", () => {
     expect(chip.textContent).not.toContain("Every rule is ignored");
     expect(chip.textContent).toContain("IDGAF");
     // The sentence is the tooltip and the described-by text
-    expect(chip.getAttribute("title")).toContain("Questions");
+    expect(chip.getAttribute("title")).toBe(
+      "Every rule is ignored. Select to go back to Careful.",
+    );
     expect(chip.getAttribute("title")).toContain("Every rule is ignored");
     const description = document.getElementById(
       chip.getAttribute("aria-describedby")!,
     )!;
-    expect(description.textContent).toContain("Questions");
-    expect(description.textContent).toContain("Every rule is ignored");
+    // It does not list the areas: the selectors already show them
+    expect(description.textContent).toBe("Every rule is ignored.");
     // It is not an alert: a standing state is not announced as an interruption
     expect(chip.getAttribute("role")).toBeNull();
     // Unrelated state changes do not remove it.
@@ -162,7 +168,7 @@ describe("PolicyControls", () => {
     const description = document.getElementById(
       chip.getAttribute("aria-describedby")!,
     )!;
-    expect(description.textContent).toContain("nothing asks");
+    expect(description.textContent).toBe("Every rule is ignored.");
     expect(chip.parentElement!.getAttribute("title")).toContain(
       "Every rule is ignored",
     );
@@ -211,9 +217,9 @@ describe("PolicyControls", () => {
     expect(chip.className).toContain("bg-error/20");
     expect(chip.textContent).toContain("Custom");
     await user.click(chip);
-    expect(
-      screen.getByTestId("policy-preset-custom-note").textContent,
-    ).toContain("your current set");
+    expect(screen.getByTestId("policy-preset-custom").textContent).toContain(
+      "your current set",
+    );
   });
 
   it("each preset row has a glyph, what it sets and a check on the current one", async () => {
@@ -325,25 +331,88 @@ describe("the settings beside the levels", () => {
     );
   });
 
-  it("a IDGAF left from an earlier session is dropped by the load", async () => {
+  const fileLevels = {
+    context: "permissive",
+    tools: "cautious",
+    edits: "manual",
+    plan: "cautious",
+    questions: "cautious",
+  };
+  const hostWith = (session: string[] | "unsupported") => {
     const ideMessenger = new MockIdeMessenger();
-    ideMessenger.responseHandlers["policy/load"] = (async () => ({
-      settings: {
-        levels: {
-          context: "permissive",
-          tools: "cautious",
-          edits: "manual",
-          plan: "cautious",
-          questions: "cautious",
-        },
-      },
+    const h = ideMessenger.responseHandlers as any;
+    h["policy/load"] = async () => ({
+      settings: { levels: fileLevels },
       notices: [],
-    })) as any;
+    });
+    const posted: unknown[] = [];
+    h["policy/sessionIdgaf"] = async (data: { areas?: string[] }) => {
+      if (session === "unsupported") throw new Error("not handled");
+      if (data?.areas !== undefined) posted.push(data.areas);
+      return { areas: session };
+    };
+    h["policy/save"] = async () => undefined;
+    return { ideMessenger, posted };
+  };
+
+  it("a webview reload or extension host restart keeps the session's IDGAF", async () => {
+    const { ideMessenger } = hostWith(["tools"]);
+    const store = setupStore({ ideMessenger });
+    await act(async () => {
+      await store.dispatch(loadPolicySettings());
+    });
+    expect(store.getState().ui.policyLevels.tools).toBe("idgaf");
+    // the other areas come from the file
+    expect(store.getState().ui.policyLevels.context).toBe("permissive");
+    expect(store.getState().ui.policyLevels.edits).toBe("manual");
+  });
+
+  it("a new editor session starts at the saved levels, whatever the webview remembered", async () => {
+    const { ideMessenger } = hostWith([]);
     const store = setupStore({ ideMessenger });
     await act(async () => {
       store.dispatch(setPolicyLevel({ area: "tools", level: "idgaf" }));
       await store.dispatch(loadPolicySettings());
     });
     expect(store.getState().ui.policyLevels.tools).toBe("cautious");
+  });
+
+  it("a host that does not keep session state starts at the saved levels", async () => {
+    const { ideMessenger } = hostWith("unsupported");
+    const store = setupStore({ ideMessenger });
+    await act(async () => {
+      store.dispatch(setPolicyLevel({ area: "tools", level: "idgaf" }));
+      await store.dispatch(loadPolicySettings());
+    });
+    expect(store.getState().ui.policyLevels.tools).toBe("cautious");
+  });
+
+  it("choosing IDGAF tells the host, for the rest of the editor session", async () => {
+    const { ideMessenger, posted } = hostWith([]);
+    const store = setupStore({ ideMessenger });
+    await act(async () => {
+      await store.dispatch(
+        applyPolicyPreset({
+          context: "idgaf",
+          tools: "idgaf",
+          edits: "idgaf",
+          plan: "idgaf",
+          questions: "idgaf",
+        }),
+      );
+    });
+    expect(posted.at(-1)).toEqual([
+      "context",
+      "tools",
+      "edits",
+      "plan",
+      "questions",
+    ]);
+    await act(async () => {
+      await store.dispatch(
+        changePolicyLevel({ area: "tools", level: "cautious" }),
+      );
+    });
+    expect(posted.at(-1)).not.toContain("tools");
   });
 });

@@ -1,5 +1,6 @@
 import { JSONContent } from "@tiptap/core";
 import { AssistantChatMessage, InputModifiers, PromptLog } from "core";
+import { DROPPED_PROMPT_MARKER } from "core/util/promptLogs";
 import { describe, expect, it, vi } from "vitest";
 import { createMockStore } from "../../util/test/mockStore";
 import { streamResponseThunk } from "./streamResponse";
@@ -260,6 +261,7 @@ describe("streamResponseThunk - tool calls", () => {
       "symbols/updateFromContextItems/pending",
       "session/updateHistoryItemAtIndex",
       "chat/streamNormalInput/pending",
+      "session/setSentToolList",
       "session/setAppliedRulesAtIndex",
       "session/setActive",
       "session/setInlineErrorMessage",
@@ -279,6 +281,7 @@ describe("streamResponseThunk - tool calls", () => {
       "session/resetNextCodeBlockToApplyIndex",
       "session/streamUpdate",
       "chat/streamNormalInput/pending",
+      "session/setSentToolList",
       "session/setAppliedRulesAtIndex",
       "session/setActive",
       "session/setInlineErrorMessage",
@@ -417,6 +420,8 @@ describe("streamResponseThunk - tool calls", () => {
           arguments: JSON.stringify({ query: "test function" }),
         },
       },
+      // Cautious, the default Tools level: a runaway command is stopped
+      runawayAction: "stop",
     });
 
     // Verify that multiple compilation calls were made (due to tool call continuation)
@@ -443,6 +448,7 @@ describe("streamResponseThunk - tool calls", () => {
       ...initialState,
       session: {
         ...initialState.session,
+        sentToolList: expect.anything(),
         history: [
           {
             contextItems: [],
@@ -484,7 +490,8 @@ describe("streamResponseThunk - tool calls", () => {
                 completion: "I'll search the codebase for you.",
                 modelProvider: "anthropic",
                 modelTitle: "Claude 3.5 Sonnet",
-                prompt: "Please search the codebase",
+                // An older request: only the newest keeps its prompt
+                prompt: DROPPED_PROMPT_MARKER,
               },
             ],
             toolCallStates: [
@@ -725,6 +732,7 @@ describe("streamResponseThunk - tool calls", () => {
       "symbols/updateFromContextItems/pending",
       "session/updateHistoryItemAtIndex",
       "chat/streamNormalInput/pending",
+      "session/setSentToolList",
       "session/setAppliedRulesAtIndex",
       "session/setActive",
       "session/setInlineErrorMessage",
@@ -744,6 +752,7 @@ describe("streamResponseThunk - tool calls", () => {
       "session/resetNextCodeBlockToApplyIndex",
       "session/streamUpdate",
       "chat/streamNormalInput/pending",
+      "session/setSentToolList",
       "session/setAppliedRulesAtIndex",
       "session/setActive",
       "session/setInlineErrorMessage",
@@ -884,6 +893,8 @@ describe("streamResponseThunk - tool calls", () => {
           arguments: JSON.stringify({ query: "test function" }),
         },
       },
+      // Cautious, the default Tools level: a runaway command is stopped
+      runawayAction: "stop",
     });
 
     // Verify that multiple compilation calls were made (due to tool call continuation)
@@ -1077,6 +1088,10 @@ describe("streamResponseThunk - tool calls", () => {
           requestStatus: "pending",
         },
         payload: undefined,
+      },
+      {
+        type: "session/setSentToolList",
+        payload: expect.anything(),
       },
       {
         type: "session/setAppliedRulesAtIndex",
@@ -1339,6 +1354,7 @@ describe("streamResponseThunk - tool calls", () => {
       ...initialState,
       session: {
         ...initialState.session,
+        sentToolList: expect.anything(),
         history: [
           {
             contextItems: [],
@@ -1631,6 +1647,10 @@ describe("streamResponseThunk - tool calls", () => {
           requestStatus: "pending",
         },
         payload: undefined,
+      },
+      {
+        type: "session/setSentToolList",
+        payload: expect.anything(),
       },
       {
         type: "session/setAppliedRulesAtIndex",
@@ -1929,6 +1949,10 @@ describe("streamResponseThunk - tool calls", () => {
         payload: undefined,
       },
       {
+        type: "session/setSentToolList",
+        payload: expect.anything(),
+      },
+      {
         type: "session/setAppliedRulesAtIndex",
         payload: {
           appliedRules: [],
@@ -2117,6 +2141,8 @@ describe("streamResponseThunk - tool calls", () => {
           arguments: JSON.stringify({ query: "test function" }),
         },
       },
+      // Cautious, the default Tools level: a runaway command is stopped
+      runawayAction: "stop",
     });
 
     // Verify second streaming call was made for continuation
@@ -2128,6 +2154,7 @@ describe("streamResponseThunk - tool calls", () => {
       ...initialState,
       session: {
         ...initialState.session,
+        sentToolList: expect.anything(),
         title: "Session summary",
         history: [
           {
@@ -2171,7 +2198,8 @@ describe("streamResponseThunk - tool calls", () => {
                 completion: "I'll search for test functions in the codebase.",
                 modelProvider: "anthropic",
                 modelTitle: "Claude 3.5 Sonnet",
-                prompt: "Please search the codebase for test functions",
+                // An older request: only the newest keeps its prompt
+                prompt: DROPPED_PROMPT_MARKER,
               },
             ],
             toolCallStates: [

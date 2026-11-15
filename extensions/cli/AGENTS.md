@@ -72,6 +72,7 @@ This is a CLI tool for Continue Dev that provides an interactive AI-assisted dev
 - Tests should be written with `.test.ts` extension
 - No existing test files found - tests should be added when writing new functionality
 - Run tests using `npm run test path/or/pattern`
+- Tests that call a real, paid provider API (`src/smoke-api`) run only with `RUN_LIVE_PROVIDER_TESTS=1` (or `RUN_SMOKE_API=1`). Without it, the test setup removes provider credentials such as `ANTHROPIC_API_KEY` from the environment; see "Live provider tests" in `CONTRIBUTING.md`.
 
 ### Build System
 

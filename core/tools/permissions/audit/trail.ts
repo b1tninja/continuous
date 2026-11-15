@@ -2,14 +2,18 @@ import {
   decisionDraft,
   outcomeDraft,
   policyDraft,
+  settingDraft,
   shadowDraft,
+  taintDraft,
   turnDraft,
   type AuditAgent,
   type AuditPolicy,
   type DecisionInput,
   type OutcomeInput,
   type PolicyInput,
+  type SettingInput,
   type ShadowInput,
+  type TaintInput,
 } from "./record";
 import { pruneAudit, type PruneResult } from "./reader";
 import { AuditWriter, DEFAULT_MAX_FILE_BYTES } from "./writer";
@@ -225,6 +229,32 @@ export class AuditTrail {
       }
     });
     return ok;
+  }
+
+  /**
+   * A change to a permission setting that is not a rule (level, preset,
+   * floor, built-in switch, trust). Returns false when it could not be
+   * written; the change itself is not undone.
+   */
+  setting(input: SettingInput): boolean {
+    if (!this.enabled) return true;
+    let ok = true;
+    this.guard(() => {
+      const result = this.writer.write(settingDraft(input));
+      if (!result.ok) {
+        ok = false;
+        this.fail(result.error);
+      }
+    });
+    return ok;
+  }
+
+  /** A taint label added to or cleared from a session. */
+  taint(input: TaintInput): void {
+    this.guard(() => {
+      const result = this.writer.write(taintDraft(input));
+      if (!result.ok) this.fail(result.error);
+    });
   }
 
   /** Delete files past the retention. Never throws. */

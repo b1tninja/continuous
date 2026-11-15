@@ -16,8 +16,14 @@ describe("project and global env files", () => {
     GLOBAL_ONLY_SECRET: process.env.GLOBAL_ONLY_SECRET,
   };
 
+  let root: string | undefined;
+
   afterEach(() => {
+    // Leave the folder before removing it: Windows will not remove the
+    // current directory of a process.
     process.chdir(originalCwd);
+    if (root) fs.rmSync(root, { recursive: true, force: true });
+    root = undefined;
     for (const [key, value] of Object.entries(original)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
@@ -25,7 +31,7 @@ describe("project and global env files", () => {
   });
 
   it("does not load a working-directory .env, and still reads the global file", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cn-proj-env-"));
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "cn-proj-env-"));
     const project = path.join(root, "project");
     const globalDir = path.join(root, "global");
     fs.mkdirSync(project);
@@ -81,7 +87,5 @@ describe("project and global env files", () => {
     expect(process.env.FROM_PROJECT).toBeUndefined();
     expect(process.env.BASH_ENV).toBeUndefined();
     expect(process.env.NODE_OPTIONS).toBeUndefined();
-
-    fs.rmSync(root, { recursive: true, force: true });
   });
 });

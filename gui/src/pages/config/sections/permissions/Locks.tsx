@@ -7,7 +7,7 @@ const LOCKS: { id: string; label: string; reason: string }[] = [
     id: "floor",
     label: "Always-on rules",
     reason:
-      "Never rules in your permissions.yaml bind at every level, IDGAF included. They are changed by editing that file, not here.",
+      "Never rules in your permissions.yaml bind at every level below IDGAF; at IDGAF they are recorded, not applied. They are changed by editing that file, not here.",
   },
   {
     id: "protected-paths",

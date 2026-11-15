@@ -268,28 +268,45 @@ export class MCPService
   }
 
   /**
-   * Run a tool by name
+   * Run a tool of one server. With `serverName` the call goes to that server
+   * and no other. Without it the name must belong to exactly one connected
+   * server: when two offer it the call is refused, because running "whichever
+   * connected first" is how an approval card and the executed server differ.
    */
-  public async runTool(name: string, args: Record<string, any>) {
-    for (const connection of this.connections.values()) {
-      if (connection.status === "connected" && connection.client) {
-        const tool = connection.tools.find((t) => t.name === name);
-        if (tool) {
-          const serverName = connection.config!.name;
-          return await this.withTokenRefresh(serverName, async () => {
-            const conn = this.connections.get(serverName);
-            if (!conn?.client) {
-              throw new Error(`Client for ${serverName} not available`);
-            }
-            const result = await conn.client.callTool({
-              name,
-              arguments: args,
-            });
-            await this.recordPins(conn, name);
-            return result;
-          });
+  public async runTool(
+    name: string,
+    args: Record<string, any>,
+    serverName?: string,
+  ) {
+    const owners = [...this.connections.values()].filter(
+      (c) =>
+        c.status === "connected" &&
+        c.client &&
+        (serverName === undefined || c.config?.name === serverName) &&
+        c.tools.some((t) => t.name === name),
+    );
+    if (owners.length > 1) {
+      throw new Error(
+        `Tool ${name} is offered by more than one MCP server (${owners
+          .map((c) => c.config?.name)
+          .join(", ")}); refusing to guess which one to run`,
+      );
+    }
+    const [owner] = owners;
+    if (owner) {
+      const ownerName = owner.config!.name;
+      return await this.withTokenRefresh(ownerName, async () => {
+        const conn = this.connections.get(ownerName);
+        if (!conn?.client) {
+          throw new Error(`Client for ${ownerName} not available`);
         }
-      }
+        const result = await conn.client.callTool({
+          name,
+          arguments: args,
+        });
+        await this.recordPins(conn, name);
+        return result;
+      });
     }
     throw new Error(`Tool ${name} not found`);
   }

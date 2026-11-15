@@ -3,6 +3,8 @@ import { CompletionOptions, LLMOptions } from "../../index.js";
 import { osModelsEditPrompt } from "../templates/edit.js";
 
 import OpenAI from "./OpenAI.js";
+import { ChatCompletionCreateParams } from "openai/resources/index";
+import { withReasoningEffort } from "../reasoningEffort.js";
 
 class Deepseek extends OpenAI {
   static providerName = "deepseek";
@@ -18,6 +20,17 @@ class Deepseek extends OpenAI {
     useLegacyCompletionsEndpoint: false,
   };
   maxStopWords: number | undefined = 16;
+
+  /** The toggle as DeepSeek's `thinking` switch (the adapter maps it). */
+  protected modifyChatBody(
+    body: ChatCompletionCreateParams,
+    options?: CompletionOptions,
+  ): ChatCompletionCreateParams {
+    return withReasoningEffort(
+      super.modifyChatBody(body, options),
+      options ?? {},
+    );
+  }
 
   supportsFim(): boolean {
     return true;

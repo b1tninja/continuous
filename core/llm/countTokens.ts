@@ -10,10 +10,10 @@ import {
 import { autodetectTemplateType } from "./autodetect.js";
 import {
   addSpaceToAnyEmptyMessages,
-  chatMessageIsEmpty,
   isUserOrToolMsg,
   messageHasToolCallId,
 } from "./messages.js";
+import { normalizeTurns, type TurnRepair } from "./normalizeTurns.js";
 
 import { renderChatMessage } from "../util/messageContent.js";
 import { isTaskPlanBlockText } from "../util/taskPlan.js";
@@ -432,6 +432,7 @@ function compileChatMessages({
   supportsImages,
   tools,
   ageing,
+  requiresAlternation,
 }: {
   modelName: string;
   msgs: ChatMessage[];
@@ -444,8 +445,11 @@ function compileChatMessages({
    * exactly as before. The caller keeps `state` between requests.
    */
   ageing?: { state: AgeingState; now?: number };
+  /** The provider wants turns to alternate (normalizeTurns.ts). */
+  requiresAlternation?: boolean;
 }): CompiledMessagesResult {
   let didPrune = false;
+  const repairs: TurnRepair[] = [];
   let didAge = false;
 
   let msgsCopy: ChatMessage[] = msgs.map((m) => ({ ...m }));
@@ -464,8 +468,12 @@ function compileChatMessages({
   const systemMsg = msgsCopy.find((msg) => msg.role === "system");
   msgsCopy = msgsCopy.filter((msg) => msg.role !== "system");
 
-  // Remove any empty messages or non-user/tool trailing messages
-  msgsCopy = msgsCopy.filter((msg) => !chatMessageIsEmpty(msg));
+  // Make the history one every provider accepts: empty turns and orphan
+  // reasoning dropped, every tool call answered and every result paired
+  // (normalizeTurns.ts). A valid history comes back unchanged.
+  const normalized = normalizeTurns(msgsCopy, { requiresAlternation });
+  msgsCopy = normalized.messages;
+  repairs.push(...normalized.repairs);
 
   msgsCopy = addSpaceToAnyEmptyMessages(msgsCopy);
 
@@ -608,16 +616,22 @@ function compileChatMessages({
     }
   }
 
-  // Now reassemble
+  // Now reassemble. Pruning can strand a tool call whose results it removed,
+  // or leave the history starting with the model, so normalise again.
+  const conversation = normalizeTurns(
+    [
+      ...historyWithTokens.map(({ tokens, ...rest }) => rest),
+      ...toolSequence,
+      ...(taskListTail ? [taskListTail] : []),
+    ],
+    { requiresAlternation },
+  );
+  repairs.push(...conversation.repairs);
   const reassembled: ChatMessage[] = [];
   if (systemMsg) {
     reassembled.push(systemMsg);
   }
-  reassembled.push(...historyWithTokens.map(({ tokens, ...rest }) => rest));
-  reassembled.push(...toolSequence);
-  if (taskListTail) {
-    reassembled.push(taskListTail);
-  }
+  reassembled.push(...conversation.messages);
 
   const inputTokens =
     currentTotal + systemMsgTokens + toolTokens + lastMessagesTokens;
@@ -628,6 +642,7 @@ function compileChatMessages({
     compiledChatMessages: reassembled,
     didPrune,
     ...(didAge && { didAge: true }),
+    ...(repairs.length > 0 && { repairs }),
     contextPercentage,
     outputTokensAvailable: Math.max(
       0,

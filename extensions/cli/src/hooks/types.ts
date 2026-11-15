@@ -150,6 +150,8 @@ export interface PreToolUseInput extends HookInputBase {
   hook_event_name: "PreToolUse";
   tool_name: string;
   tool_input: unknown;
+  /** The MCP server this tool belongs to; absent for built-in tools. `tool_name` stays the server's own tool name. */
+  server?: string;
   tool_use_id: string;
 }
 
@@ -157,6 +159,8 @@ export interface PostToolUseInput extends HookInputBase {
   hook_event_name: "PostToolUse";
   tool_name: string;
   tool_input: unknown;
+  /** The MCP server this tool belongs to; absent for built-in tools. `tool_name` stays the server's own tool name. */
+  server?: string;
   tool_response: unknown;
   tool_use_id: string;
 }
@@ -165,6 +169,8 @@ export interface PostToolUseFailureInput extends HookInputBase {
   hook_event_name: "PostToolUseFailure";
   tool_name: string;
   tool_input: unknown;
+  /** The MCP server this tool belongs to; absent for built-in tools. `tool_name` stays the server's own tool name. */
+  server?: string;
   tool_use_id: string;
   error: string;
   is_interrupt?: boolean;
@@ -174,6 +180,8 @@ export interface PermissionRequestInput extends HookInputBase {
   hook_event_name: "PermissionRequest";
   tool_name: string;
   tool_input: unknown;
+  /** The MCP server this tool belongs to; absent for built-in tools. `tool_name` stays the server's own tool name. */
+  server?: string;
   permission_suggestions?: unknown[];
 }
 

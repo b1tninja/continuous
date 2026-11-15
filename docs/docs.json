@@ -33,6 +33,7 @@
                   "ide-extensions/agent/quick-start",
                   "ide-extensions/agent/how-it-works",
                   "ide-extensions/agent/plan-mode",
+                  "ide-extensions/agent/loop-mode",
                   "ide-extensions/agent/task-list",
                   "ide-extensions/agent/plan-files",
                   "ide-extensions/agent/loop-budgets",
@@ -50,6 +51,7 @@
                   "ide-extensions/agent/terminal-environment",
                   "ide-extensions/agent/permissions-page",
                   "ide-extensions/agent/model-setup",
+                  "ide-extensions/agent/accessibility",
                   "ide-extensions/agent/how-to-customize",
                   "ide-extensions/agent/context-selection"
                 ]
@@ -85,6 +87,17 @@
                   "ide-extensions/edit/context-selection"
                 ]
               }
+            ]
+          },
+          {
+            "group": "Terminal agent",
+            "expanded": false,
+            "icon": "terminal",
+            "pages": [
+              "cli/install",
+              "cli/first-session",
+              "cli/reference",
+              "cli/slash-commands"
             ]
           },
           {
@@ -185,6 +198,11 @@
             "icon": "code",
             "pages": [
               "reference",
+              "reference/permissions-yaml",
+              "reference/settings-json",
+              "reference/environment-variables",
+              "reference/vscode",
+              "reference/storage-and-reset",
               "reference/yaml-migration",
               "reference/json-reference",
               "reference/surface-facts",
@@ -205,11 +223,16 @@
               "guides/ollama-guide",
               "guides/cn-serve",
               "cli/run-limits",
+              "cli/headless-output",
+              "cli/exit-codes",
+              "cli/export",
+              "cli/notifications",
               "guides/acp",
               "guides/instinct",
               "guides/running-continue-without-internet",
               "guides/custom-code-rag",
-              "guides/how-to-self-host-a-model"
+              "guides/how-to-self-host-a-model",
+              "cli/recovery"
             ]
           },
           {
@@ -354,7 +377,7 @@
     },
     {
       "source": "/model-setup/overview",
-      "destination": "/customize/model-roles/"
+      "destination": "/customize/model-roles/00-intro"
     },
     {
       "source": "/model-setup/select-model",
@@ -378,15 +401,15 @@
     },
     {
       "source": "/setup/select-provider",
-      "destination": "/customize/model-providers/anthropic"
+      "destination": "/customize/model-providers/top-level/anthropic"
     },
     {
       "source": "/setup/model-providers",
-      "destination": "/customize/model-providers/anthropic"
+      "destination": "/customize/model-providers/top-level/anthropic"
     },
     {
       "source": "/advanced/model-providers/anthropic",
-      "destination": "/customize/model-providers/anthropic"
+      "destination": "/customize/model-providers/top-level/anthropic"
     },
     {
       "source": "/walkthroughs/codebase-embeddings",
@@ -534,67 +557,67 @@
     },
     {
       "source": "/reference/Model Providers/anthropicllm",
-      "destination": "/customize/model-providers/anthropic"
+      "destination": "/customize/model-providers/top-level/anthropic"
     },
     {
       "source": "/reference/Model Providers/azure",
-      "destination": "/customize/model-providers/azure"
+      "destination": "/customize/model-providers/top-level/azure"
     },
     {
       "source": "/advanced/model-providers/azure",
-      "destination": "/customize/model-providers/azure"
+      "destination": "/customize/model-providers/top-level/azure"
     },
     {
       "source": "/reference/Model Providers/bedrock",
-      "destination": "/customize/model-providers/bedrock"
+      "destination": "/customize/model-providers/top-level/bedrock"
     },
     {
       "source": "/advanced/model-providers/bedrock",
-      "destination": "/customize/model-providers/bedrock"
+      "destination": "/customize/model-providers/top-level/bedrock"
     },
     {
       "source": "/reference/Model Providers/deepseek",
-      "destination": "/customize/model-providers/deepseek"
+      "destination": "/customize/model-providers/more/deepseek"
     },
     {
       "source": "/advanced/model-providers/deepseek",
-      "destination": "/customize/model-providers/deepseek"
+      "destination": "/customize/model-providers/more/deepseek"
     },
     {
       "source": "/reference/Model Providers/freetrial",
-      "destination": "/customize/model-providers/anthropic"
+      "destination": "/customize/model-providers/top-level/anthropic"
     },
     {
       "source": "/reference/Model Providers/geminiapi",
-      "destination": "/customize/model-providers/gemini"
+      "destination": "/customize/model-providers/top-level/gemini"
     },
     {
       "source": "/advanced/model-providers/gemini",
-      "destination": "/customize/model-providers/gemini"
+      "destination": "/customize/model-providers/top-level/gemini"
     },
     {
       "source": "/reference/Model Providers/mistral",
-      "destination": "/customize/model-providers/mistral"
+      "destination": "/customize/model-providers/more/mistral"
     },
     {
       "source": "/advanced/model-providers/mistral",
-      "destination": "/customize/model-providers/mistral"
+      "destination": "/customize/model-providers/more/mistral"
     },
     {
       "source": "/reference/Model Providers/ollama",
-      "destination": "/customize/model-providers/ollama"
+      "destination": "/customize/model-providers/top-level/ollama"
     },
     {
       "source": "/advanced/model-providers/ollama",
-      "destination": "/customize/model-providers/ollama"
+      "destination": "/customize/model-providers/top-level/ollama"
     },
     {
       "source": "/reference/Model Providers/openai",
-      "destination": "/customize/model-providers/openai"
+      "destination": "/customize/model-providers/top-level/openai"
     },
     {
       "source": "/advanced/model-providers/openai",
-      "destination": "/customize/model-providers/openai"
+      "destination": "/customize/model-providers/top-level/openai"
     },
     {
       "source": "/intro",
@@ -634,11 +657,11 @@
     },
     {
       "source": "/reference/Model Providers/huggingfaceinferenceapi",
-      "destination": "/customize/model-providers/more/huggingfaceinferenceapi"
+      "destination": "/customize/model-providers/top-level/huggingfaceinference"
     },
     {
       "source": "/advanced/model-providers/more/huggingfaceinferenceapi",
-      "destination": "/customize/model-providers/more/huggingfaceinferenceapi"
+      "destination": "/customize/model-providers/top-level/huggingfaceinference"
     },
     {
       "source": "/reference/Model Providers/ipex_llm",
@@ -682,11 +705,11 @@
     },
     {
       "source": "/reference/Model Providers/lmstudio",
-      "destination": "/customize/model-providers/more/lmstudio"
+      "destination": "/customize/model-providers/top-level/lmstudio"
     },
     {
       "source": "/advanced/model-providers/more/lmstudio",
-      "destination": "/customize/model-providers/more/lmstudio"
+      "destination": "/customize/model-providers/top-level/lmstudio"
     },
     {
       "source": "/reference/Model Providers/msty",
@@ -698,11 +721,11 @@
     },
     {
       "source": "/reference/Model Providers/openrouter",
-      "destination": "/customize/model-providers/more/openrouter"
+      "destination": "/customize/model-providers/top-level/openrouter"
     },
     {
       "source": "/advanced/model-providers/more/openrouter",
-      "destination": "/customize/model-providers/more/openrouter"
+      "destination": "/customize/model-providers/top-level/openrouter"
     },
     {
       "source": "/reference/Model Providers/replicatellm",
@@ -838,11 +861,11 @@
     },
     {
       "source": "/telemetry",
-      "destination": "/customize/telemetry"
+      "destination": "https://github.com/b1tninja/continuous/blob/main/PRIVACY.md"
     },
     {
       "source": "/advanced/telemetry",
-      "destination": "/customize/telemetry"
+      "destination": "https://github.com/b1tninja/continuous/blob/main/PRIVACY.md"
     },
     {
       "source": "/yaml-migration",
@@ -1114,7 +1137,7 @@
     },
     {
       "source": "/features",
-      "destination": "/ide-extensions"
+      "destination": "/ide-extensions/quick-start"
     },
     {
       "source": "/features/agent/quick-start",

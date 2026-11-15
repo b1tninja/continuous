@@ -1,0 +1,79 @@
+---
+title: "settings.json"
+---
+
+`settings.json` in the global folder (`~/.continuous/settings.json`, or `CONTINUOUS_GLOBAL_DIR`) holds your user-level settings for the terminal agent: run limits, commit and pull-request attribution, and hooks. It is JSON, and every key is optional.
+
+```json title="~/.continuous/settings.json"
+{
+  "runLimits": {
+    "maxBudgetUsd": 5,
+    "maxTurns": 100,
+    "maxDurationMinutes": 30
+  },
+  "attribution": {
+    "commit": false,
+    "pullRequest": false
+  },
+  "managedHooksOnly": true,
+  "hooks": {}
+}
+```
+
+This is not VS Code's `settings.json`. The extension's settings are listed in [VS Code settings and commands](/reference/vscode).
+
+## Keys
+
+| Key                              | Type    | Default                                                   | Read from                          |
+| -------------------------------- | ------- | --------------------------------------------------------- | ---------------------------------- |
+| `runLimits.maxBudgetUsd`         | number  | none                                                      | this file only                     |
+| `runLimits.maxTurns`             | number  | none                                                      | this file only                     |
+| `runLimits.maxDurationMinutes`   | number  | none                                                      | this file only                     |
+| `attribution.commit`             | boolean | `false`                                                   | this file only                     |
+| `attribution.pullRequest`        | boolean | `false`                                                   | this file only                     |
+| `attribution.text`               | string  | `Co-Authored-By: Continuous <noreply@continuous.invalid>` | this file only                     |
+| `hooks`                          | object  | none                                                      | user and trusted project files     |
+| `disableAllHooks`                | boolean | `false`                                                   | user and trusted project files     |
+| `managedHooksOnly`               | boolean | `false`                                                   | user files only                    |
+
+"This file only" means a project cannot set the key: a repository you open cannot raise your limits or switch attribution on.
+
+### `runLimits`
+
+Caps for headless runs and `continuous serve`. A value that is not a positive number is ignored; `maxTurns` is rounded down. A flag can only tighten a cap set here: the smaller value wins, and a flag that asks for more is ignored with a warning. [Run limits](/cli/run-limits) has the semantics and the exit codes.
+
+### `attribution`
+
+Nothing is added to a commit message or a pull request description unless you switch it on. With `commit` or `pullRequest` set to `true`, the agent is told to end what it writes with `text`, exactly as given. The default text names this product with a reserved `.invalid` address, so it credits no real person.
+
+### Hooks
+
+`hooks`, `disableAllHooks` and `managedHooksOnly` configure [hooks](/ide-extensions/agent/hooks-trust), in the same format as Claude Code's settings files.
+
+Hooks are read from these files, and those from every file run:
+
+| File                                   | Whose        | Loaded                                         |
+| -------------------------------------- | ------------ | ---------------------------------------------- |
+| `~/.claude/settings.json`              | yours        | always                                         |
+| `~/.continuous/settings.json`          | yours        | always                                         |
+| `.claude/settings.json`                | the project  | once you trust the project's hooks             |
+| `.continue/settings.json`              | the project  | once you trust the project's hooks             |
+| `.continuous/settings.json`            | the project  | once you trust the project's hooks             |
+| `.claude/settings.local.json`          | the project  | once you trust the project's hooks             |
+| `.continue/settings.local.json`        | the project  | once you trust the project's hooks             |
+| `.continuous/settings.local.json`      | the project  | once you trust the project's hooks             |
+
+- `managedHooksOnly: true` in one of your own files means the project's files are not read at all, trusted or not. A project file cannot set it.
+- `disableAllHooks: true` turns every hook off. A project file's `disableAllHooks` counts only once the project is trusted.
+- `continuous hooks list | trust | revoke` and `--trust-project-hooks` manage project trust.
+
+## Things to know
+
+- **A file that does not parse is skipped** with a warning in the log (`~/.continuous/logs/cn.log`). Its hooks do not load, including hooks you rely on for safety, and its limits and attribution fall back to the defaults.
+- If `CONTINUOUS_GLOBAL_DIR` points inside the project you are working in, this file is not read for hooks, and project trust is unavailable.
+
+## Related
+
+- [Run limits](/cli/run-limits)
+- [Hooks](/ide-extensions/agent/hooks-trust)
+- [Environment variables](/reference/environment-variables)

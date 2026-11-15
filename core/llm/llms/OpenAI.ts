@@ -26,6 +26,10 @@ import {
   toChatBody,
   toResponsesInput,
 } from "../openaiTypeConverters.js";
+import {
+  reasoningEffortFromOptions,
+  withReasoningEffort,
+} from "../reasoningEffort.js";
 
 const NON_CHAT_MODELS = [
   "text-davinci-002",
@@ -197,6 +201,27 @@ const formatMessageForO1OrGpt5ForResponses = (
   return input;
 };
 
+/**
+ * The Responses request's `reasoning`: the effort from the reasoning toggle
+ * and budget (reasoningEffortFromOptions), "medium" when the request says
+ * nothing (what was always sent), and the summaries the chat shows. Off is
+ * "none" on GPT-5.1 and later and "minimal" on GPT-5; the o-series cannot
+ * turn reasoning off and get their lowest, "low". Off has no summary.
+ */
+export function responsesReasoning(
+  model: string,
+  options: Pick<CompletionOptions, "reasoning" | "reasoningBudgetTokens">,
+): {
+  effort: "none" | "minimal" | "low" | "medium" | "high";
+  summary?: "auto";
+} {
+  const effort = reasoningEffortFromOptions(options) ?? "medium";
+  if (effort !== "none") return { effort, summary: "auto" };
+  if (/gpt-(?:5\.[1-9]|[6-9])/.test(model)) return { effort: "none" };
+  if (/gpt-5/.test(model)) return { effort: "minimal" };
+  return { effort: "low", summary: "auto" };
+}
+
 class OpenAI extends BaseLLM {
   public useLegacyCompletionsEndpoint: boolean | undefined = undefined;
 
@@ -337,10 +362,7 @@ class OpenAI extends BaseLLM {
       input,
       temperature: options.temperature ?? null,
       top_p: options.topP ?? null,
-      reasoning: {
-        effort: "medium",
-        summary: "auto",
-      },
+      reasoning: responsesReasoning(model, options),
       include: ["reasoning.encrypted_content"],
     };
 
@@ -443,10 +465,26 @@ class OpenAI extends BaseLLM {
     }
   }
 
+  /** OpenAI's own API, where `reasoning_effort` is a request field. */
+  protected isOfficialOpenAIApi(): boolean {
+    try {
+      return new URL(this.apiBase ?? "").host === "api.openai.com";
+    } catch {
+      return false;
+    }
+  }
+
   protected modifyChatBody(
     body: ChatCompletionCreateParams,
+    options?: CompletionOptions,
   ): ChatCompletionCreateParams {
     body.stop = body.stop?.slice(0, this.getMaxStopWords());
+
+    // The reasoning toggle and budget as the adapter's switch; the adapter
+    // sends it only to the reasoning models, in the values each one takes
+    if (options && this.isOfficialOpenAIApi()) {
+      body = withReasoningEffort(body, options);
+    }
 
     // OpenAI o1-preview and o1-mini or o3-mini:
     if (this.isOSeriesOrGpt5PlusModel(body.model)) {

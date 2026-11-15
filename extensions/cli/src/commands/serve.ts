@@ -11,6 +11,7 @@ import { runEnvironmentInstallSafe } from "../environment/environmentHandler.js"
 import { processCommandFlags } from "../flags/flagProcessor.js";
 import { loopWaveRunning } from "../loop/loopSession.js";
 import { toolPermissionManager } from "../permissions/permissionManager.js";
+import { isSafeMode } from "../safeMode.js";
 import {
   getService,
   initializeServices,
@@ -26,6 +27,7 @@ import { createSession } from "../session.js";
 import { messageQueue } from "../stream/messageQueue.js";
 import { constructSystemMessage } from "../systemMessage.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
+import { exitOnBrokenConfig } from "../util/configFileGate.js";
 import { gracefulExit } from "../util/exit.js";
 import { formatError } from "../util/formatError.js";
 import { getGitDiffSnapshot } from "../util/git.js";
@@ -114,6 +116,9 @@ export async function serve(prompt?: string, options: ServeOptions = {}) {
 
   // Environment install script will be deferred until after server startup to avoid blocking
 
+  // A broken hooks or permissions file stops the start (exit code 2)
+  await exitOnBrokenConfig(options);
+
   // Initialize services with tool permission overrides
   const { permissionOverrides } = processCommandFlags(options);
 
@@ -145,7 +150,11 @@ export async function serve(prompt?: string, options: ServeOptions = {}) {
   logServeConfiguration(config.name, model, options.config);
 
   // Run limits cover the whole serve process; see docs/cli/run-limits.mdx
-  startRunLimits(options, { provider: model.provider, model: model.model });
+  startRunLimits(options, {
+    provider: model.provider,
+    model: model.model,
+    pricing: model.pricing,
+  });
 
   // Initialize session with system message
   const systemMessage = await constructSystemMessage(
@@ -336,8 +345,9 @@ export async function serve(prompt?: string, options: ServeOptions = {}) {
       timeoutSeconds,
     });
 
-    // Run environment install script after server startup
-    runEnvironmentInstallSafe();
+    // Run environment install script after server startup (not under --safe:
+    // it is a command from a project file)
+    if (!isSafeMode()) runEnvironmentInstallSafe();
 
     // If initial prompt provided, queue it for processing
     const initialPrompt = prependPrompt(

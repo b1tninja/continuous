@@ -2,7 +2,10 @@ import type { ChatCompletionMessageParam } from "openai/resources.mjs";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  capGitStatus,
   ENVIRONMENT_BLOCK_OPEN,
+  MAX_GIT_STATUS_CHARS,
+  MAX_GIT_STATUS_LINES,
   environmentContextBlock,
   resetEnvironmentContextBlock,
   withEnvironmentBlock,
@@ -20,6 +23,49 @@ describe("environmentContextBlock", () => {
     expect(block).toContain("Git status at the start of the session");
     expect(block.trimEnd().endsWith("</context>")).toBe(true);
     expect(environmentContextBlock()).toBe(block);
+  });
+});
+
+describe("capGitStatus", () => {
+  const entries = (n: number) =>
+    Array.from(
+      { length: n },
+      (_, i) => ` M src/file${String(i).padStart(4, "0")}.ts`,
+    );
+
+  it("leaves a short status as it is", () => {
+    const s = " M a.ts\n?? b.ts";
+    expect(capGitStatus(s)).toBe(s);
+  });
+
+  it("cuts at the line cap with an explicit count of the rest", () => {
+    const out = capGitStatus(entries(100).join("\n"));
+    const lines = out.split("\n");
+    expect(lines).toHaveLength(MAX_GIT_STATUS_LINES + 1);
+    expect(lines.at(-1)).toBe(
+      `... and ${100 - MAX_GIT_STATUS_LINES} more changed files`,
+    );
+  });
+
+  it("cuts at the character cap", () => {
+    const long = Array.from(
+      { length: 40 },
+      (_, i) => ` M ${"d/".repeat(60)}f${String(i).padStart(2, "0")}.ts`,
+    );
+    const out = capGitStatus(long.join("\n"));
+    const [last, ...rest] = out.split("\n").reverse();
+    expect(last).toMatch(/^\.\.\. and \d+ more changed files$/);
+    expect(rest.length).toBeLessThan(MAX_GIT_STATUS_LINES);
+    expect(rest.join("\n").length).toBeLessThanOrEqual(MAX_GIT_STATUS_CHARS);
+  });
+
+  it("orders by path whatever the input order, so the same tree gives the same bytes", () => {
+    const list = entries(60);
+    const shuffled = [...list].reverse();
+    expect(capGitStatus(shuffled.join("\n"))).toBe(
+      capGitStatus(list.join("\n")),
+    );
+    expect(capGitStatus(shuffled.join("\n")).split("\n")[0]).toBe(list[0]);
   });
 });
 

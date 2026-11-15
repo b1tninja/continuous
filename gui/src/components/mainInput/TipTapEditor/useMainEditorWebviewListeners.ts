@@ -1,7 +1,9 @@
 import { Editor } from "@tiptap/react";
 import { InputModifiers } from "core";
 import { rifWithContentsToContextItem } from "core/commands/util";
-import { MutableRefObject } from "react";
+import { MutableRefObject, useContext } from "react";
+import { announce } from "../../a11y/announcer";
+import { IdeMessengerContext } from "../../../context/IdeMessenger";
 import { useWebviewListener } from "../../../hooks/useWebviewListener";
 import { useAppSelector } from "../../../redux/hooks";
 import { clearCodeToEdit } from "../../../redux/slices/editState";
@@ -9,6 +11,11 @@ import { setNewestToolbarPreviewForInput } from "../../../redux/slices/sessionSl
 import { AppDispatch } from "../../../redux/store";
 import { loadSession, saveCurrentSession } from "../../../redux/thunks/session";
 import { CodeBlock, PromptBlock } from "./extensions";
+import {
+  describeAddToChat,
+  describeAddToChatRefusals,
+  planAddToChat,
+} from "./utils/addToChat";
 import { insertCurrentFileContextMention } from "./utils/insertCurrentFileContextMention";
 
 /**
@@ -36,6 +43,7 @@ export function useMainEditorWebviewListeners({
     (state) => state.config.config.experimental?.useCurrentFileAsContext,
   );
   const isInEdit = useAppSelector((state) => state.session.isInEdit);
+  const ideMessenger = useContext(IdeMessengerContext);
 
   useWebviewListener(
     "isContinueInputFocused",
@@ -202,25 +210,28 @@ export function useMainEditorWebviewListeners({
   useWebviewListener(
     "addToChat",
     async (data) => {
-      if (!editor) return;
-      let chain = editor.chain();
+      if (!editor || editor.isDestroyed) return;
+      const plan = planAddToChat(data, editor.getJSON(), {
+        file: activeContextProviders.some((p) => p.title === "file"),
+        folder: activeContextProviders.some((p) => p.title === "folder"),
+      });
 
-      for (let mention of data.data) {
-        chain
-          .insertContent({
-            type: "mention",
-            attrs: {
-              id: mention.fullPath,
-              query: mention.fullPath,
-              itemType: mention.type,
-              label: mention.name,
-            },
-          })
-          .insertContent(" ");
+      // At the cursor when the input already has focus, otherwise at the end;
+      // either way the input is focused afterwards.
+      const chain = editor
+        .chain()
+        .focus(editorFocusedRef.current ? undefined : "end");
+      if (plan.content.length) {
+        chain.insertContent(plan.content);
       }
-
       chain.run();
+
+      announce(describeAddToChat(plan));
+      const refusals = describeAddToChatRefusals(plan);
+      if (refusals) {
+        ideMessenger.post("showToast", ["warning", refusals]);
+      }
     },
-    [editor],
+    [editor, activeContextProviders, editorFocusedRef, ideMessenger],
   );
 }

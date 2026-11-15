@@ -208,10 +208,13 @@ interface SageMakerModelToolkit {
 class MessageAPIToolkit implements SageMakerModelToolkit {
   constructor(private sagemaker: SageMaker) {}
   generateCommand(
-    messages: ChatMessage[],
+    allMessages: ChatMessage[],
     prompt: string,
     options: CompletionOptions,
   ): InvokeEndpointWithResponseStreamCommand {
+    // A chat template or Messages API endpoint has no "thinking" role; a
+    // reasoning turn is not sent back.
+    const messages = allMessages.filter((m) => m.role !== "thinking");
     if ("chat_template" in this.sagemaker.completionOptions) {
       // for some model you can apply chat_template to the model
       let prompt = jinja

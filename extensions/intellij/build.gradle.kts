@@ -92,7 +92,7 @@ dependencies {
         testIntegrationImplementation("org.bouncycastle:bcprov-jdk18on:1.86")
         testIntegrationImplementation("org.bouncycastle:bcpkix-jdk18on:1.86")
         testIntegrationImplementation("org.bouncycastle:bcutil-jdk18on:1.86")
-        testIntegrationImplementation("com.google.guava:guava:33.7.2-jre")
+        testIntegrationImplementation("com.google.guava:guava:33.8.0-jre")
         testIntegrationImplementation("com.google.protobuf:protobuf-java:4.36.2")
         testIntegrationImplementation("com.thoughtworks.xstream:xstream:1.4.21")
         testIntegrationImplementation("org.jsoup:jsoup:1.24.1")

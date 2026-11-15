@@ -67,6 +67,14 @@ function Disclosure({
 
 interface SubagentCardProps {
   toolCallState: ToolCallState;
+  /**
+   * The agents panel's transcript view: the same record, without Stop (the
+   * view has its own) and without Allow and Reject, so an approval is only
+   * ever answered on the card in the conversation; the view links to it.
+   */
+  readOnly?: boolean;
+  /** For `readOnly`: go to the card in the conversation */
+  onShowInConversation?: () => void;
 }
 
 /**
@@ -75,7 +83,11 @@ interface SubagentCardProps {
  * once it has one, and Stop. A call it wants to make that needs approval is
  * asked here, labelled with the agent's name.
  */
-export function SubagentCard({ toolCallState }: SubagentCardProps) {
+export function SubagentCard({
+  toolCallState,
+  readOnly = false,
+  onShowInConversation,
+}: SubagentCardProps) {
   const args = toolCallState.parsedArgs ?? {};
   const run: SubagentRunState = toolCallState.subagent ?? {
     agent: typeof args.agent === "string" ? args.agent : "subagent",
@@ -110,7 +122,9 @@ export function SubagentCard({ toolCallState }: SubagentCardProps) {
   return (
     <div
       className="mx-1 my-1 flex min-w-0 flex-col gap-1.5 rounded-md border border-solid border-border px-3 py-2 text-xs"
-      data-testid={`subagent-card-${id}`}
+      data-testid={
+        readOnly ? `subagent-transcript-${id}` : `subagent-card-${id}`
+      }
     >
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <span className="flex h-3.5 w-3.5 flex-shrink-0 items-center">
@@ -141,7 +155,7 @@ export function SubagentCard({ toolCallState }: SubagentCardProps) {
             {formatTokens(tokens)} tokens
           </span>
         )}
-        {started && live && (
+        {started && live && !readOnly && (
           <Button
             variant="ghost"
             size="sm"
@@ -183,7 +197,9 @@ export function SubagentCard({ toolCallState }: SubagentCardProps) {
 
       {run.toolCalls.length > 0 && (
         <ul
-          className="m-0 flex max-h-40 min-w-0 list-none flex-col gap-0.5 overflow-y-auto p-0"
+          className={`m-0 flex min-w-0 list-none flex-col gap-0.5 p-0 ${
+            readOnly ? "" : "max-h-40 overflow-y-auto"
+          }`}
           data-testid={`subagent-tools-${id}`}
         >
           {run.toolCalls.map((call, i) => (
@@ -225,30 +241,45 @@ export function SubagentCard({ toolCallState }: SubagentCardProps) {
               {maskCommandForDisplay(run.pendingApproval.note)}
             </span>
           )}
-          <div className="flex flex-wrap justify-end gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="my-0 text-description-muted"
-              onClick={() =>
-                answerSubagentApproval(run.pendingApproval!.id, false)
-              }
-              data-testid={`subagent-reject-${id}`}
-            >
-              Reject
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              className="my-0"
-              onClick={() =>
-                answerSubagentApproval(run.pendingApproval!.id, true)
-              }
-              data-testid={`subagent-accept-${id}`}
-            >
-              Allow
-            </Button>
-          </div>
+          {readOnly ? (
+            <div className="flex flex-wrap justify-end gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="my-0 text-description"
+                onClick={onShowInConversation}
+                disabled={!onShowInConversation}
+                data-testid={`subagent-approval-jump-${id}`}
+              >
+                Answer in the conversation
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap justify-end gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="my-0 text-description-muted"
+                onClick={() =>
+                  answerSubagentApproval(run.pendingApproval!.id, false)
+                }
+                data-testid={`subagent-reject-${id}`}
+              >
+                Reject
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                className="my-0"
+                onClick={() =>
+                  answerSubagentApproval(run.pendingApproval!.id, true)
+                }
+                data-testid={`subagent-accept-${id}`}
+              >
+                Allow
+              </Button>
+            </div>
+          )}
         </div>
       )}
 

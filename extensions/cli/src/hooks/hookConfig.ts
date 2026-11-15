@@ -14,11 +14,15 @@
  * Hooks from all sources are merged (project > user, continue > claude).
  */
 
-import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
 import { logger } from "../util/logger.js";
+import {
+  type BrokenConfigFile,
+  readPolicyFile,
+  warnOnce,
+} from "../util/readPolicyFile.js";
 
 import {
   fingerprintProjectHooks,
@@ -37,20 +41,25 @@ import type {
 
 /**
  * Load and parse a settings JSON file, returning only the hooks portion.
- * Returns null if file doesn't exist or fails to parse.
+ * Returns null if the file does not exist or is broken. A broken file (present
+ * but unparseable) is added to `broken` so the caller can refuse or warn: it
+ * must not read as "no hooks".
  */
-function loadSettingsFile(filePath: string): HookSettingsFile | null {
-  try {
-    if (!fs.existsSync(filePath)) {
-      return null;
-    }
-    const content = fs.readFileSync(filePath, "utf-8");
-    const parsed = JSON.parse(content);
-    return parsed as HookSettingsFile;
-  } catch (error) {
-    logger.warn(`Failed to load hooks settings from ${filePath}:`, error);
-    return null;
+function loadSettingsFile(
+  filePath: string,
+  broken?: BrokenConfigFile[],
+): HookSettingsFile | null {
+  const result = readPolicyFile<HookSettingsFile>(filePath, "json", (parsed) =>
+    parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? undefined
+      : "has the wrong structure (expected a JSON object)",
+  );
+  if (result.status === "ok") return result.value;
+  if (result.status === "broken") {
+    logger.warn(`Hooks settings file ${filePath} is broken: ${result.error}`);
+    broken?.push({ path: result.path, error: result.error });
   }
+  return null;
 }
 
 /**
@@ -78,7 +87,10 @@ function mergeHooksConfigs(
 /**
  * Settings files that belong to the user. These always load.
  */
-function getUserSettingsFilePaths(cwd: string, homeDir?: string): string[] {
+export function getUserSettingsFilePaths(
+  cwd: string,
+  homeDir?: string,
+): string[] {
   const home = homeDir ?? os.homedir();
   const paths = [path.join(home, ".claude", "settings.json")];
   // Undefined when CONTINUE_GLOBAL_DIR points inside the project; see hookTrust.
@@ -111,6 +123,7 @@ function getProjectSettingsFilePaths(cwd: string): string[] {
 export function getProjectHookFiles(
   cwd: string,
   homeDir?: string,
+  broken?: BrokenConfigFile[],
 ): ProjectHookFile[] {
   const userFiles = new Set(
     getUserSettingsFilePaths(cwd, homeDir).map(realPath),
@@ -118,7 +131,7 @@ export function getProjectHookFiles(
   const files: ProjectHookFile[] = [];
   for (const filePath of getProjectSettingsFilePaths(cwd)) {
     if (userFiles.has(realPath(filePath))) continue;
-    const settings = loadSettingsFile(filePath);
+    const settings = loadSettingsFile(filePath, broken);
     if (!settings?.hooks && !settings?.disableAllHooks) continue;
     files.push({
       path: filePath,
@@ -147,6 +160,11 @@ export interface LoadedHooksConfig {
    */
   managedOnly?: boolean;
   untrustedProject?: UntrustedProjectHooks;
+  /**
+   * Settings files that exist but do not parse. None of what they say was
+   * loaded. Project files are listed only when they would have been read.
+   */
+  broken?: BrokenConfigFile[];
 }
 
 /**
@@ -180,6 +198,9 @@ export function loadHooksConfig(
   let mergedHooks: HooksConfig = {};
   let disabled = false;
   let managedOnly = false;
+  const broken: BrokenConfigFile[] = [];
+  const withBroken = (r: LoadedHooksConfig): LoadedHooksConfig =>
+    broken.length > 0 ? { ...r, broken } : r;
 
   const apply = (settings: {
     hooks?: HooksConfig;
@@ -191,7 +212,7 @@ export function loadHooksConfig(
   };
 
   for (const filePath of getUserSettingsFilePaths(cwd, homeDir)) {
-    const settings = loadSettingsFile(filePath);
+    const settings = loadSettingsFile(filePath, broken);
     if (!settings) continue;
     apply(settings);
     // Only the user's own files can switch this on, and only with `true`.
@@ -201,11 +222,13 @@ export function loadHooksConfig(
   if (managedOnly) {
     // Nothing from the project is read, so not even a `disableAllHooks` in it
     // can silence the user's hooks, and there is nothing to ask about.
-    return { hooks: mergedHooks, disabled, managedOnly };
+    return withBroken({ hooks: mergedHooks, disabled, managedOnly });
   }
 
-  const projectFiles = getProjectHookFiles(cwd, homeDir);
-  if (projectFiles.length === 0) return { hooks: mergedHooks, disabled };
+  const projectFiles = getProjectHookFiles(cwd, homeDir, broken);
+  if (projectFiles.length === 0) {
+    return withBroken({ hooks: mergedHooks, disabled });
+  }
 
   const fingerprint = fingerprintProjectHooks(cwd, projectFiles);
   if (
@@ -215,10 +238,10 @@ export function loadHooksConfig(
     projectFiles.forEach((file) =>
       apply({ ...file, hooks: markAsProject(file.hooks) }),
     );
-    return { hooks: mergedHooks, disabled };
+    return withBroken({ hooks: mergedHooks, disabled });
   }
 
-  return {
+  return withBroken({
     hooks: mergedHooks,
     disabled,
     untrustedProject: {
@@ -226,7 +249,15 @@ export function loadHooksConfig(
       fingerprint,
       handlers: listProjectHandlers(projectFiles, cwd),
     },
-  };
+  });
+}
+
+/** Hook settings files that exist but do not parse, for the headless start check. */
+export function findBrokenHookFiles(
+  cwd: string,
+  homeDir?: string,
+): BrokenConfigFile[] {
+  return loadHooksConfig(cwd, homeDir).broken ?? [];
 }
 
 /**
@@ -257,15 +288,19 @@ export function getMatchingHookGroups(
     }
 
     // Regex match
+    let regex: RegExp;
     try {
-      const regex = new RegExp(group.matcher);
-      return regex.test(matcherValue);
-    } catch (error) {
-      logger.warn(
-        `Invalid hook matcher regex "${group.matcher}" for event ${eventName}:`,
-        error,
+      regex = new RegExp(group.matcher);
+    } catch {
+      // A matcher that does not compile must not switch the hook off: a guard
+      // that silently never runs is the dangerous direction. Treat it as
+      // matching, so the hook runs, and say so once.
+      warnOnce(
+        `matcher:${group.matcher}`,
+        `Hook matcher "${group.matcher}" for event ${eventName} is not a valid regular expression, so the hook runs on every ${eventName} event. Fix the matcher.`,
       );
-      return false;
+      return true;
     }
+    return regex.test(matcherValue);
   });
 }

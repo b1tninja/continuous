@@ -29,6 +29,7 @@ import { services } from "../services/index.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
 import { applyChatCompletionToolOverrides } from "../tools/applyToolOverrides.js";
 import { ToolCall } from "../tools/index.js";
+import { logCliDebugPrompt } from "../util/debugPromptLog.js";
 import {
   chatCompletionStreamWithBackoff,
   isContextLengthError,
@@ -50,6 +51,7 @@ import {
   leakedCallNudgeAllowed,
   noteLeakedCallNudge,
 } from "./leakedCallNudge.js";
+import { ReasoningAccumulator, type StreamedReasoning } from "./reasoning.js";
 import { resetRefusalCount } from "./refusalCap.js";
 import { resetRepeatGuard } from "./repeatGuard.js";
 import { buildChatRequestBody } from "./requestBody.js";
@@ -72,6 +74,11 @@ import {
 import { StreamCallbacks } from "./streamChatResponse.types.js";
 import { taskListBlockForRequest } from "./taskListBlock.js";
 import { hintToolDialectLeak } from "./toolDialectLeak.js";
+import {
+  historyForHeldTools,
+  holdRequestTools,
+  noteHeldToolsUsage,
+} from "./toolListHoldStep.js";
 
 function updateFinalResponse(
   content: string,
@@ -132,6 +139,8 @@ interface ProcessChunkOptions {
   indexToIdMap: Map<number, string>;
   callbacks?: StreamCallbacks;
   isHeadless?: boolean;
+  /** The reply's reasoning so far. */
+  reasoning?: ReasoningAccumulator;
 }
 
 function processChunk(options: ProcessChunkOptions): {
@@ -145,6 +154,7 @@ function processChunk(options: ProcessChunkOptions): {
     indexToIdMap,
     callbacks,
     isHeadless,
+    reasoning,
   } = options;
   const holding = recoveryHoldOf(chunk);
   if (holding !== undefined) callbacks?.onRecoveryHold?.(holding);
@@ -159,6 +169,15 @@ function processChunk(options: ProcessChunkOptions): {
   }
 
   let updatedResponse = aiResponse;
+
+  // The model's reasoning, shown live where a caller asks for it; never
+  // written to stdout or added to the reply
+  const now = Date.now();
+  const thought = reasoning?.add(choice.delta, now);
+  if (thought) callbacks?.onReasoning?.(thought);
+  if (choice.delta.content || choice.delta.tool_calls) {
+    reasoning?.markAnswer(now);
+  }
 
   // Handle content streaming
   if (choice.delta.content) {
@@ -347,6 +366,8 @@ export async function processStreamingResponse(
   usage?: any;
   /** The provider's finish_reason of the last chunk that carried one. */
   finishReason?: string;
+  /** The reply's reasoning, when the model sent any. */
+  reasoning?: StreamedReasoning;
 }> {
   const {
     model,
@@ -449,6 +470,11 @@ export async function processStreamingResponse(
     });
     // CONTINUE_DUMP_REQUESTS: the body as handed to the adapter, for diffing
     dumpRequest(requestBody);
+    // --debug-prompt-log: the messages, scrubbed, in the capped prompt log
+    logCliDebugPrompt({
+      model: requestBody.model,
+      messages: requestBody.messages,
+    });
     return await chatCompletionStreamWithBackoff(
       llmApi,
       requestBody,
@@ -460,6 +486,7 @@ export async function processStreamingResponse(
   let finalContent = "";
   const toolCallsMap = new Map<string, ToolCall>();
   const indexToIdMap = new Map<number, string>(); // Track index to ID mapping
+  const reasoning = new ReasoningAccumulator();
   let firstTokenTime: number | null = null;
   let inputTokens = 0;
   let outputTokens = 0;
@@ -515,6 +542,7 @@ export async function processStreamingResponse(
         indexToIdMap,
         callbacks,
         isHeadless,
+        reasoning,
       });
       aiResponse = result.aiResponse;
       if (!result.shouldContinue) break;
@@ -578,6 +606,7 @@ export async function processStreamingResponse(
         toolCalls: [],
         shouldContinue: false,
         usage: fullUsage,
+        reasoning: reasoning.result(Date.now()),
       };
     }
 
@@ -616,6 +645,7 @@ export async function processStreamingResponse(
     shouldContinue: validToolCalls.length > 0,
     usage: fullUsage,
     finishReason,
+    reasoning: reasoning.result(Date.now()),
   };
 }
 
@@ -715,10 +745,18 @@ export async function streamChatResponse(
       fixedUse,
     );
 
-    // Recompute tools on each iteration to handle mode changes during streaming
-    const rawTools = await getRequestTools(isHeadless);
+    // Recompute tools on each iteration to handle mode changes during
+    // streaming; while the prompt cache is warm a change to them waits (C80)
+    const mainRequest = !fixedUse && persistSession;
+    const held = holdRequestTools({
+      rawTools: await getRequestTools(isHeadless),
+      model,
+      historyLength: chatHistory.length,
+      main: mainRequest,
+      callbacks,
+    });
     const tools = applyChatCompletionToolOverrides(
-      rawTools,
+      held.tools,
       model.chatOptions?.toolOverrides,
     );
 
@@ -753,10 +791,18 @@ export async function streamChatResponse(
     // Get response from LLM ("Steer now" interrupts only while it streams;
     // Loop mode sends each run without the turns before it)
     callbacks?.onModelStreaming?.(true);
-    const { content, toolCalls, shouldContinue, usage } =
+    const { content, toolCalls, shouldContinue, usage, reasoning } =
       await processStreamingResponse({
         isHeadless,
-        chatHistory: loopRequestHistory(chatHistory, isCompacting),
+        // Reasoning minted under an earlier tool list is left out on the
+        // models that refuse it (core thinkingCutAfterToolChange)
+        chatHistory: loopRequestHistory(
+          historyForHeldTools(
+            chatHistory,
+            preCompactionResult.wasCompacted ? undefined : held.thinkingCut,
+          ),
+          isCompacting,
+        ),
         model,
         llmApi,
         abortController,
@@ -768,6 +814,11 @@ export async function streamChatResponse(
       }).finally(() => callbacks?.onModelStreaming?.(false));
 
     options.onRequest?.();
+    if (mainRequest && !isCompacting) noteHeldToolsUsage(model, usage);
+
+    // The reply's whole reasoning, once: after the request's usage and
+    // before the reply's message is reported
+    if (reasoning) callbacks?.onReasoningComplete?.(reasoning);
 
     if (abortController?.signal.aborted) {
       return finalResponse || content || fullResponse;
@@ -805,6 +856,7 @@ export async function streamChatResponse(
       callbacks,
       isHeadless,
       usage,
+      reasoning,
       abortSignal: abortController.signal,
     });
 

@@ -82,6 +82,8 @@ export async function compactConversation({
 
   // add cancelled chat messages explicitly for cancelled tool calls
   filteredHistory.forEach((item) => {
+    // An old turn removed with "Choose what to keep" is not summarised
+    if (item.removedByUser?.turn) return;
     messages.push(item.message);
     // toolcalls only exist in an assistant message
     if (item.message.role === "assistant" && item.message.toolCalls) {

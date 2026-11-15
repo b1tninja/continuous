@@ -3,9 +3,16 @@ import { describe, expect, it } from "vitest";
 import type { ShellKind } from "../../util/shell";
 import { commandCandidates } from "./candidates";
 import { hiddenCommandName } from "./commandName";
-import { evaluateToolPolicyWithRules } from "./evaluate";
+import { evaluateToolPolicyWithRules as evaluateAndRun } from "./evaluate";
+import { wouldDecide } from "./idgafView.testutil";
 import { maskAssignmentValues } from "./envMask";
 import { DEFAULT_POLICY_LEVELS } from "./policy";
+
+// At IDGAF every call runs; these tests read what the guard would have
+// decided (wouldDecide), which IDGAF records instead of acting on.
+const evaluateToolPolicyWithRules = (
+  input: Parameters<typeof evaluateAndRun>[0],
+) => wouldDecide(evaluateAndRun(input));
 
 /**
  * An assignment in front of a command (`NAME=value cmd`, `env NAME=value cmd`,
@@ -67,7 +74,7 @@ describe("what each kind of name does at each level", () => {
     "PYTHONPATH=/tmp/x python a.py",
     "env -i PATH=/tmp git status",
     "IFS=/ git status",
-  ])("%s asks at every level, IDGAF included", (command) => {
+  ])("%s asks at every level (at IDGAF: runs, ask recorded)", (command) => {
     for (const level of LEVELS) {
       const r = run(command, "bash", level);
       expect(r.policy, `${level}: ${command}`).toBe(ASK);
@@ -80,9 +87,10 @@ describe("what each kind of name does at each level", () => {
     "AWS_ENDPOINT_URL=http://h:1 aws s3 ls",
     "API_KEY=abc node a.js",
     "TMPDIR=/tmp/x node a.js",
-  ])("%s asks below IDGAF and runs at IDGAF", (command) => {
+  ])("%s asks below IDGAF; IDGAF runs it and records the ask", (command) => {
     expect(run(command, "bash", "permissive").policy).toBe(ASK);
-    expect(run(command, "bash", "idgaf").policy).toBe(RUN);
+    // wouldDecide: checked to have run, and read as what was recorded
+    expect(run(command, "bash", "idgaf").policy).toBe(ASK);
   });
 
   it.each([

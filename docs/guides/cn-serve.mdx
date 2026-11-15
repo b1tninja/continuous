@@ -52,7 +52,7 @@ These apply before the token is checked, whatever the token setting. A Host that
 
 ## Limits and masking
 
-A request body over 1 MB gets `413`. Each address is limited to 1200 requests a minute (`429`). `GET /state` and `GET /diff` pass what they return through the display masker and the secret scanner, so a key in the conversation or in a diff is shown as a placeholder.
+A request body over 1 MB gets `413`. Each address is limited to 1200 requests a minute (`429`). `GET /state` and `GET /diff` pass what they return through the display masker and the secret scanner, so a key in the conversation or in a diff is shown as a placeholder. For `GET /state` that covers every field: the conversation, a pending permission, the queued messages (`messageQueue`), the held questions (`pendingQuestions`) and the loop (`loop`, with its questions, reports and check output). The masking is by pattern, so a secret in a shape no rule lists is not caught.
 
 ## Agents
 

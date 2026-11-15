@@ -116,3 +116,57 @@ describe("cn hooks", () => {
     expect(runs()).toBe(0);
   });
 });
+
+describe("cn hooks list: your own hooks", () => {
+  const writeUser = (content: string) => {
+    fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(home, ".claude", "settings.json"), content);
+  };
+  beforeEach(() => {
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+  });
+
+  it("shows user-level hooks with the file they come from", async () => {
+    writeUser(
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            { matcher: "Bash", hooks: [{ type: "command", command: "guard" }] },
+          ],
+        },
+      }),
+    );
+    expect(await hooksCommand("list", {}, project)).toBe(0);
+    expect(out).toContain("Your own hooks");
+    expect(out).toContain(path.join(home, ".claude", "settings.json"));
+    expect(out).toContain("[PreToolUse] command: guard");
+    // the project's hooks are still listed, and still not trusted
+    expect(out).toContain("audit --log");
+    expect(out).toContain("Not trusted");
+  });
+
+  it("lists them when the project defines none", async () => {
+    fs.rmSync(path.join(project, ".continue"), { recursive: true });
+    writeUser(
+      JSON.stringify({
+        hooks: { Stop: [{ hooks: [{ type: "command", command: "bye" }] }] },
+      }),
+    );
+    expect(await hooksCommand("list", {}, project)).toBe(0);
+    expect(out).toContain("[Stop] command: bye");
+    expect(out).toContain("This project defines no hooks");
+  });
+
+  it("says a user file that cannot be read, without quoting it", async () => {
+    writeUser('{ "token": "sk-canary", }');
+    expect(await hooksCommand("list", {}, project)).toBe(0);
+    expect(out).toContain("could not be read");
+    expect(out).not.toContain("sk-canary");
+  });
+
+  it("prints no heading when there are no user hooks", async () => {
+    await hooksCommand("list", {}, project);
+    expect(out).not.toContain("Your own hooks");
+  });
+});

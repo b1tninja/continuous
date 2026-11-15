@@ -161,4 +161,35 @@ describe("SubagentCard", () => {
     render(<SubagentCard toolCallState={callWith(undefined, "canceled")} />);
     expect(status()).toBe("Not started");
   });
+
+  it("read-only (the agents panel): no Stop, no Allow or Reject, a link to the card that asks instead", () => {
+    const jump = vi.fn();
+    vi.mocked(answerSubagentApproval).mockClear();
+    render(
+      <SubagentCard
+        readOnly
+        onShowInConversation={jump}
+        toolCallState={callWith({
+          pendingApproval: {
+            id: "p1",
+            toolName: "run_terminal_command",
+            summary: "npm test",
+          },
+        })}
+      />,
+    );
+    expect(screen.getByTestId(`subagent-transcript-${ID}`)).toBeDefined();
+    expect(screen.queryByTestId(`subagent-card-${ID}`)).toBeNull();
+    expect(screen.queryByTestId(`subagent-stop-${ID}`)).toBeNull();
+    expect(screen.queryByTestId(`subagent-accept-${ID}`)).toBeNull();
+    expect(screen.queryByTestId(`subagent-reject-${ID}`)).toBeNull();
+    expect(screen.getByTestId(`subagent-approval-${ID}`).textContent).toContain(
+      "run_terminal_command",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Answer in the conversation" }),
+    );
+    expect(jump).toHaveBeenCalledOnce();
+    expect(answerSubagentApproval).not.toHaveBeenCalled();
+  });
 });

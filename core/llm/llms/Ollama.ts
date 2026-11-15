@@ -493,15 +493,23 @@ class Ollama extends BaseLLM implements ModelInstaller {
     return result;
   }
 
+  /** The messages of a chat request. */
+  protected _convertMessages(messages: ChatMessage[]): OllamaChatMessage[] {
+    // Ollama has no "thinking" role; a reasoning turn is not sent back.
+    return this._reorderMessagesForToolCompat(
+      messages
+        .filter((message) => message.role !== "thinking")
+        .map(this._convertToOllamaMessage),
+    );
+  }
+
   protected async *_streamChat(
     messages: ChatMessage[],
     signal: AbortSignal,
     options: CompletionOptions,
   ): AsyncGenerator<ChatMessage> {
     await this.ensureModelInfo();
-    const ollamaMessages = this._reorderMessagesForToolCompat(
-      messages.map(this._convertToOllamaMessage),
-    );
+    const ollamaMessages = this._convertMessages(messages);
     const chatOptions: OllamaChatOptions = {
       model: this._getModel(),
       messages: ollamaMessages,

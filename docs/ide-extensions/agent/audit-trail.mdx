@@ -24,6 +24,24 @@ Each call produces a `decision` line when it is decided and an `outcome` line wh
 
 Tool output is not stored, only its size and hash. Assistant text is not stored.
 
+A call the host sent with no call id is still recorded, under an id of the form `nocall-<hash>-<n>` and with `"synthetic": true`. The hash is of the session, turn, tool and arguments; `n` counts such calls in the process, so two identical calls stay two lines. Such a decision cannot be joined to an outcome, and a reviewer's verdict for the same call is a separate line with its own made-up id.
+
+### Setting changes
+
+A change to a permission setting is a `setting` line, written to `<global dir>/audit/<yyyy-mm>/policy-changes.jsonl` (rule edits from the Permissions page and `continuous permissions` are `policy` lines in the same file). It records the setting, the old and new value and where the change came from, never file contents.
+
+| Field       | Content                                                                                                                                   |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `kind`      | `level` (one area), `preset` (the preset the five levels add up to, or `custom`), `floor` (a floor rule added or removed), `builtin` (a built-in rule switched on or off), `mcp-trust` (a server's read-only hints trusted or not), `plan-terminal`, `project-trust`, `hook-trust` |
+| `name`      | The area, the preset, the built-in rule id, the floor rule (masked), the server name, or the project directory for trust                    |
+| `from`, `to` | The old and new value: a level word, `on` or `off`, `trusted`                                                                              |
+| `source`    | `cli-policy` (`/policy`), `flag` (`--policy`, `--auto`, `--trust-project-hooks`, `--trust-project-config`), `gui-settings` (the settings page), `file` (an edit of `permissions.yaml` seen when it was next loaded), `cli-command` (`continuous project trust`, `continuous hooks trust`) |
+| `loosens`   | The change lets something run, or run unasked, that did not before                                                                         |
+| `confirmed` | `prompt` (a question was answered), `flag` (typed on the command line) or absent                                                        |
+| `viaSession`| The session the change was made in                                                                                                         |
+
+A level change is written as one line per area plus one `preset` line. An edit made to `permissions.yaml` by hand is found by comparing it with the settings last seen, kept in `<global dir>/audit/settings-seen.json`; the first run records that baseline only. The line says `file` and has no more detail than the setting, so it cannot say who edited the file. A reader that does not know a `kind` shows it as written, and a reader written before `setting` lines existed skips them.
+
 ### Agent identity
 
 Decision, outcome and turn records carry an `agent` field: `id` (`main-<session>`, `sub-<toolCallId>`, `worker-<itemId>` or `bg-<taskId>`), `kind` (`main`, `subagent`, `loop-worker` or `background`), and optionally `role` (the subagent definition's name, such as `Explore`, or `item 3` for a Loop worker), `mode` (the permission mode) and `parentId` (the agent that started it). Each value is masked and clipped to 80 characters, and no prompt is stored. Records written before this field existed have none and read as unknown. Stuck-agent detection counts each agent's turns on its own.
@@ -47,12 +65,17 @@ The global directory is `~/.continuous` unless `CONTINUOUS_GLOBAL_DIR` points el
 ```bash
 continuous audit list [--session <id>] [--decision allow|ask|deny|reviewer] [--tool <name>] [--agent <role|id|kind>] [--since <date>] [--until <date>] [--limit <n>] [--json]
 continuous audit show <session> [--json]
+continuous audit changes [--since <date>] [--until <date>] [--limit <n>] [--json]
 continuous audit inbox [--agent <role|id|kind>] [--session <id>] [--since <date>] [--json]
 continuous audit suggest [--decision allow|deny] [--min <n>] [--max-age-days <n>] [--max-mb <n>] [--max-rows <n>] [--verbose] [--json]
 continuous audit prune [--days <n>] [--dry-run]
 ```
 
 `--decision ask` matches calls that asked at any point, including those you then approved. `--decision reviewer` matches calls the reviewer model decided. `--agent` keeps calls whose agent role, id or kind equals the value exactly (`Explore`, `sub-call_1`, `loop-worker`). `--json` prints one array: rows for `list`, raw records for `show`. The `list` row shows the agent's role, or its kind when it has no role.
+
+### Changes
+
+`continuous audit changes` lists setting and rule changes across all sessions, oldest first: `2026-11-12 09:14:02  cli-policy    level          loosens  set tools: cautious -> permissive (confirmed: prompt)`. It prints "No setting changes recorded." when there are none.
 
 ### Inbox
 

@@ -1,10 +1,20 @@
 /**
  * The tainted-session flag (plans/design/tainted-session.md, ROADMAP X4).
  *
- * Per session, a monotone set of source kinds: once untrusted content has
- * entered the conversation, the kind stays recorded (with the turn it first
- * entered) until the person clears it. Nothing about the content is kept: not
- * the text, not the URL, not a hash. The state is a few bytes per session.
+ * Per session, a monotone set of labels: once untrusted content has entered
+ * the conversation, its label stays recorded (with the turn it first entered)
+ * until the person clears it, all at once or one label at a time. Nothing
+ * about the content is kept: not the text, not the URL, not a hash. The state
+ * is a few bytes per session.
+ *
+ * `secret` is the one confidentiality label: a secret was read into the
+ * session (a protected secret path, a credential printed by a command). It
+ * says private data is present, not that the content is untrusted, so on its
+ * own it raises only the sinks that send data out (`taintRule.ts`).
+ *
+ * An MCP result is labelled per server, `mcp:<server>`, so acknowledging one
+ * server's output does not forgive another's. `mcp-result` remains for a
+ * result whose server the host cannot name.
  */
 export const TAINT_KINDS = [
   "web-fetch",
@@ -12,13 +22,53 @@ export const TAINT_KINDS = [
   "outside-read",
   "untrusted-workspace",
   "issue-text",
+  "secret",
 ] as const;
 export type TaintKind = (typeof TAINT_KINDS)[number];
+/** A fixed kind, or the label of one MCP server's results. */
+export type TaintLabel = TaintKind | `mcp:${string}`;
+
+const MAX_SERVER_LABEL_CHARS = 40;
+
+/**
+ * The label for a result from this MCP server. The name can come from a file
+ * in the open folder and is shown to the reviewer, so it is cut to letters,
+ * digits, dot, underscore and hyphen, and to 40 characters.
+ */
+export function mcpLabel(server: string | undefined): TaintLabel {
+  const word = (server ?? "")
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, MAX_SERVER_LABEL_CHARS);
+  return word ? `mcp:${word}` : "mcp-result";
+}
+
+/** Whether a word, as typed by the person, is a label the registry could hold. */
+export function isTaintLabel(word: string): word is TaintLabel {
+  return (
+    (TAINT_KINDS as readonly string[]).includes(word) ||
+    /^mcp:[A-Za-z0-9._-]{1,40}$/.test(word)
+  );
+}
+
+/** Fixed kinds in their order, each server's label after `mcp-result`, by name. */
+function ordered(labels: Iterable<TaintLabel>): TaintLabel[] {
+  const all = new Set(labels);
+  const servers = [...all]
+    .filter((l) => l.startsWith("mcp:"))
+    .sort((a, b) => a.localeCompare(b));
+  const out: TaintLabel[] = [];
+  for (const k of TAINT_KINDS) {
+    if (all.has(k)) out.push(k);
+    if (k === "mcp-result") out.push(...servers);
+  }
+  return out;
+}
 
 /** What the evaluator, the reviewer prompt and the audit record are given. */
 export interface TaintFact {
-  /** Source kinds in a fixed order */
-  kinds: TaintKind[];
+  /** Labels in a fixed order */
+  kinds: TaintLabel[];
   /** The turn the first source entered, when the host counts turns */
   firstTurn?: number;
 }
@@ -26,13 +76,30 @@ export interface TaintFact {
 /** What ends a taint: the person's own action, or a new session. */
 export type TaintClearReason = "user-ack" | "untaint-command" | "new-session";
 
+/** How a label arrived: a tool's result, a subagent handing it back, or a fork. */
+export type TaintAddReason = "tool-result" | "subagent" | "inherited";
+
+/**
+ * One label added to or cleared from a session, for the audit trail. `source`
+ * is the tool that brought the content in (an add) or the control that
+ * cleared it (a clear).
+ */
+export interface TaintChange {
+  session: string;
+  op: "add" | "clear";
+  label: TaintLabel;
+  turn?: number;
+  source?: string;
+  reason: TaintAddReason | TaintClearReason;
+}
+
 interface Entry {
   turn?: number;
   /** Copied from a parent at fork: a join does not hand it back */
   inherited: boolean;
 }
 
-type SessionTaint = Map<TaintKind, Entry>;
+type SessionTaint = Map<TaintLabel, Entry>;
 
 const MAX_BOUND_CALLS = 500;
 /** A host with no session id of its own shares this one */
@@ -41,9 +108,28 @@ export const DEFAULT_TAINT_SESSION = "default";
 export class TaintRegistry {
   private readonly sessions = new Map<string, SessionTaint>();
   private readonly callSession = new Map<string, string>();
+  private listener?: (change: TaintChange) => void;
 
-  /** Add a source. Returns true when this kind was not already recorded. */
-  mark(session: string, kind: TaintKind, turn?: number): boolean {
+  /** Who hears of every add and clear (the audit trail). One at a time. */
+  setListener(listener: ((change: TaintChange) => void) | undefined): void {
+    this.listener = listener;
+  }
+
+  private emit(change: TaintChange): void {
+    try {
+      this.listener?.(change);
+    } catch {
+      // the record is a nicety; it never changes the taint
+    }
+  }
+
+  /** Add a source. Returns true when this label was not already recorded. */
+  mark(
+    session: string,
+    kind: TaintLabel,
+    turn?: number,
+    origin: { source?: string; reason?: TaintAddReason } = {},
+  ): boolean {
     let entries = this.sessions.get(session);
     if (!entries) this.sessions.set(session, (entries = new Map()));
     if (entries.has(kind)) return false;
@@ -51,13 +137,21 @@ export class TaintRegistry {
       inherited: false,
       ...(turn === undefined ? {} : { turn }),
     });
+    this.emit({
+      session,
+      op: "add",
+      label: kind,
+      ...(turn === undefined ? {} : { turn }),
+      ...(origin.source ? { source: origin.source } : {}),
+      reason: origin.reason ?? "tool-result",
+    });
     return true;
   }
 
   fact(session: string): TaintFact | undefined {
     const entries = this.sessions.get(session);
     if (!entries || entries.size === 0) return undefined;
-    const kinds = TAINT_KINDS.filter((k) => entries.has(k));
+    const kinds = ordered(entries.keys());
     const turns = [...entries.values()]
       .map((e) => e.turn)
       .filter((t): t is number => t !== undefined);
@@ -67,10 +161,34 @@ export class TaintRegistry {
     };
   }
 
-  /** Clear the session. Returns the kinds that were cleared. */
-  clear(session: string, _reason: TaintClearReason): TaintKind[] {
-    const cleared = this.fact(session)?.kinds ?? [];
-    this.sessions.delete(session);
+  /**
+   * Clear the session, or only the labels named. Returns the labels that were
+   * cleared; each is reported to the listener with the reason and the
+   * control that cleared it.
+   */
+  clear(
+    session: string,
+    reason: TaintClearReason,
+    source?: string,
+    labels?: readonly TaintLabel[],
+  ): TaintLabel[] {
+    const held = this.fact(session)?.kinds ?? [];
+    const entries = this.sessions.get(session);
+    const cleared = labels ? held.filter((l) => labels.includes(l)) : held;
+    if (!labels || cleared.length === held.length) {
+      this.sessions.delete(session);
+    } else {
+      for (const l of cleared) entries?.delete(l);
+    }
+    for (const label of cleared) {
+      this.emit({
+        session,
+        op: "clear",
+        label,
+        reason,
+        ...(source ? { source } : {}),
+      });
+    }
     return cleared;
   }
 
@@ -81,6 +199,16 @@ export class TaintRegistry {
     const copy: SessionTaint = new Map();
     for (const [kind, e] of from) copy.set(kind, { ...e, inherited: true });
     this.sessions.set(child, copy);
+    for (const [kind, e] of copy) {
+      this.emit({
+        session: child,
+        op: "add",
+        label: kind,
+        ...(e.turn === undefined ? {} : { turn: e.turn }),
+        source: parent,
+        reason: "inherited",
+      });
+    }
   }
 
   /** What the child met comes back to the parent; what it only inherited does not. */
@@ -88,7 +216,9 @@ export class TaintRegistry {
     const from = this.sessions.get(child);
     if (!from) return;
     for (const [kind, e] of from) {
-      if (!e.inherited) this.mark(parent, kind, e.turn);
+      if (!e.inherited) {
+        this.mark(parent, kind, e.turn, { source: child, reason: "subagent" });
+      }
     }
   }
 

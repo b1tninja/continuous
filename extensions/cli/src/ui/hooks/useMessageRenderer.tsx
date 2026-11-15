@@ -2,8 +2,9 @@ import React, { useCallback } from "react";
 
 import type { ChatHistoryItem } from "../../../../../core/index.js";
 import { MemoizedMessage } from "../components/MemoizedMessage.js";
+import type { ThinkingDisplay } from "../thinkingDisplay.js";
 
-export function useMessageRenderer() {
+export function useMessageRenderer(thinkingDisplay: ThinkingDisplay = "fold") {
   const renderMessage = useCallback(
     (item: ChatHistoryItem, index: number, allMessages?: ChatHistoryItem[]) => {
       // Generate a unique key by combining message role, content hash, and timestamp
@@ -31,10 +32,11 @@ export function useMessageRenderer() {
           item={item}
           index={index}
           hideBullet={isContinuation}
+          thinkingDisplay={thinkingDisplay}
         />
       );
     },
-    [],
+    [thinkingDisplay],
   );
 
   return { renderMessage };

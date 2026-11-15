@@ -1,5 +1,6 @@
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { spawn } from "node:child_process";
+import { COMMAND_STDIO, commandEnvironment } from "./commandSpawn";
 import { containerArgs } from "./containerArgs";
 import {
   containerUnavailableMessage,
@@ -37,10 +38,20 @@ export interface CommandExecutor {
    * the policy engine read it with this shell's grammar, whatever the host is.
    */
   shell: ResolvedShell;
-  /** The program and arguments that run `command` and exit. */
-  invocation(command: string): { shell: string; args: string[] };
-  /** Starts `command`. Options are those of `child_process.spawn`. */
-  spawn(command: string, options?: SpawnOptions): ChildProcess;
+  /**
+   * The program and arguments that run `command` and exit, started from `cwd`
+   * (the process's own working folder when not given). A container mounts
+   * `cwd`, so a caller that starts the command elsewhere must pass it.
+   */
+  invocation(command: string, cwd?: string): { shell: string; args: string[] };
+  /**
+   * Starts `command`, the only way a tool starts an agent command. Options are
+   * those of `child_process.spawn`. It resolves once the process is running
+   * and rejects with the error that kept it from starting (a shell that is not
+   * there), so a caller never misses that error. It is asynchronous because an
+   * executor may have to prepare something first (an OS sandbox).
+   */
+  spawn(command: string, options?: SpawnOptions): Promise<ChildProcess>;
   /** One sentence saying where commands run, for a status line or a tool description. */
   describe(): string;
   /**
@@ -86,17 +97,41 @@ export function getCommandExecutor(
       args: shell.args(command),
     }),
     // A caller that passes its own `env` owns it; otherwise the host's
-    // secrets are not handed on (terminalEnvironment)
-    spawn: (command, options) =>
-      spawn(shell.executable, shell.args(command), {
-        ...options,
-        env: options?.env ?? terminalEnvironment(),
-      }),
+    // secrets are not handed on (terminalEnvironment). The same for `stdio`:
+    // without one, standard input is not left open (COMMAND_STDIO)
+    spawn: async (command, options) =>
+      started(
+        spawn(shell.executable, shell.args(command), {
+          ...options,
+          stdio: options?.stdio ?? COMMAND_STDIO,
+          env: options?.env ?? commandEnvironment(terminalEnvironment()),
+        }),
+      ),
     describe: () =>
       wsl
         ? "bash inside WSL, started from the workspace folder"
         : `${shell.kind} on this machine`,
   };
+}
+
+/**
+ * Resolves with `child` once it is running ("spawn"), or rejects with the
+ * error that kept it from starting. Waiting for one of the two means the
+ * error cannot be emitted before the caller has listeners on the process.
+ */
+function started(child: ChildProcess): Promise<ChildProcess> {
+  return new Promise((resolve, reject) => {
+    const onSpawn = () => {
+      child.off("error", onError);
+      resolve(child);
+    };
+    const onError = (error: Error) => {
+      child.off("spawn", onSpawn);
+      reject(error);
+    };
+    child.once("spawn", onSpawn);
+    child.once("error", onError);
+  });
 }
 
 /** The distribution named in a WSL invocation (`-d <name>`), or undefined for the default. */
@@ -139,12 +174,19 @@ function containerExecutor(
       args: (command) => run(command, process.cwd()),
       runsProfile: false,
     },
-    invocation: (command) => ({
+    // The folder mounted is the one the command starts in, never the
+    // process's own: in an editor that is not the workspace (W28)
+    invocation: (command, cwd) => ({
       shell: runtime,
-      args: run(command, process.cwd()),
+      args: run(command, cwd ?? process.cwd()),
     }),
-    spawn: (command, options) =>
-      spawn(runtime, run(command, cwdOf(options)), options ?? {}),
+    spawn: async (command, options) =>
+      started(
+        spawn(runtime, run(command, cwdOf(options)), {
+          ...options,
+          stdio: options?.stdio ?? COMMAND_STDIO,
+        }),
+      ),
     describe: () =>
       `bash in a ${runtime} container (${image}): the workspace folder only, no network, no capabilities, no host secrets`,
   };

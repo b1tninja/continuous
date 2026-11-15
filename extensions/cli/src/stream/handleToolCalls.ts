@@ -2,8 +2,13 @@ import type { ChatHistoryItem, ToolStatus } from "core/index.js";
 import { stripImages } from "core/util/messageContent.js";
 import { createHistoryItem } from "core/util/messageConversion.js";
 
-import { isAutoReviewEnabled } from "src/permissions/coreRules.js";
+import {
+  isAutoReviewEnabled,
+  liftAtIdgaf,
+  runsAtIdgaf,
+} from "src/permissions/coreRules.js";
 import { checkToolPermission } from "src/permissions/permissionChecker.js";
+import { effectiveLevels } from "src/permissions/policyLevels.js";
 import { withReadOnlyMcp } from "src/permissions/readOnlyMcp.js";
 
 import { cliAuditSession, cliAuditTrail } from "../audit/cliAudit.js";
@@ -22,6 +27,7 @@ import {
 } from "../tools/index.js";
 import { logger } from "../util/logger.js";
 
+import type { StreamedReasoning } from "./reasoning.js";
 import { recordRefusals } from "./refusalCap.js";
 import {
   checkRepeatedCall,
@@ -47,6 +53,8 @@ interface HandleToolCallsOptions {
   callbacks: StreamCallbacks | undefined;
   isHeadless: boolean;
   usage?: any;
+  /** The reply's reasoning, kept on its history item. */
+  reasoning?: StreamedReasoning;
   /** The turn's signal, passed on to tool runs. */
   abortSignal?: AbortSignal;
 }
@@ -98,8 +106,8 @@ function refuseRepeatedCalls(
       toRun.push(tc);
       continue;
     }
-    ctx.callbacks?.onToolStart?.(tc.name, tc.arguments);
-    ctx.callbacks?.onToolResult?.(verdict.refusal, tc.name, "canceled");
+    ctx.callbacks?.onToolStart?.(tc.name, tc.arguments, tc.id);
+    ctx.callbacks?.onToolResult?.(verdict.refusal, tc.name, "canceled", tc.id);
     if (ctx.useService) {
       ctx.chatHistorySvc.addToolResult(tc.id, verdict.refusal, "canceled");
     } else {
@@ -191,6 +199,20 @@ function noteStuckRound(
   }
 }
 
+/** A reply's reasoning as its history item keeps it (ChatHistoryItem.reasoning). */
+function historyReasoning(
+  reasoning: StreamedReasoning | undefined,
+): ChatHistoryItem["reasoning"] | undefined {
+  if (!reasoning) return undefined;
+  return {
+    active: false,
+    text: reasoning.text,
+    startAt: reasoning.startAt,
+    endAt: reasoning.endAt,
+    ...(reasoning.details.length > 0 && { details: reasoning.details }),
+  };
+}
+
 export async function handleToolCalls(
   options: HandleToolCallsOptions,
 ): Promise<boolean> {
@@ -201,8 +223,10 @@ export async function handleToolCalls(
     callbacks,
     isHeadless,
     usage,
+    reasoning,
     abortSignal,
   } = options;
+  const itemReasoning = historyReasoning(reasoning);
   const chatHistorySvc = services.chatHistory;
   const useService =
     typeof chatHistorySvc?.isReady === "function" && chatHistorySvc.isReady();
@@ -210,7 +234,12 @@ export async function handleToolCalls(
     if (content) {
       if (useService) {
         // Service-driven: write assistant message via service
-        chatHistorySvc.addAssistantMessage(content, undefined, usage);
+        chatHistorySvc.addAssistantMessage(
+          content,
+          undefined,
+          usage,
+          itemReasoning,
+        );
       } else {
         // Fallback only when service is unavailable
         const message: any = {
@@ -220,7 +249,10 @@ export async function handleToolCalls(
         if (usage) {
           message.usage = usage;
         }
-        chatHistory.push(createHistoryItem(message));
+        chatHistory.push({
+          ...createHistoryItem(message),
+          ...(itemReasoning && { reasoning: itemReasoning }),
+        });
       }
     }
     return false;
@@ -262,13 +294,17 @@ export async function handleToolCalls(
       assistantMessage.content || "",
       assistantMessage.toolCalls,
       usage,
+      itemReasoning,
     );
   } else {
     // Fallback only when service is unavailable
     const messageWithUsage = usage
       ? { ...assistantMessage, usage }
       : assistantMessage;
-    chatHistory.push(createHistoryItem(messageWithUsage, [], toolCallStates));
+    chatHistory.push({
+      ...createHistoryItem(messageWithUsage, [], toolCallStates),
+      ...(itemReasoning && { reasoning: itemReasoning }),
+    });
   }
 
   // The repeat guard: a call identical to the ones before it is refused
@@ -366,6 +402,21 @@ export async function handleToolCalls(
   return false;
 }
 
+function safeRunsAtIdgaf(
+  levels: ReturnType<typeof effectiveLevels>,
+  mode: Parameters<typeof runsAtIdgaf>[1],
+  tool: Tool,
+): boolean {
+  try {
+    return runsAtIdgaf(levels, mode, {
+      name: tool.name,
+      readonly: tool.readonly,
+    });
+  } catch {
+    return false;
+  }
+}
+
 export async function getRequestTools(isHeadless: boolean) {
   const availableTools = await getAllAvailableTools(isHeadless);
 
@@ -374,14 +425,21 @@ export async function getRequestTools(isHeadless: boolean) {
       SERVICE_NAMES.TOOL_PERMISSIONS,
     );
 
+  const mode = permissionsState.currentMode;
+  const levels = effectiveLevels(mode);
   const allowedTools: Tool[] = [];
   for (const tool of availableTools) {
-    const result = withReadOnlyMcp(
-      checkToolPermission(
-        { name: tool.name, arguments: {} },
-        permissionsState.permissions,
+    // IDGAF: a tool the CLI's own policy asks about or excludes is offered,
+    // headless too, and runs (runsAtIdgaf); a structural limit stays
+    const result = liftAtIdgaf(
+      withReadOnlyMcp(
+        checkToolPermission(
+          { name: tool.name, arguments: {} },
+          permissionsState.permissions,
+        ),
+        tool,
       ),
-      tool,
+      safeRunsAtIdgaf(levels, mode, tool),
     );
 
     // Headless runs have no one to ask, so "ask" tools are normally not offered.

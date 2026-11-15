@@ -469,6 +469,9 @@ describe("prompt cache options in the chat request", () => {
       write5m: 3_000,
       write1h: 1_000,
       output: 5,
+      // The prompt ended after the new message (the session held one
+      // already), not after the empty reply it was about to fill
+      historyItems: 2,
     });
     // No message text is kept
     expect(JSON.stringify(ledger)).not.toContain("hello");

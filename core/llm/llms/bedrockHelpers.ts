@@ -14,9 +14,10 @@ import {
   minMaxTokensFor,
   unsupportedInferenceFor,
 } from "./bedrockFamilyRules.js";
+import type { CompletionOptions } from "../../index.js";
 import {
   budgetTokensToEffort,
-  supportsAdaptiveThinking,
+  getAnthropicThinkingParams,
 } from "./anthropicThinking.js";
 
 /**
@@ -162,6 +163,29 @@ export function getBedrockErrorHint(
       ctx.region ? ` in ${ctx.region}` : ""
     }. Enabling the model in the Bedrock console will not fix this: ask your AWS administrator to allow it. Restricted models can also need separate approval from the model provider.`;
   }
+  // A region the account has never used: the first request there is refused
+  // while AWS verifies the account (seen live from eu-central-1, 2026-11-08).
+  // It clears by itself, so neither access nor quota is suggested.
+  if (/account is currently being verified/i.test(text)) {
+    return `Bedrock is still verifying this account for ${
+      ctx.region ? `region ${ctx.region}` : "this region"
+    }, which happens on the first use of a region. AWS says this normally takes less than 2 hours: try again after that.`;
+  }
+  // An AccessDeniedException "not available for this account" is what a
+  // model whose applied tokens-per-minute quota is 0 answered on 2026-11-08
+  // (Claude 5.5 models in us-east-1 and us-west-2, agreement AVAILABLE and
+  // AUTHORIZED). Enabling the model does not help, so the hint points at the
+  // quota instead of the console's model access page.
+  if (/not available for this account/i.test(text)) {
+    return `Bedrock says this model is not available for this account${
+      ctx.region ? ` in ${ctx.region}` : ""
+    }, even when model access shows as granted. Bedrock answers this when the account's tokens-per-minute quota for the model is 0: check Service Quotas > Amazon Bedrock for the model's on-demand, cross-region and global quotas in this region (another region may have the default), and ask AWS Support to raise a quota that is 0.`;
+  }
+  if (/ThrottlingException|Too many (tokens|requests)/i.test(text)) {
+    return `Bedrock is throttling requests to this model${
+      ctx.region ? ` in ${ctx.region}` : ""
+    }: the account's tokens-per-minute or requests-per-minute quota for it is used up. Wait a minute and retry. If even the first request is throttled, the quota may be very low or 0: check Service Quotas > Amazon Bedrock for this model and region.`;
+  }
   if (
     /AccessDeniedException/i.test(text) &&
     /model|bedrock:Invoke/i.test(text)
@@ -186,7 +210,66 @@ export interface FoundationModelSummaryLike {
   outputModalities?: string[];
   responseStreamingSupported?: boolean;
   inferenceTypesSupported?: string[];
-  modelLifecycle?: { status?: string };
+  /**
+   * FoundationModelLifecycle. The SDK gives the times as Date objects; a
+   * string is accepted too (a cached or hand-made answer).
+   */
+  modelLifecycle?: {
+    status?: string;
+    startOfLifeTime?: Date | string;
+    legacyTime?: Date | string;
+    publicExtendedAccessTime?: Date | string;
+    endOfLifeTime?: Date | string;
+  };
+}
+
+/**
+ * The lifecycle dates Bedrock reports for a model, as ISO strings: when it
+ * became (or becomes) legacy, when its public extended access starts (the
+ * part of the legacy period where AWS says to expect higher pricing), and
+ * when it stops being served in every region. Each is set only when
+ * Bedrock sends it.
+ */
+export interface BedrockModelLifecycleDates {
+  legacyAt?: string;
+  extendedAccessAt?: string;
+  endOfLifeAt?: string;
+}
+
+function isoTime(value: Date | string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
+function lifecycleDates(
+  lifecycle: FoundationModelSummaryLike["modelLifecycle"],
+): BedrockModelLifecycleDates | undefined {
+  const dates: BedrockModelLifecycleDates = {};
+  const legacyAt = isoTime(lifecycle?.legacyTime);
+  const extendedAccessAt = isoTime(lifecycle?.publicExtendedAccessTime);
+  const endOfLifeAt = isoTime(lifecycle?.endOfLifeTime);
+  if (legacyAt) dates.legacyAt = legacyAt;
+  if (extendedAccessAt) dates.extendedAccessAt = extendedAccessAt;
+  if (endOfLifeAt) dates.endOfLifeAt = endOfLifeAt;
+  return Object.keys(dates).length > 0 ? dates : undefined;
+}
+
+/**
+ * What the foundation model entry says about the model itself, carried onto
+ * every option built from it: image input and the lifecycle dates.
+ */
+function modelFacts(
+  fm: FoundationModelSummaryLike | undefined,
+): Pick<BedrockModelOption, "supportsImages" | "lifecycle"> {
+  if (!fm) return {};
+  const facts: Pick<BedrockModelOption, "supportsImages" | "lifecycle"> = {};
+  if (fm.inputModalities) {
+    facts.supportsImages = fm.inputModalities.includes("IMAGE");
+  }
+  const dates = lifecycleDates(fm.modelLifecycle);
+  if (dates) facts.lifecycle = dates;
+  return facts;
 }
 
 /** Subset of the control-plane InferenceProfileSummary we rely on. */
@@ -211,6 +294,14 @@ export interface BedrockModelOption {
   /** Underlying foundation model ID when known. */
   baseModelId?: string;
   legacy?: boolean;
+  /**
+   * Whether the model takes images (`inputModalities` includes IMAGE).
+   * Absent when Bedrock did not say (an application profile over a model
+   * it does not list).
+   */
+  supportsImages?: boolean;
+  /** Lifecycle dates from `modelLifecycle`, when Bedrock reports any. */
+  lifecycle?: BedrockModelLifecycleDates;
   /**
    * An Anthropic model on an account that has not filled out Anthropic's
    * use-case form. Bedrock still lists it as ACTIVE, but chat is refused.
@@ -258,6 +349,7 @@ export function buildModelCatalog(
         kind: "on-demand",
         baseModelId: fm.modelId,
         legacy: fm.modelLifecycle?.status === "LEGACY",
+        ...modelFacts(fm),
       });
     }
   }
@@ -288,6 +380,7 @@ export function buildModelCatalog(
       kind: isApplication ? "application-profile" : "inference-profile",
       baseModelId: baseId,
       legacy: fm?.modelLifecycle?.status === "LEGACY",
+      ...modelFacts(fm),
     });
   }
 
@@ -1005,7 +1098,9 @@ const REASONING_EFFORT_MODEL = /(^|\.)(qwen\.|deepseek\.v3)/i;
  * (probe-model-families.md):
  *
  * - Claude: Anthropic's `thinking` (adaptive with `output_config.effort` on
- *   the models that take it, else `budget_tokens`).
+ *   the models that take it, else `budget_tokens`), with `display:
+ *   "summarized"` on the models that otherwise return empty thinking, and on
+ *   the models that think with reasoning off, that field alone.
  * - Nova 2 (`nova-2-`): `reasoningConfig: { type: "enabled",
  *   maxReasoningEffort }`, and no `maxTokens` at `high`. On at `low` when
  *   the config says nothing: without it Nova 2 Lite reasons in plain text
@@ -1040,20 +1135,15 @@ export function bedrockReasoningFields(
 ): BedrockReasoningRequest {
   const none = { additionalModelRequestFields: {}, omitMaxTokens: false };
   if (/claude/i.test(modelId)) {
-    if (!reasoning) return none;
-    if (supportsAdaptiveThinking(modelId)) {
-      return {
-        additionalModelRequestFields: {
-          thinking: { type: "adaptive" },
-          output_config: { effort: budgetTokensToEffort(budgetTokens) },
-        },
-        omitMaxTokens: false,
-      };
-    }
+    // The same fields as Anthropic's API, `display: "summarized"` included
+    // where the model hides its thinking by default (getAnthropicThinkingParams)
+    const thinking = getAnthropicThinkingParams({
+      model: modelId,
+      reasoning: !!reasoning,
+      reasoningBudgetTokens: budgetTokens,
+    } as CompletionOptions);
     return {
-      additionalModelRequestFields: {
-        thinking: { type: "enabled", budget_tokens: budgetTokens },
-      },
+      additionalModelRequestFields: { ...thinking },
       omitMaxTokens: false,
     };
   }

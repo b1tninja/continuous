@@ -16,13 +16,17 @@ export const fetchUrlContentImpl: ToolImpl = async (args, extras) => {
     guardRedirects: true,
   });
 
+  // Where the page was really read, after any redirects
+  const finalUrl =
+    contextItems.find((i) => i.uri?.type === "url")?.uri?.value ?? url;
+
   // Track truncated content
   const truncatedUrls: string[] = [];
 
   // Check and truncate each context item
   const processedItems = contextItems.map((item) => {
     if (item.content.length > DEFAULT_FETCH_URL_CHAR_LIMIT) {
-      truncatedUrls.push(url);
+      truncatedUrls.push(finalUrl);
       return {
         ...item,
         content: item.content.substring(0, DEFAULT_FETCH_URL_CHAR_LIMIT),
@@ -41,7 +45,7 @@ export const fetchUrlContentImpl: ToolImpl = async (args, extras) => {
   }
 
   return spotlightEnabled(extras.config?.experimental?.spotlightUntrusted)
-    ? spotlightItems(processedItems, url)
+    ? spotlightItems(processedItems, finalUrl)
     : processedItems;
 };
 

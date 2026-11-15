@@ -2,8 +2,10 @@ name: Post-merge check
 
 # CI15: two pull requests that were each green alone can break `main` together (#553 x #557 TS2741,
 # #587 x #588 lint complexity). Nothing built the merged result. This builds the tip of `main` after
-# every push with the same type-check and lint commands the PR checks run, and keeps ONE issue open
-# while main is red (closed again when a later push is green). See docs/ci-merge-gate.md section 6.
+# every push with the same type-check and lint commands the PR checks run, runs the full unit suites
+# of core, gui and the CLI (pull requests may run only the tests affected by their change,
+# docs/ci-merge-gate.md section 9), and keeps ONE issue open while main is red (closed again when a
+# later push is green). See docs/ci-merge-gate.md section 6.
 on:
   push:
     branches:
@@ -36,6 +38,15 @@ jobs:
           cd core
           npx tsc --noEmit
           npm run lint
+      # Pull requests may run only the tests related to their change (scripts/ci/affected-tests.mjs);
+      # main runs the full suites after every merge, as well as nightly. No API keys here.
+      - name: Full unit tests
+        run: |
+          cd core
+          npm test
+          npm run vitest
+        env:
+          IGNORE_API_KEY_TESTS: "true"
 
   gui:
     runs-on: ubuntu-latest
@@ -59,6 +70,32 @@ jobs:
           cd gui
           npx tsc --noEmit
           npm run lint
+      - name: Full unit tests
+        run: |
+          cd gui
+          npm test
+
+  # The CLI unit suite, which pull requests may narrow, in full.
+  cli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup packages
+        uses: ./.github/actions/setup-packages
+      - name: Setup core component
+        uses: ./.github/actions/setup-component
+        with:
+          component: core
+          include-root: true
+      - name: Full unit tests
+        run: |
+          (cd core && npm run build)
+          cd extensions/cli
+          npm ci --include=optional
+          npm test
 
   binary:
     runs-on: ubuntu-latest
@@ -84,7 +121,7 @@ jobs:
 
   report:
     # No checkout and no third-party action: only the preinstalled gh and the built-in token.
-    needs: [core, gui, binary]
+    needs: [core, gui, binary, cli]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -96,7 +133,7 @@ jobs:
       GH_REPO: ${{ github.repository }}
       SHA: ${{ github.sha }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      RESULTS: ${{ needs.core.result }} ${{ needs.gui.result }} ${{ needs.binary.result }}
+      RESULTS: ${{ needs.core.result }} ${{ needs.gui.result }} ${{ needs.binary.result }} ${{ needs.cli.result }}
       TITLE: "main is red: post-merge check failed"
     steps:
       - name: Report the result
@@ -107,16 +144,16 @@ jobs:
             *" failure "*|*" skipped "*) red=yes ;;
           esac
           if [ "$red" = yes ]; then
-            echo "main is red at $SHA (core, gui, binary: $RESULTS). Run: $RUN_URL" >> "$GITHUB_STEP_SUMMARY"
+            echo "main is red at $SHA (core, gui, binary, cli: $RESULTS). Run: $RUN_URL" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "main is green at $SHA (core, gui, binary: $RESULTS)." >> "$GITHUB_STEP_SUMMARY"
+            echo "main is green at $SHA (core, gui, binary, cli: $RESULTS)." >> "$GITHUB_STEP_SUMMARY"
           fi
           # A tracking issue is a convenience, only where the repository has issues turned on
           # (this fork does not): the red run itself is the signal either way.
           if [ "$(gh api "repos/$GH_REPO" --jq .has_issues)" = true ]; then
             existing=$(gh issue list --state open --search "\"$TITLE\" in:title" --json number,title               --jq "map(select(.title == \"$TITLE\")) | .[0].number // empty")
             if [ "$red" = yes ]; then
-              body="Commit $SHA on main failed the post-merge check (results in order core, gui, binary: $RESULTS). Run: $RUN_URL. Usually two pull requests that were each green alone; find the pair with node scripts/ci/merge-ready.mjs --trial."
+              body="Commit $SHA on main failed the post-merge check (results in order core, gui, binary, cli: $RESULTS). Run: $RUN_URL. Usually two pull requests that were each green alone; find the pair with node scripts/ci/merge-ready.mjs --trial."
               if [ -n "$existing" ]; then
                 gh issue comment "$existing" --body "$body"
               else

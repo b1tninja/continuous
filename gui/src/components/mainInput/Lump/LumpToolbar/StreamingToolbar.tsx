@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useAppSelector } from "../../../../redux/hooks";
-import { getAltKeyLabel, getMetaKeyLabel, isJetBrains } from "../../../../util";
 import {
   formatPromptProgress,
   RECOVERY_HOLD_TEXT,
@@ -37,7 +36,6 @@ export function StreamingToolbar({
   onStop,
   displayText = "Stop",
 }: StreamingToolbarProps) {
-  const jetbrains = isJetBrains();
   // While a local server reads a long prompt, say how far it is
   const progress = useAppSelector((state) => state.session.promptProgress);
   // While the reply is held for tool call recovery nothing else would show
@@ -69,10 +67,6 @@ export function StreamingToolbar({
         className="min-h-6 cursor-pointer border-none bg-transparent px-1.5 py-0.5 text-2xs hover:brightness-125"
       >
         <span className="text-description">{displayText}</span>
-        {/* JetBrains overrides cmd+backspace, so we have to use another shortcut */}
-        <span className="ml-1 text-description-muted opacity-75">
-          {jetbrains ? getAltKeyLabel() : getMetaKeyLabel()}⌫
-        </span>
       </button>
     </div>
   );

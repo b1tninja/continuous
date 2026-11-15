@@ -62,14 +62,25 @@ export function shellKindOf(executable: string | undefined): ShellKind {
  * is not reported, and `$?` decides success so `node -e "process.exit(3)";
  * echo hi` is still 0, as it is without the tail. A failing cmdlet leaves
  * `$LASTEXITCODE` null and exits 1. Other shells report the real code
- * already and get `command` back unchanged. Opt-in: ordinary Bash tool calls
- * do not use it.
+ * already and get `command` back unchanged.
+ *
+ * `resetFirst: false` leaves out the line that clears `$LASTEXITCODE`, so the
+ * command stays on line 1 and PowerShell's own error text ("At line:1
+ * char:5") is what it would be without the tail: the terminal tools use it,
+ * because the model reads that text. The price is small: when the last
+ * statement is a failing cmdlet, no native program ran in the command, and
+ * the person's profile left a non-zero `$LASTEXITCODE`, that stale number is
+ * reported in place of 1 (a failure either way).
  */
-export function withRealExitCode(command: string, kind: ShellKind): string {
+export function withRealExitCode(
+  command: string,
+  kind: ShellKind,
+  opts: { resetFirst?: boolean } = {},
+): string {
   if (kind !== "powershell") return command;
   // Newlines, not `;`: a trailing `# comment` must not swallow the tail
   return [
-    "$global:LASTEXITCODE = $null",
+    ...(opts.resetFirst === false ? [] : ["$global:LASTEXITCODE = $null"]),
     command,
     "$__ok = $?",
     "if ($__ok) { exit 0 }",
@@ -188,7 +199,9 @@ export function wslArgs(command: string, distro?: string): string[] {
 
 /**
  * The shell terminal commands run in: Windows PowerShell on Windows, the
- * person's login shell elsewhere (bash when `$SHELL` is not set). WSL is a
+ * person's login shell elsewhere. When `$SHELL` is not set (an editor started
+ * from the Dock on some setups), that is zsh on macOS, every new account's
+ * shell since 10.15, and bash elsewhere. WSL is a
  * Linux, so it takes the second branch. On Windows a preference for WSL
  * (`terminalShell`, the editor's setting, or `CONTINUOUS_TERMINAL_SHELL`) runs
  * commands in bash inside that distribution instead.
@@ -233,8 +246,13 @@ export function resolveShell(opts: ShellEnvironment = {}): ResolvedShell {
     return {
       kind: "powershell",
       executable: "powershell.exe",
+      // -NonInteractive: a prompt (Read-Host, a confirmation, a cmdlet asking
+      // for a missing mandatory parameter such as the `curl` alias's -Uri)
+      // fails at once with PowerShell's own error instead of waiting for an
+      // answer nobody can type
       args: (command) => [
         "-NoLogo",
+        "-NonInteractive",
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
@@ -244,7 +262,8 @@ export function resolveShell(opts: ShellEnvironment = {}): ResolvedShell {
       runsProfile: true,
     };
   }
-  const executable = env.SHELL || "/bin/bash";
+  const executable =
+    env.SHELL || (platform === "darwin" ? "/bin/zsh" : "/bin/bash");
   return {
     kind: shellKindOf(executable),
     executable,

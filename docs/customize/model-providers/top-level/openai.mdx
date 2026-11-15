@@ -48,6 +48,12 @@ sidebarTitle: "OpenAI"
   **Check out a more advanced configuration here**
 </Info>
 
+## Model information from OpenAI
+
+**Test connection** (and `continuous test-connection --provider openai --model <id>`) checks the configured id with `GET /v1/models/{id}` and reports its `shutdown_date` when OpenAI has announced one. An unknown id is named with close matches from the model list. For other OpenAI-compatible servers the id is checked against the server's `/models` list, and against `/models/{id}` when the list does not include it; a server without those routes is reported as "not checked", which does not affect chat.
+
+With [Model information updates](/reference#modelcatalog) on `automatic` (the default), a selected chat model with `provider: openai` is looked up in the background a few seconds after you select it and once per refresh interval, against the `apiBase` you configured, with your key and `requestOptions`. A shutdown date shows as the warning chip beside the model picker. An endpoint without a models API is not asked again in that session. With `manual` only Test connection asks; with `off` nothing is asked.
+
 ## OpenAI API compatible providers
 
 OpenAI API compatible providers include

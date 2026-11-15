@@ -44,7 +44,7 @@ describe("fetchTool", () => {
     );
     expect(mockFetchUrlContentImpl).toHaveBeenCalledWith(
       { url: "https://example.com" },
-      { fetch },
+      { fetch: expect.any(Function) },
     );
   });
 
@@ -128,7 +128,7 @@ describe("fetchTool", () => {
 
     expect(mockFetchUrlContentImpl).toHaveBeenCalledWith(
       { url: "https://example.com" },
-      { fetch },
+      { fetch: expect.any(Function) },
     );
   });
 

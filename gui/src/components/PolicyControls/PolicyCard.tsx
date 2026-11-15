@@ -196,8 +196,8 @@ export function PolicyCard() {
           data-testid="policy-floor"
         >
           {floor.length} floor rule{floor.length === 1 ? "" : "s"} in
-          permissions.yaml block these calls at every level, IDGAF included.
-          Edit the file to change them.
+          permissions.yaml block these calls at every level below IDGAF. At
+          IDGAF they are recorded, not applied. Edit the file to change them.
         </p>
       )}
     </div>

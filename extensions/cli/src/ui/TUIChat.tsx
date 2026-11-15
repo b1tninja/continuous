@@ -5,6 +5,7 @@ import React, {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 
 import { ToolPermissionServiceState } from "src/services/ToolPermissionService.js";
@@ -29,11 +30,16 @@ import { BottomStatusBar } from "./components/BottomStatusBar.js";
 import { ResourceDebugBar } from "./components/ResourceDebugBar.js";
 import { ScreenContent } from "./components/ScreenContent.js";
 import { StaticChatContent } from "./components/StaticChatContent.js";
+import { LiveThinking } from "./components/ThinkingBlock.js";
 import { useNavigation } from "./context/NavigationContext.js";
 import { useChat } from "./hooks/useChat.js";
 import { useContextPercentage } from "./hooks/useContextPercentage.js";
 import { useMessageRenderer } from "./hooks/useMessageRenderer.js";
 import { useIntroMessage, useSelectors } from "./hooks/useTUIChatHooks.js";
+import {
+  getThinkingDisplay,
+  subscribeThinkingDisplay,
+} from "./thinkingDisplay.js";
 
 interface TUIChatProps {
   // Remote mode props
@@ -208,6 +214,7 @@ const TUIChat: React.FC<TUIChatProps> = ({
     setChatHistory,
     isWaitingForResponse,
     isReadingReply,
+    liveReasoning,
     responseStartTime,
     isCompacting,
     compactionStartTime,
@@ -268,7 +275,20 @@ const TUIChat: React.FC<TUIChatProps> = ({
     model: services.model?.model || undefined,
   });
 
-  const { renderMessage } = useMessageRenderer();
+  // How reasoning shows (/thinking); a change redraws the transcript, whose
+  // finished messages are otherwise never drawn again
+  const thinkingDisplay = useSyncExternalStore(
+    subscribeThinkingDisplay,
+    getThinkingDisplay,
+  );
+  const shownThinkingDisplay = useRef(thinkingDisplay);
+  useEffect(() => {
+    if (shownThinkingDisplay.current === thinkingDisplay) return;
+    shownThinkingDisplay.current = thinkingDisplay;
+    setStaticRefreshTrigger((prev) => prev + 1);
+  }, [thinkingDisplay]);
+
+  const { renderMessage } = useMessageRenderer(thinkingDisplay);
 
   const { handleConfigSelect, handleModelSelect } = useSelectors(
     configPath,
@@ -423,6 +443,11 @@ const TUIChat: React.FC<TUIChatProps> = ({
 
       {/* Fixed bottom section */}
       <Box flexDirection="column" flexShrink={0}>
+        {/* The reasoning of the reply now streaming */}
+        {liveReasoning && thinkingDisplay !== "hide" && (
+          <LiveThinking text={liveReasoning} />
+        )}
+
         {/* Status */}
         <ActionStatus
           visible={isWaitingForResponse && !!responseStartTime}

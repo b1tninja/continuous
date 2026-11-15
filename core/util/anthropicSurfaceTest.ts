@@ -2,8 +2,10 @@
  * "Test connection" for the Anthropic API, which is not OpenAI-compatible:
  * `GET {base}/models` with `x-api-key` and an `anthropic-version` header, read
  * `lifecycle`, `deprecated_at` and `retires_at` for the configured models and
- * report them (core/util/modelRetirement.ts). One read-only request, no model
- * call. The listing may use the newer API version safely (it changes no
+ * report them (core/util/modelRetirement.ts), then `GET {base}/models/{id}`
+ * for each configured model to say whether this key reaches that id
+ * (core/util/providerModelLookup.ts). Read-only requests, no model call.
+ * The listing may use the newer API version safely (it changes no
  * request shape); if the service refuses that version it is retried with
  * 2023-06-01, which may omit the lifecycle fields. The key goes only in the
  * header, is never returned, and is scrubbed from error text. The sender is
@@ -18,6 +20,11 @@ import {
   type RetirementNotice,
   retirementNotice,
 } from "./modelRetirement.js";
+import {
+  lookupProviderModel,
+  type ModelCheck,
+  toModelCheck,
+} from "./providerModelLookup.js";
 
 export const ANTHROPIC_DEFAULT_BASE = "https://api.anthropic.com/v1";
 export const ANTHROPIC_LIST_VERSION = "2026-10-21";
@@ -76,6 +83,8 @@ export type AnthropicTestResult =
       notices: RetirementNotice[];
       /** The API version that answered. */
       version: string;
+      /** Per asked-for model: `GET /models/{id}`'s verdict and what it reported. */
+      modelChecks: ModelCheck[];
     }
   | { ok: false; error: string };
 
@@ -165,6 +174,9 @@ function failure(
   if (r.status === 401 || r.status === 403) {
     return `Anthropic rejected the API key (HTTP ${r.status}).`;
   }
+  if (r.status === 429) {
+    return "Anthropic is rate limiting this key (HTTP 429). Try again in a minute.";
+  }
   const detail = scrub(r.body, key);
   return `Anthropic answered HTTP ${r.status}${detail ? `: ${detail}` : ""}.`;
 }
@@ -205,11 +217,27 @@ export async function testAnthropicConnection(
     });
     if (n) notices.push(n);
   }
+  // The configured id itself: does this key reach it, and what Anthropic
+  // reports for it. The listing just fetched supplies the suggestions.
+  const modelChecks: ModelCheck[] = [];
+  for (const model of input.models ?? []) {
+    const result = await lookupProviderModel({
+      provider: "anthropic",
+      apiBase: input.apiBase,
+      apiKey: input.apiKey,
+      model,
+      listed: listed.map((m) => m.id),
+      ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
+      ...(input.fetchFn ? { fetchFn: input.fetchFn } : {}),
+    });
+    modelChecks.push(toModelCheck("anthropic", model, result));
+  }
   return {
     ok: true,
     models: listed.map((m) => m.id),
     listed,
     notices,
     version,
+    modelChecks,
   };
 }

@@ -1,0 +1,103 @@
+---
+title: "Recovery"
+---
+
+Three commands for when the terminal agent will not start or behaves in a way you did not set up: `continuous doctor config` shows what it reads and what is in force, `--safe` starts without the files that can block a start, and `continuous reset` puts one part of its stored state back to "as installed".
+
+## Check the configuration
+
+```bash
+continuous doctor config
+```
+
+`continuous config check` is the same command. It reads, and never changes:
+
+- `config.yaml` in the global folder (`~/.continuous`, or `CONTINUOUS_GLOBAL_DIR`), or the file given with `--config` or as `continuous config check <file>`
+- `permissions.yaml`
+- every hook settings file: `~/.claude/settings.json`, the global `settings.json`, and the project's `.claude`, `.continue` and `.continuous` settings files that exist
+- the `mcpServers` entries of `config.yaml`
+
+For each file it prints the path and `ok`, `absent` or `broken`. A broken file gets one line per problem with its line, column and key, never the text of the file:
+
+```
+Files
+  ok      config.yaml (user)         /home/ana/.continuous/config.yaml
+  ok      permissions.yaml (user)    /home/ana/.continuous/permissions.yaml
+  broken  hook settings (user)       /home/ana/.continuous/settings.json
+          line 1, column 89: not valid JSON: expected ',' or ']'
+
+MCP servers in config.yaml: 1
+  ok      files (stdio, npx) env: API_TOKEN
+```
+
+An MCP entry shows its name, transport, program name or address host, and the names of the variables it sets, never their values or the arguments.
+
+Then, for each main control, the value in force and where it comes from: `default`, `user file`, `project file`, `flag` or `env`, with the file, flag or variable in brackets:
+
+```
+Permission levels
+  Tool use                                     permissive               user file (/home/ana/.continuous/permissions.yaml)
+  Preset                                       Custom                   user file (/home/ana/.continuous/permissions.yaml)
+
+Run limits
+  Model requests                               5                        flag (--max-turns)
+```
+
+The controls are the five permission levels and the preset, the floor and the Never, Ask and Always rule counts, each Protection, the tainted-session rule, your hooks and the project's (running, or held until trusted), project configuration trust, the global folder, the environment passed to commands, and the run limits. Flags given with the command count, so `continuous --auto --max-turns 5 doctor config` shows what such a start would get.
+
+`--json` prints the same report with a stable schema (`"schema": "continuous.doctor.config/1"`). The exit code is 1 when a file that exists is broken or an MCP entry is, and 0 otherwise.
+
+## Start in safe mode
+
+```bash
+continuous --safe
+continuous -p --safe "summarise the failing tests in test-results.xml"
+continuous serve --safe
+```
+
+Safe mode does not read:
+
+- hooks, yours and the project's
+- MCP servers from `config.yaml`, and `--mcp`
+- agent files (`AGENTS.md`, `AGENT.md`, `CLAUDE.md`, `CODEX.md`) and `--agent`
+- rules from `config.yaml` and from the rules folders, and skills
+- the project's `providers.yaml` and `models.yaml`, even when trusted
+- the project's `environment.json` install command (`serve`)
+
+It keeps your `config.yaml` (or `--config`) for the models, your permission rules, and text you pass with `--rule` or `--prompt`. Each permission level is capped at its default, so no area is looser than a fresh install, whatever `permissions.yaml`, `--policy` or `/policy` say. `--auto`, `--auto-review`, `--allow`, `--trust-project-hooks` and `--trust-project-config` are dropped. One line on stderr says so:
+
+```
+Safe mode: started without project configuration, hooks (yours and the project's), MCP servers, agent files (AGENTS.md, CLAUDE.md), rules, skills and the environment install; permission levels are capped at the defaults. Ignored: --auto. To find what is broken: continuous doctor config
+```
+
+A hook settings file or `permissions.yaml` that does not parse does not stop a safe start. Loop workers that a safe session starts in parallel are separate processes and are not in safe mode.
+
+## Reset stored state
+
+```bash
+continuous reset --trust
+```
+
+Without `--yes` this is a dry run. It lists each path, its size and its file count, and changes nothing:
+
+```
+Global folder: /home/ana/.continuous
+Would move to a backup folder (nothing is deleted):
+  trust        /home/ana/.continuous/trusted-hooks.json  (412 B)
+  trust        /home/ana/.continuous/mcp-tool-pins.json  (2.1 KB)
+Total: 2 entries, 2.5 KB.
+```
+
+With `--yes` each entry is moved, not deleted, to `reset-backups/<time>/` in the global folder at the same relative path. To undo, move it back. Close other Continuous sessions first: a running session can write these files again.
+
+| Flag            | What is moved                                                                         |
+| --------------- | ------------------------------------------------------------------------------------- |
+| `--sessions`    | `sessions/` and `input_history.json`                                                  |
+| `--trust`       | `trusted-project.json`, `trusted-hooks.json`, `mcp-tool-pins.json`                    |
+| `--permissions` | `permissions.yaml`: levels, rules, floor and Protection switches                      |
+| `--caches`      | `index/` (except `globalContext.json`), `bedrock-catalog/`, `.diffs/`                 |
+| `--all`         | all of the above                                                                      |
+
+`config.yaml`, `providers.yaml`, `models.yaml`, `.env`, `settings.json`, `audit/`, `logs/`, `rules/` and `skills/` are never moved. Only those names, directly in the global folder, are touched. `~/.continue`, the folder of the product Continuous was forked from, is never touched, and a global folder that is `~/.continue`, a home folder or a drive root is refused with exit code 2. To delete old sessions and logs by age instead, use `continuous clean`.
+
+What the VS Code extension keeps in its own storage (keys in secure storage, the panel's remembered levels) is not covered.

@@ -12,11 +12,17 @@ import {
   RecentlyEditedRange,
 } from "../autocomplete/util/types";
 import type {
-  TerminalEnvironmentMode,
-  TerminalEnvironmentStatus,
-} from "../util/terminalEnvironment";
+  McpImportPreview,
+  McpImportRequest,
+  McpImportResult,
+} from "../config/importClineMcp";
+import type {
+  ModelBlockInfo,
+  ModelEditPreview,
+  ModelEditSaveResult,
+} from "../config/modelEdit/modelBlockEdit";
+import type { ModelPatchOp } from "../config/modelEdit/modelEditFields";
 import { ProfileDescription } from "../config/ProfileLifecycleManager";
-import { SharedConfigSchema } from "../config/sharedConfig";
 import type {
   MovePlaintextKeysResult,
   PlaintextKey,
@@ -24,30 +30,35 @@ import type {
   SaveProviderInstanceRequest,
   SaveProviderInstanceResult,
 } from "../config/providers/types";
-import type { ModeModelsInput } from "../config/yaml/saveModeModels";
-import type { SubagentLoadResult } from "../subagents/loadSubagents";
-import type { ApplyPatchResult, WorktreeInfo } from "../util/worktree";
-import type { DetectedLocalServer } from "../llm/localServers";
-import type { RulesByModeInput } from "../config/yaml/saveRulesByMode";
-import type {
-  AutoReviewReply,
-  AutoReviewRequest,
-} from "../tools/permissions/auto/handler";
-import type {
-  McpImportPreview,
-  McpImportRequest,
-  McpImportResult,
-} from "../config/importClineMcp";
+import type { TrashSessionResult } from "../util/history.js";
+import type { SessionSearchResult } from "../util/sessionSearch.js";
+import type { TrashedSession } from "../util/sessionTrash.js";
 import type {
   ProviderSetupInfo,
   SaveProviderModelsRequest,
   SaveProviderModelsResult,
 } from "../config/providerSetup";
-import type { DecisionSource as ToolDecisionSource } from "../tools/permissions/decide";
-import type { AuditListProtocol } from "./audit";
+import { SharedConfigSchema } from "../config/sharedConfig";
+import type { ModeModelsInput } from "../config/yaml/saveModeModels";
+import type { RulesByModeInput } from "../config/yaml/saveRulesByMode";
+import type { CommunityPrice } from "../llm/communityCatalog";
+import type { DetectedLocalServer } from "../llm/localServers";
+import type { CatalogModel } from "../llm/openRouterCatalog";
+import type { SubagentLoadResult } from "../subagents/loadSubagents";
 import type { ApprovalSettings } from "../tools/permissions/approval";
+import type {
+  AutoReviewReply,
+  AutoReviewRequest,
+} from "../tools/permissions/auto/handler";
+import type { DecisionSource as ToolDecisionSource } from "../tools/permissions/decide";
 import type { RuleEditRequest } from "../tools/permissions/ruleEditorHandlers";
 import { GlobalContextModelSelections } from "../util/GlobalContext";
+import type {
+  TerminalEnvironmentMode,
+  TerminalEnvironmentStatus,
+} from "../util/terminalEnvironment";
+import type { ApplyPatchResult, WorktreeInfo } from "../util/worktree";
+import type { AuditListProtocol } from "./audit";
 
 import {
   BaseSessionMetadata,
@@ -72,6 +83,8 @@ import {
   RangeInFileWithNextEditInfo,
   SerializedContinueConfig,
   Session,
+  SessionDelta,
+  SessionSaveResult,
   SiteIndexingConfig,
   SlashCommandDescWithSource,
   StreamDiffLinesPayload,
@@ -134,10 +147,33 @@ export interface BedrockModelOptionInfo {
    * "pending" while an access request is open.
    */
   access?: "available" | "needs-access" | "pending";
+  /**
+   * Set when the account's applied tokens- or requests-per-minute quota for
+   * this model on its route is 0 (Service Quotas): the warning to show
+   * before the first request, with the Service Quotas console link.
+   */
+  quotaWarning?: string;
+}
+
+/** The optional Service Quotas check that runs with Test connection. */
+export interface BedrockQuotaCheckInfo {
+  /** `ok`: quotas known; `skipped`: not checked (see `note`); `off`: model information updates are off */
+  status: "ok" | "skipped" | "off";
+  /** One quiet line, e.g. "Quota check skipped: this profile lacks servicequotas:ListServiceQuotas" */
+  note?: string;
+  docsUrl?: string;
+  fetchedAt?: string;
+  /** How many listed models have a 0 quota on their route */
+  zeroQuotaModels?: number;
 }
 
 export type BedrockListModelsResult =
-  { ok: true; models: BedrockModelOptionInfo[] } | { ok: false; error: string };
+  | {
+      ok: true;
+      models: BedrockModelOptionInfo[];
+      quota?: BedrockQuotaCheckInfo;
+    }
+  | { ok: false; error: string };
 
 /**
  * Whether the account lists the `global.` inference profile of a configured
@@ -176,9 +212,22 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
   "history/list": [ListHistoryOptions, BaseSessionMetadata[]];
   "history/delete": [{ id: string }, void];
   "history/load": [{ id: string }, Session];
-  "history/save": [Session, void];
+  "history/save": [Session, SessionSaveResult | void];
+  "history/saveDelta": [SessionDelta, SessionSaveResult];
   "history/share": [{ id: string; outputDir?: string }, void];
   "history/clear": [undefined, void];
+  /** Delete now: to the trash, restorable for 7 days (NI10). */
+  "history/trash": [{ id: string; force?: boolean }, TrashSessionResult];
+  "history/restore": [{ id: string }, BaseSessionMetadata];
+  "history/listTrash": [undefined, TrashedSession[]];
+  /** "Delete permanently" in the trash. */
+  "history/deleteFromTrash": [{ id: string }, void];
+  "history/emptyTrash": [undefined, void];
+  /** Message-text search over the newest sessions (bounded). */
+  "history/search": [
+    { query: string; maxSessions?: number; maxResults?: number },
+    SessionSearchResult,
+  ];
   "devdata/log": [DevDataLogEvent, void];
   "config/addOpenAiKey": [string, void];
   "config/addModel": [
@@ -243,6 +292,25 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
       confirm?: string;
     },
     { saved: boolean; declined?: boolean },
+  ];
+  /**
+   * The config.yaml entry of the model with this title, for the model
+   * configuration dialog. Plain credential values are masked; secret
+   * references are returned as names.
+   */
+  "config/getModelBlock": [{ title: string }, ModelBlockInfo];
+  /** Check a change to that entry and return the YAML diff it would make. */
+  "config/previewModelEdit": [
+    { title: string; ops: ModelPatchOp[] },
+    ModelEditPreview,
+  ];
+  /**
+   * Write the change, if the file still matches the preview's `baseHash`.
+   * Comments, key order and keys the dialog does not manage are kept.
+   */
+  "config/saveModelEdit": [
+    { title: string; ops: ModelPatchOp[]; baseHash: string },
+    ModelEditSaveResult,
   ];
   /**
    * The effective policy for the environment commands inherit, where it comes
@@ -429,6 +497,15 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
     },
     { account?: string; converted: number; error?: string },
   ];
+  /**
+   * Take one provider connection's models out of the selected config (and
+   * their names out of modeModels). The account in providers.yaml, the
+   * catalog models and stored keys are kept.
+   */
+  "config/removeProviderConnection": [
+    import("../config/providerSetup").RemoveProviderConnectionRequest,
+    import("../config/providerSetup").RemoveProviderConnectionResult,
+  ];
   /** Add a model that uses a provider instance to the selected config. */
   "config/addConnectedModel": [
     { connection: string; model: string; name?: string; roles?: string[] },
@@ -561,6 +638,8 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
       apiBase?: string;
       apiKey?: string;
       model?: string;
+      /** The configured model id to check with `GET /models/{id}`. */
+      checkModel?: string;
     },
     OpenAICompatTestResult,
   ];
@@ -582,6 +661,17 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
     { notice?: RetirementNotice },
   ];
   "model/dismissRetirementNotice": [{ provider: string; model: string }, void];
+  /**
+   * The notices of several configured models at once (the picker, Settings >
+   * Models): same sources as `model/retirementNotice`, not filtered by a
+   * dismissal of the chip. No network call.
+   */
+  "model/retirementNotices": [
+    { models: { provider: string; model: string }[] },
+    {
+      notices: { provider: string; model: string; notice: RetirementNotice }[];
+    },
+  ];
   "ollama/showHint": [
     { provider?: string; apiBase?: string; model: string },
     { serverParses?: boolean; toolsAdvertised?: boolean },
@@ -697,6 +787,12 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
        * made by tools/evaluatePolicy; this lets the tool resolve the path.
        */
       allowOutsideWorkspace?: boolean;
+      /**
+       * What run_terminal_command does with output that looks like a
+       * runaway, from the Tools policy level: "stop" (default) or
+       * "keep-running" (Permissive and IDGAF).
+       */
+      runawayAction?: "stop" | "keep-running";
     },
     {
       contextItems: ContextItem[];
@@ -716,6 +812,15 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
   "policy/save": [
     import("../tools/permissions/settingsFile").PolicyFileUpdate,
     void,
+  ];
+  /**
+   * The save, dry-run: the exact permissions.yaml text core's writer would
+   * produce, line by line, and what the save's native dialog would ask about.
+   * Nothing is written.
+   */
+  "policy/preview": [
+    import("../tools/permissions/settingsFile").PolicyFileUpdate,
+    import("../tools/permissions/policySave").PolicySavePreview,
   ];
   /**
    * Every permission rule in effect with its area, source and state, and the
@@ -758,6 +863,12 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
       sessionId?: string;
       /** Which agent made the call (main, a subagent or a Loop worker), for the audit */
       agent?: import("../tools/permissions/audit/record").AuditAgent;
+      /**
+       * The tool is withheld while the prompt cache is warm (C88): the call is
+       * refused with this reason, and the audit trail records it, without
+       * asking the rules.
+       */
+      withheld?: string;
       /**
        * The conversation as the reviewer sees it. Offered only for a call that
        * may be shadow-reviewed (off unless the person's config turns it on).
@@ -810,6 +921,51 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
   "process/isBackgrounded": [{ toolCallId: string }, boolean];
   "process/killTerminalProcess": [{ toolCallId: string }, void];
   "mdm/setLicenseKey": [{ licenseKey: string }, boolean];
+  /**
+   * The dated local copy of OpenRouter's public model list. `status` and
+   * `cached` read the file only; `pull` is a request to openrouter.ai made
+   * when the person asks (Pull now, Refresh now), refused when model
+   * information updates are `off`. With `automatic` (the default) core also
+   * refreshes the copy in the background when it is older than
+   * `refreshHours`; `lastAttempt` is that refresher's last request.
+   */
+  "modelCatalog/status": [
+    undefined,
+    {
+      policy: "automatic" | "ask" | "never" | "off";
+      refreshHours: number;
+      lastAttempt?: { at: string; error?: string };
+      openrouter?: { fetchedAt: string; count: number };
+      /** The community catalogue copy (models.dev), when there is one */
+      community?: { fetchedAt: string; count: number };
+    },
+  ];
+  "modelCatalog/cached": [
+    undefined,
+    { fetchedAt: string; models: CatalogModel[] } | null,
+  ];
+  /**
+   * The trimmed community catalogue copy (models.dev prices), the last price
+   * source; a file read, null when there is none or updates are `off`.
+   */
+  "modelCatalog/communityCached": [
+    undefined,
+    { fetchedAt: string; prices: CommunityPrice[] } | null,
+  ];
+  "modelCatalog/pull": [
+    undefined,
+    (
+      | { ok: true; fetchedAt: string; models: CatalogModel[] }
+      | { ok: false; error: string }
+    ),
+  ];
+  "modelCatalog/setPolicy": [
+    {
+      policy?: "automatic" | "ask" | "never" | "off";
+      refreshHours?: number;
+    },
+    { saved: boolean },
+  ];
   "models/fetch": [
     { provider: string; apiKey?: string; apiBase?: string },
     {

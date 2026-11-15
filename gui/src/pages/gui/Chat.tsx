@@ -25,7 +25,9 @@ import { CacheMissNotice } from "../../components/mainInput/CacheMissNotice";
 import { CachingOffNotice } from "../../components/mainInput/CachingOffNotice";
 import { ToolDialectNotice } from "../../components/mainInput/ToolDialectNotice";
 import { ColdCacheNotice } from "../../components/mainInput/ColdCacheNotice";
+import { SessionLoadNotice } from "../../components/mainInput/SessionLoadNotice";
 import { AgentsList } from "../../components/BackgroundMode/AgentsList";
+import { NeedsYouTray } from "../../components/loop/NeedsYouTray";
 import { LoopInbox } from "../../components/mainInput/LoopInbox";
 import {
   QuestionPanel,
@@ -34,6 +36,7 @@ import {
 import { TaskListPanel } from "../../components/mainInput/TaskListPanel";
 import { useLoopDriver } from "../../hooks/useLoopDriver";
 import { LargeMessageNotice } from "../../components/mainInput/LargeMessageNotice";
+import { PendingToolChangesNotice } from "../../components/mainInput/PendingToolChangesNotice";
 import { QueuedMessages } from "../../components/mainInput/QueuedMessages";
 import { useMainEditor } from "../../components/mainInput/TipTapEditor";
 import { mergeQueuedMessages } from "../../components/mainInput/util/queuedMessages";
@@ -57,6 +60,7 @@ import {
   QueuedMessage,
   moveQueuedMessage,
   removeQueuedMessage,
+  setLoadingSessionId,
   steerQueuedMessages,
   takeQueuedMessages,
   updateToolCallOutput,
@@ -64,7 +68,7 @@ import {
 import { streamEditThunk } from "../../redux/thunks/edit";
 import { loadLastSession } from "../../redux/thunks/session";
 import { streamResponseThunk } from "../../redux/thunks/streamResponse";
-import { isJetBrains, isMetaEquivalentKeyPressed } from "../../util";
+import ResumeResponse from "../../components/StepContainer/ResumeResponse";
 import { ToolCallDiv } from "./ToolCallDiv";
 import { McpAppTurn } from "./ToolCallDiv/McpAppTurn";
 import { isMcpAppTurn } from "./ToolCallDiv/mcpAppTurnContent";
@@ -77,10 +81,17 @@ import InlineErrorMessage from "../../components/mainInput/InlineErrorMessage";
 import { resolveEditorContent } from "../../components/mainInput/TipTapEditor/utils/resolveEditorContent";
 import { setDialogMessage, setShowDialog } from "../../redux/slices/uiSlice";
 import { RootState } from "../../redux/store";
-import { cancelStream, interruptStream } from "../../redux/thunks/cancelStream";
+import { interruptStream } from "../../redux/thunks/cancelStream";
 import { getLocalStorage, setLocalStorage } from "../../util/localStorage";
+import {
+  currentWorkspaceDirs,
+  lastSessionCandidates,
+} from "../../util/sessionWorkspace";
 import { EmptyChatBody } from "./EmptyChatBody";
+import { ResumingSessionBody } from "./ResumingSessionBody";
 import { ExploreDialogWatcher } from "./ExploreDialogWatcher";
+import { JumpToLatest } from "./JumpToLatest";
+import { TranscriptMessage } from "./TranscriptMessage";
 import { useAutoScroll } from "./useAutoScroll";
 
 // Helper function to find the index of the latest conversation summary
@@ -153,32 +164,37 @@ export function Chat() {
   const isInEdit = useAppSelector((store) => store.session.isInEdit);
 
   const lastSessionId = useAppSelector((state) => state.session.lastSessionId);
+  const lastSessionIdByWorkspace = useAppSelector(
+    (state) => state.session.lastSessionIdByWorkspace,
+  );
+  const allSessionMetadata = useAppSelector(
+    (state) => state.session.allSessionMetadata,
+  );
+  // "Last Session" reopens a session of this workspace (thunks/session.ts
+  // loadLastSession), so it is offered only when this workspace has one
+  const canReopenLastSession = useMemo(
+    () =>
+      lastSessionCandidates({
+        byWorkspace: lastSessionIdByWorkspace,
+        legacyLastSessionId: lastSessionId,
+        sessions: allSessionMetadata,
+        workspaceDirs: currentWorkspaceDirs(),
+      }).length > 0,
+    [lastSessionIdByWorkspace, lastSessionId, allSessionMetadata],
+  );
+  const loadingSessionId = useAppSelector(
+    (state) => state.session.loadingSessionId,
+  );
+  const isResumingSession =
+    history.length === 0 && !!loadingSessionId && !isInEdit;
   const hasDismissedExploreDialog = useAppSelector(
     (state) => state.ui.hasDismissedExploreDialog,
   );
-  const jetbrains = useMemo(() => {
-    return isJetBrains();
-  }, []);
 
-  useAutoScroll(stepsDivRef, history);
-
-  useEffect(() => {
-    // Cmd + Backspace to delete current step
-    const listener = (e: KeyboardEvent) => {
-      if (
-        e.key === "Backspace" &&
-        (jetbrains ? e.altKey : isMetaEquivalentKeyPressed(e)) &&
-        !e.shiftKey
-      ) {
-        void dispatch(cancelStream());
-      }
-    };
-    window.addEventListener("keydown", listener);
-
-    return () => {
-      window.removeEventListener("keydown", listener);
-    };
-  }, [isStreaming, jetbrains, isInEdit]);
+  const { paused: autoScrollPaused, scrollToLatest } = useAutoScroll(
+    stepsDivRef,
+    history,
+  );
 
   const { widget, highlights } = useFindWidget(
     stepsDivRef,
@@ -215,6 +231,19 @@ export function Chat() {
           editorToClearOnSend?.commands.clearContent(false);
         }
         return;
+      }
+
+      // Sent while a saved session is still loading: the person has moved
+      // on, so the load is dropped and cannot replace what they sent. With
+      // an empty chat the current id may be the session being loaded, so
+      // the message goes to a fresh session rather than over it. (Typing
+      // already dropped it, useDropSessionLoadOnTyping; this is the backstop.)
+      if (stateSnapshot.session.loadingSessionId && !isCurrentlyInEdit) {
+        if (stateSnapshot.session.history.length === 0) {
+          dispatch(newSession());
+        } else {
+          dispatch(setLoadingSessionId(undefined));
+        }
       }
 
       // Cancel all pending tool calls
@@ -487,7 +516,10 @@ export function Chat() {
 
       if (message.role === "thinking") {
         const thinkingContent = renderChatMessage(message);
-        if (!thinkingContent?.trim()) {
+        const thinkingInProgress = index === history.length - 1 && isStreaming;
+        // An empty block (a model that hides its thinking) has nothing to
+        // reopen once it is done; while it streams it still says "Thinking"
+        if (!thinkingContent?.trim() && !thinkingInProgress) {
           return null;
         }
         return (
@@ -497,7 +529,7 @@ export function Chat() {
               redactedThinking={message.redactedThinking}
               index={index}
               prevItem={index > 0 ? history[index - 1] : null}
-              inProgress={index === history.length - 1 && isStreaming}
+              inProgress={thinkingInProgress}
               signature={message.signature}
             />
           </div>
@@ -537,17 +569,18 @@ export function Chat() {
 
       <StepsDiv
         ref={stepsDivRef}
+        role="region"
+        aria-label="Conversation"
         className={`pt-[8px] ${showScrollbar ? "thin-scrollbar" : "no-scrollbar"} ${history.length > 0 ? "min-h-0 flex-1 overflow-y-scroll" : "shrink-0"}`}
       >
         {highlights}
         {history
           .filter((item) => item.message.role !== "system")
           .map((item, index: number) => (
-            <div
+            <TranscriptMessage
               key={item.message.id}
-              style={{
-                minHeight: index === history.length - 1 ? "200px" : 0,
-              }}
+              role={item.message.role}
+              minHeight={index === history.length - 1 ? "200px" : 0}
             >
               <ErrorBoundary
                 FallbackComponent={fallbackRender}
@@ -558,21 +591,26 @@ export function Chat() {
                 {renderChatHistoryItem(item, index)}
               </ErrorBoundary>
               {index === history.length - 1 && <InlineErrorMessage />}
-            </div>
+            </TranscriptMessage>
           ))}
+        <ResumeResponse />
         {/* Inside the scroll area, so it does not push the input down */}
         <ToolDialectNotice />
       </StepsDiv>
+      <JumpToLatest paused={autoScrollPaused} scrollToLatest={scrollToLatest} />
       <div className={"relative shrink-0"}>
         <CacheMissNotice />
         <ColdCacheNotice />
+        <SessionLoadNotice />
         <CachingOffNotice />
+        <PendingToolChangesNotice />
         <LargeMessageNotice />
         {/* A loop shows its own plan in its panel */}
         {!hasLoop && <TaskListPanel />}
         <LoopInbox />
         <AgentsList />
-        <QuestionPanel />
+        {/* A loop asks through its Needs you tray, which holds the same questions */}
+        {hasLoop ? <NeedsYouTray /> : <QuestionPanel />}
         <QueuedMessages
           onSendNow={sendNowOrSteer}
           onSteerNow={(ids) => void steerNow(ids)}
@@ -596,23 +634,30 @@ export function Chat() {
         >
           <div className="flex flex-row items-center justify-between pr-2 pb-1 pl-0.5">
             <div className="hidden xs:inline">
-              {history.length === 0 && lastSessionId && !isInEdit && (
-                <NewSessionButton
-                  onClick={async () => {
-                    await dispatch(loadLastSession());
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  <ArrowLeftIcon className="h-3 w-3" />
-                  <span className="text-xs">Last Session</span>
-                </NewSessionButton>
-              )}
+              {history.length === 0 &&
+                canReopenLastSession &&
+                !isInEdit &&
+                !isResumingSession && (
+                  <NewSessionButton
+                    onClick={async () => {
+                      await dispatch(loadLastSession());
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <ArrowLeftIcon className="h-3 w-3" />
+                    <span className="text-xs">Last Session</span>
+                  </NewSessionButton>
+                )}
             </div>
           </div>
           <FatalErrorIndicator />
           {!hasDismissedExploreDialog && <ExploreDialogWatcher />}
-          {history.length === 0 && (
-            <EmptyChatBody showOnboardingCard={onboardingCard.show} />
+          {isResumingSession && loadingSessionId ? (
+            <ResumingSessionBody loadingSessionId={loadingSessionId} />
+          ) : (
+            history.length === 0 && (
+              <EmptyChatBody showOnboardingCard={onboardingCard.show} />
+            )
           )}
         </div>
       </div>

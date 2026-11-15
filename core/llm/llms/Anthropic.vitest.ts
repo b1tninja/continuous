@@ -770,6 +770,77 @@ describe("Anthropic", () => {
     });
   });
 
+  describe("Thinking display", () => {
+    function anthropicFor(model: string) {
+      return new Anthropic({
+        apiKey: "test-api-key",
+        model,
+        apiBase: "https://api.anthropic.com/v1/",
+      });
+    }
+
+    test("asks Claude 4.7 and later for summarized thinking", () => {
+      const args = anthropicFor("claude-opus-4-8").convertArgs({
+        model: "claude-opus-4-8",
+        reasoning: true,
+        reasoningBudgetTokens: 4096,
+      });
+      expect(args.thinking).toEqual({
+        type: "adaptive",
+        display: "summarized",
+      });
+    });
+
+    test("leaves Sonnet 4.6's request as it was: it shows a summary by default", () => {
+      const args = anthropicFor("claude-sonnet-4-6").convertArgs({
+        model: "claude-sonnet-4-6",
+        reasoning: true,
+        reasoningBudgetTokens: 4096,
+      });
+      expect(args.thinking).toEqual({ type: "adaptive" });
+    });
+
+    const history = [
+      { role: "user" as const, content: "hi" },
+      {
+        role: "thinking" as const,
+        content: "A summary of the reasoning",
+        signature: "sig",
+      },
+      { role: "assistant" as const, content: "hello" },
+      { role: "user" as const, content: "again" },
+    ];
+
+    test("does not send a summary back to a model that hides its thinking by default", () => {
+      // Its blocks used to arrive empty and were never sent back; asking for a
+      // summary to show must not change the conversation sent
+      const sent = anthropicFor("claude-opus-5-5").convertMessages(
+        history,
+        false,
+        undefined,
+        "claude-opus-5-5",
+      );
+      expect(sent[1]).toEqual({
+        role: "assistant",
+        content: [{ type: "text", text: "hello" }],
+      });
+    });
+
+    test("still sends signed thinking back to a model that shows it by default", () => {
+      const sent = anthropicFor("claude-sonnet-4-6").convertMessages(
+        history,
+        false,
+        undefined,
+        "claude-sonnet-4-6",
+      );
+      expect(sent[1].content[0]).toEqual({
+        type: "thinking",
+        thinking: "A summary of the reasoning",
+        signature: "sig",
+      });
+    });
+  });
+
   describe("Error handling", () => {
     test("should throw error when API key is missing", async () => {
       const anthropic = new Anthropic({

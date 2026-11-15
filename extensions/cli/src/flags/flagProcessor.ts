@@ -4,6 +4,12 @@
 
 import { setAutoReviewEnabled } from "../permissions/coreRules.js";
 import {
+  auditFileEditsAtLoad,
+  auditLevelChange,
+} from "../permissions/policyAudit.js";
+import {
+  effectiveLevels,
+  getPolicyLevels,
   loadPolicyFile,
   parsePolicySpec,
   setCommandPermissionFlags,
@@ -83,6 +89,8 @@ export function processCommandFlags(options: {
 
   // The shared settings file first, so a flag wins over it
   for (const notice of loadPolicyFile()) logger.warn(notice);
+  // Edits made to the file since the last run are audited as such
+  auditFileEditsAtLoad();
 
   // The level of each policy area (--policy)
   if (options.policy !== undefined) {
@@ -90,11 +98,23 @@ export function processCommandFlags(options: {
     if (!parsed.ok) throw new Error(`--policy: ${parsed.error}`);
     // stderr, so a JSON run's stdout stays what it was
     if (parsed.deprecated) process.stderr.write(`${parsed.deprecated}\n`);
+    const before = getPolicyLevels();
     setPolicyLevels(parsed.levels);
+    // Typed on the command line, so already explicit: audited, not asked
+    auditLevelChange(before, parsed.levels, "flag", "flag");
   }
 
   // Convert legacy flags to mode
   const mode = convertLegacyModeFlags(options.readonly, options.auto);
+  // `--auto` raises the tool areas to IDGAF for this run
+  if (mode === "auto") {
+    auditLevelChange(
+      getPolicyLevels(),
+      effectiveLevels("auto"),
+      "flag",
+      "flag",
+    );
+  }
 
   // Remembered for loop workers, which are a separate process.
   setCommandPermissionFlags({

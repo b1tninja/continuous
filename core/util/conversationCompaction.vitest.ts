@@ -59,6 +59,35 @@ describe("compactConversation", () => {
     });
     expect(session.promptCache?.lastInputTokens).toBe(366_000);
   });
+
+  it("does not summarise old turns removed with Choose what to keep", async () => {
+    const session = sessionWithCache();
+    session.history = [
+      {
+        message: { role: "user", content: "old question" },
+        contextItems: [],
+        removedByUser: { turn: true },
+      },
+      {
+        message: { role: "assistant", content: "old answer" },
+        contextItems: [],
+        removedByUser: { turn: true },
+      },
+      ...session.history,
+    ];
+    const historyManager = { load: () => session, save: vi.fn() } as any;
+    const chat = vi.fn(async () => ({ role: "assistant", content: "x" }));
+    await compactConversation({
+      sessionId: "s1",
+      index: 3,
+      historyManager,
+      currentModel: { chat } as any,
+    });
+    const sent = JSON.stringify((chat.mock.calls[0] as any[])[0]);
+    expect(sent).not.toContain("old question");
+    expect(sent).not.toContain("old answer");
+    expect(sent).toContain("hello");
+  });
 });
 
 describe("compactConversation with the conversation prefix", () => {

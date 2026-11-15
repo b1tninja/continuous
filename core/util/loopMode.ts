@@ -11,10 +11,12 @@ import type {
   LoopItemState,
   LoopItemStatus,
   LoopPolicy,
+  LoopReplacedItem,
   LoopParallelRun,
   LoopQuestion,
   LoopQuestionKind,
   LoopState,
+  LoopStopBudget,
   LoopStopReason,
   LoopStrategy,
   MessageContent,
@@ -639,7 +641,12 @@ export type LoopAction =
   | { kind: "wait"; until?: string }
   /** Unattended: the wait ran out; the waiting items go on (proceedUnanswered) */
   | { kind: "proceed" }
-  | { kind: "stop"; reason: LoopStopReason; detail: string }
+  | {
+      kind: "stop";
+      reason: LoopStopReason;
+      detail: string;
+      budget?: LoopStopBudget;
+    }
   | { kind: "none" };
 
 export interface LoopContext {
@@ -1011,23 +1018,80 @@ export function loopTokensUsed(loop: LoopState, sessionTokens: number): number {
   return Math.max(0, sessionTokens - loop.tokensAtStart);
 }
 
+/**
+ * Moves the wait in progress into `waitedMs`: the loop is no longer waiting
+ * on the person. A loop that was not waiting is returned with `waitingSince`
+ * cleared as before. The clock defaults to now where a caller has none.
+ */
+export function bankWait(loop: LoopState, now: Date = new Date()): LoopState {
+  const since = loop.waitingSince
+    ? new Date(loop.waitingSince).getTime()
+    : Number.NaN;
+  const waited = Number.isFinite(since)
+    ? Math.max(0, now.getTime() - since)
+    : 0;
+  return {
+    ...loop,
+    waitingSince: undefined,
+    ...(waited > 0 ? { waitedMs: (loop.waitedMs ?? 0) + waited } : {}),
+  };
+}
+
+/** Milliseconds the loop has waited on the person, the wait in progress included. */
+export function loopWaitedMs(loop: LoopState, now: Date): number {
+  const banked = Math.max(0, loop.waitedMs ?? 0);
+  if (
+    (loop.status === "waiting" || loop.status === "awaiting_plan") &&
+    loop.waitingSince
+  ) {
+    const since = new Date(loop.waitingSince).getTime();
+    if (Number.isFinite(since)) {
+      return banked + Math.max(0, now.getTime() - since);
+    }
+  }
+  return banked;
+}
+
+/**
+ * Milliseconds the time budget counts: since the loop started, without the
+ * time it waited on the person.
+ */
+export function loopElapsedMs(loop: LoopState, now: Date): number {
+  return Math.max(
+    0,
+    now.getTime() -
+      new Date(loop.startedAt).getTime() -
+      loopWaitedMs(loop, now),
+  );
+}
+
 export function loopBudgetStop(
   loop: LoopState,
   ctx: LoopContext,
-): { reason: LoopStopReason; detail: string } | undefined {
+):
+  | { reason: LoopStopReason; detail: string; budget: LoopStopBudget }
+  | undefined {
   const { budget } = loop;
   const used = loopTokensUsed(loop, ctx.sessionTokens);
   if (budget.maxTokens > 0 && used >= budget.maxTokens) {
     return {
       reason: "tokens",
       detail: `The loop used ${used} tokens; its budget is ${budget.maxTokens}.`,
+      budget: { kind: "tokens", used, max: budget.maxTokens },
     };
   }
-  const elapsed = ctx.now.getTime() - new Date(loop.startedAt).getTime();
+  const elapsed = loopElapsedMs(loop, ctx.now);
   if (budget.maxWallMs > 0 && elapsed >= budget.maxWallMs) {
+    const waited = loopWaitedMs(loop, ctx.now);
+    const minutes = (ms: number) => Math.round(ms / 60000);
+    const ran =
+      waited >= 60000
+        ? `${minutes(elapsed)} minutes of work (${minutes(elapsed + waited)} minutes including waiting for you)`
+        : `${minutes(elapsed)} minutes`;
     return {
       reason: "time",
-      detail: `The loop ran for ${Math.round(elapsed / 60000)} minutes; its budget is ${Math.round(budget.maxWallMs / 60000)}.`,
+      detail: `The loop ran for ${ran}; its budget is ${minutes(budget.maxWallMs)}.`,
+      budget: { kind: "time", used: elapsed, max: budget.maxWallMs },
     };
   }
   return undefined;
@@ -1203,6 +1267,7 @@ export function stopLoop(
   loop: LoopState,
   reason: LoopStopReason,
   detail: string,
+  budget?: LoopStopBudget,
 ): LoopState {
   // The inline run and every worker of a wave go back to pending: the
   // harness ends them, and their next run checks what is already done
@@ -1234,6 +1299,7 @@ export function stopLoop(
     waitingSince: undefined,
     stopReason: reason,
     stopDetail: detail,
+    stopBudget: budget,
   };
 }
 
@@ -1253,7 +1319,9 @@ export function resumeLoop(
     status: "running",
     stopReason: undefined,
     stopDetail: undefined,
+    stopBudget: undefined,
     startedAt: iso(ctx.now),
+    waitedMs: undefined,
     tokensAtStart: ctx.sessionTokens,
     costAtStart: ctx.costMark,
     noProgressRounds: 0,
@@ -1276,7 +1344,10 @@ export function enterWait(loop: LoopState, now: Date): LoopState {
  * default. Its questions stay open, so an answer that comes later is still
  * routed (a done item is then redone). Nothing is confirmed.
  */
-export function proceedUnanswered(loop: LoopState): LoopState {
+export function proceedUnanswered(
+  loop: LoopState,
+  now: Date = new Date(),
+): LoopState {
   const items = loop.items.map((item) => {
     if (item.status !== "waiting") return item;
     const unanswered = openQuestions(loop, item.id).map((q) => q.id);
@@ -1287,7 +1358,7 @@ export function proceedUnanswered(loop: LoopState): LoopState {
       ...(unanswered.length ? { unanswered } : {}),
     };
   });
-  return { ...loop, items, status: "running", waitingSince: undefined };
+  return { ...bankWait(loop, now), items, status: "running" };
 }
 
 /**
@@ -1509,6 +1580,7 @@ export function repairDecision(
 export function endReplan(
   loop: LoopState,
   plan: TaskPlan | undefined,
+  now: Date = new Date(),
 ): { loop: LoopState; accept: boolean } {
   const current = loop.current;
   const planTexts = current?.planTexts ?? [];
@@ -1539,6 +1611,8 @@ export function endReplan(
     ...loop,
     current: undefined,
     status: "awaiting_plan",
+    // The wait on the card is not work: the time budget leaves it out
+    waitingSince: loop.waitingSince ?? iso(now),
     replanReason: reason,
     replanned: {
       planTexts,
@@ -2238,7 +2312,7 @@ export type LoopControlResult =
 /** A loop that waited on the person goes on once something changed. */
 function wake(loop: LoopState): LoopState {
   return loop.status === "waiting"
-    ? { ...loop, status: "running", waitingSince: undefined }
+    ? { ...bankWait(loop), status: "running" }
     : loop;
 }
 
@@ -2883,7 +2957,7 @@ export function answerLoop(
     !!refuseCheck ||
     (question?.kind === "approval" && !!input.approve);
   if (next.status === "waiting" && route !== "standing" && unblocks) {
-    next = { ...next, status: "running", waitingSince: undefined };
+    next = { ...bankWait(next, now), status: "running" };
   }
   return { ok: true, loop: next, answer };
 }
@@ -3090,19 +3164,64 @@ function sameTexts(previous: string[], plan: TaskPlan): boolean {
  *   alone; only the repaired item runs again (other failed items stay
  *   failed), and the to-dos it was split into inherit its repairs.
  */
+/**
+ * The to-dos an accepted re-plan took out of the plan, for the plan tree
+ * (LoopState.replacedItems). Their text comes from the plan the loop was
+ * running, when its to-dos still line up with the loop's items. A link to the
+ * to-do that took the place is kept only for a repair that replaced the failed
+ * item with exactly one new to-do: any other re-plan does not say which new
+ * to-do answers which old one, so those show as dropped. Undefined when
+ * nothing was taken out.
+ */
+function recordReplaced(
+  loop: LoopState,
+  plan: TaskPlan,
+  items: LoopItemState[],
+  round: number,
+  repairOf: LoopItemState | undefined,
+): LoopReplacedItem[] | undefined {
+  const kept = new Set(plan.items.map((t) => t.id));
+  const previous = loop.replanned?.planTexts ?? loop.current?.planTexts;
+  const aligned = !!previous && previous.length === loop.items.length;
+  const added = items.filter((i) => i.addedInRound === round);
+  const taken: LoopReplacedItem[] = [];
+  loop.items.forEach((item, i) => {
+    if (kept.has(item.id)) return;
+    const text = aligned ? previous[i] : undefined;
+    taken.push({
+      id: item.id,
+      ...(text ? { text } : {}),
+      round,
+      ...(repairOf?.id === item.id && added.length === 1
+        ? { replacedBy: added[0].id }
+        : {}),
+    });
+  });
+  if (taken.length === 0) return undefined;
+  return [...(loop.replacedItems ?? []), ...taken].slice(-MAX_REPLACED_ITEMS);
+}
+
+/** How many taken-out to-dos the loop remembers */
+const MAX_REPLACED_ITEMS = 20;
+
 export function acceptReplan(
   loop: LoopState,
   plan: TaskPlan,
   ctx: LoopContext,
 ): LoopState {
-  loop = { ...loop, ...rehomedReminders(loop, plan) };
+  loop = { ...bankWait(loop, ctx.now), ...rehomedReminders(loop, plan) };
   const scope = loop.replanned;
   const unchangedCheckIn = !!scope?.checkIn && sameTexts(scope.planTexts, plan);
   const repairOf = scope?.itemId ? itemState(loop, scope.itemId) : undefined;
+  // The round the plan's new to-dos come in with (LoopItemState.addedInRound)
+  const roundAfter = loop.round + (unchangedCheckIn ? 0 : 1);
   const items = plan.items.map((task) => {
     const known = itemState(loop, task.id);
     if (!known) {
-      const fresh = fromTask(task);
+      const fresh = {
+        ...fromTask(task),
+        ...(roundAfter > 1 ? { addedInRound: roundAfter } : {}),
+      };
       return repairOf?.repairs
         ? { ...fresh, repairs: repairOf.repairs }
         : fresh;
@@ -3118,8 +3237,10 @@ export function acceptReplan(
     }
     return state;
   });
+  const replacedItems = recordReplaced(loop, plan, items, roundAfter, repairOf);
   const strategyState: Partial<LoopState> = {
     replanned: undefined,
+    ...(replacedItems ? { replacedItems } : {}),
     ...(loopStrategy(loop) === "check-in"
       ? { doneSinceReplan: 0, checkInDue: undefined }
       : {}),

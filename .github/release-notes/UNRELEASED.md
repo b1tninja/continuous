@@ -2,41 +2,20 @@
 
 Staging note for the next release. Fold it into that release's `<tag>.md` (the release job reads `.github/release-notes/<tag>.md`) and delete this file.
 
-## Privacy: Continuous no longer contacts Continue-operated servers
+## New
 
-Earlier builds said they collect no telemetry, and the claim was not fully accurate. This change makes it accurate.
-
-- **The built-in web search is gone.** The `search_web` tool and the `@web` context provider used to post the query, with the version, the operating system, a machine id and a key embedded in the code, to a Google Cloud Run proxy run by the upstream Continue project. That proxy is no longer contacted and the key is removed. `search_web` and `@web` now exist only if you set `CONTINUOUS_WEB_SEARCH_URL` to a search endpoint of your own (SearXNG-compatible JSON; optional `CONTINUOUS_WEB_SEARCH_KEY`). See `docs/customize/web-search.mdx`.
-- **The docs crawler no longer has a remote path.** The `useLocalCrawling: false` setting that sent a site URL to the same proxy is ignored; sites are always fetched directly from the host you named.
-- **Terminal agent metrics are opt-in.** They used to start whenever any `OTEL_*` variable was set. They now also need `CONTINUOUS_OTEL=1`, and the service name is `continuous-cli`. The old `CONTINUE_METRICS_ENABLED` and `CONTINUE_CLI_ENABLE_TELEMETRY` switches are no longer read.
-- **A test now guards the claim.** `core/egress/egressAllowlist.vitest.ts` fails when a new hostname appears in source without an entry and a reason in `core/egress/egress-allowlist.json`.
-- What Continuous stores, sends and does not send is now written down in [PRIVACY.md](https://github.com/b1tninja/continuous/blob/main/PRIVACY.md).
-
-## Loop mode: it goes on when Plan edits and Questions are permissive
-
-- A loop no longer stops on a plan card or in the Questions panel when you chose not to be asked. At Plan edits Automatic, Permissive or IDGAF a re-plan (a repair, a replaced check, added or dropped to-dos) is accepted and the next round starts. Before, a re-plan that replaced a failed item's check always waited, even at IDGAF.
-- At Questions Automatic, Permissive or IDGAF a question the agent asks, and a decision in a plan, is answered by the system: the option labelled `(recommended)`, else the first, else "No one is available to answer; use your best judgment and state the assumption". The record says `system` and names the setting. At Manual and Cautious nothing changes.
-- The loop panel shows one non-blocking line for each, such as `Plan updated: 11 kept, 1 added, 1 dropped; check of item 1 replaced` and `Auto-answered: <question> -> <answer>`. The extension, `cn` and `cn serve` share one rule. See "What Plan edits and Questions do for a loop" in the Permissions page docs.
-
-## Questions at IDGAF: nothing asks
-
-- At Questions IDGAF no question waits for you any more, outside a loop too. `cn`'s AskQuestion (terminal UI, `-p`, `serve`), a plan's decisions made in Plan mode, held questions left over when you move a loop to IDGAF, an item over its limit under Suggest and an MCP server's elicitation are all answered by the system. A call that a loop would hold for approval is refused instead of held, and a call at an IDGAF-level area that still asked (a command that hides what it runs) is refused with its reason.
-- The answer is the option labelled `(recommended)`, else the plan's pick, else the first option, else "No one is available to answer; use your best judgment and state the assumption", recorded as `system` with `Questions: IDGAF` and shown as `Auto-answered: <question> -> <answer>`. Your own "you decide" list no longer applies at IDGAF. MCP elicitation takes the server's defaults, or is declined when a field has none or asks for a secret. Permissive, Automatic, Cautious and Manual are unchanged.
-
-## Hub assistants and the generated SDK client are removed
-
-- The generated hub/API SDK client (`packages/continue-sdk`) is deleted, together with the terminal agent's API client service and the `CONTINUE_API_BASE` setting. The code no longer names a Continue-operated host, and `core/egress/egress-allowlist.json` has no entry for one.
-- `--config owner/slug` (a hub assistant) now fails with "hub assistants are not supported; pass a config.yaml path". Pass a path to a `config.yaml`.
+- Changing tools while the prompt cache is warm no longer rebuilds the cache without asking. Turning a tool, a tool group or an MCP server on or off, or a server that connects late or changes its tools, now waits until the cache goes cold when re-reading the conversation would cost a significant amount. The Tools page says what applying it now would cost and offers Apply now, Apply when the cache goes cold (the default) or Start a new session with it; a line above the input shows what is waiting. In the `cn` command line, `/tools` lists waiting changes and `/tools apply` applies them. See "Changing tools during a session" in the prompt caching docs.
 
 ## Behaviour changes
 
-- The YOLO level is now called IDGAF; existing settings keep working. A saved `yolo` (settings, loops, `--policy yolo`) is read as `idgaf`, and nothing writes the old name.
+- Add model > CometAPI no longer offers Claude Sonnet 4.5 (retires 2026-11-30; CometAPI has no Sonnet 5.5 preset yet) or the retired Claude Opus 4.1, Claude Opus 4.1 Thinking, Claude Sonnet 4, Claude Sonnet 4 Thinking and Claude 3.7 Sonnet Latest; Claude Haiku 4.5 stays. Existing configs and pricing are unchanged.
+- Prompt cache, once: the first request after upgrading writes the prompt cache once because the prompt prefix changed. The changes are all in text sent to the model: the `multi_edit` / `MultiEdit` tool description is shorter (the same rules in about a quarter of the words), the terminal agent's git status in the environment block is capped at 40 files and 4,000 characters (the rest is counted in a "... and N more changed files" line, files listed by path), and, with tool search on, the `search_tools` description now lists every deferrable tool and no longer changes after a search. Tool search is still off by default. In the terminal agent the tools a search activated are now read from the conversation, so a resumed session keeps the tools its history already called and a new session in the same process starts with none.
+- A tool turned off while the prompt cache is warm stays in the request's tool list until the cache goes cold, after compaction or in a new session, and a call to it is refused with a result that says why and recorded in the audit trail. To apply tool changes at once as before, choose "Apply tool changes at once" in the prompt cache menu, or set `CONTINUE_TOOL_CHANGES=now` for `cn`.
+- On models with preserved thinking's prefix check (Claude Fable 5.2 and Mythos 5.2, and depending on the account Fable 5.1, Mythos 5.1, Opus 5.5, Sonnet 5.5 and Haiku 5.5), the reasoning from before a tool list change is no longer sent back once the change applies, because those models refuse it.
 
-## File edits at IDGAF now reach outside the workspace
+## Fixes
 
-At File edits = IDGAF (the top level, also reached by `--auto`), the agent can create, edit and write files outside the workspace folder, in the editor, the terminal UI, headless `-p` and `serve`, with no prompt and no refusal. Before, a headless run refused such a write whatever the level, and the editor's exact edit tools treated an absolute path elsewhere as a file that does not exist.
-
-- Each such write is listed in the audit trail as allowed by the level, with the resolved absolute path, and the tool result says `Wrote outside the workspace: <path>`.
-- Lower levels are unchanged: Manual, Cautious and Automatic ask, Permissive holds it by the outside-paths protection.
-- Still binding at IDGAF: the locked policy files, a tool switched off, an organisation ceiling and the `floor:` rules you wrote. Secret-file name checks inside the file tools, and the webview's own write guard (used for plan files), are not changed.
-- Separate fix: an absolute path inside the workspace given to the new-file tool is now written where it says, not under a folder named after the drive.
+- An unsent message no longer comes back with the "Restored your unsent message" notice after a trip to Settings (or another page of the panel) and back; the text returns quietly. The notice still shows after a window reload, an extension update or a crash, and when you return to a session after opening another.
+- **Open the Audit Inbox** lands on the Inbox each time it runs, also after you switched the Permissions page to another view by hand.
+- Settings > Providers says how an AWS profile signs in: SSO, `credential_process`, an assumed role, a web identity token, or access keys in `~/.aws/config` or `~/.aws/credentials`. It reads only the key names in the profile's `~/.aws/config` section and never opens `~/.aws/credentials`.
+- **No conversation starters while a session reopens.** A large session takes a while to arrive from the IDE, and the empty chat with its starters showed until then. The chat now says which session is loading and offers **Start a new session instead** and the recent sessions. Typing, a new session or opening another one drops the load, so it cannot replace what you started, and the text you typed stays in the input. Only a session this window reopens (one of its workspace) shows the view. A session that went to the trash or cannot be read opens as an empty chat with a short note, under a new id.

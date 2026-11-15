@@ -432,3 +432,131 @@ describe("tool run context", () => {
     });
   });
 });
+
+describe("MCP tools", () => {
+  const mcpTool = (server: string): Tool => ({
+    ...tool,
+    name: "search",
+    displayName: "search",
+    preprocess: undefined,
+    isBuiltIn: false,
+    mcpServer: server,
+  });
+  const mcpCall = (server: string, id: string): PreprocessedToolCall => ({
+    id,
+    name: "search",
+    arguments: { command: "q" },
+    argumentsStr: JSON.stringify({ command: "q" }),
+    startNotified: false,
+    tool: mcpTool(server),
+  });
+  const logger = () =>
+    script(
+      "log",
+      `let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{require("fs").appendFileSync(${JSON.stringify(path.join(dir, "seen.jsonl"))},d+"\\n")})`,
+    );
+  const seen = (): any[] => {
+    const file = path.join(dir, "seen.jsonl");
+    if (!fs.existsSync(file)) return [];
+    return fs
+      .readFileSync(file, "utf-8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l));
+  };
+  const denyScript = () =>
+    script("denymcp", `console.error("guarded"); process.exit(2)`);
+  const calls = () => [mcpCall("github", "a"), mcpCall("gitlab", "b")];
+
+  beforeEach(() => fs.rmSync(path.join(dir, "seen.jsonl"), { force: true }));
+
+  it("puts the server in the hook input and keeps the raw tool name", async () => {
+    hooksConfig = pre(logger());
+    await run(calls());
+    const inputs = seen();
+    expect(inputs.map((i) => [i.tool_name, i.server]).sort()).toEqual([
+      ["search", "github"],
+      ["search", "gitlab"],
+    ]);
+  });
+
+  it("gives built-in tools no server field", async () => {
+    hooksConfig = pre(logger());
+    await run([makeCall()]);
+    expect(seen()[0]).not.toHaveProperty("server");
+  });
+
+  it("a mcp__<server>__<tool> matcher guards only that server's tool", async () => {
+    hooksConfig = {
+      PreToolUse: [
+        {
+          matcher: "mcp__github__search",
+          hooks: [{ type: "command", command: denyScript() }],
+        },
+      ],
+    };
+    const { chatHistoryEntries } = await run(calls());
+    expect(chatHistoryEntries.map((e) => e.status)).toEqual([
+      "canceled",
+      "done",
+    ]);
+    expect(executeToolCall).toHaveBeenCalledTimes(1);
+  });
+
+  it("a raw-name matcher still matches both servers' tools", async () => {
+    hooksConfig = {
+      PreToolUse: [
+        {
+          matcher: "^search$",
+          hooks: [{ type: "command", command: denyScript() }],
+        },
+      ],
+    };
+    const { chatHistoryEntries } = await run(calls());
+    expect(chatHistoryEntries.map((e) => e.status)).toEqual([
+      "canceled",
+      "canceled",
+    ]);
+  });
+
+  it("a mcp__ wildcard matcher covers every tool of one server", async () => {
+    hooksConfig = {
+      PreToolUse: [
+        {
+          matcher: "mcp__gitlab__.*",
+          hooks: [{ type: "command", command: denyScript() }],
+        },
+      ],
+    };
+    const { chatHistoryEntries } = await run(calls());
+    expect(chatHistoryEntries.map((e) => e.status)).toEqual([
+      "done",
+      "canceled",
+    ]);
+  });
+
+  it("a server named like a built-in tool does not widen that tool's matcher", async () => {
+    hooksConfig = {
+      PreToolUse: [
+        {
+          matcher: "^Bash$",
+          hooks: [{ type: "command", command: denyScript() }],
+        },
+      ],
+    };
+    const { chatHistoryEntries } = await run([mcpCall("Bash", "a")]);
+    expect(chatHistoryEntries[0].status).toBe("done");
+  });
+
+  it("PostToolUse hears the server too", async () => {
+    hooksConfig = {
+      PostToolUse: [{ hooks: [{ type: "command", command: logger() }] }],
+    };
+    await run(calls());
+    expect(
+      seen()
+        .map((i) => i.server)
+        .sort(),
+    ).toEqual(["github", "gitlab"]);
+  });
+});

@@ -1,3 +1,4 @@
+import type { ToolDialectSetting } from "@continuedev/config-yaml";
 import {
   ActionReducerMapBuilder,
   AsyncThunk,
@@ -5,7 +6,6 @@ import {
   createSelector,
   createSlice,
 } from "@reduxjs/toolkit";
-import type { ToolDialectSetting } from "@continuedev/config-yaml";
 import { JSONContent } from "@tiptap/react";
 import {
   ApplyState,
@@ -18,49 +18,63 @@ import {
   FileCheckpoint,
   FileSymbolMap,
   InputModifiers,
+  LoopState,
   McpUiState,
   MessageModes,
   PromptLog,
   PromptProgress,
+  RemovedByUser,
   RuleMetadata,
   Session,
   SessionUsage,
   SubagentRunState,
+  TaskPlan,
   ThinkingChatMessage,
   Tool,
   ToolCallDelta,
   ToolCallState,
-  LoopState,
-  TaskPlan,
   TurnCheckpoint,
+  TurnInterruption,
   Usage,
 } from "core";
 import { mergeReasoningDetails } from "core/llm/openaiTypeConverters";
 import { addRequestUsage } from "core/llm/utils/sessionUsage";
-import { interruptSubagentRuns } from "../../util/subagents/interrupt";
-import { abortLoopWorkers } from "../../util/subagents/loopWorkers";
 import { addFileSnapshot } from "core/util/checkpoints";
-import { restoreLoop } from "core/util/loopMode";
-import { isTaskPlan } from "core/util/taskPlan";
 import { NEW_SESSION_TITLE } from "core/util/constants";
+import {
+  DROPPED_PROMPT_MARKER,
+  keepLatestPromptOnly,
+  withoutPrompt,
+} from "core/util/promptLogs";
+import { restoreLoop } from "core/util/loopMode";
 import {
   renderChatMessage,
   renderContextItems,
 } from "core/util/messageContent";
+import { isTaskPlan } from "core/util/taskPlan";
 import { findUriInDirs, getUriPathBasename } from "core/util/uri";
 import { findLastIndex } from "lodash";
 import { v4 as uuidv4 } from "uuid";
 import { type InlineErrorMessageType } from "../../components/mainInput/InlineErrorMessage";
 import { toolCallCtxItemToCtxItemWithId } from "../../pages/gui/ToolCallDiv/utils";
-import { addToolCallDeltaToState, isEditTool } from "../../util/toolCallState";
 import { appendLedger, type CacheLedgerEntry } from "../../util/cacheLedger";
-import { appendFailure, type RequestFailure } from "../../util/requestFailures";
 import {
   INITIAL_PROMPT_CACHE_STATE,
   type PromptCacheKey,
   type PromptCacheMiss,
   type PromptCacheSessionState,
 } from "../../util/promptCache";
+import { appendFailure, type RequestFailure } from "../../util/requestFailures";
+import {
+  currentWorkspaceDirs,
+  rememberLastSession,
+  workspaceKey,
+} from "../../util/sessionWorkspace";
+import { markTurnCutOffOnLoad } from "../../util/resumeTurn";
+import { historyKey } from "../../util/selectiveCompaction";
+import { interruptSubagentRuns } from "../../util/subagents/interrupt";
+import { abortLoopWorkers } from "../../util/subagents/loopWorkers";
+import { addToolCallDeltaToState, isEditTool } from "../../util/toolCallState";
 import { RootState } from "../store";
 import { streamResponseThunk } from "../thunks/streamResponse";
 import { findChatHistoryItemByToolCallId, findToolCallById } from "../util";
@@ -230,7 +244,31 @@ export type ChatHistoryItemWithMessageId = ChatHistoryItem & {
 };
 
 type SessionState = {
+  /**
+   * The session left last, in any window: the webview's storage is shared by
+   * every window. Kept to show the reopen action; which session it reopens
+   * comes from `lastSessionIdByWorkspace`.
+   */
   lastSessionId?: string;
+  /** The session left last in each workspace, by `workspaceKey` */
+  lastSessionIdByWorkspace?: Record<string, string>;
+  /**
+   * The folder the open session belongs to: its saved `workspaceDirectory`,
+   * or this window's first folder for a new one. Persisted with `id`, so at
+   * start-up the webview can tell, before asking the IDE, whether the stored
+   * session is one this window will reopen (restoreWorkspaceSession).
+   */
+  sessionWorkspaceDirectory?: string;
+  /**
+   * Set while a saved session is being fetched from the IDE. A large session
+   * can take a while, and until it arrives `history` is empty, so the chat
+   * shows a resuming view instead of the conversation starters. Any
+   * `newSession` clears it, so a slow load the user has moved on from is
+   * dropped rather than replacing what they are doing.
+   */
+  loadingSessionId?: string;
+  /** A short note when a session could not be opened (missing, trashed) */
+  sessionLoadNotice?: string;
   isSessionMetadataLoading: boolean;
   allSessionMetadata: BaseSessionMetadata[];
   history: ChatHistoryItemWithMessageId[];
@@ -272,6 +310,36 @@ type SessionState = {
   answeredRoute?: { model: string; route: string };
   isPruned?: boolean;
   contextPercentage?: number;
+  /**
+   * What "Choose what to keep" changed since the last request was sent, so it
+   * can be undone: each changed item's marks before the first change, by
+   * message id. Until the next request the prompt cache still holds the
+   * conversation as it was, so undoing costs nothing. Cleared when a request
+   * is sent and with the session. Not saved.
+   */
+  contextRemovalUndo?: ContextRemovalUndo;
+  /**
+   * The tool list the last request offered, before model overrides and tool
+   * search, and the context it was offered in (core/tools/toolListHold.ts).
+   * While the prompt cache is warm a change to the list waits and requests
+   * keep offering this one (C80, C88). Not saved: a loaded session starts
+   * from the current list.
+   */
+  sentToolList?: { key: string; tools: Tool[] };
+  /**
+   * On a model with preserved thinking's prefix check, the history length at
+   * the last request that changed the tool list: reasoning from before it is
+   * no longer sent (core/tools/toolListHold.ts, thinkingCutAfterToolChange).
+   * Not saved.
+   */
+  thinkingCutAt?: number;
+  /** "Apply now": the next request takes the current tool list. Not saved. */
+  applyToolChangesNext?: boolean;
+  /**
+   * The pending tool changes (toolChangesId) the person chose to leave for a
+   * cold cache, so the choice is not offered again for the same set. Not saved.
+   */
+  toolChangeChoiceMade?: string;
   /** Tokens and estimated cost of this session's requests, saved with it. */
   usage?: SessionUsage;
   inlineErrorMessage?: InlineErrorMessageType;
@@ -290,6 +358,8 @@ type SessionState = {
    * presented plan starts the loop by itself. Saved with the session.
    */
   loopRequested?: boolean;
+  /** The session this one was forked from; saved with it (forkSession). */
+  forkedFrom?: Session["forkedFrom"];
   /**
    * The mode picked while a loop item ran: the loop stops after the item and
    * the mode is taken then, so the item finishes in its own mode.
@@ -302,6 +372,13 @@ type SessionState = {
   /** Set when a turn ends; the chat view then sends the queue and clears it */
   isQueueSendRequested: boolean;
 };
+
+export interface ContextRemovalUndo {
+  /** Marks before the first change since the last request; null for none. */
+  previous: Record<string, RemovedByUser | null>;
+  /** Estimated tokens taken out of the context (negative when put back). */
+  removedTokens: number;
+}
 
 export interface QueuedMessage {
   id: string;
@@ -358,9 +435,24 @@ export const sessionSlice = createSlice({
 
       const lastMessage = state.history[state.history.length - 1];
 
+      // Only the newest request keeps its full prompt (core/util/promptLogs):
+      // every prompt repeats the whole conversation, so keeping them all grew
+      // the session with the square of its length until the window ran out
+      // of memory. Only a log that still holds a prompt is replaced, so the
+      // items that are already small stay the same objects.
+      for (const item of state.history) {
+        if (
+          item.promptLogs?.some((log) => log.prompt !== DROPPED_PROMPT_MARKER)
+        ) {
+          item.promptLogs = item.promptLogs.map(withoutPrompt);
+        }
+      }
+      const added = payload.map((log, i) =>
+        i === payload.length - 1 ? log : withoutPrompt(log),
+      );
       lastMessage.promptLogs = lastMessage.promptLogs
-        ? lastMessage.promptLogs.concat(payload)
-        : payload;
+        ? lastMessage.promptLogs.concat(added)
+        : added;
 
       // Inactive thinking for reasoning models when '</think>' tag is not received on request completion
       if (lastMessage.reasoning?.active) {
@@ -377,7 +469,10 @@ export const sessionSlice = createSlice({
         curMessage.isGatheringContext = payload;
       }
     },
-    clearDanglingMessages: (state) => {
+    clearDanglingMessages: (
+      state,
+      action: PayloadAction<TurnInterruption | undefined>,
+    ) => {
       // This is used during cancellation
       // After the last user or tool message, we can have thinking and or valid assitant message (content or generated tool calls) OR nothing.
       // The only thing allowed after the last assistant message that has either content or generated tool calls
@@ -385,6 +480,9 @@ export const sessionSlice = createSlice({
       if (state.history.length < 2) {
         return;
       }
+      // Stop or a failed request (not a retry or a steer) marks the turn it
+      // ended, so the chat can offer Resume
+      const interruption = action?.payload;
 
       const lastUserOrToolIdx = findLastIndex(
         state.history,
@@ -397,7 +495,12 @@ export const sessionSlice = createSlice({
         const hasGeneratedMsg = message.toolCallStates?.some(
           (toolCallState) => toolCallState.status !== "generating",
         );
-        if (message.message.content || hasGeneratedMsg) {
+        // Reasoning is not an answer: a turn stopped while the model was
+        // still thinking has nothing to send back as an assistant turn
+        if (
+          (message.message.role !== "thinking" && message.message.content) ||
+          hasGeneratedMsg
+        ) {
           validAssistantMessageIdx = i;
           // Cancel any tool calls that are dangling and generated
           if (message.toolCallStates) {
@@ -415,6 +518,28 @@ export const sessionSlice = createSlice({
       }
 
       if (validAssistantMessageIdx === -1) {
+        // Reasoning the model wrote before it was stopped stays on screen:
+        // keep the turn up to it, marked. It is never sent (constructMessages
+        // leaves out reasoning with no answer after it).
+        const lastThinkingIdx = findLastIndex(
+          state.history,
+          (item) =>
+            item.message.role === "thinking" &&
+            !!(
+              renderChatMessage(item.message).trim() ||
+              item.reasoning?.text?.trim()
+            ),
+        );
+        if (interruption && lastThinkingIdx > lastUserOrToolIdx) {
+          state.history = state.history.slice(0, lastThinkingIdx + 1);
+          const thinking = state.history[lastThinkingIdx];
+          thinking.interrupted = interruption;
+          if (thinking.reasoning?.active) {
+            thinking.reasoning.active = false;
+            thinking.reasoning.endAt = Date.now();
+          }
+          return;
+        }
         const lastMsg = state.history[lastUserOrToolIdx];
         const lastRole = lastMsg.message.role as "user" | "tool";
         if (lastRole === "user") {
@@ -422,9 +547,13 @@ export const sessionSlice = createSlice({
           state.history = state.history.slice(0, lastUserOrToolIdx);
         } else {
           state.history = state.history.slice(0, lastUserOrToolIdx + 1);
+          if (interruption) lastMsg.interrupted = interruption;
         }
       } else {
         state.history = state.history.slice(0, validAssistantMessageIdx + 1);
+        if (interruption) {
+          state.history[validAssistantMessageIdx].interrupted = interruption;
+        }
       }
     },
     // Trigger value picked up by editor with isMainInput to set its content
@@ -476,6 +605,8 @@ export const sessionSlice = createSlice({
         historyItem.message.content = ""; // IMPORTANT - this is quickly updated by resolveEditorContent based on editor state prior to streaming
         historyItem.editorState = payload.editorState;
         historyItem.contextItems = [];
+        // The marks point into the old context items
+        historyItem.removedByUser = undefined;
 
         state.history = state.history.slice(0, index + 1).concat({
           message: {
@@ -609,6 +740,49 @@ export const sessionSlice = createSlice({
       { payload }: PayloadAction<MessageModes | undefined>,
     ) => {
       state.modeAfterLoop = payload;
+    },
+    /**
+     * Set the "Choose what to keep" marks of the given items (by message id;
+     * null clears them), remembering the marks they replace for Undo.
+     */
+    applyContextRemovals: (
+      state,
+      {
+        payload,
+      }: PayloadAction<{
+        marks: Record<string, RemovedByUser | null>;
+        removedTokens: number;
+      }>,
+    ) => {
+      const undo: ContextRemovalUndo = state.contextRemovalUndo ?? {
+        previous: {},
+        removedTokens: 0,
+      };
+      state.history.forEach((item, i) => {
+        const id = historyKey(item, i);
+        if (!(id in payload.marks)) return;
+        if (!(id in undo.previous)) {
+          undo.previous[id] = item.removedByUser ?? null;
+        }
+        item.removedByUser = payload.marks[id] ?? undefined;
+      });
+      undo.removedTokens += payload.removedTokens;
+      state.contextRemovalUndo = undo;
+    },
+    /** Put back what "Choose what to keep" changed since the last request. */
+    undoContextRemovals: (state) => {
+      const undo = state.contextRemovalUndo;
+      if (!undo) return;
+      state.history.forEach((item, i) => {
+        const id = historyKey(item, i);
+        if (id in undo.previous) {
+          item.removedByUser = undo.previous[id] ?? undefined;
+        }
+      });
+      state.contextRemovalUndo = undefined;
+    },
+    clearContextRemovalUndo: (state) => {
+      state.contextRemovalUndo = undefined;
     },
     deleteCompaction: (state, action: PayloadAction<number>) => {
       // Removes the conversation summary from the specified message
@@ -924,6 +1098,19 @@ export const sessionSlice = createSlice({
     },
     newSession: (state, { payload }: PayloadAction<Session | undefined>) => {
       state.lastSessionId = state.id;
+      state.loadingSessionId = undefined;
+      state.sessionLoadNotice = undefined;
+      state.sessionWorkspaceDirectory = payload
+        ? payload.workspaceDirectory
+        : (currentWorkspaceDirs()[0] ?? "");
+      // Only a session with messages is saved, so only one can be reopened
+      if (state.history.length > 0) {
+        state.lastSessionIdByWorkspace = rememberLastSession(
+          state.lastSessionIdByWorkspace,
+          workspaceKey(currentWorkspaceDirs()),
+          state.id,
+        );
+      }
 
       state.streamAborter.abort();
       state.streamAborter = new AbortController();
@@ -953,7 +1140,14 @@ export const sessionSlice = createSlice({
       state.inlineErrorMessage = undefined;
       state.isPruned = false;
       state.contextPercentage = undefined;
+      state.contextRemovalUndo = undefined;
       state.answeredRoute = undefined;
+      // A new session, a loaded one or a compacted one (which is reloaded)
+      // builds its prompt from scratch: tool changes that waited apply now
+      state.sentToolList = undefined;
+      state.applyToolChangesNext = undefined;
+      state.toolChangeChoiceMade = undefined;
+      state.thinkingCutAt = undefined;
       state.usage = payload?.usage;
       // A different conversation shares nothing with the cached one: its size,
       // timing, misses and what Auto learned all start over. Each conversation
@@ -978,10 +1172,13 @@ export const sessionSlice = createSlice({
       };
 
       if (payload) {
-        state.history = payload.history as any;
+        state.history = keepLatestPromptOnly(payload.history) as any;
         // A subagent cannot outlive the window that ran it: one saved while
         // running is shown as interrupted, not spinning forever.
         interruptSubagentRuns(state.history);
+        // A turn the window closed on is offered Resume (reads the tool
+        // calls' saved status, so it runs before they are ended below)
+        markTurnCutOffOnLoad(state.history);
         // A session saved mid-turn (the queue saves it at once) can hold a
         // tool call that was running or still being generated. Nothing
         // finishes it after a reload or crash, and a tool that looks running
@@ -1014,6 +1211,7 @@ export const sessionSlice = createSlice({
           typeof payload.planFile === "string" ? payload.planFile : undefined;
         state.loop = restoreLoop(payload.loop);
         state.loopRequested = payload.loopRequested === true || undefined;
+        state.forkedFrom = payload.forkedFrom;
         state.modeAfterLoop = undefined;
         if (payload.mode) {
           state.mode = payload.mode;
@@ -1027,11 +1225,24 @@ export const sessionSlice = createSlice({
         state.planFile = undefined;
         state.loop = undefined;
         state.loopRequested = undefined;
+        state.forkedFrom = undefined;
         state.modeAfterLoop = undefined;
       }
     },
     updateSessionTitle: (state, { payload }: PayloadAction<string>) => {
       state.title = payload;
+    },
+    setLoadingSessionId: (
+      state,
+      { payload }: PayloadAction<string | undefined>,
+    ) => {
+      state.loadingSessionId = payload;
+    },
+    setSessionLoadNotice: (
+      state,
+      { payload }: PayloadAction<string | undefined>,
+    ) => {
+      state.sessionLoadNotice = payload;
     },
     setIsSessionMetadataLoading: (
       state,
@@ -1354,6 +1565,27 @@ export const sessionSlice = createSlice({
     ) => {
       state.promptCache = action.payload;
     },
+    /** What a request offered; it also settles an "Apply now". */
+    setSentToolList: (
+      state,
+      action: PayloadAction<{
+        key: string;
+        tools: Tool[];
+        thinkingCut?: number;
+      }>,
+    ) => {
+      const { thinkingCut, ...sent } = action.payload;
+      state.sentToolList = sent;
+      state.thinkingCutAt = thinkingCut;
+      state.applyToolChangesNext = undefined;
+    },
+    applyToolChangesNow: (state) => {
+      state.applyToolChangesNext = true;
+    },
+    /** "Apply when the cache goes cold" for this set of changes */
+    keepToolChangesQueued: (state, action: PayloadAction<string>) => {
+      state.toolChangeChoiceMade = action.payload;
+    },
     setPromptProgress: (
       state,
       action: PayloadAction<PromptProgress | undefined>,
@@ -1557,6 +1789,8 @@ export const {
   streamUpdate,
   newSession,
   updateSessionTitle,
+  setLoadingSessionId,
+  setSessionLoadNotice,
   addHighlightedCode,
   addPromptCompletionPair,
   setActive,
@@ -1567,6 +1801,9 @@ export const {
   setMainEditorContentTrigger,
   deleteMessage,
   deleteCompaction,
+  applyContextRemovals,
+  undoContextRemovals,
+  clearContextRemovalUndo,
   addCheckpointSnapshot,
   setCheckpoints,
   setTaskPlan,
@@ -1613,6 +1850,9 @@ export const {
   acknowledgeCacheMisses,
   dismissColdCacheNotice,
   dismissCachingOffNotice,
+  setSentToolList,
+  applyToolChangesNow,
+  keepToolChangesQueued,
   noteToolDialectLeak,
   dismissToolDialectNotice,
   setInlineErrorMessage,

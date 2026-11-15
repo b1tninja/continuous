@@ -45,6 +45,7 @@ import { isLemonadeInstalled } from "../util/lemonadeHelper.js";
 import { Logger } from "../util/Logger.js";
 import mergeJson from "../util/merge.js";
 import { renderChatMessage } from "../util/messageContent.js";
+import { retirementNotice } from "../util/modelRetirement.js";
 import { isOllamaInstalled } from "../util/ollamaHelper.js";
 import { providerRecoversText } from "../util/toolDialectLeak.js";
 import {
@@ -52,13 +53,16 @@ import {
   unresolvedSecretNamesOfLlm,
 } from "../util/unresolvedSecrets.js";
 import { withExponentialBackoff } from "../util/withExponentialBackoff.js";
-import { retryStreamOnDroppedConnection } from "./utils/streamRetry.js";
 import {
   promptProgressOf,
   streamsPromptProgress,
   withThinkingOff,
 } from "./localServers.js";
+import { providerModelFactsFor } from "./providerModelInfoStore.js";
+import { resolveModelLimits, type LimitInputs } from "./providerModelLimits.js";
+import { retryStreamOnDroppedConnection } from "./utils/streamRetry.js";
 
+import { applyToolOverrides } from "../tools/applyToolOverrides.js";
 import {
   autodetectPromptTemplates,
   autodetectTemplateFunction,
@@ -74,19 +78,26 @@ import {
   LLMConfigurationStatuses,
 } from "./constants.js";
 import {
+  contextCorrectionFor,
+  correctedContextLength,
+  correctionFromOverflow,
+  learnContextCorrection,
+  parseContextOverflow,
+} from "./contextOverflow.js";
+import {
   compileChatMessages,
   countTokens,
   pruneRawPromptFromTop,
 } from "./countTokens.js";
+import { providerRequiresAlternation } from "./normalizeTurns.js";
 import {
-  messagesFromChatCompletionChunk,
   fromChatResponse,
   LlmApiRequestType,
+  messagesFromChatCompletionChunk,
   toChatBody,
   toCompleteBody,
   toFimBody,
 } from "./openaiTypeConverters.js";
-import { applyToolOverrides } from "../tools/applyToolOverrides.js";
 import {
   firstRouteToTry,
   isContextLengthError,
@@ -298,21 +309,36 @@ export abstract class BaseLLM implements ILLM {
     this.toolDialect = options.toolDialect;
     this.basePlanSystemMessage = options.basePlanSystemMessage;
     this.baseChatSystemMessage = options.baseChatSystemMessage;
-    this._contextLength = options.contextLength ?? llmInfo?.contextLength;
+    // Context window and output cap: the person's config, then what the
+    // provider's own models API last said (Anthropic, OpenAI; cached, never
+    // fetched here), then llm-info. The output cap stays at most a quarter
+    // of the window so one reply cannot take the whole context.
+    this.limitInputs = {
+      userContextLength: _options.contextLength,
+      userMaxTokens: _options.completionOptions?.maxTokens,
+      classMaxTokens:
+        _options.completionOptions === undefined
+          ? options.completionOptions?.maxTokens
+          : undefined,
+      llmInfo,
+      defaultContextLength: DEFAULT_CONTEXT_LENGTH,
+      defaultMaxTokens: DEFAULT_MAX_TOKENS,
+    };
+    const providerFacts = providerModelFactsFor(this.providerName, {
+      apiBase: options.apiBase,
+      apiKey: options.apiKey,
+      model: options.model,
+    });
+    const limits = resolveModelLimits({
+      ...this.limitInputs,
+      ...(providerFacts ? { provider: providerFacts } : {}),
+    });
+    this._contextLength = limits.contextLength;
     this.maxStopWords = options.maxStopWords ?? this.maxStopWords;
     this.completionOptions = {
       ...options.completionOptions,
       model: options.model || "gpt-4",
-      maxTokens:
-        options.completionOptions?.maxTokens ??
-        (llmInfo?.maxCompletionTokens
-          ? Math.min(
-              llmInfo.maxCompletionTokens,
-              // Even if the model has a large maxTokens, we don't want to use that every time,
-              // because it takes away from the context length
-              this.contextLength / 4,
-            )
-          : DEFAULT_MAX_TOKENS),
+      maxTokens: limits.maxTokens,
     };
     this.requestOptions = options.requestOptions;
     this.promptTemplates = {
@@ -380,6 +406,26 @@ export abstract class BaseLLM implements ILLM {
     this.sourceFile = options.sourceFile;
     this.isFromAutoDetect = options.isFromAutoDetect;
     this.toolOverrides = options.toolOverrides;
+  }
+
+  /** What the limits were resolved from, to apply a newer provider answer. */
+  private limitInputs: LimitInputs;
+
+  /**
+   * A newer answer from the provider's models API (the background refresh of
+   * the selected model): the window and output cap the person did not set
+   * follow it from the next request on.
+   */
+  applyProviderModelFacts(facts: {
+    contextLength?: number;
+    maxOutputTokens?: number;
+  }): void {
+    const limits = resolveModelLimits({ ...this.limitInputs, provider: facts });
+    this._contextLength = limits.contextLength;
+    this.completionOptions = {
+      ...this.completionOptions,
+      maxTokens: limits.maxTokens,
+    };
   }
 
   get contextLength() {
@@ -556,8 +602,19 @@ export abstract class BaseLLM implements ILLM {
       }
     }
     return new Error(
-      `HTTP ${resp.status} ${resp.statusText} from ${redactUrl(String(resp.url ?? ""))}\n\n${text}`,
+      `HTTP ${resp.status} ${resp.statusText} from ${redactUrl(String(resp.url ?? ""))}\n\n${text}${this.retiredModelHint(resp.status)}`,
     );
+  }
+
+  /** On a 404 for a model the checked-in table lists as retired, say so and name the replacement. */
+  private retiredModelHint(status: number): string {
+    if (status !== 404) return "";
+    const notice = retirementNotice({
+      provider: this.providerName,
+      model: this.model,
+      now: new Date().toISOString().slice(0, 10),
+    });
+    return notice?.severity === "retired" ? `\n\n${notice.message}` : "";
   }
 
   fetch(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -1071,6 +1128,32 @@ export abstract class BaseLLM implements ILLM {
     return historyAgeingEnabled() ? { state: this._ageingState } : undefined;
   }
 
+  /**
+   * When the provider refused the prompt as too long and said how long it
+   * was, remember how far our estimate was off for this model, so the next
+   * request (the retry the person makes, or the next turn) is pruned to fit.
+   * See contextOverflow.ts.
+   */
+  private _learnFromContextOverflow(
+    e: unknown,
+    model: string,
+    sent: ChatMessage[],
+  ): void {
+    const message = e instanceof Error ? e.message : String(e ?? "");
+    const overflow = parseContextOverflow(message);
+    if (!overflow) return;
+    const estimated = sent.reduce(
+      (sum, m) => sum + countTokens(m.content, model),
+      0,
+    );
+    const factor = correctionFromOverflow(
+      overflow,
+      estimated,
+      contextCorrectionFor(model),
+    );
+    if (factor !== undefined) learnContextCorrection(model, factor);
+  }
+
   compileChatMessages(
     message: ChatMessage[],
     options: LLMFullCompletionOptions,
@@ -1081,11 +1164,16 @@ export abstract class BaseLLM implements ILLM {
     return compileChatMessages({
       modelName: completionOptions.model,
       msgs: message,
-      knownContextLength: this._contextLength,
+      // Smaller after the provider refused a prompt our estimate said fitted
+      knownContextLength: correctedContextLength(
+        this._contextLength,
+        completionOptions.model,
+      ),
       maxTokens: completionOptions.maxTokens ?? DEFAULT_MAX_TOKENS,
       supportsImages: this.supportsImages(),
       tools: options.tools,
       ageing: this._ageing(),
+      requiresAlternation: providerRequiresAlternation(this.providerName),
     });
   }
 
@@ -1387,11 +1475,15 @@ export abstract class BaseLLM implements ILLM {
       const { compiledChatMessages } = compileChatMessages({
         modelName: completionOptions.model,
         msgs: _messages,
-        knownContextLength: this._contextLength,
+        knownContextLength: correctedContextLength(
+          this._contextLength,
+          completionOptions.model,
+        ),
         maxTokens: completionOptions.maxTokens ?? DEFAULT_MAX_TOKENS,
         supportsImages: this.supportsImages(),
         tools: optionsWithOverrides.tools,
         ageing: this._ageing(),
+        requiresAlternation: providerRequiresAlternation(this.providerName),
       });
 
       messages = compiledChatMessages;
@@ -1560,6 +1652,7 @@ export abstract class BaseLLM implements ILLM {
         usage,
       );
     } catch (e) {
+      this._learnFromContextOverflow(e, completionOptions.model, messages);
       Logger.error(e as Error, {
         context: "llm_stream_chat",
         model: completionOptions.model,

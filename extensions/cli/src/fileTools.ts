@@ -1,6 +1,8 @@
 import * as fs from "fs";
 import * as path from "path";
 
+import { writeFileAtomicSync } from "core/util/atomicWrite.js";
+
 export interface ToolResult {
   success: boolean;
   output: string;
@@ -45,7 +47,7 @@ export function writeFile(filePath: string, content: string): ToolResult {
       fs.mkdirSync(dirPath, { recursive: true });
     }
 
-    fs.writeFileSync(filePath, content, "utf-8");
+    writeFileAtomicSync(filePath, content);
     return {
       success: true,
       output: `Successfully wrote to file: ${filePath}`,

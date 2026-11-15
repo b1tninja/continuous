@@ -75,11 +75,12 @@ export async function getUrlContextItems(
   fetchFn: FetchFunction,
   options: UrlFetchOptions = {},
 ): Promise<ContextItem[]> {
-  const url = new URL(query.trim());
+  const startUrl = new URL(query.trim());
+  let url = startUrl;
   // Before any network call, and for typed and model-chosen URLs alike
-  assertFetchableScheme(url);
-  assertNoUserinfo(url);
-  if (options.guardRedirects) assertNoSecretInUrl(url);
+  assertFetchableScheme(startUrl);
+  assertNoUserinfo(startUrl);
+  if (options.guardRedirects) assertNoSecretInUrl(startUrl);
 
   const limits = readUserFetchLimits();
   const maxBytes = options.maxBytes ?? limits.maxBytes;
@@ -87,18 +88,25 @@ export async function getUrlContextItems(
 
   const icon = options.guardRedirects
     ? undefined
-    : await fetchFavicon(url, options.requestOptions);
+    : await fetchFavicon(startUrl, options.requestOptions);
   const { text, truncated, contentType } = await withDeadline(
     deadlineMs,
     async (signal) => {
       const resp = options.guardRedirects
         ? await fetchWithGuardedRedirects(
-            url,
+            startUrl,
             fetchFn,
-            { classify: classifyFetchTarget },
+            {
+              classify: classifyFetchTarget,
+              // The page is labelled with where it was read, not where the
+              // model pointed: a redirect can lead to another host
+              onFinalUrl: (final) => {
+                url = final;
+              },
+            },
             { signal },
           )
-        : await fetchFn(url, { signal } as never);
+        : await fetchFn(startUrl, { signal } as never);
 
       // Check if the response is not OK
       if (!resp.ok) {

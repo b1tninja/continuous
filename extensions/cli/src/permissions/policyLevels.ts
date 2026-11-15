@@ -23,6 +23,8 @@ import {
   type PolicyFileUpdate,
 } from "core/tools/permissions/settingsFile.js";
 
+import { capAtDefaults, isSafeMode } from "../safeMode.js";
+
 import { isAutoReviewEnabled } from "./coreRules.js";
 import { PERMISSIONS_YAML_PATH } from "./permissionsYamlLoader.js";
 import type { PermissionMode } from "./types.js";
@@ -76,7 +78,7 @@ export function getPolicyExtras(): Omit<PolicyFileSettings, "levels"> {
 export function loadPolicyFile(file: string = PERMISSIONS_YAML_PATH): string[] {
   const { settings, notices } = readPolicyFile(file);
   const { levels: fileLevels, ...rest } = settings;
-  levels = { ...fileLevels };
+  levels = isSafeMode() ? capAtDefaults(fileLevels) : { ...fileLevels };
   extras = rest;
   return notices;
 }
@@ -94,7 +96,8 @@ export function getPolicyLevels(): PolicyLevels {
 }
 
 export function setPolicyLevels(next: PolicyLevels): void {
-  levels = { ...next };
+  // --safe: no area looser than its default, whatever --policy or /policy say
+  levels = isSafeMode() ? capAtDefaults(next) : { ...next };
 }
 
 export function resetPolicyLevels(): void {

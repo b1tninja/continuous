@@ -3,12 +3,14 @@
  * Provides consistent validation across all commands and proper error reporting
  */
 
+import { HEADLESS_FORMATS } from "../headless/streamJsonEvents.js";
 import { safeStderr } from "../init.js";
 
 export interface ValidationOptions {
   // Root command specific flags
   print?: boolean;
   format?: string;
+  outputSchema?: string;
   silent?: boolean;
 
   // Common flags
@@ -17,7 +19,7 @@ export interface ValidationOptions {
   config?: string;
 
   // Session flags
-  resume?: boolean;
+  resume?: boolean | string;
   fork?: string;
 
   // Permission flags
@@ -57,6 +59,22 @@ function validateFormatFlag(options: ValidationOptions): ValidationError[] {
 }
 
 /**
+ * Validate that --output-schema only works with -p/--print
+ */
+function validateOutputSchemaFlag(
+  options: ValidationOptions,
+): ValidationError[] {
+  return options.outputSchema && !options.print
+    ? [
+        {
+          code: "OUTPUT_SCHEMA_REQUIRES_PRINT",
+          message: "Error: --output-schema can only be used with -p/--print",
+        },
+      ]
+    : [];
+}
+
+/**
  * Validate that --silent flag only works with -p/--print
  */
 function validateSilentFlag(options: ValidationOptions): ValidationError[] {
@@ -78,10 +96,13 @@ function validateSilentFlag(options: ValidationOptions): ValidationError[] {
 function validateFormatValue(options: ValidationOptions): ValidationError[] {
   const errors: ValidationError[] = [];
 
-  if (options.format && options.format !== "json") {
+  if (
+    options.format &&
+    !(HEADLESS_FORMATS as readonly string[]).includes(options.format)
+  ) {
     errors.push({
       code: "INVALID_FORMAT_VALUE",
-      message: "Error: --format currently only supports 'json'",
+      message: `Error: --format supports ${HEADLESS_FORMATS.map((f) => `'${f}'`).join(" and ")}`,
     });
   }
 
@@ -189,6 +210,7 @@ export function validateFlags(options: ValidationOptions): ValidationResult {
   const validators = [
     validateFormatFlag,
     validateSilentFlag,
+    validateOutputSchemaFlag,
     validateFormatValue,
     validateModeFlags,
     validateSessionFlags,

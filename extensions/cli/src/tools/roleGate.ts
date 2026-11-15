@@ -25,7 +25,10 @@ export function cliToolRole(mode: string | undefined): ToolRole {
 
 /** An MCP tool is any tool that is not built in; its server is the one it came from. */
 export function cliToolRef(
-  tool: Pick<Tool, "name" | "isBuiltIn" | "mcpServer" | "readonly">,
+  tool: Pick<
+    Tool,
+    "name" | "isBuiltIn" | "mcpServer" | "mcpToolName" | "readonly"
+  >,
 ): RoleToolRef {
   return tool.isBuiltIn
     ? { name: tool.name }
@@ -33,7 +36,7 @@ export function cliToolRef(
         name: tool.name,
         mcp: {
           server: tool.mcpServer ?? "",
-          tool: tool.name,
+          tool: tool.mcpToolName ?? tool.name,
           readOnlyHint: tool.readonly === true,
         },
       };

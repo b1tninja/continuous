@@ -152,6 +152,38 @@ describe("the file on disk", () => {
     });
     expect(readPolicyFile(file).settings.levels.edits).toBe("permissive");
   });
+
+  it("does not write over a file that is not valid YAML", () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "policy-file-"));
+    const file = path.join(dir, "permissions.yaml");
+    const broken = "floor:\n  - Bash(rm -rf*)\nallow: [Read\n";
+    fs.writeFileSync(file, broken);
+    expect(() =>
+      writePolicyFile(file, {
+        levels: { ...DEFAULT_POLICY_LEVELS, edits: "permissive" },
+      }),
+    ).toThrow();
+    expect(fs.readFileSync(file, "utf-8")).toBe(broken);
+    expect(fs.readdirSync(dir)).toEqual(["permissions.yaml"]);
+  });
+
+  it("keeps comments and the keys it does not set", () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "policy-file-"));
+    const file = path.join(dir, "permissions.yaml");
+    fs.writeFileSync(
+      file,
+      "# mine\nfloor:\n  - Bash(rm -rf*) # never\nallow:\n  - Read\n",
+    );
+    writePolicyFile(file, {
+      levels: { ...DEFAULT_POLICY_LEVELS, edits: "permissive" },
+    });
+    const after = fs.readFileSync(file, "utf-8");
+    expect(after).toContain("# mine");
+    expect(after).toContain("- Bash(rm -rf*) # never");
+    expect(after).toContain("- Read");
+    expect(readPolicyFile(file).settings.levels.edits).toBe("permissive");
+    expect(fs.readdirSync(dir)).toEqual(["permissions.yaml"]);
+  });
 });
 
 describe("plan.mcpTools", () => {

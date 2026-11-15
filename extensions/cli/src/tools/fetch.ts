@@ -1,8 +1,11 @@
-import type { ContextItem } from "core/index.js";
+import type { ContextItem, FetchFunction } from "core/index.js";
 import { fetchUrlContentTool } from "core/tools/definitions/fetchUrlContent.js";
 import { fetchUrlContentImpl } from "core/tools/implementations/fetchUrlContent.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
+import { modelToolFetch } from "core/util/modelToolFetch.js";
 
+import { getServiceSync, SERVICE_NAMES } from "../services/index.js";
+import type { ConfigServiceState } from "../services/types.js";
 import {
   parseEnvNumber,
   truncateOutputFromEnd,
@@ -18,6 +21,28 @@ function getFetchMaxChars(): number {
     process.env.CONTINUE_CLI_FETCH_MAX_OUTPUT_LENGTH,
     DEFAULT_FETCH_MAX_CHARS,
   );
+}
+
+/**
+ * The fetch the IDE gives this tool (`modelToolFetch`): the pinned `lookup`
+ * of a checked address is honoured, and proxy, CA bundle, certificate and
+ * TLS settings from the person's `requestOptions` apply. Their `headers` go
+ * only to the origins of the configured models. Without a loaded config the
+ * transport defaults (HTTPS_PROXY, the system CA store) still apply.
+ */
+export function guardedToolFetch(): FetchFunction {
+  let config: ConfigServiceState["config"] = null;
+  try {
+    config =
+      getServiceSync<ConfigServiceState>(SERVICE_NAMES.CONFIG).value?.config ??
+      null;
+  } catch {
+    // no config service in this process
+  }
+  return modelToolFetch({
+    requestOptions: config?.requestOptions,
+    modelsByRole: { chat: (config?.models ?? []) as never[] },
+  });
 }
 
 export const fetchTool: Tool = {
@@ -62,7 +87,10 @@ export const fetchTool: Tool = {
       console.error = () => {};
 
       // Use the core fetchUrlContent implementation
-      const contextItems = await fetchUrlContentImpl({ url }, { fetch });
+      const contextItems = await fetchUrlContentImpl(
+        { url },
+        { fetch: guardedToolFetch() },
+      );
 
       // Restore console.error
       console.error = originalConsoleError;

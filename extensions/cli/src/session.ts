@@ -1,5 +1,6 @@
 /* eslint-disable max-lines */
 import fs from "fs";
+import os from "os";
 import path from "path";
 
 import type {
@@ -12,14 +13,37 @@ import type {
   Usage,
 } from "core/index.js";
 import { totalInputTokens } from "core/llm/utils/cacheStats.js";
+import type { CostBreakdown } from "core/llm/utils/calculateRequestCost.js";
 import { addRequestUsage } from "core/llm/utils/sessionUsage.js";
-import historyManager from "core/util/history.js";
+import { forkSession } from "core/util/forkSession.js";
+import historyManager, {
+  damagedSessionNotice,
+  isSessionFileName,
+  readSessionFile,
+  type TrashSessionResult,
+} from "core/util/history.js";
 import { restoreLoop } from "core/util/loopMode.js";
+import {
+  groupSessionsByWorkspace,
+  isCaseInsensitivePlatform,
+  sessionMatchesWorkspace,
+  type WorkspaceMatchOptions,
+} from "core/util/sessionWorkspace.js";
 import { v4 as uuidv4 } from "uuid";
 
 import { DEFAULT_SESSION_TITLE } from "./constants/session.js";
 import { env } from "./env.js";
+import { resetCliToolListHold } from "./tools/toolListHold.js";
 import { logger } from "./util/logger.js";
+import { userNotice } from "./util/userNotice.js";
+
+/** How a request was priced, for `trackUsage`. */
+export interface TrackHow {
+  /** Priced at the fallback rate: the session total becomes an estimate */
+  estimated?: boolean;
+  /** The price used, so the per-model price source matches the total */
+  pricedAs?: CostBreakdown | null;
+}
 
 // Re-export BaseSessionMetadata for external consumers
 export type { BaseSessionMetadata };
@@ -29,11 +53,21 @@ export interface ExtendedSessionMetadata extends BaseSessionMetadata {
   firstUserMessage?: string;
   isRemote?: boolean;
   remoteId?: string; // For remote sessions, this is the agent ID
+  /** When the session file was last written (ISO): the "newest" order */
+  lastModified?: string;
+  /** Saved in the folder the CLI runs in, or its repository (core/util/sessionWorkspace.ts) */
+  inWorkspace?: boolean;
+  /** Header of the workspace group the session is listed under */
+  workspaceGroup?: string;
+  /** Full path of that group's folder ("" for sessions without one) */
+  workspaceGroupPath?: string;
 }
 
 // Note: We now use UUID-based session IDs instead of terminal-based IDs.
 // Each new chat session gets a unique UUID.
-// The --resume flag loads the most recent session.
+// --resume continues the newest session of the folder the CLI runs in (in a
+// terminal, after the picker of commands/resumePicker.ts), or the session
+// given by id.
 
 /**
  * Get the session storage directory
@@ -212,8 +246,14 @@ class SessionManager {
     usage: Usage,
     provider?: string,
     model?: string,
-    estimated = false,
+    /**
+     * `true` (or `estimated`): priced at the fallback rate. `pricedAs`: the
+     * price the caller used, so the per-model source matches the total.
+     */
+    how: boolean | TrackHow = false,
   ): void {
+    const { estimated = false, pricedAs } =
+      typeof how === "boolean" ? { estimated: how } : how;
     // Accumulate cost
     this.sessionUsage.totalCost += cost;
     if (estimated) {
@@ -228,6 +268,7 @@ class SessionManager {
       provider ?? "unattributed",
       model ?? "unattributed",
       usage,
+      pricedAs,
     ).byModel;
 
     // Accumulate token counts
@@ -361,6 +402,7 @@ function hasSessionContent(session: Session): boolean {
  * Save the current session to file
  */
 export function saveSession(): void {
+  let sessionId = "";
   try {
     const manager = SessionManager.getInstance();
     if (!manager.hasSession()) {
@@ -371,20 +413,252 @@ export function saveSession(): void {
     if (!hasSessionContent(session)) {
       return;
     }
+    sessionId = session.sessionId;
 
     const sessionToSave = getSessionPersistenceSnapshot(session);
     historyManager.save(sessionToSave);
   } catch (error) {
     logger.error("Error saving session:", error);
+    // A full disk or a folder that cannot be written fails on every
+    // message: say it once for this session, where the person will see it.
+    userNotice(sessionNotSavedNotice(error), `session-not-saved:${sessionId}`);
   }
 }
 
+/** The line shown once when a session cannot be written. */
+export function sessionNotSavedNotice(error: unknown): string {
+  const folder = path.join(env.continueHome, "sessions");
+  const reason = error instanceof Error ? error.message : String(error);
+  return `This session is not being saved (${folder}): ${reason}. The conversation continues in memory and is saved again as soon as a write succeeds.`;
+}
+
+const gitRootCache = new Map<string, string | undefined>();
+
 /**
- * Load session from current terminal's session file
+ * The folder holding `.git` (a directory, or the file of a worktree) at or
+ * above `dir`; `undefined` outside a repository. Walks the file system
+ * instead of running git, so ordering many sessions stays cheap.
  */
-export function loadSession(): Session | null {
+export function findGitRoot(dir: string): string | undefined {
+  if (!dir || URI_PATTERN.test(dir)) return undefined;
+  const start = path.resolve(dir);
+  if (gitRootCache.has(start)) return gitRootCache.get(start);
+  let found: string | undefined;
+  let current = start;
+  for (;;) {
+    try {
+      if (fs.existsSync(path.join(current, ".git"))) {
+        found = current;
+        break;
+      }
+    } catch {
+      break;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  gitRootCache.set(start, found);
+  return found;
+}
+
+const URI_PATTERN = /^[a-z][a-z0-9+.-]+:\/\//i;
+
+/** How this machine compares a session's folder with the one the CLI runs in. */
+export function workspaceMatchOptions(): WorkspaceMatchOptions {
+  return {
+    caseInsensitive: isCaseInsensitivePlatform(process.platform),
+    homeDir: os.homedir(),
+    gitRootOf: findGitRoot,
+  };
+}
+
+/** A relative path resolved; URIs (sessions saved by the IDE) as they are. */
+function resolveSessionDir(dir: string): string {
+  return URI_PATTERN.test(dir) ? dir : path.resolve(dir);
+}
+
+/** Whether a session saved in `sessionDir` belongs to `cwd` (or its repository). */
+export function isSessionInWorkspace(
+  sessionDir: string | undefined,
+  cwd: string = process.cwd(),
+): boolean {
+  if (!sessionDir) return false;
+  return sessionMatchesWorkspace(
+    resolveSessionDir(sessionDir),
+    [path.resolve(cwd)],
+    workspaceMatchOptions(),
+  );
+}
+
+function sessionTime(session: ExtendedSessionMetadata): number {
+  const when = session.lastModified ?? session.dateCreated;
+  const parsed = Date.parse(when);
+  return Number.isNaN(parsed) ? Number(when) || 0 : parsed;
+}
+
+/**
+ * Sessions in the order `continuous ls` and the `--resume` picker show them
+ * (core/util/sessionWorkspace.ts): the sessions of the folder the CLI runs
+ * in first, newest at the top, then each other folder by its newest session,
+ * then sessions without a folder. Each is marked with its group.
+ */
+export function orderSessionsForWorkspace(
+  sessions: ExtendedSessionMetadata[],
+  cwd: string = process.cwd(),
+): ExtendedSessionMetadata[] {
+  const groups = groupSessionsByWorkspace(sessions, {
+    ...workspaceMatchOptions(),
+    workspaceDirs: [path.resolve(cwd)],
+    getDirectory: (s) =>
+      s.workspaceDirectory ? resolveSessionDir(s.workspaceDirectory) : "",
+    getTime: sessionTime,
+  });
+  return groups.flatMap((group) =>
+    group.sessions.map((session) => ({
+      ...session,
+      inWorkspace: group.isCurrent,
+      workspaceGroup: group.label,
+      workspaceGroupPath: group.path,
+    })),
+  );
+}
+
+/** `listSessions` in workspace order (`orderSessionsForWorkspace`). */
+export async function listSessionsForWorkspace(
+  limit: number = 100,
+  cwd: string = process.cwd(),
+): Promise<ExtendedSessionMetadata[]> {
+  return orderSessionsForWorkspace(await listSessions(limit), cwd);
+}
+
+/**
+ * The session the next `loadSession` resumes, chosen by id (`--resume <id>`,
+ * the `--resume` picker, `continuous ls`).
+ */
+let resumeSessionId: string | undefined;
+
+export function setResumeSessionId(sessionId: string | undefined): void {
+  resumeSessionId = sessionId;
+}
+
+export function getResumeSessionId(): string | undefined {
+  return resumeSessionId;
+}
+
+/** Whether a session with this id is saved (as .json, or the IDE's .jsonl). */
+export function sessionExists(sessionId: string): boolean {
+  if (!sessionId || /[\\/]/.test(sessionId)) return false;
+  const dir = getSessionDir();
+  return (
+    fs.existsSync(path.join(dir, `${sessionId}.json`)) ||
+    fs.existsSync(path.join(dir, `${sessionId}.jsonl`))
+  );
+}
+
+/** A saved session as `continuous acp` lists it (`session/list`). */
+export interface SavedSessionInfo {
+  sessionId: string;
+  title: string;
+  /** As saved: a path (the CLI) or a URI (the IDE); "" when none was saved */
+  workspaceDirectory: string;
+  /** When the session file was last written (ISO 8601) */
+  updatedAt: string;
+}
+
+/**
+ * Every saved session, `.json` (the CLI) and `.jsonl` (the IDE's log), with
+ * its folder and title, in no particular order. A session saved in both
+ * formats is listed once, from the `.jsonl`: the file `openSavedSession`
+ * reads. The folder and title come from sessions.json when it lists the
+ * session; a file it does not list is read for them (a damaged one is set
+ * aside, as `--resume` does, and left out). The time is the file's, so it is
+ * the last activity whichever side wrote it.
+ */
+export function listSavedSessions(): SavedSessionInfo[] {
+  const sessionDir = getSessionDir();
+  const listed = new Map<string, BaseSessionMetadata>();
   try {
-    // For resume, we need to find the most recent session
+    for (const meta of historyManager.list({})) {
+      listed.set(meta.sessionId, meta);
+    }
+  } catch (error) {
+    logger.debug("sessions.json could not be read for session/list", error);
+  }
+  const names = new Set(fs.readdirSync(sessionDir).filter(isSessionFileName));
+  const sessions: SavedSessionInfo[] = [];
+  for (const name of names) {
+    if (name.endsWith(".json") && names.has(`${name}l`)) continue;
+    const file = path.join(sessionDir, name);
+    const sessionId = name.replace(/\.jsonl?$/, "");
+    let mtime: Date;
+    try {
+      mtime = fs.statSync(file).mtime;
+    } catch {
+      continue;
+    }
+    let meta: { title?: string; workspaceDirectory?: string } | undefined =
+      listed.get(sessionId);
+    if (!meta?.workspaceDirectory) {
+      try {
+        const read = readSessionFile(file);
+        if (!read || "damaged" in read) continue;
+        meta = read.session;
+      } catch (error) {
+        logger.debug(`Session file ${file} could not be read`, error);
+        continue;
+      }
+    }
+    sessions.push({
+      sessionId,
+      title: meta?.title || DEFAULT_SESSION_TITLE,
+      workspaceDirectory: meta?.workspaceDirectory ?? "",
+      updatedAt: mtime.toISOString(),
+    });
+  }
+  return sessions;
+}
+
+/**
+ * Open a saved session by id and make it the current one (`session/load`
+ * and `session/resume` of `continuous acp`). `undefined` when no session of
+ * that id is saved. Throws when its file is damaged (it is set aside) or
+ * cannot be read, rather than opening it as an empty session.
+ */
+export function openSavedSession(sessionId: string): Session | undefined {
+  if (!sessionExists(sessionId)) return undefined;
+  const result = historyManager.loadWithStatus(sessionId);
+  if (result.damaged) throw new Error(damagedSessionNotice(result.damaged));
+  SessionManager.getInstance().setSession(result.session);
+  return result.session;
+}
+
+export interface LoadSessionOptions {
+  /** The folder whose sessions come first; `process.cwd()` by default */
+  cwd?: string;
+}
+
+/**
+ * The session `--resume` continues:
+ * - the one chosen by id (`setResumeSessionId`), when there is one;
+ * - otherwise the newest session saved in this folder, a folder inside or
+ *   around it, or another folder of the same repository
+ *   (`isSessionInWorkspace`);
+ * - otherwise the newest session of any folder, with a notice naming the
+ *   folder it came from.
+ * A damaged file is set aside and the next one is tried, with a notice.
+ */
+export function loadSession(options: LoadSessionOptions = {}): Session | null {
+  // Kept after use: the TUI may ask again while it starts, and must get the
+  // same session
+  const chosen = resumeSessionId;
+  if (chosen) {
+    const session = loadSessionById(chosen);
+    if (session) SessionManager.getInstance().setSession(session);
+    return session;
+  }
+  const cwd = path.resolve(options.cwd ?? process.cwd());
+  try {
     const sessionDir = getSessionDir();
     if (!fs.existsSync(sessionDir)) {
       return null;
@@ -392,38 +666,125 @@ export function loadSession(): Session | null {
 
     const files = fs
       .readdirSync(sessionDir)
-      .filter(
-        (f) =>
-          f.endsWith(".json") && f !== "sessions.json" && !f.includes(".tmp"),
-      )
+      // .json, or the IDE's .jsonl log (read here; the CLI saves .json)
+      .filter(isSessionFileName)
       .map((f) => ({
-        name: f,
+        id: f.replace(/\.jsonl?$/, ""),
         path: path.join(sessionDir, f),
         mtime: fs.statSync(path.join(sessionDir, f)).mtime,
       }))
       .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
 
-    // Newest first. A truncated or half-written file is skipped; the temp
-    // files from an atomic save are not .json, so they are not candidates.
-    for (const file of files) {
-      try {
-        const session = JSON.parse(
-          fs.readFileSync(file.path, "utf8"),
-        ) as Session;
-        if (!session || typeof session !== "object" || Array.isArray(session)) {
-          continue;
+    // The folder of each session from sessions.json, so a session of another
+    // folder is passed over without reading its file
+    const listedDirs = new Map<string, string>();
+    try {
+      for (const meta of historyManager.list({})) {
+        if (meta.workspaceDirectory) {
+          listedDirs.set(meta.sessionId, meta.workspaceDirectory);
         }
-        SessionManager.getInstance().setSession(session);
-        return session;
-      } catch (error) {
-        logger.error("Error loading session:", error);
       }
+    } catch (error) {
+      logger.debug("sessions.json could not be read for --resume", error);
+    }
+
+    type SessionFile = (typeof files)[number];
+    type Read = ReturnType<typeof readSessionFile> | { failed: true };
+    const reads = new Map<string, Read>();
+    const read = (file: SessionFile): Read => {
+      if (reads.has(file.path)) return reads.get(file.path)!;
+      let result: Read;
+      try {
+        result = readSessionFile(file.path);
+      } catch (error) {
+        // Could not be read, or could not be set aside: left where it is
+        logger.error("Error loading session:", error);
+        result = { failed: true };
+      }
+      reads.set(file.path, result);
+      return result;
+    };
+
+    // Newest first. A damaged file is set aside (kept beside the others as
+    // <id>.corrupt-<time>.json) and the next one is tried; the person is
+    // told, because the session they get is not the one they last used.
+    const passedOver: string[] = [];
+    const sessionOf = (file: SessionFile): Session | undefined => {
+      const result = read(file);
+      if (!result) return undefined;
+      if ("failed" in result) {
+        if (!passedOver.includes(file.path)) passedOver.push(file.path);
+        return undefined;
+      }
+      if ("damaged" in result) {
+        const keptAt = result.damaged?.keptAt;
+        if (keptAt && !passedOver.includes(keptAt)) passedOver.push(keptAt);
+        return undefined;
+      }
+      return result.session;
+    };
+
+    const resume = (session: Session, otherFolder: boolean): Session => {
+      SessionManager.getInstance().setSession(session);
+      if (passedOver.length > 0) {
+        userNotice(resumedEarlierNotice(passedOver, session));
+      } else if (otherFolder) {
+        userNotice(resumedOtherFolderNotice(cwd, session));
+      }
+      return session;
+    };
+
+    // 1. The newest session of this folder
+    for (const file of files) {
+      const listed = listedDirs.get(file.id);
+      if (listed !== undefined && !isSessionInWorkspace(listed, cwd)) continue;
+      const session = sessionOf(file);
+      if (session && isSessionInWorkspace(session.workspaceDirectory, cwd)) {
+        return resume(session, false);
+      }
+    }
+
+    // 2. None here: the newest of any folder, and say where it is from
+    for (const file of files) {
+      const session = sessionOf(file);
+      if (session) return resume(session, true);
+    }
+
+    if (passedOver.length > 0) {
+      userNotice(
+        `${couldNotBeRead(passedOver)} There is no earlier session to resume; starting a new one.`,
+      );
     }
     return null;
   } catch (error) {
     logger.error("Error loading session:", error);
     return null;
   }
+}
+
+/** Said when this folder has no session and another folder's was resumed. */
+export function resumedOtherFolderNotice(
+  cwd: string,
+  session: Session,
+): string {
+  const title = session.title || DEFAULT_SESSION_TITLE;
+  const where = session.workspaceDirectory || "no folder";
+  return `No session was started in ${cwd}; resumed the newest one instead: "${title}" from ${where}. \`continuous ls\` lists the others.`;
+}
+
+function couldNotBeRead(keptAt: string[]): string {
+  return keptAt.length === 1
+    ? `The newest session could not be read (kept at ${keptAt[0]}).`
+    : `The ${keptAt.length} newest sessions could not be read (kept at ${keptAt.join(", ")}).`;
+}
+
+/** Said when --resume did not resume the session the person last used. */
+function resumedEarlierNotice(keptAt: string[], session: Session): string {
+  const title = session.title || DEFAULT_SESSION_TITLE;
+  const where = session.workspaceDirectory
+    ? ` from ${session.workspaceDirectory}`
+    : "";
+  return `${couldNotBeRead(keptAt)} Resumed the one before it: "${title}"${where}.`;
 }
 
 /**
@@ -524,6 +885,7 @@ function getSessionMetadataWithPreview(
       sessionId: sessionData.sessionId,
       title: sessionData.title || DEFAULT_SESSION_TITLE,
       dateCreated: stats.birthtime.toISOString(),
+      lastModified: stats.mtime.toISOString(),
       workspaceDirectory: sessionData.workspaceDirectory || "",
       firstUserMessage,
     };
@@ -594,13 +956,45 @@ export async function listSessions(
   }
 }
 
+/** What deleting a session from the picker did (`trashSessionById`). */
+export type PickerTrashResult =
+  | TrashSessionResult
+  /** The session this process is in: not deleted, it would be saved again. */
+  | { status: "current"; sessionId: string };
+
+/**
+ * Delete from the session picker (NI11): the session goes to the same trash
+ * as the IDE's History page (core/util/sessionTrash.ts), restorable for 7
+ * days. The session this process is in is refused, and one open in another
+ * window or agent is moved only with `force`.
+ */
+export async function trashSessionById(
+  sessionId: string,
+  options: { force?: boolean } = {},
+): Promise<PickerTrashResult> {
+  const manager = SessionManager.getInstance();
+  if (manager.hasSession() && manager.getSessionId() === sessionId) {
+    return { status: "current", sessionId };
+  }
+  return historyManager.trash(sessionId, options);
+}
+
+/** Undo in the picker: the trashed session is back in the list. */
+export function restoreTrashedSessionById(
+  sessionId: string,
+): BaseSessionMetadata {
+  return historyManager.restore(sessionId);
+}
+
 /**
  * Load session by ID
  */
 export function loadSessionById(sessionId: string): Session | null {
+  resetCliToolListHold();
   try {
-    const session = historyManager.load(sessionId);
-    return session;
+    const result = historyManager.loadWithStatus(sessionId);
+    if (result.damaged) userNotice(damagedSessionNotice(result.damaged));
+    return result.session;
   } catch (error) {
     logger.error("Error loading session by ID:", error);
     return null;
@@ -651,6 +1045,8 @@ export function getCurrentSession(): Session {
  */
 export function startNewSession(history: ChatHistoryItem[] = []): Session {
   const manager = SessionManager.getInstance();
+  // A new conversation has a cold cache: tool changes that waited apply
+  resetCliToolListHold();
 
   // Clear the current session from memory (don't delete the file)
   manager.clear();
@@ -674,6 +1070,26 @@ export function startNewSession(history: ChatHistoryItem[] = []): Session {
 
   manager.setSession(newSession);
   return newSession;
+}
+
+/**
+ * Fork `parent` into a new session and make the fork the current one. The
+ * fork keeps what `startNewSession` dropped: the mode, the chat model, the
+ * task plan and the prompt cache record (core/util/forkSession.ts has the
+ * copy table). Its history is the parent's, unchanged, so its first request
+ * starts with the same bytes and can read the parent's cache. The parent's
+ * file is not touched. Permission levels are the process's, not the
+ * session's, so a fork keeps them (an IDGAF set for this run stays set).
+ */
+export function forkIntoNewSession(parent: Session): Session {
+  const manager = SessionManager.getInstance();
+  const fork = forkSession(parent, { sessionId: uuidv4() });
+  fork.workspaceDirectory = process.cwd();
+
+  manager.clear();
+  manager.setSession(fork);
+  saveSession();
+  return fork;
 }
 
 type TaskPlanListener = (plan: TaskPlan | undefined) => void;
@@ -760,15 +1176,9 @@ export function trackSessionUsage(
   usage: Usage,
   provider?: string,
   model?: string,
-  estimated = false,
+  how: boolean | TrackHow = false,
 ): void {
-  SessionManager.getInstance().trackUsage(
-    cost,
-    usage,
-    provider,
-    model,
-    estimated,
-  );
+  SessionManager.getInstance().trackUsage(cost, usage, provider, model, how);
 }
 
 /**

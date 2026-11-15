@@ -12,9 +12,10 @@ import { classifyReadOnly } from "./readOnlyCommand";
 
 /**
  * The permission and policy files protect themselves. A call that would write
- * or delete one is a locked floor: no setting, rule or level lets it run
- * unasked, IDGAF included, because a model that can edit the policy can undo
- * every other protection. `protect-config` is a separate, switchable rule over
+ * or delete one is a locked floor: no setting, rule or level below IDGAF lets
+ * it run unasked, because a model that can edit the policy can undo every
+ * other protection. IDGAF runs it and records it (evaluate.ts,
+ * idgafRunsEverything). `protect-config` is a separate, switchable rule over
  * the wider set of files that change what runs later; this one has no switch.
  *
  * What counts is every path the product loads as config, code, rules or hooks,

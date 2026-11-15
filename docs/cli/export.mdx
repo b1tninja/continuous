@@ -1,0 +1,39 @@
+---
+title: "Export a session"
+description: "Write a session as a masked Markdown or HTML transcript you can read and send yourself."
+---
+
+A transcript is a file on your machine. Nothing is uploaded and there is no share link.
+
+```bash
+continuous export last                       # the newest session, Markdown, to stdout
+continuous export 3f2a --out review.md       # a session by the start of its id
+continuous export last --format html --out review.html
+```
+
+In the terminal UI:
+
+```text
+/export                  # Markdown, named after the title and today's date, in the current folder
+/export notes/run.md
+/export run.html --force
+```
+
+| Option        | Meaning                                                                       |
+| ------------- | ----------------------------------------------------------------------------- |
+| `--format`    | `md` (default) or `html`. With `--out` the extension decides when it is absent. |
+| `--out <file>`| Write to the file instead of stdout.                                          |
+| `--force`     | Replace the file if it exists. Without it the export refuses and writes nothing. |
+| `--reasoning` | Include the model's reasoning, which is left out by default.                  |
+
+## What a transcript holds
+
+- A header with the session title and a date. No path, workspace, model, session id or version.
+- Your messages and the assistant's replies, and each tool call with its arguments and its output.
+- Every text goes through the same masker as the audit trail and the approval prompt: a value that looks like a credential becomes `«masked:<kind>»`. Masking is best effort; read the file before you send it.
+- A tool output longer than 2000 characters is cut, with a line that says how much was shown.
+- Left out: the system prompt, attached context (file contents you added with `@`), images, and reasoning unless you pass `--reasoning`.
+
+The HTML file is the same text, escaped, in one page with no script and a content security policy that blocks anything from loading.
+
+The session file itself, which `/import` reads, is still written by `/export --json`. That file is **not** masked.

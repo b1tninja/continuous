@@ -18,7 +18,7 @@ import {
 } from "../../../components/ui";
 import { useFontSize } from "../../../components/ui/font";
 import { useAppSelector } from "../../../redux/hooks";
-import { useWarmCacheNote } from "../../../hooks/useWarmCacheNote";
+import { useToolChangeNote } from "../../../hooks/useToolChangeNote";
 import { addTool, setToolPolicy } from "../../../redux/slices/uiSlice";
 
 interface ToolPolicyItemProps {
@@ -32,7 +32,7 @@ export function ToolPolicyItem(props: ToolPolicyItemProps) {
   const policy = useAppSelector(
     (state) => state.ui.toolSettings[props.tool.function.name],
   );
-  const warmCacheNote = useWarmCacheNote();
+  const warmCacheNote = useToolChangeNote();
   const [isExpanded, setIsExpanded] = useState(false);
   const mode = useAppSelector((state) => state.session.mode);
 

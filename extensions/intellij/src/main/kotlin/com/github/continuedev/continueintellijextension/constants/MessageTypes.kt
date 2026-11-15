@@ -49,7 +49,8 @@ class MessageTypes {
             "copyText",
             "jetbrains/isOSREnabled",
             "jetbrains/getColors",
-            "jetbrains/onLoad"
+            "jetbrains/onLoad",
+            "policy/sessionIdgaf"
         )
 
         // Note: If updating these values, make a corresponding update in
@@ -67,6 +68,7 @@ class MessageTypes {
             "sessionUpdate",
             "didCloseFiles",
             "toolCallPartialOutput",
+            "model/infoUpdated",
         )
 
         // Note: If updating these values, make a corresponding update in
@@ -77,8 +79,15 @@ class MessageTypes {
             "history/delete",
             "history/load",
             "history/save",
+            "history/saveDelta",
             "history/loadRemote",
             "history/clear",
+            "history/trash",
+            "history/restore",
+            "history/listTrash",
+            "history/deleteFromTrash",
+            "history/emptyTrash",
+            "history/search",
             "devdata/log",
             "config/addModel",
             "config/newPromptFile",
@@ -89,6 +98,7 @@ class MessageTypes {
             "providers/list",
             "providers/save",
             "providers/delete",
+            "config/removeProviderConnection",
             "config/addConnectedModel",
             "config/findPlaintextKeys",
             "config/movePlaintextKeys",
@@ -154,9 +164,17 @@ class MessageTypes {
             "bedrock/testModel",
             "bedrock/probeToolCalls",
             "config/setToolDialect",
+            "config/getModelBlock",
+            "config/previewModelEdit",
+            "config/saveModelEdit",
             "ollama/showHint",
             "config/getTerminalEnvironment",
             "config/setTerminalEnvironment",
+            // policy/save asks in the IDE's own notification before a
+            // change that loosens (core: policySave.ts)
+            "policy/load",
+            "policy/save",
+            "policy/preview",
             "policy/rules",
             "policy/test",
             "llm/compileChat",

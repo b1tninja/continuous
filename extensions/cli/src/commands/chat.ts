@@ -2,11 +2,11 @@ import { ModelConfig } from "@continuedev/config-yaml";
 import { BaseLlmApi } from "@continuedev/openai-adapters";
 import chalk from "chalk";
 import { ChatHistoryItem, Session } from "core";
-import { ChatDescriber } from "core/util/chatDescriber.js";
 
 import * as runLimits from "../budget/runLimits.js";
 import { compactChatHistory, findCompactionIndex } from "../compaction.js";
 import { processCommandFlags } from "../flags/flagProcessor.js";
+import * as headless from "../headless/streamJsonHeadless.js";
 import { runStopHooks } from "../hooks/lifecycleHooks.js";
 import {
   describePromptBlocked,
@@ -15,6 +15,7 @@ import {
 import { safeStderr, safeStdout } from "../init.js";
 import { configureLogger } from "../logger.js";
 import * as logging from "../logging.js";
+import { startModelInfoRefresh } from "../modelInfoRefresh.js";
 import { seedPlanBuild } from "../plans/planBuild.js";
 import { initializeServices, services } from "../services/index.js";
 import { serviceContainer } from "../services/ServiceContainer.js";
@@ -23,14 +24,12 @@ import {
   ModelServiceState,
   SERVICE_NAMES,
 } from "../services/types.js";
-import {
-  loadSession,
-  updateSessionHistory,
-  updateSessionTitle,
-} from "../session.js";
+import { loadSession, updateSessionHistory } from "../session.js";
 import { streamChatResponse } from "../stream/streamChatResponse.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
 import { startTUIChat } from "../ui/index.js";
+import { initThinkingDisplay } from "../ui/thinkingDisplay.js";
+import { exitOnBrokenConfig } from "../util/configFileGate.js";
 import { gracefulExit } from "../util/exit.js";
 import { formatAnthropicError, formatError } from "../util/formatError.js";
 import { logger } from "../util/logger.js";
@@ -44,14 +43,18 @@ import {
 
 import { ExtendedCommandOptions } from "./BaseCommandOptions.js";
 import { processJsonOutput, stripThinkTags } from "./chatOutput.js";
+import { handleTitleGeneration } from "./chatTitle.js";
 import { printRetirementNotice } from "./retirementNotice.js";
 
 export interface ChatOptions extends ExtendedCommandOptions {
   headless?: boolean;
   resume?: boolean;
   fork?: string; // Fork from an existing session ID
-  format?: "json"; // Output format for headless mode
+  format?: headless.HeadlessFormat; // Output format for headless mode
   silent?: boolean; // Strip <think></think> tags and excess whitespace
+  outputSchema?: string; // --output-schema: a JSON Schema the final answer must match
+  thinking?: string; // --thinking: fold, expanded or hide (ui/thinkingDisplay.ts)
+  includeReasoning?: boolean; // --include-reasoning: stream-json `reasoning` lines
 }
 
 export async function initializeChatHistory(
@@ -61,11 +64,12 @@ export async function initializeChatHistory(
 
   // Fork from an existing session if --fork flag is used
   if (options.fork) {
-    const { loadSessionById, startNewSession } = await import("../session.js");
+    const { loadSessionById, forkIntoNewSession } =
+      await import("../session.js");
     const sessionToFork = loadSessionById(options.fork);
     if (sessionToFork) {
       logger.info(chalk.yellow("Forking from existing session..."));
-      const newSession = startNewSession(sessionToFork.history);
+      const newSession = forkIntoNewSession(sessionToFork);
       return newSession.history;
     } else {
       logger.error(chalk.red(`Session with ID "${options.fork}" not found.`));
@@ -139,27 +143,22 @@ async function getStreamingResponse(
   llmApi: BaseLlmApi,
 ): Promise<string> {
   const abortController = new AbortController();
-
-  if (compactionIndex !== null && compactionIndex !== undefined) {
-    // Use service to compute history for LLM
-    const historyForLLM =
-      services.chatHistory.getHistoryForLLM(compactionIndex);
-
-    return await streamChatResponse(
-      historyForLLM,
-      model,
-      llmApi,
-      abortController,
-    );
-  } else {
-    // No compaction - get full history from service
-    return await streamChatResponse(
-      services.chatHistory.getHistory(),
-      model,
-      llmApi,
-      abortController,
-    );
-  }
+  // --format stream-json: the stream hears each reply and finished request
+  const { callbacks, options } = headless.streamJsonHooks();
+  // The service's history for the LLM after a compaction, else the full one
+  const history =
+    compactionIndex !== null && compactionIndex !== undefined
+      ? services.chatHistory.getHistoryForLLM(compactionIndex)
+      : services.chatHistory.getHistory();
+  return await streamChatResponse(
+    history,
+    model,
+    llmApi,
+    abortController,
+    callbacks,
+    false,
+    options,
+  );
 }
 
 // Helper function to process and output response in headless mode
@@ -167,8 +166,10 @@ function processAndOutputResponse(
   finalResponse: string,
   isHeadless: boolean,
   silent?: boolean,
-  format?: "json",
+  format?: headless.HeadlessFormat,
 ): void {
+  // stream-json keeps the answer for its `result` line and prints nothing
+  if (headless.noteHeadlessAnswer(finalResponse, silent, format)) return;
   if (isHeadless && finalResponse && finalResponse.trim()) {
     let processedResponse = finalResponse;
 
@@ -193,7 +194,7 @@ async function handleAutoCompaction(
   model: ModelConfig,
   llmApi: BaseLlmApi,
   isHeadless: boolean,
-  format?: "json",
+  format?: headless.HeadlessFormat,
 ): Promise<number | null> {
   const { handleAutoCompaction: coreAutoCompaction } =
     await import("../stream/streamChatResponse.autoCompaction.js");
@@ -257,7 +258,7 @@ async function handleAutoCompaction(
     llmApi,
     {
       isHeadless,
-      format,
+      format: format === "json" ? format : undefined,
       callbacks,
     },
   );
@@ -271,37 +272,13 @@ async function handleAutoCompaction(
 /**
  * Helper to generate and update session title after first assistant response
  */
-async function handleTitleGeneration(
-  assistantResponse: string,
-  llmApi: BaseLlmApi,
-  model: ModelConfig,
-): Promise<void> {
-  try {
-    if (!assistantResponse) return;
-
-    const generatedTitle = await ChatDescriber.describeWithBaseLlmApi(
-      llmApi,
-      model,
-      assistantResponse,
-    );
-
-    if (generatedTitle) {
-      updateSessionTitle(generatedTitle);
-      logger.debug("Generated session title:", generatedTitle);
-    }
-  } catch (error) {
-    // Don't fail the response if title generation fails
-    logger.debug("Session title generation failed:", error);
-  }
-}
-
 interface ProcessMessageOptions {
   userInput: string;
   chatHistory: ChatHistoryItem[];
   model: ModelConfig;
   llmApi: BaseLlmApi;
   isHeadless: boolean;
-  format?: "json";
+  format?: headless.HeadlessFormat;
   silent?: boolean;
   compactionIndex?: number | null;
   firstAssistantResponse?: boolean;
@@ -419,6 +396,9 @@ async function runHeadlessMode(
   prompt: string | undefined,
   options: ChatOptions,
 ): Promise<void> {
+  // A broken hooks or permissions file stops the start (exit code 2)
+  await exitOnBrokenConfig(options);
+
   // Initialize services for headless mode
   const { permissionOverrides } = processCommandFlags(options);
 
@@ -437,11 +417,11 @@ async function runHeadlessMode(
   const { llmApi, model } = modelState;
 
   if (!model) {
-    throw new Error("No models were found.");
+    throw headless.configError("No models were found.");
   }
 
   if (!llmApi) {
-    throw new Error("No LLM API instance found.");
+    throw headless.configError("No LLM API instance found.");
   }
 
   // Run limits (--max-budget-usd, --max-turns, --max-duration): refuses a
@@ -449,6 +429,7 @@ async function runHeadlessMode(
   runLimits.startRunLimits(options, {
     provider: model.provider,
     model: model.model,
+    pricing: model.pricing,
   });
 
   // Initialize service-driven history (resume if requested)
@@ -458,6 +439,7 @@ async function runHeadlessMode(
     services.chatHistory.setHistory(chatHistory);
     compactionIndex = findCompactionIndex(chatHistory);
   }
+  headless.startStreamJsonRun(options.format, model); // stream-json: the `init` line
 
   // Handle additional prompts from --prompt flags
   const { processAndCombinePrompts } =
@@ -530,7 +512,7 @@ async function runHeadlessMode(
   }
 
   // exit after headless mode completes: a run limit has its own exit code
-  await gracefulExit(runLimits.exitCodeOfRun(options.format));
+  await gracefulExit(headless.endHeadlessRun(options.format));
 }
 
 export async function chat(prompt?: string, options: ChatOptions = {}) {
@@ -541,6 +523,13 @@ export async function chat(prompt?: string, options: ChatOptions = {}) {
   logging.configureLogger({ headless: options.headless ?? false });
 
   try {
+    // Model information updates: a background refresh of a stale OpenRouter
+    // list when the setting is automatic, and of the community catalogue
+    // while the run's model has no better price. Sets timers only.
+    startModelInfoRefresh(undefined, undefined, {
+      currentModel: () => services.model?.getModelId?.(),
+    });
+
     // Record session start
     telemetryService.recordSessionStart();
 
@@ -551,11 +540,13 @@ export async function chat(prompt?: string, options: ChatOptions = {}) {
     if (options.headless) {
       // Headless path - no Ink, no TUI, works in TTY-less environments
       logger.debug("Running in headless mode (TTY-less compatible)");
+      headless.beginHeadlessRun(options);
       await runHeadlessMode(prompt, options);
       return;
     }
 
     runLimits.assertLimitsEnforceable(options);
+    initThinkingDisplay(options.thinking);
 
     // Interactive path - requires TTY for Ink rendering
     // If not in headless mode, use unified initialization with TUI
@@ -631,7 +622,7 @@ export async function chat(prompt?: string, options: ChatOptions = {}) {
     // Stop active time tracking BEFORE graceful exit
     telemetryService.stopActiveTime();
 
-    await gracefulExit(1);
+    await gracefulExit(headless.failHeadlessRun(options, err));
   } finally {
     // Stop active time tracking for normal completion
     telemetryService.stopActiveTime();

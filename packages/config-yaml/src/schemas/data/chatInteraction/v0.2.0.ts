@@ -13,6 +13,11 @@ export const chatInteractionEventSchema_0_2_0 =
     // other
     prompt: true,
     completion: true,
+    promptBytes: true,
+    completionBytes: true,
+    promptSha256: true,
+    promptTokens: true,
+    completionTokens: true,
     modelName: true,
     modelTitle: true,
     modelProvider: true,

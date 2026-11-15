@@ -62,6 +62,7 @@ import {
 import type { VsCodeWebviewProtocol } from "../webviewProtocol";
 import { registerVsCodeAi } from "../ai/registerVsCodeAi";
 import { registerTerminalShellSetting } from "../terminalShellSetting";
+import { registerModelInfoSetting } from "../modelInfoSetting";
 import { registerConfigLanguageSupport } from "../lang-server/configLanguageSupport";
 import { promptForWorkspaceConfigTrust } from "../util/workspaceConfigTrust";
 
@@ -294,6 +295,9 @@ export class VsCodeExtension {
 
     // Where terminal commands run (the host shell or WSL)
     registerTerminalShellSetting(context);
+
+    // Model information updates (OpenRouter's list), into the shared store
+    registerModelInfoSetting(context);
 
     this.verticalDiffManager = new VerticalDiffManager(
       this.sidebar.webviewProtocol,

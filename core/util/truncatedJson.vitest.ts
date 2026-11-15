@@ -1,5 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { isTruncatedJson, truncatedToolCallResult } from "./truncatedJson.js";
+import {
+  incompleteToolCallResult,
+  isTruncatedJson,
+  stoppedForLength,
+  truncatedToolCallResult,
+} from "./truncatedJson.js";
 
 describe("isTruncatedJson", () => {
   test("a complete object is not truncated", () => {
@@ -34,5 +39,38 @@ describe("isTruncatedJson", () => {
     expect(truncatedToolCallResult("multi_edit", undefined)).not.toContain(
       "append",
     );
+  });
+});
+
+describe("stoppedForLength", () => {
+  test("is true for the output-limit stop reasons", () => {
+    expect(stoppedForLength("max_tokens")).toBe(true);
+    expect(stoppedForLength("length")).toBe(true);
+    expect(stoppedForLength("model_context_window_exceeded")).toBe(true);
+    expect(stoppedForLength("MAX_TOKENS")).toBe(true);
+  });
+
+  test("is false for a reply that ended for another reason", () => {
+    expect(stoppedForLength("tool_use")).toBe(false);
+    expect(stoppedForLength("tool_calls")).toBe(false);
+    expect(stoppedForLength("end_turn")).toBe(false);
+    expect(stoppedForLength("stop")).toBe(false);
+  });
+
+  test("is undefined when no reason was reported", () => {
+    expect(stoppedForLength(undefined)).toBeUndefined();
+    expect(stoppedForLength(null)).toBeUndefined();
+    expect(stoppedForLength("")).toBeUndefined();
+  });
+});
+
+describe("incompleteToolCallResult", () => {
+  test("says it was not the output limit and to send the call again", () => {
+    const text = incompleteToolCallResult("multi_edit");
+    expect(text).toContain("multi_edit");
+    expect(text).toContain("nothing was written");
+    expect(text).toContain("not the output limit");
+    expect(text).toContain("Send the same call again");
+    expect(text).not.toContain("smaller pieces");
   });
 });

@@ -1,0 +1,194 @@
+---
+title: "Loop mode"
+---
+
+Loop mode plans first, then builds the plan's to-dos one at a time without you driving each step. Each to-do runs in its own turn with a fresh context, reports when it is finished, and is checked. When nothing more can run, the loop re-plans and starts another round, until the plan is done or a limit stops it. Questions go to an inbox you can answer while it works.
+
+Use it for work that is already a list: a migration over many files, a set of failing tests, a plan you have reviewed. For one change you want to watch, Agent mode is the better fit.
+
+## Start a loop
+
+In the VS Code extension:
+
+1. Pick **Loop** in the mode picker and send your request. The first reply is a plan, written to a file in `.continuous/plans`.
+2. Review the plan card. Whether the loop waits here depends on your **Plan edits** level: at Manual and Cautious the first plan waits for you; at Automatic, Permissive and IDGAF it goes on.
+
+Or, from Plan mode, choose **Build in a loop** on a plan card. **Set a budget…** next to it divides the loop's limits among the to-dos first; see [Loop budgets](/ide-extensions/agent/loop-budgets).
+
+### In the terminal agent
+
+Press Shift+Tab until the mode indicator shows **loop**, then send your request. The plan is built in a loop without a further question. From plan mode, the plan's prompt offers **Build**, **Build in a loop** and **Keep planning**.
+
+`/loop` opens the loop's inbox: answer questions, allow or refuse a held call, change the level or the strategy, resume, or stop after this item.
+
+No flag starts a loop in a headless run. `continuous plan build <name>` looks similar and is not a loop: it is one ordinary agent run with the plan as its task, with no rounds, re-plans, inbox or loop limits. A `check:` line is still run by the harness there.
+
+## What a to-do's run looks like
+
+- The to-do runs until the agent reports it finished, or it uses up its attempts or its budget.
+- If the to-do has a `check:` line in the [plan file](/ide-extensions/agent/plan-files), the harness runs that command itself. Exit code 0 makes the to-do done. A failing check sends the to-do round again with the check's output, up to the attempts limit, and then marks it failed. A check that was not allowed to run (a rule refused it, or you did not allow it) fails the to-do; it never counts as done.
+- A call that would ask for approval is not run. It is held as a question in the inbox with **Allow once** and **Don't allow**.
+
+## Autonomy levels
+
+A loop has an autonomy level. There are four: **Supervised**, **Auto**, **Unattended** and **IDGAF**.
+
+You do not pick the autonomy level directly. A loop follows two of your [permission levels](/ide-extensions/agent/permissions-page#what-plan-edits-and-questions-do-for-a-loop), **Plan edits** and **Questions**, and its autonomy level is worked out from them when it starts and again whenever you change them:
+
+| Your levels                                              | Autonomy level |
+| -------------------------------------------------------- | -------------- |
+| Questions is IDGAF                                       | IDGAF          |
+| Otherwise, Plan edits is Permissive or IDGAF             | Unattended     |
+| Otherwise, Plan edits is Manual                          | Supervised     |
+| Otherwise (Plan edits is Cautious or Automatic)          | Auto           |
+
+With the default levels (the Careful preset: Plan edits Cautious, Questions Cautious) a loop is at **Auto**.
+
+The two things have separate jobs:
+
+- **The Plan edits and Questions levels decide who decides**: whether a re-plan goes on or waits on its card, and whether a question is yours or the agent's. The table on the Permissions page has every case.
+- **The autonomy level supplies the numbers**: the default limits below, the default strategy, and the default for what happens when a to-do reaches its own budget.
+
+The terminal agent's inbox has a **Level** row that names an autonomy level. Changing it there sets the two permission levels for you (Supervised: Manual and Manual; Auto: Cautious and Cautious; Unattended: Permissive and Cautious; IDGAF: Permissive and IDGAF) and resets the loop's limits to that level's.
+
+## Default limits
+
+| Limit                                              | Supervised | Auto       | Unattended | IDGAF      |
+| -------------------------------------------------- | ---------- | ---------- | ---------- | ---------- |
+| Rounds                                             | 3          | 5          | 10         | 10         |
+| Tokens                                             | 5,000,000  | 10,000,000 | 20,000,000 | 20,000,000 |
+| Time                                               | 1 hour     | 2 hours    | 8 hours    | 8 hours    |
+| Attempts at one to-do before it is failed          | 2          | 2          | 2          | 2          |
+| Rounds in a row that finish nothing before a stop  | 2          | 2          | 2          | 2          |
+| To-dos in a row that fail before a stop            | 3          | 3          | 3          | 3          |
+| Model requests in one run of a to-do               | 60         | 60         | 60         | 60         |
+
+- **Rounds.** The first pass over the plan is round 1. Each re-plan starts the next round, so a limit of 5 allows four re-plans.
+- **Tokens** are counted for the loop only: output tokens plus the input tokens the provider did not serve from its cache.
+- **Time** is wall-clock time since the loop started or was last resumed.
+
+There is no loop-wide dollar limit. A to-do can have a dollar budget of its own; see [Loop budgets](/ide-extensions/agent/loop-budgets).
+
+You can change limits while the loop runs, in the loop controls. The allowed ranges:
+
+| Limit                  | Range                                  |
+| ---------------------- | -------------------------------------- |
+| Rounds                 | 1 to 50                                |
+| Tokens                 | 10,000 to 50,000,000, or no limit      |
+| Time                   | 1 minute to 24 hours, or no limit      |
+| Attempts               | 1 to 5                                 |
+| Failures in a row      | 1 to 10                                |
+
+A limit lowered below what the loop has already used stops it at its next step. Changing a permission level while a loop runs changes who decides and leaves the limits and the strategy as they are.
+
+## Strategy
+
+The strategy is how the loop moves through the plan. It is a second setting beside the level, and it never loosens a limit.
+
+| Strategy                    | What it does                                                                                                                            | Default at                    |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| **Finish what you started** | To-dos in plan order. A failed to-do runs again once, and the plan is re-evaluated only when nothing can run                            | Supervised                    |
+| **Check in**                | To-dos in plan order. The plan is also re-evaluated after every 3 finished to-dos, and at once when one fails or an assumption is overruled | none                      |
+| **Fix forward**             | A failed to-do gets a re-plan of just that to-do (reworded, split or dropped), at most 2 times, then the loop moves on                  | Auto, Unattended and IDGAF    |
+
+A strategy you pick yourself stays when the level changes.
+
+## Plans and re-plans
+
+The loop's plan is a [plan file](/ide-extensions/agent/plan-files) with one checkbox line per to-do. A to-do can carry a `check:` line (the command that proves it) and a `budget:` line.
+
+A re-plan is a read-only planning turn that proposes the next round: it may reword, split, add or drop to-dos. What happens to it follows the Plan edits level:
+
+| Plan edits | A first plan    | A re-plan                                                                                   |
+| ---------- | --------------- | ------------------------------------------------------------------------------------------- |
+| Manual     | Waits for you   | Waits for you                                                                               |
+| Cautious   | Waits for you   | Goes on if it adds no to-do; otherwise waits                                                |
+| Automatic  | Goes on         | Goes on                                                                                     |
+| Permissive | Goes on         | Goes on, unless it adds more new to-dos than `plan.maxNewItems` (default 5); then it waits  |
+| IDGAF      | Goes on         | Goes on                                                                                     |
+
+At Manual and Cautious, the built-in rule `plan-keeps-checks` also holds a re-plan that changes a failing check or drops a finished to-do. A waiting re-plan shows a card with **Continue the loop**; to refuse it, edit the plan file or stop the loop.
+
+## Questions
+
+When a to-do needs something only you can say, the agent holds a question instead of guessing silently. It labels the question with a type:
+
+| Type           | About                                                    | Who decides by default |
+| -------------- | -------------------------------------------------------- | ---------------------- |
+| `scope`        | What to build, add or drop                               | You                    |
+| `irreversible` | Deleting, publishing, migrating, anything hard to undo   | You                    |
+| `security`     | Credentials, permissions, exposure                       | You                    |
+| `cost`         | Spending money or a large share of a budget              | You                    |
+| `design`       | Architecture, libraries, approaches                      | You                    |
+| `detail`       | Naming, formatting, small defaults                       | The agent              |
+
+That column is the Questions level **Cautious**, the default. At Manual you decide every question. At Automatic and Permissive the agent decides, except the types you put on your own "you decide" list. At IDGAF the agent decides everything and nothing is held. The two lists are `questions.youDecide` and `questions.agentDecides` in [`permissions.yaml`](/reference/permissions-yaml).
+
+A question that is yours waits until you answer it; there is no timer. Other to-dos go on meanwhile. When every open to-do is waiting on you, the loop's status reads `paused until you answer`, and an answer starts it again. A to-do can hold up to 4 open questions and a loop 40.
+
+In the extension the panel offers **Answer**, the agent's own options, **Keep the default** for an assumption it went ahead with, and **Allow once** or **Don't allow** for a held call. A question the agent answered itself shows as `Auto-answered: <question> -> <answer>`, and a later answer from you still overrules it.
+
+## Budgets
+
+Inside the loop's limits, each to-do can have its own budget in turns, tokens, minutes or dollars, written as a `budget:` line in the plan or set on the plan card. [Loop budgets](/ide-extensions/agent/loop-budgets) covers the syntax, how a budget is divided, and what happens when a to-do reaches its limit.
+
+## Stop and resume
+
+- **Stop after this item** lets the running to-do or re-plan finish, then stops.
+- **Stop now** ends the running to-do at once. It goes back to pending. Edits it had already made stay on disk.
+- Choosing Chat, Plan or Agent in the mode picker pauses the loop; see [Leave and resume a loop](/ide-extensions/agent/leave-and-resume-loop).
+
+**Resume** on a stopped loop starts it again. The limits restart from that moment: the time and token counts begin at the resume, not at the original start, and the no-progress and failure counts are cleared. A loop that stopped at its rounds limit will stop there again unless you raise the limit first.
+
+A loop is saved with its session. If the window reloads, or the terminal agent is killed, while a to-do is running, that to-do goes back to pending and the loop comes back stopped with `The window reloaded while the loop was running. Resume to go on.`
+
+## What "Done" means
+
+A loop stops as done when every to-do in the plan is done and nothing is waiting to trigger a re-plan. The status line reads `stopped: All 12 items are done.`
+
+A to-do counts as done when one of these is true:
+
+- The agent reported it finished and it has no check.
+- The agent reported it finished and its check exited with code 0.
+- You skipped it. The count says so: `All 12 items are done (2 skipped).`
+- You marked it completed or cancelled in the task list yourself.
+
+Done is a statement about the plan, not about your goal. A to-do with no `check:` is done on the agent's word alone, and the loop does not list the files it changed. Review the diff before you rely on it.
+
+A finished loop has no **Resume**. **Close** removes its record from the session.
+
+## Why a loop stopped
+
+| Shown as                                                         | Reason                                                              |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `All N items are done.`                                          | Done                                                                |
+| `The loop reached its limit of N rounds.`                        | Rounds limit                                                        |
+| `The loop used N tokens; its budget is M.`                       | Tokens limit                                                        |
+| `The loop ran for N minutes; its budget is M.`                   | Time limit                                                          |
+| `N rounds in a row finished no item.`                            | No progress                                                         |
+| `N items in a row failed.`                                       | Failures in a row                                                   |
+| `You stopped the loop.`                                          | You stopped it                                                      |
+| `paused: you left Loop mode; its items and budgets are kept.`    | You switched to another mode                                        |
+| `The re-plan ended without presenting a plan.`                   | The planning turn produced no plan                                  |
+| `The model request failed: ...`                                  | A provider error during a to-do                                     |
+
+## What always holds
+
+Whatever the levels, the strategy and the autonomy level:
+
+- Never rules, Ask rules and protected paths still decide each call, except in the areas you set to IDGAF.
+- A call left for you is held as a question. It is never run on your behalf.
+- The limits, the no-progress stop, the failures stop and the limit on repeating an identical call stop the loop.
+
+## Limits
+
+- **Automatic on Plan edits has no reviewer.** The level's description says a reviewer model judges each plan. A reviewer for plans is not built: at Automatic a re-plan goes on with no cap on new to-dos, which makes it looser than Permissive.
+- The product's own description of Unattended mentions going on "after 15 minutes without an answer". A loop that follows your permission levels, which is every loop the extension and the terminal agent start, has no such timer.
+- Checkpoints and **Restore to here** are in the extension only. The terminal agent has no undo for a loop's edits; use git.
+- A finished or stopped loop does not summarise what it changed.
+
+## Related
+
+- [Loop budgets](/ide-extensions/agent/loop-budgets)
+- [Leave and resume a loop](/ide-extensions/agent/leave-and-resume-loop)
+- [Permissions page](/ide-extensions/agent/permissions-page)

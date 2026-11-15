@@ -1,8 +1,16 @@
 #!/usr/bin/env node
 
-import { execSync } from "child_process";
-import { existsSync, readFileSync } from "fs";
-import { resolve, dirname } from "path";
+import { execSync, spawnSync } from "child_process";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from "fs";
+import { tmpdir } from "os";
+import { resolve, dirname, join } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -80,6 +88,46 @@ runTest("Version command", () => {
     throw new Error(
       `Version mismatch. Expected ${packageJson.version}, got: ${output}`,
     );
+  }
+});
+
+// Test 3b: --version is answered by the wrapper, without the bundle
+runTest("Version command does not load the bundle", () => {
+  const packageJson = JSON.parse(
+    readFileSync(resolve(__dirname, "package.json"), "utf8"),
+  );
+  // An install with the wrapper and package.json but no dist/index.js
+  const root = mkdtempSync(join(tmpdir(), "cn-smoke-"));
+  try {
+    const wrapper = join(root, "dist", "cn.js");
+    mkdirSync(join(root, "dist"));
+    copyFileSync(resolve(__dirname, "dist/cn.js"), wrapper);
+    copyFileSync(
+      resolve(__dirname, "package.json"),
+      join(root, "package.json"),
+    );
+    for (const flag of ["--version", "-v"]) {
+      const result = spawnSync(process.execPath, [wrapper, flag], {
+        encoding: "utf8",
+      });
+      if (result.status !== 0 || result.stderr !== "") {
+        throw new Error(
+          `${flag} exited ${result.status}: ${result.stderr.slice(0, 200)}`,
+        );
+      }
+      if (result.stdout !== `${packageJson.version}\n`) {
+        throw new Error(`${flag} printed ${JSON.stringify(result.stdout)}`);
+      }
+    }
+    // Anything else still needs the bundle, so the check above means something
+    const help = spawnSync(process.execPath, [wrapper, "--help"], {
+      encoding: "utf8",
+    });
+    if (help.status === 0) {
+      throw new Error("--help worked without dist/index.js");
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

@@ -24,6 +24,12 @@ export interface GuardedFetchOptions {
   classify?: (
     hostname: string,
   ) => Promise<{ addresses: string[]; nonPublic: boolean }>;
+  /**
+   * Called with the URL the returned response came from (the start URL when
+   * nothing redirected), so a caller can label the content with where it
+   * really was read.
+   */
+  onFinalUrl?: (url: URL) => void;
 }
 
 /**
@@ -55,7 +61,10 @@ export async function fetchWithGuardedRedirects(
         : {}),
     });
     const location: string | null | undefined = resp.headers?.get?.("location");
-    if (resp.status < 300 || resp.status >= 400 || !location) return resp;
+    if (resp.status < 300 || resp.status >= 400 || !location) {
+      options.onFinalUrl?.(current);
+      return resp;
+    }
 
     const next = new URL(location, current);
     if (next.protocol !== "http:" && next.protocol !== "https:") {

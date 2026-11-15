@@ -64,4 +64,31 @@ describe("egress allowlist", () => {
       ).toEqual([]);
     }
   });
+
+  it("covers the model catalogue hosts: ollama.com opt-in, openrouter.ai on by default", () => {
+    expect(allowed.get("ollama.com")?.class).toBe("O");
+    // Model information updates are automatic by default (modelCatalog: off
+    // turns them off), so openrouter.ai is listed as reachable by default
+    expect(allowed.get("openrouter.ai")?.class).toBe("D");
+    // The community catalogue is fetched only while a selected model is
+    // unpriced, but that needs no opt-in under the default setting
+    expect(allowed.get("models.dev")?.class).toBe("D");
+    // The AWS Price List is fetched when a Bedrock model is configured
+    expect(allowed.get("pricing.us-east-1.amazonaws.com")?.class).toBe("R");
+  });
+
+  it("lists each host in one group only", () => {
+    const groupsOf = new Map<string, string[]>();
+    for (const g of allowlist.groups) {
+      for (const h of g.hosts) {
+        groupsOf.set(h, [...(groupsOf.get(h) ?? []), g.class]);
+      }
+    }
+    const twice = [...groupsOf]
+      .filter(([, classes]) => classes.length > 1)
+      .map(([h, classes]) => `${h}: ${classes.join(", ")}`);
+    expect(twice, "a host in two groups takes the class of the last").toEqual(
+      [],
+    );
+  });
 });

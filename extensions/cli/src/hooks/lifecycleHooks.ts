@@ -9,6 +9,7 @@
  * and `SessionStart` context is not added to the conversation.
  */
 
+import { notifyPerson } from "../notify/attention.js";
 import { logger } from "../util/logger.js";
 
 import {
@@ -90,6 +91,12 @@ export function notifyAttention(
   void safely("Notification", () =>
     fireNotification(message, notificationType, title),
   );
+  // The bell or an OS notice, when the person turned them on (GAP9). The
+  // tool's name is the end of the message ("Approval needed for <tool>").
+  if (notificationType === "permission_prompt") {
+    const tool = /^Approval needed for (.+)$/.exec(message)?.[1] ?? "";
+    notifyPerson({ kind: "approval", tool });
+  }
 }
 
 export async function runPreCompactHooks(trigger: "manual" | "auto") {

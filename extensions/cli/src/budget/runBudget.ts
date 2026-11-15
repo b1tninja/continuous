@@ -1,4 +1,11 @@
-import { costOf, type CostModel } from "core/util/costOf.js";
+import { costOf, type CostModel, type UserPrice } from "core/util/costOf.js";
+import { USER_PRICE_SOURCE } from "core/util/modelPrice.js";
+
+import {
+  REFRESH_HINT,
+  priceSourceNote,
+  type PriceListStatus,
+} from "./openRouterPrices.js";
 
 /**
  * The run limits of a plain headless run (`cn -p`) or `cn serve`: dollars,
@@ -47,6 +54,13 @@ export const DEFAULT_OUTPUT_ESTIMATE = 1024;
 export interface RunBudgetOptions {
   limits: RunLimits;
   model: CostModel;
+  /**
+   * Hold the dollar cap on a price from the community catalogue (models.dev)
+   * when that is the only price: set by --budget-allow-unpriced.
+   */
+  allowCommunityPrice?: boolean;
+  /** The price on the model's config entry (`pricing:`), which wins over the tables */
+  userPrice?: UserPrice;
   /** Milliseconds, injectable for tests */
   now?: () => number;
   /** USD this run has spent so far, or "unknown" when a model it used has no price */
@@ -57,24 +71,68 @@ function positive(n: number | undefined): n is number {
   return typeof n === "number" && Number.isFinite(n) && n > 0;
 }
 
-function hasPrice(model: CostModel): boolean {
-  return (
-    costOf(
-      { input: 1_000_000, output: 1_000_000, cacheRead: 0, cacheWrite: 0 },
-      model,
-    ).amount !== "unknown"
+function probe(model: CostModel, userPrice?: UserPrice) {
+  return costOf(
+    { input: 1_000_000, output: 1_000_000, cacheRead: 0, cacheWrite: 0 },
+    model,
+    { userPrice },
   );
 }
 
-/** Why a dollar budget cannot be held on this model, or undefined when it can. */
+/**
+ * Whether a dollar cap can be held on this model's price. A price from the
+ * community catalogue (models.dev) counts only with `allowCommunity`
+ * (--budget-allow-unpriced): it is a third-party estimate.
+ */
+function hasPrice(
+  model: CostModel,
+  allowCommunity = false,
+  userPrice?: UserPrice,
+): boolean {
+  const r = probe(model, userPrice);
+  if (r.amount === "unknown") return false;
+  return allowCommunity || r.priceSource?.kind !== "community";
+}
+
+/** The date of the community copy when that is the model's only price. */
+function communityOnlyPrice(model: CostModel): string | undefined {
+  const r = probe(model);
+  return r.amount !== "unknown" && r.priceSource?.kind === "community"
+    ? (r.priceSource.asOf ?? "").slice(0, 10)
+    : undefined;
+}
+
+/**
+ * Why a dollar budget cannot be held on this model, or undefined when it can.
+ * `prices` is the state of the downloaded OpenRouter list, which prices
+ * OpenRouter models the tables do not know.
+ */
 export function unpricedBudgetProblem(
   limits: RunLimits,
   model: CostModel,
   allowUnpriced: boolean | undefined,
+  prices?: PriceListStatus,
+  userPrice?: UserPrice,
 ): string | undefined {
   if (!positive(limits.maxBudgetUsd) || allowUnpriced) return undefined;
-  if (hasPrice(model)) return undefined;
-  return `--max-budget-usd cannot be held on ${model.provider}/${model.model}: the cost table has no price for it, so spend would read as unknown. Pick a priced model, or pass --budget-allow-unpriced to run without the dollar cap.`;
+  if (hasPrice(model, false, userPrice)) return undefined;
+  const communityDate = communityOnlyPrice(model);
+  if (communityDate !== undefined) {
+    return `--max-budget-usd cannot be held on ${model.provider}/${model.model}: its only price is from the community catalogue (models.dev, ${communityDate}), a third-party estimate a dollar cap is not held on. Pick a model with a price from the provider or the price tables, or pass --budget-allow-unpriced to hold the cap on the community estimate.`;
+  }
+  if (model.provider.toLowerCase() === "openrouter") {
+    const id = `${model.provider}/${model.model}`;
+    const escape =
+      "or pass --budget-allow-unpriced to run without the dollar cap";
+    if (!prices || prices.state === "none") {
+      return `--max-budget-usd cannot be held on ${id}: there is no downloaded OpenRouter price list on this computer. To download the public list, ${REFRESH_HINT} (it contacts openrouter.ai once), ${escape}.`;
+    }
+    if (prices.state === "tooOld") {
+      return `--max-budget-usd cannot be held on ${id}: the downloaded OpenRouter price list is ${prices.ageDays} days old (downloaded ${prices.fetchedAt.slice(0, 10)}), and a dollar cap is not held on prices older than 90 days. ${REFRESH_HINT}, ${escape}.`;
+    }
+    return `--max-budget-usd cannot be held on ${id}: the downloaded OpenRouter list (${prices.fetchedAt.slice(0, 10)}) has no price for this model id. Pick a priced model, or ${REFRESH_HINT} in case it was added since, ${escape}.`;
+  }
+  return `--max-budget-usd cannot be held on ${model.provider}/${model.model}: the cost table has no price for it, so spend would read as unknown. Pick a priced model, set its price in config.yaml (pricing: input and output, US dollars per million tokens), or pass --budget-allow-unpriced to run without the dollar cap.`;
 }
 
 /**
@@ -95,7 +153,11 @@ export class RunBudget {
     this.limits = opts.limits;
     this.now = opts.now ?? Date.now;
     this.startedAt = this.now();
-    this.priced = hasPrice(opts.model);
+    this.priced = hasPrice(
+      opts.model,
+      opts.allowCommunityPrice,
+      opts.userPrice,
+    );
   }
 
   get stop(): RunStop | undefined {
@@ -104,6 +166,21 @@ export class RunBudget {
 
   get requests(): number {
     return this.calls;
+  }
+
+  /**
+   * "prices from openrouter.ai as of <date>" when the model is priced from the
+   * downloaded list, "prices from the community catalogue (models.dev) as of
+   * <date>" when from that.
+   */
+  get priceNote(): string | undefined {
+    if (!this.priced) return undefined;
+    if (this.opts.userPrice) return `prices from ${USER_PRICE_SOURCE}`;
+    const community = communityOnlyPrice(this.opts.model);
+    if (community !== undefined) {
+      return `prices from the community catalogue (models.dev) as of ${community}`;
+    }
+    return priceSourceNote(this.opts.model);
   }
 
   /** Whether the dollar cap is actually being enforced for this run. */
@@ -125,6 +202,7 @@ export class RunBudget {
         cacheWrite: 0,
       },
       this.opts.model,
+      { userPrice: this.opts.userPrice },
     );
     return r.amount === "unknown" ? undefined : r.amount;
   }
