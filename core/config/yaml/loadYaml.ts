@@ -92,6 +92,7 @@ import { resolveToolPermissions } from "../../tools/permissions/ruleTrust";
 import { resolveTerminalSettings } from "../../util/terminalEnvironment";
 import { readUserToolPermissions } from "../../util/userToolPermissions";
 import { readUserTerminalSettings } from "../../util/userTerminalSettings";
+import { applyWebConfig } from "../../util/webConfig";
 import { readUserGuidance, withOwnGuidance } from "../../util/userGuidance";
 import { loadProviderInstances } from "../providers/providersFile";
 import { LocalPlatformClient } from "./LocalPlatformClient";
@@ -552,6 +553,16 @@ export async function configYamlToContinueConfig(options: {
       readUserTerminalSettings(),
       config.terminal,
     ).notices.map((message) => ({ fatal: false, message })),
+  );
+  // Only the person's own config.yaml may loosen the web settings or set what
+  // is sent to sites; other sources may only tighten (core/util/webConfig.ts).
+  // Old spellings are announced once per process.
+  const web = applyWebConfig(config.web);
+  localErrors.push(
+    ...[...web.notices, ...web.deprecations].map((message) => ({
+      fatal: false,
+      message,
+    })),
   );
   localErrors.push(...validateToolPermissions(config.toolPermissions));
 
