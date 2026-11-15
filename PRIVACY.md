@@ -12,6 +12,7 @@ Everything lives under the global folder, `~/.continuous` (copied from `~/.conti
 
 - **Settings, models and rules**: `config.yaml`, `permissions.yaml` (your tool permission rules).
 - **Chat sessions and history**: `sessions/`, plus `dev_data/` event files and `logs/`. Sessions keep the conversation, not the full prompt of each request (which repeated the conversation and the system message every time). Dev data keeps the sizes, token counts and a hash of each prompt, not its text. Full prompts are kept only if you turn on the debug prompt log (`continuous.debugPromptLog`, or `--debug-prompt-log` in the terminal): `logs/prompts/`, masked, 50 MB at most, deleted after 14 days.
+- **Command output**: `command-output/` holds the full output of an agent terminal command once it is longer than what the model is sent, as the command wrote it, without masking. Files older than 7 days are deleted the next time a command writes there.
 - **The audit trail** of tool decisions: `audit/`, with `audit-index.json` and, in shadow mode, `shadow-spend.jsonl`. On by default, masked and capped (30 days, 20 MB a file). Turn it off with `audit.enabled: false` in `config.yaml` or `CONTINUE_AUDIT=off`.
 - **Checkpoints** of agent file edits, and plan files in your own project.
 
