@@ -1432,20 +1432,6 @@ export const models: { [key: string]: ModelPackage } = {
     icon: "anthropic.png",
     isOpenSource: false,
   },
-  claude45Sonnet: {
-    title: "Claude Sonnet 4.5",
-    description:
-      "Previous generation Sonnet model with strong performance in reasoning and multilingual tasks.",
-    params: {
-      model: "claude-sonnet-4-5-20250929",
-      contextLength: 200_000,
-      title: "Claude Sonnet 4.5",
-      apiKey: "",
-    },
-    providerOptions: ["anthropic", "replicate"],
-    icon: "anthropic.png",
-    isOpenSource: false,
-  },
   claude45Haiku: {
     title: "Claude Haiku 4.5",
     description:
@@ -1619,32 +1605,6 @@ export const models: { [key: string]: ModelPackage } = {
       model: "claude-4-sonnet-latest",
       contextLength: 200_000,
       title: "Claude 4 Sonnet",
-      apiKey: "",
-    },
-    providerOptions: ["anthropic"],
-    icon: "anthropic.png",
-    isOpenSource: false,
-  },
-  claude4_5Opus: {
-    title: "Claude Opus 4.5",
-    description: "The most capable model in the Claude 4.5 series",
-    params: {
-      model: "claude-opus-4-5",
-      contextLength: 200_000,
-      title: "Claude Opus 4.5",
-      apiKey: "",
-    },
-    providerOptions: ["anthropic"],
-    icon: "anthropic.png",
-    isOpenSource: false,
-  },
-  claude41Opus: {
-    title: "Claude Opus 4.1",
-    description: "The most capable model in the Claude 4 series",
-    params: {
-      model: "claude-opus-4-1-20250805",
-      contextLength: 200_000,
-      title: "Claude Opus 4.1",
       apiKey: "",
     },
     providerOptions: ["anthropic"],

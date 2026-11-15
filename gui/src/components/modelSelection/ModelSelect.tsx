@@ -1,3 +1,4 @@
+import type { RetirementNotice } from "core/util/modelRetirement";
 import { selectCacheSetting } from "../../redux/selectors/selectCacheSetting";
 import {
   ArrowPathIcon,
@@ -9,6 +10,12 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/Auth";
+import {
+  retirementDetail,
+  retirementKey,
+  retirementLabel,
+  useRetirementNotices,
+} from "../../hooks/useRetirementNotices";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import { useProviderSetupDialog } from "../ProviderSetup/useProviderSetupDialog";
 import { useModelConfigDialog } from "../ModelConfig/useModelConfigDialog";
@@ -48,6 +55,8 @@ interface ModelOptionProps {
   idx: number;
   showMissingApiKeyMsg: boolean;
   isSelected?: boolean;
+  /** Deprecated, retired or retiring soon (core/util/modelRetirement.ts). */
+  retirement?: RetirementNotice;
 }
 
 interface Option {
@@ -58,6 +67,8 @@ interface Option {
   isAutoDetected?: boolean;
   /** A `${{ secrets.* }}` credential with no value on this machine. */
   missingSecret?: boolean;
+  provider?: string;
+  model?: string;
 }
 
 function modelSelectTitle(model: any): string {
@@ -85,6 +96,7 @@ function ModelOption({
   idx,
   showMissingApiKeyMsg,
   isSelected,
+  retirement,
 }: ModelOptionProps) {
   const openModelConfig = useModelConfigDialog();
 
@@ -132,6 +144,15 @@ function ModelOption({
                 (Key not set)
               </span>
             )}
+            {retirement && (
+              <span
+                className="ml-1.5 text-[10px] text-warning italic"
+                data-testid="model-option-retirement"
+                title={retirementDetail(retirement)}
+              >
+                ({retirementLabel(retirement)})
+              </span>
+            )}
           </span>
         </div>
         <Button
@@ -168,6 +189,7 @@ function ModelSelect() {
   }, []);
   const [options, setOptions] = useState<Option[]>([]);
   const [sortedOptions, setSortedOptions] = useState<Option[]>([]);
+  const retirements = useRetirementNotices(options);
   const { selectedProfile } = useAuth();
   const mode = useAppSelector((state) => state.session.mode);
   const tinyFont = useFontSize(-4);
@@ -223,6 +245,8 @@ function ModelSelect() {
           sourceFile: model.sourceFile,
           isAutoDetected: model.isFromAutoDetect,
           missingSecret: modelHasMissingSecret(model),
+          provider: model.provider,
+          model: model.model,
         };
       }),
     );
@@ -411,6 +435,9 @@ function ModelSelect() {
                     key={`offered-${option.value}`}
                     showMissingApiKeyMsg={option.apiKey === ""}
                     isSelected={option.value === selectedModel?.title}
+                    retirement={retirements.get(
+                      retirementKey(option.provider, option.model),
+                    )}
                   />
                 ))}
                 {otherSorted.length > 0 && (
@@ -428,6 +455,9 @@ function ModelSelect() {
                         key={`other-${option.value}`}
                         showMissingApiKeyMsg={option.apiKey === ""}
                         isSelected={option.value === selectedModel?.title}
+                        retirement={retirements.get(
+                          retirementKey(option.provider, option.model),
+                        )}
                       />
                     ))}
                   </>
@@ -441,6 +471,9 @@ function ModelSelect() {
                   key={idx}
                   showMissingApiKeyMsg={option.apiKey === ""}
                   isSelected={option.value === selectedModel?.title}
+                  retirement={retirements.get(
+                    retirementKey(option.provider, option.model),
+                  )}
                 />
               ))
             )}

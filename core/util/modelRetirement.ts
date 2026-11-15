@@ -207,3 +207,38 @@ export function retirementNotice(
     key: `${model}@${f.retiresAt ?? "-"}:${severity}`,
   };
 }
+
+/**
+ * Lifecycle facts from a provider's model list as the person fetched it
+ * (`deprecated` and `retiresAt` of core/llm/fetchModels.ts), in the shape the
+ * notices read. Only the providers whose notices read live facts (Anthropic
+ * and OpenAI). A model the list reports active is kept as "active", so a
+ * stale deprecation recorded earlier does not linger; a model whose entry
+ * carries no lifecycle field and no date yields nothing.
+ */
+export function liveFromFetched(
+  provider: string,
+  fetched: {
+    modelId?: string;
+    name: string;
+    deprecated?: boolean;
+    retiresAt?: string;
+  }[],
+): { model: string; live: LiveLifecycle }[] {
+  if (provider !== "anthropic" && provider !== "openai") return [];
+  const out: { model: string; live: LiveLifecycle }[] = [];
+  for (const m of fetched) {
+    const model = m.modelId ?? m.name;
+    if (!model || (m.deprecated === undefined && !m.retiresAt)) continue;
+    out.push({
+      model,
+      live: {
+        ...(m.deprecated === undefined
+          ? {}
+          : { lifecycle: m.deprecated ? "deprecated" : "active" }),
+        ...(m.retiresAt ? { retiresAt: m.retiresAt } : {}),
+      },
+    });
+  }
+  return out;
+}

@@ -1,9 +1,10 @@
-import { allModelProviders } from "@continuedev/llm-info";
+import { allModelProviders, getAllRecommendedFor } from "@continuedev/llm-info";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   findRetirementRow,
+  liveFromFetched,
   RETIREMENT_ROWS,
   retirementNotice,
 } from "./modelRetirement.js";
@@ -178,5 +179,77 @@ describe("retirementNotice for OpenAI", () => {
         live: { lifecycle: "deprecated", retiresAt: "2027-02-14" },
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("liveFromFetched (a model list the person fetched)", () => {
+  it("keeps the deprecated flag and the date from an Anthropic list", () => {
+    expect(
+      liveFromFetched("anthropic", [
+        {
+          name: "Claude Sonnet 4.5",
+          modelId: "claude-sonnet-4-5-20250929",
+          deprecated: true,
+          retiresAt: "2026-11-30T00:00:00Z",
+        },
+        {
+          name: "Claude Sonnet 5.5",
+          modelId: "claude-sonnet-5-5",
+          deprecated: false,
+        },
+        // An older API version: no lifecycle field, nothing to record
+        { name: "Claude Haiku 5.5", modelId: "claude-haiku-5-5" },
+      ]),
+    ).toEqual([
+      {
+        model: "claude-sonnet-4-5-20250929",
+        live: { lifecycle: "deprecated", retiresAt: "2026-11-30T00:00:00Z" },
+      },
+      { model: "claude-sonnet-5-5", live: { lifecycle: "active" } },
+    ]);
+  });
+
+  it("records nothing for providers whose notices do not read live facts", () => {
+    expect(
+      liveFromFetched("bedrock", [
+        { name: "x", modelId: "anthropic.claude-sonnet-4-5", deprecated: true },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("a fetched past date reads as retired, a future one as retiring", () => {
+    const [past] = liveFromFetched("anthropic", [
+      {
+        name: "a",
+        modelId: "claude-a",
+        deprecated: true,
+        retiresAt: "2026-11-01",
+      },
+    ]);
+    expect(
+      note("anthropic", past.model, "2026-11-14", past.live)?.severity,
+    ).toBe("retired");
+    const [future] = liveFromFetched("anthropic", [
+      {
+        name: "b",
+        modelId: "claude-b",
+        deprecated: true,
+        retiresAt: "2027-01-01",
+      },
+    ]);
+    expect(
+      note("anthropic", future.model, "2026-11-14", future.live),
+    ).toMatchObject({ severity: "retiring", from: "live", daysLeft: 48 });
+  });
+});
+
+describe("llm-info recommendations", () => {
+  it("never recommend a model marked deprecated or retired", () => {
+    const ids = getAllRecommendedFor("chat")
+      .filter((m) => m.provider === "anthropic")
+      .map((m) => m.model);
+    expect(ids).not.toContain("claude-sonnet-4-5-20250929");
+    expect(ids).not.toContain("claude-opus-4-1-20250805");
+    expect(ids).toContain("claude-sonnet-5-5");
   });
 });

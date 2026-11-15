@@ -38,6 +38,7 @@ const DEFAULT_MOCK_CORE_RESPONSES: MockResponses = {
   ],
   "modelCatalog/status": { policy: "ask", refreshHours: 24 },
   "modelCatalog/cached": null,
+  "model/retirementNotices": { notices: [] },
   "modelCatalog/communityCached": null,
   "history/list": [],
   "docs/getIndexedPages": [],
