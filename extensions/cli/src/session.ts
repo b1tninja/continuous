@@ -20,6 +20,7 @@ import historyManager, {
   damagedSessionNotice,
   isSessionFileName,
   readSessionFile,
+  type TrashSessionResult,
 } from "core/util/history.js";
 import { restoreLoop } from "core/util/loopMode.js";
 import {
@@ -875,6 +876,36 @@ export async function listSessions(
     logger.error("Error listing sessions:", error);
     return [];
   }
+}
+
+/** What deleting a session from the picker did (`trashSessionById`). */
+export type PickerTrashResult =
+  | TrashSessionResult
+  /** The session this process is in: not deleted, it would be saved again. */
+  | { status: "current"; sessionId: string };
+
+/**
+ * Delete from the session picker (NI11): the session goes to the same trash
+ * as the IDE's History page (core/util/sessionTrash.ts), restorable for 7
+ * days. The session this process is in is refused, and one open in another
+ * window or agent is moved only with `force`.
+ */
+export async function trashSessionById(
+  sessionId: string,
+  options: { force?: boolean } = {},
+): Promise<PickerTrashResult> {
+  const manager = SessionManager.getInstance();
+  if (manager.hasSession() && manager.getSessionId() === sessionId) {
+    return { status: "current", sessionId };
+  }
+  return historyManager.trash(sessionId, options);
+}
+
+/** Undo in the picker: the trashed session is back in the list. */
+export function restoreTrashedSessionById(
+  sessionId: string,
+): BaseSessionMetadata {
+  return historyManager.restore(sessionId);
 }
 
 /**

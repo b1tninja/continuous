@@ -92,6 +92,22 @@ export function markSessionOpen(
   }
 }
 
+/**
+ * Drops `sessionId` from this process's record (it was moved to the trash),
+ * so another process does not see it as open here. Best effort.
+ */
+export function forgetSessionOpen(sessionId: string): void {
+  try {
+    if (!own || !ownFile || own.sessions[sessionId] === undefined) return;
+    delete own.sessions[sessionId];
+    const tmp = `${ownFile}.${Date.now()}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(own), { mode: 0o600 });
+    fs.renameSync(tmp, ownFile);
+  } catch {
+    // the record ages out by itself
+  }
+}
+
 /** Forget this process's own record (for tests). */
 export function resetOwnLease(): void {
   own = undefined;

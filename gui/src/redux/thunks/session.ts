@@ -1,6 +1,7 @@
 import { createAsyncThunk, unwrapResult } from "@reduxjs/toolkit";
 import { BaseSessionMetadata, ChatMessage, Session } from "core";
 import { NEW_SESSION_TITLE } from "core/util/constants";
+import type { TrashSessionResult } from "core/util/history";
 import { renderChatMessage } from "core/util/messageContent";
 import { IIdeMessenger } from "../../context/IdeMessenger";
 import { selectSelectedChatModel } from "../slices/configSlice";
@@ -73,6 +74,48 @@ export const deleteSession = createAsyncThunk<void, string, ThunkApiType>(
     void dispatch(refreshSessionMetadata({}));
   },
 );
+
+/**
+ * Delete from the History page: the session goes to the trash, restorable
+ * for 7 days (core/util/sessionTrash.ts). When another window or terminal
+ * agent has it open nothing moves, and the answer says where, for the page
+ * to ask; `force` moves it anyway.
+ */
+export const trashSession = createAsyncThunk<
+  TrashSessionResult,
+  { id: string; force?: boolean },
+  ThunkApiType
+>("session/trash", async ({ id, force }, { getState, dispatch, extra }) => {
+  const result = await extra.ideMessenger.request("history/trash", {
+    id,
+    force,
+  });
+  if (result.status === "error") {
+    throw new Error(result.error);
+  }
+  if (result.content.status === "trashed") {
+    dispatch(deleteSessionMetadata(id));
+    if (id === getState().session.id) {
+      await dispatch(loadLastSession());
+    }
+    void dispatch(refreshSessionMetadata({}));
+  }
+  return result.content;
+});
+
+/** Undo, or Restore in the trash: the session is back in the list. */
+export const restoreTrashedSession = createAsyncThunk<
+  BaseSessionMetadata,
+  string,
+  ThunkApiType
+>("session/restoreTrashed", async (id, { dispatch, extra }) => {
+  const result = await extra.ideMessenger.request("history/restore", { id });
+  if (result.status === "error") {
+    throw new Error(result.error);
+  }
+  await dispatch(refreshSessionMetadata({}));
+  return result.content;
+});
 
 export const updateSession = createAsyncThunk<void, Session, ThunkApiType>(
   "session/update",

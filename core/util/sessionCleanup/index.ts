@@ -34,6 +34,7 @@ import { summarizeChatInteraction } from "../../data/chatInteractionSummary.js";
 import { DAY_MS, DEFAULT_RETENTION_DAYS } from "../cleanStores.js";
 import { getGlobalDirPath } from "../paths.js";
 import { openSessions, type OpenSession } from "../sessionLeases.js";
+import { purgeExpiredTrash } from "../sessionTrash.js";
 import { JsonScanError } from "./jsonStreamScan.js";
 import {
   scanSessionFile,
@@ -164,6 +165,8 @@ export interface CleanupResult {
   blobs: { moved: number; bytes: number };
   devData: { cleaned: number; bytes: number };
   logs: { moved: number; bytes: number };
+  /** Sessions removed from the trash because they were deleted over 7 days ago. */
+  trash?: { purged: number; bytes: number };
   skipped: Skipped[];
   failed: { file: string; reason: string }[];
 }
@@ -738,6 +741,15 @@ export async function applyCleanup(
       result.failed.push({ file: finding.file, reason: codeOf(error) });
     }
   }
+
+  // Sessions deleted more than 7 days ago leave the trash; the trash is
+  // beside sessions/, so nothing above ever treated them as live
+  if (scan.stores.includes("sessions")) {
+    const purged = purgeExpiredTrash({ root, now });
+    if (purged.removed.length) {
+      result.trash = { purged: purged.removed.length, bytes: purged.bytes };
+    }
+  }
   return result;
 }
 
@@ -1091,6 +1103,11 @@ export function describeResult(result: CleanupResult): string[] {
     `Cleaned ${result.sessions.cleaned} session(s) (${formatMegabytes(result.sessions.bytes)}), moved ${result.blobs.moved} stored output(s) no session refers to (${formatMegabytes(result.blobs.bytes)}), ${result.devData.cleaned} dev data file(s) (${formatMegabytes(result.devData.bytes)}), moved ${result.logs.moved} log file(s) (${formatMegabytes(result.logs.bytes)}).`,
     `Originals are kept in ${result.backupDir}. The space is freed when that folder is deleted.`,
   ];
+  if (result.trash) {
+    out.push(
+      `Removed ${result.trash.purged} session(s) deleted more than 7 days ago from the trash (${formatMegabytes(result.trash.bytes)}).`,
+    );
+  }
   if (result.skipped.length) {
     out.push(
       `Left alone: ${result.skipped.map((s) => `${path.basename(s.file)} (${s.reason})`).join(", ")}.`,

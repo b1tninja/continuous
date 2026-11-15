@@ -37,6 +37,9 @@ import type {
   ModelEditSaveResult,
 } from "../config/modelEdit/modelBlockEdit";
 import type { ModelPatchOp } from "../config/modelEdit/modelEditFields";
+import type { TrashSessionResult } from "../util/history.js";
+import type { SessionSearchResult } from "../util/sessionSearch.js";
+import type { TrashedSession } from "../util/sessionTrash.js";
 import type {
   AutoReviewReply,
   AutoReviewRequest,
@@ -213,6 +216,18 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
   "history/saveDelta": [SessionDelta, SessionSaveResult];
   "history/share": [{ id: string; outputDir?: string }, void];
   "history/clear": [undefined, void];
+  /** Delete now: to the trash, restorable for 7 days (NI10). */
+  "history/trash": [{ id: string; force?: boolean }, TrashSessionResult];
+  "history/restore": [{ id: string }, BaseSessionMetadata];
+  "history/listTrash": [undefined, TrashedSession[]];
+  /** "Delete permanently" in the trash. */
+  "history/deleteFromTrash": [{ id: string }, void];
+  "history/emptyTrash": [undefined, void];
+  /** Message-text search over the newest sessions (bounded). */
+  "history/search": [
+    { query: string; maxSessions?: number; maxResults?: number },
+    SessionSearchResult,
+  ];
   "devdata/log": [DevDataLogEvent, void];
   "config/addOpenAiKey": [string, void];
   "config/addModel": [

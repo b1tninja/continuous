@@ -150,6 +150,7 @@ import { localPathToUri } from "./util/pathToUri";
 import { isDismissed, recordLive } from "./util/retirementNoticeState";
 import { currentNotice, dismissCurrentNotice } from "./util/retirementStartup";
 import { SESSION_LOG_STORAGE_DEFAULT } from "./util/sessionLog";
+import { searchSessions, titlesOf } from "./util/sessionSearch";
 import { resolveShell } from "./util/shell";
 import {
   credentialUrlNames,
@@ -476,6 +477,7 @@ export class Core {
       this.registerMessageHandlers(ideSettingsPromise);
       this.registerSubagentHandlers();
       this.registerModelListHandlers();
+      this.registerHistoryTrashHandlers();
     } catch (error) {
       Logger.error(error);
       throw error; // Re-throw to prevent partially initialized core
@@ -486,6 +488,30 @@ export class Core {
   private registerSubagentHandlers() {
     this.messenger.on("subagents/list", async () =>
       loadSubagentDefinitions(this.ide),
+    );
+  }
+
+  /** The session trash and message-text search of the History page (NI10). */
+  private registerHistoryTrashHandlers() {
+    const on = this.messenger.on.bind(this.messenger);
+    on("history/trash", (msg) =>
+      historyManager.trash(msg.data.id, { force: msg.data.force }),
+    );
+    on("history/restore", (msg) => historyManager.restore(msg.data.id));
+    on("history/listTrash", () => historyManager.listTrash());
+    on("history/deleteFromTrash", (msg) => {
+      historyManager.deleteFromTrash(msg.data.id);
+    });
+    on("history/emptyTrash", () => {
+      historyManager.emptyTrash();
+    });
+    on("history/search", (msg) =>
+      searchSessions({
+        query: msg.data.query,
+        maxSessions: msg.data.maxSessions,
+        maxResults: msg.data.maxResults,
+        titles: titlesOf(historyManager.list({})),
+      }),
     );
   }
 
