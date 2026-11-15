@@ -275,6 +275,58 @@ function handleTools(args: string[]) {
   };
 }
 
+/**
+ * `/mcp` opens the server list; `/mcp pending` lists the tools waiting for
+ * approval (TR4) with their descriptions; `/mcp approve <server> [tool...]`
+ * approves them (all of the server's when no tool is named). An approval is
+ * a tool list change: it waits for the prompt cache to cool like any other
+ * (`/tools`).
+ */
+async function handleMcp(args: string[]): Promise<SlashCommandResult> {
+  const [sub, server, ...tools] = args;
+  if (!sub) return { openMcpSelector: true };
+  const mcp = services.mcp;
+  if (sub === "pending") {
+    const pending = mcp?.listPendingApproval?.() ?? [];
+    if (!pending.length) {
+      return { output: "No MCP tool is waiting for approval." };
+    }
+    const lines = pending.map(
+      (p) =>
+        `  ${p.server}/${p.tool}${p.kind === "changed" ? " (changed)" : ""}${p.description ? `: ${p.description.slice(0, 160)}` : ""}`,
+    );
+    return {
+      output: [
+        "Not offered to the model until you approve them:",
+        ...lines,
+        "Approve with /mcp approve <server> [tool...]",
+      ].join("\n"),
+    };
+  }
+  if (sub === "approve") {
+    if (!server || !mcp) {
+      return { output: "Usage: /mcp approve <server> [tool...]" };
+    }
+    try {
+      const pinned = await mcp.approveTools(
+        server,
+        tools.length && tools[0] !== "all" ? tools : "all",
+      );
+      if (!pinned.length) {
+        return { output: `Nothing to approve on ${server}.` };
+      }
+      return {
+        output: `Approved ${pinned.join(", ")} on ${server}. ${pinned.length === 1 ? "It is" : "They are"} offered from the next request, or when the prompt cache goes cold (see /tools).`,
+      };
+    } catch (e) {
+      return { output: e instanceof Error ? e.message : String(e) };
+    }
+  }
+  return {
+    output: `Unknown /mcp option "${sub}"; use /mcp, /mcp pending or /mcp approve <server> [tool...]`,
+  };
+}
+
 function handleSessions() {
   return { openSessionSelector: true };
 }
@@ -402,9 +454,7 @@ const commandHandlers: Record<string, CommandHandler> = {
   compact: () => {
     return { compact: true };
   },
-  mcp: () => {
-    return { openMcpSelector: true };
-  },
+  mcp: handleMcp,
   resume: () => {
     return { openSessionSelector: true };
   },

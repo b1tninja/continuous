@@ -95,8 +95,9 @@ export function urlReviewReason(rawUrl: unknown): string | undefined {
 }
 
 /**
- * A name that resolves to nothing here and ends in a label that is not a
- * delegated top-level domain (`wiki`, `intranet`, `host.corp`, `nas.lan`).
+ * A name that resolves to nothing here and is a single label (`wiki`,
+ * `intranet`) or ends in a label that is not a delegated top-level domain
+ * (`host.corp`, `nas.lan`).
  * Behind an HTTP proxy the proxy resolves names, so such a name may be an
  * internal host that this machine cannot see. Names under a real TLD that do
  * not resolve are not flagged: with DNS only available through the proxy,
@@ -113,6 +114,11 @@ export function isUnresolvedInternalName(
     .replace(/\.$/, "");
   if (!host || host.includes(":") || /^[\d.]+$/.test(host)) return false;
   const labels = host.split(".");
+  // A single label is an internal name even when it is also a delegated
+  // top-level domain (`wiki`, `app`, `dev`): a bare TLD names no web host in
+  // practice (ICANN does not allow dotless domains, SSAC SAC053), so `wiki`
+  // that does not resolve here is the intranet's `wiki` behind a proxy.
+  if (labels.length === 1) return true;
   return !isPublicTld(labels[labels.length - 1]);
 }
 

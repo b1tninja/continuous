@@ -10,32 +10,6 @@ import {
 
 import { AuthConfig } from "./auth/workos.js";
 import { logger } from "./util/logger.js";
-import { getUniqueId } from "./util/uniqueId.js";
-import { getVersion } from "./version.js";
-
-/**
- * Creates user-agent header value for CLI requests
- */
-function getUserAgent(): string {
-  const version = getVersion();
-  return `Continuous-CLI/${version}`;
-}
-
-/**
- * Merges user-agent header into request options
- */
-function _mergeUserAgentIntoRequestOptions(
-  requestOptions: ModelConfig["requestOptions"],
-): ModelConfig["requestOptions"] {
-  return {
-    ...requestOptions,
-    headers: {
-      ...requestOptions?.headers,
-      "user-agent": getUserAgent(),
-      "x-continue-unique-id": getUniqueId(),
-    },
-  };
-}
 
 /**
  * The caching settings for a Bedrock model. The CLI only runs agent loops, so

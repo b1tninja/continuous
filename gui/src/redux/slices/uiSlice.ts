@@ -92,6 +92,8 @@ export interface PolicyExtras {
   floor?: string[];
   /** MCP tools Plan mode may use ("server/tool", "server/*"); read from the file, never written here */
   planMcpTools?: string[];
+  /** `background.mcpTools`: MCP tools unattended runs may use; read from the file, never written here */
+  backgroundMcpTools?: string[];
   /** MCP servers whose read-only hints the person trusts; written only by the Custom policy page */
   trustedMcpServers?: string[];
   /** Whether work goes on while a question waits (`questions.delivery`) */
