@@ -22,6 +22,7 @@ Staging note for the next release. Fold it into that release's `<tag>.md` (the r
 - On models with preserved thinking's prefix check (Claude Fable 5.2 and Mythos 5.2, and depending on the account Fable 5.1, Mythos 5.1, Opus 5.5, Sonnet 5.5 and Haiku 5.5), the reasoning from before a tool list change is no longer sent back once the change applies, because those models refuse it.
 
 - `/export --json` (the session file `/import` reads) now replaces secrets the at-rest scanner recognises with `[REDACTED:<kind>:xxxx]` and says how many; before, it wrote the session as it was. `/export --json --raw` keeps the old behaviour.
+- `continuous clean --yes` moves old sessions to the trash instead of deleting them, so a clean can be undone with `continuous sessions restore <id>` for 7 days, and it leaves sessions open in another window or a running agent alone. Logs and `dev_data` are deleted as before.
 - Feedback (thumbs up or down on a reply) sends the full prompt of the newest request only. Every other request sends its size and SHA-256 in place of the prompt; before, it sent `[prompt not kept: older request]` and nothing else.
 
 ## Fixes

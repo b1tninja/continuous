@@ -107,7 +107,11 @@ describe("continuous sessions prune --older-than (V11)", () => {
     expect(fs.existsSync(getSessionFilePath(old))).toBe(false);
     expect(listed(recent)).toBe(true);
     expect(out.join("\n")).toContain("Moved");
-    expect(out.join("\n")).toContain("continuous sessions restore");
+    // the result line says how to undo it, for how long, and what then
+    expect(out.join("\n")).toContain(
+      "Each can be restored with continuous sessions restore <id> for 7 days",
+    );
+    expect(out.join("\n")).toContain("after that it is removed for good");
 
     // and it comes back from the trash whole
     historyManager.restore(old);
@@ -127,6 +131,10 @@ describe("continuous sessions prune --older-than (V11)", () => {
       io(),
     );
     expect(asked[0]).toMatch(/Move \d+ session\(s\) to the trash\?/);
+    // before the question: restorable for 7 days, then removed for good
+    expect(out.join("\n")).toContain(
+      "each can be restored with continuous sessions restore <id> for 7 days, and is then removed for good",
+    );
     expect(out.join("\n")).toContain("Nothing moved.");
     expect(listed(old)).toBe(true);
 

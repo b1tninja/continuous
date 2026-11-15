@@ -251,13 +251,13 @@ It exits 0 with no findings, 3 with findings and 2 on a usage error.
 
 ### `clean`
 
-Delete this product's own sessions, `dev_data` and logs older than an age. It is a dry run unless `--yes` is given, and it never runs by itself. `input_history.json` is not touched.
+Move this product's own sessions older than an age to the trash, and delete its `dev_data` and logs older than an age. It is a dry run unless `--yes` is given, and it never runs by itself. Sessions are not deleted: each goes to the trash (`sessions-trash/`), where it can be restored with `continuous sessions restore <id>` for 7 days and is then removed for good. A session open in another window or used by a running agent is left alone and reported. `input_history.json` is not touched.
 
 | Flag                 | Meaning                                                                                         |
 | -------------------- | ----------------------------------------------------------------------------------------------- |
 | `--older-than <age>` | One age for every store: `30d`, `12h`, `2w`. Default: sessions 30 days, logs 14, `dev_data` 90  |
 | `--dry-run`          | List only. This is the default                                                                  |
-| `--yes`              | Delete                                                                                          |
+| `--yes`              | Move the sessions to the trash and delete the logs and `dev_data`                               |
 | `--json`             | Machine-readable output                                                                         |
 
 ### `sessions clean`

@@ -100,15 +100,27 @@ export function planPrune(olderThanMs: number, now: number): PrunePlan {
   return plan;
 }
 
-interface PruneResult {
+/**
+ * What happens to a trashed session, said the same way by prune and
+ * `continuous clean`: restorable for 7 days, then removed for good.
+ */
+export const TRASH_RESTORE_LINE = `Each can be restored with continuous sessions restore <id> for ${TRASH_KEEP_DAYS} days (list them with continuous sessions trash); after that it is removed for good.`;
+
+export interface TrashResult {
   moved: PruneCandidate[];
   /** Opened elsewhere since the report. */
   skipped: (PruneCandidate & { pid: number; host: string })[];
   failed: (PruneCandidate & { error: string })[];
 }
 
-async function moveToTrash(candidates: PruneCandidate[]): Promise<PruneResult> {
-  const result: PruneResult = { moved: [], skipped: [], failed: [] };
+/**
+ * Moves each session to the trash with `HistoryManager.trash`, never
+ * forced: one a running process opened since the report is left alone.
+ */
+export async function moveToTrash(
+  candidates: PruneCandidate[],
+): Promise<TrashResult> {
+  const result: TrashResult = { moved: [], skipped: [], failed: [] };
   for (const c of candidates) {
     try {
       const done = await historyManager.trash(c.sessionId);
@@ -146,10 +158,11 @@ function describePlan(plan: PrunePlan, age: string, io: Io): void {
   }
 }
 
-function describeResult(result: PruneResult, io: Io): void {
+/** The result lines of a move to the trash (prune and `continuous clean`). */
+export function describeTrashResult(result: TrashResult, io: Io): void {
   const total = result.moved.reduce((n, c) => n + c.bytes, 0);
   io.out(
-    `Moved ${result.moved.length} session(s) to the trash, ${formatMegabytes(total)}. Each can be restored for ${TRASH_KEEP_DAYS} days: continuous sessions restore <id> (list them with continuous sessions trash).`,
+    `Moved ${result.moved.length} session(s) to the trash, ${formatMegabytes(total)}. ${TRASH_RESTORE_LINE}`,
   );
   for (const c of result.skipped) {
     io.out(
@@ -179,6 +192,9 @@ async function mayMove(
     return false;
   }
   const ask = options.confirm ?? askOnTerminal;
+  io.out(
+    `They go to the trash: each can be restored with continuous sessions restore <id> for ${TRASH_KEEP_DAYS} days, and is then removed for good.`,
+  );
   if (await ask(`Move ${count} session(s) to the trash? [y/N] `)) return true;
   io.out("Nothing moved.");
   return false;
@@ -187,7 +203,7 @@ async function mayMove(
 function jsonOf(
   plan: PrunePlan,
   age: string,
-  result: PruneResult | undefined,
+  result: TrashResult | undefined,
 ): string {
   const c = ({ sessionId, title, lastUsed, bytes }: PruneCandidate) => ({
     id: sessionId,
@@ -237,6 +253,6 @@ export async function sessionsPruneCommand(
   }
   if (!(await mayMove(options, plan.candidates.length, io))) return 0;
   const result = await moveToTrash(plan.candidates);
-  describeResult(result, io);
+  describeTrashResult(result, io);
   return result.failed.length ? 1 : 0;
 }
