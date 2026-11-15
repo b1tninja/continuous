@@ -64,6 +64,7 @@ import {
   handlePreApiCompaction,
 } from "./streamChatResponse.compactionHelpers.js";
 import {
+  announceIdgafAtTurnStart,
   cacheReadTokens,
   processChunkContent,
   recoveryHoldOf,
@@ -718,6 +719,7 @@ export async function streamChatResponse(
   // End-of-turn nudges (core/util/turnEnd.ts): one between tool calls, a few per turn
   const nudges: TurnNudges = { sinceToolUse: 0, thisTurn: 0, leaked: 0 };
   resetTurnGuards(isCompacting);
+  if (!isCompacting && !fixedUse && persistSession) announceIdgafAtTurnStart();
 
   while (true) {
     // Token and time budgets are also checked between items (decideNext).

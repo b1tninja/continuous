@@ -223,7 +223,7 @@ export interface PolicyEvent extends AuditEnvelope {
 
 /** Where a settings change came from. */
 export type SettingChangeSource =
-  "cli-policy" | "flag" | "gui-settings" | "file" | "cli-command";
+  "cli-policy" | "flag" | "gui-settings" | "file" | "cli-command" | "env";
 
 /**
  * What kind of setting changed. A reader that does not know a kind shows it
@@ -237,7 +237,17 @@ export type SettingChangeKind =
   | "mcp-trust"
   | "plan-terminal"
   | "project-trust"
-  | "hook-trust";
+  | "hook-trust"
+  /**
+   * IDGAF came into force for one session (a flag, `/policy`, the mode
+   * cycle, the IDE's level picker). Never saved; `name` lists the areas.
+   */
+  | "idgaf-session"
+  /**
+   * A loosening read from an environment variable: it holds for every run
+   * while the variable is set, not only this session. `name` is the variable.
+   */
+  | "env-loosening";
 
 /**
  * A change to a permission setting that is not a rule: a level, the preset

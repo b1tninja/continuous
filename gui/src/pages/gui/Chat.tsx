@@ -26,6 +26,7 @@ import { CachingOffNotice } from "../../components/mainInput/CachingOffNotice";
 import { ToolDialectNotice } from "../../components/mainInput/ToolDialectNotice";
 import { ColdCacheNotice } from "../../components/mainInput/ColdCacheNotice";
 import { SessionLoadNotice } from "../../components/mainInput/SessionLoadNotice";
+import { IdgafNotice } from "../../components/mainInput/IdgafNotice";
 import { AgentsList } from "../../components/BackgroundMode/AgentsList";
 import { NeedsYouTray } from "../../components/loop/NeedsYouTray";
 import { LoopInbox } from "../../components/mainInput/LoopInbox";
@@ -599,6 +600,7 @@ export function Chat() {
       </StepsDiv>
       <JumpToLatest paused={autoScrollPaused} scrollToLatest={scrollToLatest} />
       <div className={"relative shrink-0"}>
+        <IdgafNotice />
         <CacheMissNotice />
         <ColdCacheNotice />
         <SessionLoadNotice />

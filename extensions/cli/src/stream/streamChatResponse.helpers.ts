@@ -41,6 +41,7 @@ import {
   headlessAskRefusal,
   noteHeadlessRefusal,
 } from "../permissions/headlessPolicy.js";
+import { announceIdgaf } from "../permissions/idgafNotices.js";
 import { checkToolPermission } from "../permissions/permissionChecker.js";
 import { toolPermissionManager } from "../permissions/permissionManager.js";
 import {
@@ -55,7 +56,7 @@ import {
   serviceContainer,
   services,
 } from "../services/index.js";
-import { trackSessionUsage } from "../session.js";
+import { getCurrentSession, trackSessionUsage } from "../session.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
 import {
   executeToolCall,
@@ -225,6 +226,24 @@ async function promptForPermission(
  * run by core's engine. A failure here is never an allow: the call asks, and
  * is refused when headless (see the catch in coreRulesVerdict).
  */
+/**
+ * At the start of the main session's turn: the IDGAF line, once per session
+ * (D-001, D-002), and the mark a later `--resume` reads (ID 5). Never throws.
+ */
+export function announceIdgafAtTurnStart(): void {
+  try {
+    let session;
+    try {
+      session = getCurrentSession();
+    } catch {
+      session = undefined;
+    }
+    announceIdgaf(effectiveLevels(currentPermissionMode()), session);
+  } catch (e) {
+    logger.debug("IDGAF line not shown", { error: e });
+  }
+}
+
 /** The permission mode, or the normal one when the service is not up yet. */
 function currentPermissionMode(): "normal" | "plan" | "auto" {
   try {

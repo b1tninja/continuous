@@ -2,7 +2,7 @@
 title: "permissions.yaml"
 ---
 
-`permissions.yaml` in the global folder (`~/.continuous/permissions.yaml`, or `CONTINUOUS_GLOBAL_DIR`) holds the permission settings that the VS Code extension and the terminal agent share: the level of each area, the loop's question and plan settings, the built-in rule switches, and the always-on rules. It also holds the terminal agent's own `allow`, `ask` and `exclude` lists.
+`permissions.yaml` in the global folder (`~/.continuous/permissions.yaml`, or `CONTINUOUS_GLOBAL_DIR`) holds the permission settings that the VS Code extension and the terminal agent share: the level of each area, the loop's question and plan settings, the built-in rule switches, and the locked rules. It also holds the terminal agent's own `allow`, `ask` and `exclude` lists.
 
 Only this one file is read. A project cannot ship a `permissions.yaml` that changes yours. It is one of the locked policy files: an agent's write to it asks you, and is refused at Automatic. At IDGAF it runs, and the audit trail records that the lock would have refused it.
 
@@ -110,7 +110,7 @@ The first eleven can be switched off here. `protect-policy-files` is a lock: no 
 
 ### `floor`
 
-Always-on rules: Never rules that bind at every level below IDGAF (at IDGAF the call runs and the audit trail records the rule). They are written in the `config.yaml` rule form, with the extension's tool names:
+Locked rules: Never rules that bind at every level below IDGAF (at IDGAF the call runs and the audit trail records the rule). They are written in the `config.yaml` rule form, with the extension's tool names:
 
 ```yaml
 floor:
@@ -118,7 +118,7 @@ floor:
   - writeFile(**/.env)
 ```
 
-The Permissions page shows them as locked. Change them in this file, or in the extension's **Custom policy** editor (the **Always-on Never** list), which keeps the file's comments and the other keys.
+The Permissions page shows them as locked. Change them in this file, or in the extension's **Custom policy** editor (the **Locked rules** list), which keeps the file's comments and the other keys.
 
 ### `mcpServers`
 
