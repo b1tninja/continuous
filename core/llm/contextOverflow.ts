@@ -8,6 +8,19 @@
  * Bedrock refused it: "prompt is too long: 1067710 tokens > 1000000 maximum"
  * (Sonnet 5.5, 2026-11-14). The provider's count is the truth, so a refusal
  * that states it gives a correction for the next try.
+ *
+ * Two things are learned, and kept apart:
+ *
+ * - the overflow correction, from a refused request: it only ever shrinks the
+ *   budget (`MIN_CORRECTION` is 1), for every provider;
+ * - the usage calibration, from every answered request to a local server:
+ *   the provider's `prompt_tokens` over our estimate of the same prompt, which
+ *   may go below 1. A Qwen model is counted with the Llama 2 tokenizer and
+ *   over-counted by about 23% (a ratio of 0.81), so without it pruning starts
+ *   about 97k tokens early on a 524k window (decision D2 of
+ *   plans/research/cache-friendly-context-trimming.md).
+ *
+ * Both live for the life of the process, by model.
  */
 
 export interface ContextOverflow {
@@ -93,22 +106,88 @@ export function correctionFromOverflow(
   return Math.min(MAX_CORRECTION, Math.max(current, ratio, MIN_CORRECTION));
 }
 
-/** Learned corrections, by model, for the life of the process. */
+/** Overflow corrections learned from refusals, by model. */
 const corrections = new Map<string, number>();
 
+/** Usage calibrations: the smoothed ratio of the provider's count to ours. */
+const calibrations = new Map<string, number>();
+
+/** The usage calibration's bounds: it may give room back, within reason. */
+export const MIN_CALIBRATION = 0.6;
+export const MAX_CALIBRATION = 2;
+/** Weight of the newest request in the smoothed ratio. */
+export const CALIBRATION_SMOOTHING = 0.3;
+/** Smaller prompts are mostly template overhead and say little about the ratio. */
+export const MIN_CALIBRATION_SAMPLE_TOKENS = 1024;
+
+const clamp = (value: number, low: number, high: number) =>
+  Math.min(high, Math.max(low, value));
+
+/**
+ * The factor the context length is divided by: the usage calibration (with
+ * headroom) when there is one, raised to the overflow correction when the
+ * provider has refused a prompt. Neither: 1.
+ */
 export function contextCorrectionFor(model: string): number {
-  return corrections.get(model) ?? MIN_CORRECTION;
+  const overflow = corrections.get(model);
+  const ratio = calibrations.get(model);
+  const calibrated =
+    ratio === undefined
+      ? undefined
+      : clamp(ratio * CORRECTION_HEADROOM, MIN_CALIBRATION, MAX_CALIBRATION);
+  if (overflow === undefined) return calibrated ?? MIN_CORRECTION;
+  return Math.max(overflow, calibrated ?? MIN_CORRECTION);
 }
 
+/** The overflow path: a refusal's correction. Never lowers what was learned. */
 export function learnContextCorrection(model: string, factor: number): void {
   corrections.set(
     model,
-    Math.min(MAX_CORRECTION, Math.max(contextCorrectionFor(model), factor)),
+    clamp(
+      Math.max(corrections.get(model) ?? MIN_CORRECTION, factor),
+      MIN_CORRECTION,
+      MAX_CORRECTION,
+    ),
   );
+}
+
+/** The smoothed usage ratio for a model, undefined before any usage. */
+export function tokenCalibrationFor(model: string): number | undefined {
+  return calibrations.get(model);
+}
+
+/**
+ * The usage path: fold one answered request into the model's ratio. The
+ * first sample is taken as it is, later ones are smoothed, and the result is
+ * clamped to [MIN_CALIBRATION, MAX_CALIBRATION]. A missing count or a prompt
+ * too small to say anything is ignored. Returns the new ratio.
+ */
+export function learnTokenCalibration(
+  model: string,
+  providerTokens: number | undefined,
+  estimatedTokens: number,
+): number | undefined {
+  if (
+    !providerTokens ||
+    !(providerTokens > 0) ||
+    !(estimatedTokens >= MIN_CALIBRATION_SAMPLE_TOKENS)
+  ) {
+    return calibrations.get(model);
+  }
+  const sample = providerTokens / estimatedTokens;
+  const previous = calibrations.get(model);
+  const smoothed =
+    previous === undefined
+      ? sample
+      : previous + CALIBRATION_SMOOTHING * (sample - previous);
+  const ratio = clamp(smoothed, MIN_CALIBRATION, MAX_CALIBRATION);
+  calibrations.set(model, ratio);
+  return ratio;
 }
 
 export function resetContextCorrections(): void {
   corrections.clear();
+  calibrations.clear();
 }
 
 /**

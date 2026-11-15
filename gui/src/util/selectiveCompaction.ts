@@ -12,6 +12,7 @@ import {
   IMAGE_TOKENS,
   type ContextBreakdown,
 } from "core/llm/contextBreakdown";
+import type { ContextClass } from "core/llm/contextThresholds";
 import type { PromptSegment } from "core/llm/promptSegments";
 import { BuiltInToolNames } from "core/tools/builtIn";
 import {
@@ -473,6 +474,7 @@ export function currentBreakdown(args: {
   previousMarks?: Record<string, RemovedByUser | null>;
   contextLength?: number;
   maxTokens?: number;
+  contextClass?: ContextClass;
   reportedTokens?: number;
 }): ContextBreakdown {
   const { previousMarks, ...input } = args;

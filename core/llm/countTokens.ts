@@ -20,6 +20,13 @@ import { isTaskPlanBlockText } from "../util/taskPlan.js";
 import { AsyncEncoder, LlamaAsyncEncoder } from "./asyncEncoder.js";
 import { ageRequest, type AgeingState } from "../util/contextAgeing.js";
 import { DEFAULT_PRUNING_LENGTH } from "./constants.js";
+import {
+  blocksToDrop,
+  type ContextClass,
+  contextLimits,
+  countingSafetyBuffer,
+  MIN_RESPONSE_TOKENS,
+} from "./contextThresholds.js";
 import { getAdjustedTokenCountFromModel } from "./getAdjustedTokenCount.js";
 import llamaTokenizer from "./llamaTokenizer.js";
 interface Encoding {
@@ -220,6 +227,23 @@ function countChatMessageTokens(
 }
 
 /**
+ * Our estimate of a request's prompt, counted as `compileChatMessages`
+ * counts it: every message, plus the tool definitions. The calibration from
+ * usage (contextOverflow.ts) compares the provider's count with this.
+ */
+function estimatePromptTokens(
+  modelName: string,
+  messages: ChatMessage[],
+  tools?: Tool[],
+): number {
+  let total = tools ? countToolsTokens(tools, modelName) : 0;
+  for (const message of messages) {
+    total += countChatMessageTokens(modelName, message);
+  }
+  return total;
+}
+
+/**
  * Extracts and validates the tool call sequence from the end of a message array.
  * Tool sequences consist of: [assistant_with_tool_calls, tool_response_1, tool_response_2, ...]
  * or just a single user message.
@@ -367,19 +391,9 @@ function pruneStringFromTop(
   return encoding.decode(tokens.slice(tokens.length - maxTokens));
 }
 
-const MAX_TOKEN_SAFETY_BUFFER = 1000;
-const TOKEN_SAFETY_PROPORTION = 0.02;
 export function getTokenCountingBufferSafety(contextLength: number) {
-  return Math.min(
-    MAX_TOKEN_SAFETY_BUFFER,
-    contextLength * TOKEN_SAFETY_PROPORTION,
-  );
+  return countingSafetyBuffer(contextLength);
 }
-
-const MIN_RESPONSE_TOKENS = 1000;
-
-/** History is pruned in steps of this share of the input budget. */
-const PRUNE_STEP_FRACTION = 0.1;
 
 function pruneRawPromptFromTop(
   modelName: string,
@@ -392,6 +406,37 @@ function pruneRawPromptFromTop(
     tokensForCompletion -
     getTokenCountingBufferSafety(contextLength);
   return pruneStringFromTop(modelName, maxTokens, prompt);
+}
+
+/**
+ * The history without every message that starts within the first
+ * `dropTokens` tokens of it, counted from the start. A tool result goes with
+ * its call, so no result is left without the call that produced it, and
+ * `keep` (the user's last message in a tool loop) is never dropped and takes
+ * no room in the count.
+ */
+function dropOldestBlocks<T extends ChatMessage & { tokens: number }>(
+  history: T[],
+  dropTokens: number,
+  keep: T | undefined,
+): T[] {
+  if (dropTokens <= 0) return history;
+  const kept: T[] = [];
+  let position = 0;
+  let callDropped = false;
+  for (const message of history) {
+    if (message === keep) {
+      kept.push(message);
+      continue;
+    }
+    const start = position;
+    position += message.tokens;
+    const drop: boolean =
+      message.role === "tool" ? callDropped : start < dropTokens;
+    if (message.role !== "tool") callDropped = drop;
+    if (!drop) kept.push(message);
+  }
+  return kept;
 }
 
 /**
@@ -411,7 +456,8 @@ function pruneRawPromptFromTop(
  * 3. Filter out empty messages and trailing non-user/tool messages
  * 4. Extract the complete tool sequence from the end (user message or assistant + tool responses)
  * 5. Calculate token requirements for non-negotiable elements (system, tools, last sequence)
- * 6. Prune older messages until within available token budget
+ * 6. Past the force threshold, drop the oldest history in whole blocks
+ *    (contextThresholds.ts), so the cut moves once per block, never back
  * 7. Reassemble with proper ordering and flatten adjacent similar messages
  *
  * @param params - Configuration object containing:
@@ -433,6 +479,7 @@ function compileChatMessages({
   tools,
   ageing,
   requiresAlternation,
+  contextClass = "cloud",
 }: {
   modelName: string;
   msgs: ChatMessage[];
@@ -447,6 +494,8 @@ function compileChatMessages({
   ageing?: { state: AgeingState; now?: number };
   /** The provider wants turns to alternate (normalizeTurns.ts). */
   requiresAlternation?: boolean;
+  /** Which thresholds of contextThresholds.ts apply; cloud when left out. */
+  contextClass?: ContextClass;
 }): CompiledMessagesResult {
   let didPrune = false;
   const repairs: TurnRepair[] = [];
@@ -531,14 +580,13 @@ function compileChatMessages({
   }
 
   const contextLength = knownContextLength ?? DEFAULT_PRUNING_LENGTH;
-  const countingSafetyBuffer = getTokenCountingBufferSafety(contextLength);
-  const minOutputTokens = Math.min(MIN_RESPONSE_TOKENS, maxTokens);
-
-  let inputTokensAvailable = contextLength;
+  const limits = contextLimits(contextLength, maxTokens, contextClass);
+  const countingSafetyBuffer = limits.safety;
+  // The configured reply limit, up to 10% of the window (contextThresholds.ts)
+  const reservedOutputTokens = limits.reserve;
 
   // Leave space for output/safety
-  inputTokensAvailable -= countingSafetyBuffer;
-  inputTokensAvailable -= minOutputTokens;
+  let inputTokensAvailable = limits.hardLimit;
 
   // Non-negotiable messages
   inputTokensAvailable -= toolTokens;
@@ -549,7 +597,7 @@ function compileChatMessages({
   if (knownContextLength !== undefined && inputTokensAvailable < 0) {
     throw new Error(
       `Not enough context available to include the system message, last user message, and tools.
-        There must be at least ${minOutputTokens} tokens remaining for output.
+        There must be at least ${reservedOutputTokens} tokens remaining for output.
         Request had the following token counts:
         - contextLength: ${knownContextLength}
         - counting safety buffer: ${countingSafetyBuffer}
@@ -573,54 +621,38 @@ function compileChatMessages({
   // In a tool loop the trailing sequence is assistant tool calls and their
   // results, so the user's last message is in the prunable history. Never
   // drop it: some providers reject a request with no user message (Ollama
-  // answers 500). Once everything before it is gone, prune the older tool
-  // rounds after it instead.
+  // answers 500). Once everything before it is gone, the older tool rounds
+  // after it are dropped instead.
   const protectedUser = toolSequence.some((m) => m.role === "user")
     ? undefined
     : // A reverse search, not findLast: gui/vscode/binary compile core with ES2022 libs.
       [...historyWithTokens].reverse().find((m) => m.role === "user");
 
-  const removeAt = (index: number) => {
-    const [message] = historyWithTokens.splice(index, 1);
-    currentTotal -= message.tokens;
-    didPrune = true;
-    // Make sure no latent tool response is left without its call
-    while (historyWithTokens[index]?.role === "tool") {
-      const [toolMessage] = historyWithTokens.splice(index, 1);
-      currentTotal -= toolMessage.tokens;
-    }
-  };
-
-  // Prune in steps. The history is pruned from scratch on every request, so
-  // dropping just enough would move the cut forward on every request, and
-  // a prompt cache could then reuse nothing after the system message and
-  // tools. Rounding what is dropped up to a step keeps the cut where it was
-  // until the conversation has grown by a whole step.
-  const overBy = currentTotal - inputTokensAvailable;
-  const pruneStep = Math.max(
-    1,
-    Math.floor(inputTokensAvailable * PRUNE_STEP_FRACTION),
+  // Drop in whole blocks (contextThresholds.ts). The history is pruned from
+  // scratch on every request, so the cut must be a function of the
+  // conversation that only moves forward as it grows: every message before
+  // `blocks` blocks of history, counted from the start, is dropped. That
+  // count depends on the total only through the block number, so the size of
+  // the latest turn cannot move the cut by a message either way.
+  const blocks = blocksToDrop(
+    currentTotal + systemMsgTokens + toolTokens + lastMessagesTokens,
+    limits,
   );
-  const keepAtMost =
-    overBy > 0
-      ? currentTotal - Math.ceil(overBy / pruneStep) * pruneStep
-      : inputTokensAvailable;
-
-  while (historyWithTokens.length > 0 && currentTotal > keepAtMost) {
-    if (historyWithTokens[0] !== protectedUser) {
-      removeAt(0);
-    } else if (historyWithTokens.length > 1) {
-      removeAt(1);
-    } else {
-      break; // only the user's turn is left; the request keeps it
-    }
+  const kept = dropOldestBlocks(
+    historyWithTokens,
+    blocks * limits.block,
+    protectedUser,
+  );
+  if (kept.length < historyWithTokens.length) {
+    didPrune = true;
+    currentTotal = kept.reduce((sum, m) => sum + m.tokens, 0);
   }
 
   // Now reassemble. Pruning can strand a tool call whose results it removed,
   // or leave the history starting with the model, so normalise again.
   const conversation = normalizeTurns(
     [
-      ...historyWithTokens.map(({ tokens, ...rest }) => rest),
+      ...kept.map(({ tokens, ...rest }) => rest),
       ...toolSequence,
       ...(taskListTail ? [taskListTail] : []),
     ],
@@ -636,7 +668,7 @@ function compileChatMessages({
   const inputTokens =
     currentTotal + systemMsgTokens + toolTokens + lastMessagesTokens;
   const availableTokens =
-    contextLength - countingSafetyBuffer - minOutputTokens;
+    contextLength - countingSafetyBuffer - reservedOutputTokens;
   const contextPercentage = inputTokens / availableTokens;
   return {
     compiledChatMessages: reassembled,
@@ -662,6 +694,7 @@ export {
   compileChatMessages,
   countTokens,
   countTokensAsync,
+  estimatePromptTokens,
   extractToolSequence,
   pruneLinesFromBottom,
   pruneLinesFromTop,
