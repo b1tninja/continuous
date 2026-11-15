@@ -1,0 +1,141 @@
+---
+title: "Web fetch and URLs"
+---
+
+Every place where Continuous fetches a web page, what each request sends, and the `web:` section of `config.yaml` that configures them. Each item says whether it works today or is planned. The design and its decisions are in `plans/research/web-fetch-deep-dive.md`.
+
+## Paths that fetch
+
+| Path                                 | Who picks the URL                                  | Client                                                         | Limits today                                                                                                     |
+| ------------------------------------ | -------------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `fetch_url_content` tool (IDE)       | the model                                          | guarded fetch: address pinned, each redirect re-checked        | 2 MiB after decompression, 20 s in all, 5 redirects, 20,000 characters to the model                              |
+| `Fetch` tool (`cn`)                  | the model                                          | the same guarded fetch                                         | as above; characters cut again at `CONTINUE_CLI_FETCH_MAX_OUTPUT_LENGTH` (default 20,000)                        |
+| `@url` context provider              | you                                                | the shared client, with node-fetch's own redirect handling     | 2 MiB, 20 s, content-type checks; no character cut                                                               |
+| `search_web` tool and `@web`         | the model (tool) or your message (`@web`)          | `GET <search URL>?q=…&format=json`                             | top 5 results, 8,000 characters each. Off unless a search endpoint is configured ([Web search](./web-search))   |
+| Docs crawler (Cheerio)               | a `docs:` entry in your config                     | guarded fetch, start host only                                 | depth 4, 1,000 pages, batches of 50 requests                                                                     |
+| Docs crawler (Chromium)              | a `docs:` entry, with `useChromiumForDocsCrawling` | a headless Chromium the extension downloads after asking you   | no navigation timeout                                                                                            |
+| Docs crawler (GitHub)                | a `docs:` entry on github.com                      | the GitHub API                                                 | none                                                                                                             |
+| Favicon lookup                       | derived from an `@url` page or a docs site         | the shared client                                              | none                                                                                                             |
+| Images in the chat                   | context items, providers, model Markdown           | the editor's webview                                           | images the model wrote load only when you click them                                                             |
+
+Opening a link you click hands the URL to your system browser. An MCP server that fetches or drives a browser makes its own requests: none of the rules on this page reach them.
+
+## What each request sends
+
+| Path                           | User-Agent                                                                     | Other headers                                                                                                                |
+| ------------------------------ | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| Fetch tools, `@url`, favicon, Cheerio crawler | `node-fetch`                                                    | `Accept: */*`, `Accept-Encoding: gzip, deflate, br`. `@url` also sends every `requestOptions.headers` value; the tools do not |
+| Chromium crawler               | a Chrome 88 browser string                                                     | Chromium's own                                                                                                               |
+| Search backend                 | `node-fetch`                                                                   | `Accept: application/json`, `Authorization: Bearer <key>` when `CONTINUOUS_WEB_SEARCH_KEY` is set                            |
+| GitHub crawler                 | Octokit's                                                                      | your GitHub token, if the docs entry has one                                                                                 |
+
+No request sends cookies, a `Referer`, a machine id, your operating system or your editor. The fetch tools refuse a URL with a user name or password in it, or one that carries something shaped like a secret. For the fetch tools, a URL that resolves to a private, loopback or link-local address asks first, and a redirect from a public address to a private one is refused.
+
+Planned (WB17): one honest User-Agent on every path, chosen with `web.userAgent`. By default it is `Continuous-User/<major>.<minor> (+https://github.com/b1tninja/continuous/blob/main/docs/web-agent.md)` for fetches made for you and `Continuous-Crawler/<major>.<minor> (+…)` for the docs crawler. It names the product and the release and nothing else. `@url` and the search backend stop receiving `requestOptions.headers` (WB23).
+
+## The `web:` section
+
+```yaml config.yaml
+web:
+  enabled: true
+  userAgent:
+    preset: continuous # continuous | generic-agent | custom | a browser preset id
+  robots: ask # ask | respect | ignore
+  requireHttps: false
+  limits:
+    maxBytes: 2097152
+    timeoutSeconds: 20
+    maxRedirects: 5
+    perHostPerMinute: 10
+    modelChars: 20000
+  cache:
+    minutes: 15
+  hosts:
+    "*.intranet.example.com":
+      headers:
+        Authorization: "Bearer ${{ secrets.INTRANET_TOKEN }}"
+      userAgent:
+        preset: chrome-windows
+  crawler:
+    contact: ""
+    concurrencyPerHost: 2
+    minDelayMs: 1000
+```
+
+Every key is optional. A malformed value is ignored with a notice in the config errors and the default applies; the rest of the section still counts.
+
+| Key                          | Default                  | Meaning                                                                                                                              | Status                                                           |
+| ---------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `enabled`                    | `true`                   | `false` stops every web fetch the agent makes                                                                                        | accepted, not yet enforced                                       |
+| `policy`                     | none                     | reserved for the web policy levels, which are still being designed                                                                   | reserved, read by nothing                                        |
+| `userAgent.preset`           | `continuous`             | `continuous` (the product token above), `generic-agent` (`Mozilla/5.0 (compatible)`, names no product), `custom`, or a browser preset | accepted; sent from WB17                                         |
+| `userAgent.custom`           | none                     | the string sent with `preset: custom`; `""` sends no User-Agent                                                                      | accepted; sent from WB17                                         |
+| `acceptLanguage`             | none                     | an `Accept-Language` value. None is sent by default, because it discloses your locale                                               | accepted; sent from WB17                                         |
+| `requireHttps`               | `false`                  | `true` refuses plain `http:` URLs                                                                                                    | accepted, not yet enforced (WB21)                                |
+| `robots`                     | `ask`                    | how the model's fetch tool treats a `robots.txt` disallow: `ask` you, `respect` (refuse), or `ignore`. URLs you typed are never checked | accepted; checked from WB20                                      |
+| `spotlight`                  | `false`                  | mark fetched text as untrusted for the model. Replaces `experimental.spotlightUntrusted`                                             | accepted; the tool still reads `CONTINUOUS_SPOTLIGHT_UNTRUSTED`  |
+| `limits.maxBytes`            | 2 MiB                    | largest body after decompression; ceiling 64 MiB                                                                                     | **in force** for the fetch tool and `@url`                       |
+| `limits.timeoutSeconds`      | 20                       | time for the whole fetch, body included; ceiling 300                                                                                 | **in force** for the fetch tool and `@url`                       |
+| `limits.maxRedirects`        | 5                        | redirects followed; ceiling 10                                                                                                       | accepted; the guarded fetch still uses 5                         |
+| `limits.perHostPerMinute`    | 10                       | requests to one host per minute from the tools and `@url`                                                                            | accepted; enforced from WB25                                     |
+| `limits.modelChars`          | 20,000                   | characters of a page given to the model per call                                                                                     | accepted; the tools still use 20,000                             |
+| `cache.minutes`              | 15                       | how long a fetched page is kept for the session, with ETag revalidation; `0` turns the cache off                                     | accepted; cache from WB25                                        |
+| `hosts.<pattern>.headers`    | none                     | headers sent only to hosts matching the pattern, and dropped on a redirect to another host                                           | accepted; sent from WB17                                         |
+| `hosts.<pattern>.userAgent`  | none                     | a `{ preset, custom }` User-Agent for those hosts                                                                                    | accepted; sent from WB17                                         |
+| `reputation.onHit`           | `ask`                    | what a reputation-list hit does: `ask` or `refuse`                                                                                   | accepted; providers from WB29                                    |
+| `reputation.providers`       | none                     | `feed` (a hostfile or list URL), `safeBrowsing` (your own key, hash-prefix lookups) or `rhsbl` (a domain-list zone). Nothing is looked up until you list one | accepted; providers from WB29                                    |
+| `crawler.contact`            | none                     | sent by the docs crawler as `From:`, only when set                                                                                   | accepted; sent from WB19                                         |
+| `crawler.concurrencyPerHost` | 2                        | requests in flight to one host                                                                                                       | accepted; the crawler still batches 50 until WB19                |
+| `crawler.minDelayMs`         | 1000                     | delay between two requests to one host, or `Crawl-delay` if larger                                                                   | accepted; from WB19                                              |
+| `search.provider`, `search.url`, `search.apiKey` | none | the search backend. Replaces `CONTINUOUS_WEB_SEARCH_URL` and `CONTINUOUS_WEB_SEARCH_KEY`                                       | accepted; the backend still reads the variables (WB1)            |
+
+The browser presets are Chrome, Edge and Firefox on Windows, macOS and Linux (`chrome-windows`, `edge-macos`, `firefox-linux` and so on) and `safari-macos`. They are listed, with the date they were last checked, in `core/web/userAgentPresets.json`, which a maintainer refreshes once per release with `node scripts/update-ua-presets.mjs`. Continuous never downloads presets.
+
+Choosing a browser preset makes the agent look like a browser to the site. That is your choice for your own requests; it is never the default, and a repository cannot make it.
+
+Domain allow and deny rules are not part of `web:`. They will be `host:` and `net:` rules in `permissions.yaml`, applied to every web path and at every redirect (WB21). Today those rules apply to terminal commands only. The proxy, CA bundle and client certificate stay in `requestOptions`, which every web path already uses.
+
+## Who may set what
+
+Only your own `config.yaml` (in the global Continuous folder) may loosen a web setting or decide what is sent to sites. An assistant from the hub, a shared config or a project folder may only tighten. What it may not set is ignored, with one notice per key in the config errors (the IDE) or the log (`cn`).
+
+| Set only in your own config.yaml                                                                      | Any config may tighten                                                                                  |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `userAgent`, `acceptLanguage`, `hosts`, `reputation.providers`, `crawler.contact`, `search`, `policy` | `enabled: false`                                                                                        |
+| `enabled: true` over a `false` of yours                                                                | `requireHttps: true`                                                                                    |
+| `robots: ignore`, or any mode looser than yours                                                       | a stricter `robots` (`respect` over `ask`)                                                              |
+| `spotlight: false` over a `true` of yours                                                             | `spotlight: true`                                                                                       |
+| a higher `limits.*` or `cache.minutes`                                                                | a lower `limits.*`, `cache.minutes` or `crawler.concurrencyPerHost`; a longer `crawler.minDelayMs`      |
+| `reputation.onHit: ask` over a `refuse` of yours                                                      | `reputation.onHit: refuse`                                                                              |
+
+A repository must not be able to make the agent pretend to be a browser, send a header to a host, or raise a limit you set, because a checked-in file is how an attacker reaches your settings. The same rule applies to `terminal:` and to `toolPermissions` allow rules ([Workspace trust](./workspace-trust)).
+
+## Old keys and variables
+
+| Old                                                     | New                       | Read today                     |
+| ------------------------------------------------------- | ------------------------- | ------------------------------ |
+| `toolPermissions.auto.environment.fetchMaxBytes`        | `web.limits.maxBytes`     | yes; deprecation notice        |
+| `toolPermissions.auto.environment.fetchTimeoutSeconds`  | `web.limits.timeoutSeconds` | yes; deprecation notice      |
+| `CONTINUOUS_SPOTLIGHT_UNTRUSTED=1`                      | `web.spotlight: true`     | yes, by the fetch tool itself  |
+| `CONTINUE_CLI_FETCH_MAX_OUTPUT_LENGTH`                  | `web.limits.modelChars`   | yes, by `cn`'s `Fetch` itself  |
+| `CONTINUOUS_WEB_SEARCH_URL`, `CONTINUOUS_WEB_SEARCH_KEY` | `web.search`             | yes, by the search backend     |
+
+The old spelling still works. When both are set, the `web:` key wins. A deprecation notice appears once per editor or `cn` process in the config errors (the IDE) or the log (`cn`), and every time in `continuous doctor config`, but only for an old key whose `web:` replacement is already in force; the variables are announced once their readers move to `web:`.
+
+## Built and planned
+
+Built:
+
+- The guarded fetch for the tools: http and https only, no user names in URLs, a secret scan on the URL, the address resolved once and pinned, every redirect re-checked, public-to-private redirects refused, the byte cap and the deadline.
+- The `web:` section: schema, defaults, the tighten-only rule, the old keys as aliases, and `web.limits.maxBytes` and `web.limits.timeoutSeconds` in force.
+
+Planned, in the order they can land:
+
+- The User-Agent policy and per-host headers (WB17).
+- `robots.txt`: a parser (WB18), the crawler respecting it (WB19), and the fetch tool asking on a disallow (WB20).
+- `host:` and `net:` rules for every web path, at every redirect (WB21).
+- `@url`, favicon and search brought onto the guarded fetch with caps (WB23).
+- A fetch record and a provenance line for each fetch (WB24), then a session cache and per-host rate limits (WB25).
+- A Settings page for these keys (WB28), reputation providers (WB29), and a Browser panel that shows what was fetched and what the model was sent (WB31).
+
+JavaScript rendering is not part of the built-in fetch. For pages that need it, add a browser MCP server, and keep in mind that its traffic is outside the rules on this page.
