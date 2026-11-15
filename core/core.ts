@@ -1755,6 +1755,11 @@ export class Core {
       const { id, enabled } = msg.data;
       await MCPManagerSingleton.getInstance().setEnabled(id, enabled);
     });
+    on("mcp/approveTools", async (msg) => {
+      const { id, tools } = msg.data;
+      const connection = MCPManagerSingleton.getInstance().getConnection(id);
+      return connection ? await connection.approveTools(tools) : [];
+    });
     on("mcp/getPrompt", async (msg) => {
       const { serverName, promptName, args } = msg.data;
       const prompt = await MCPManagerSingleton.getInstance().getPrompt(

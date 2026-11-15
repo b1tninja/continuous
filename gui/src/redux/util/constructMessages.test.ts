@@ -29,6 +29,8 @@ const LAST_MESSAGE_RULE: RuleWithSource = {
   rule: "LAST_MESSAGE_RULE",
   description: "LAST_MESSAGE_TRIGGER",
 };
+/** What appliedRules reports for a rule sent with a message: no text. */
+const { rule: _contextRuleText, ...CONTEXT_RULE_META } = CONTEXT_RULE;
 const NORMAL_RULE: RuleWithSource = {
   source: "rules-block",
   rule: "Always apply rule",
@@ -36,14 +38,35 @@ const NORMAL_RULE: RuleWithSource = {
 
 vi.mock("core/llm/rules/getSystemMessageWithRules", async (importOriginal) => {
   const original = (await importOriginal()) as any;
+  // Our mock matching: one trigger in the message, one in its context items
+  const applicable = (
+    userMessage: UserChatMessage | ToolResultChatMessage | undefined,
+    availableRules: RuleWithSource[],
+    contextItems: ContextItemWithId[],
+  ) =>
+    availableRules.filter((rule) => {
+      if (rule.rule === LAST_MESSAGE_RULE.rule) {
+        return userMessage
+          ? renderChatMessage(userMessage).includes(
+              LAST_MESSAGE_RULE.description!,
+            )
+          : false;
+      }
+      if (rule.rule === CONTEXT_RULE.rule) {
+        return contextItems.some((item) =>
+          item.content.includes(CONTEXT_RULE.description!),
+        );
+      }
+      return true;
+    });
   return {
     ...original,
+    getApplicableRules: applicable,
     getSystemMessageWithRules: ({
       baseSystemMessage,
       availableRules,
       userMessage,
       contextItems,
-      rulePolicies,
     }: {
       baseSystemMessage: string;
       availableRules: RuleWithSource[];
@@ -51,24 +74,11 @@ vi.mock("core/llm/rules/getSystemMessageWithRules", async (importOriginal) => {
       contextItems: ContextItemWithId[];
       rulePolicies?: Record<string, any>;
     }) => {
-      // Filter rules based on our mock logic
-      const appliedRules = availableRules.filter((rule) => {
-        if (rule.rule === LAST_MESSAGE_RULE.rule) {
-          if (userMessage) {
-            return renderChatMessage(userMessage).includes(
-              LAST_MESSAGE_RULE.description!,
-            );
-          } else {
-            return false;
-          }
-        }
-        if (rule.rule === CONTEXT_RULE.rule) {
-          return contextItems.some((item) =>
-            item.content.includes(CONTEXT_RULE.description!),
-          );
-        }
-        return true;
-      });
+      const appliedRules = applicable(
+        userMessage,
+        availableRules,
+        contextItems,
+      );
 
       // Build the system message with applied rules
       let systemMessage = baseSystemMessage || "";
@@ -620,7 +630,7 @@ describe("constructMessages", () => {
     expect(appliedRules).toContainEqual(NORMAL_RULE);
   });
 
-  test("system message should include rules triggered by context items from the last user message forward", () => {
+  test("a rule a later message's context item triggers is sent with that message, not in the system message", () => {
     // Create context item that should trigger the CONTEXT_RULE
     const triggeringContextItem = createContextItem(
       "trigger",
@@ -655,16 +665,24 @@ describe("constructMessages", () => {
       {},
     );
 
-    // Verify context rule was applied in the system message
+    // The rule applies, with the message that triggered it: the system
+    // message, in front of the whole conversation, stays as it was
     expect(appliedRules).toHaveLength(2);
     expect(appliedRules).toContainEqual(NORMAL_RULE);
-    expect(appliedRules).toContainEqual(CONTEXT_RULE);
+    expect(appliedRules).toContainEqual(CONTEXT_RULE_META);
     expect(messages[0].role).toBe("system");
     expect(messages[0].content).toContain("Base System Message");
-    expect(messages[0].content).toContain(CONTEXT_RULE.rule);
+    expect(messages[0].content).not.toContain(CONTEXT_RULE.rule);
+    const last = messages[messages.length - 1];
+    expect(last.role).toBe("user");
+    const text = renderChatMessage(last);
+    expect(text.indexOf("Last message")).toBeLessThan(
+      text.indexOf(CONTEXT_RULE.rule),
+    );
+    expect(text.endsWith(`${CONTEXT_RULE.rule}\n</rule>`)).toBe(true);
   });
 
-  test("system message should include rules triggered by tool output after the last user message", () => {
+  test("a rule a tool result triggers is sent with that tool result", () => {
     // Create a history with a user message, assistant with tool call, and tool output containing triggering content
     const assistantWithToolCall: AssistantChatMessage = {
       role: "assistant",
@@ -724,16 +742,18 @@ describe("constructMessages", () => {
       {},
     );
 
-    // Verify context rule was applied in the system message due to the tool output
     expect(appliedRules).toHaveLength(2);
     expect(appliedRules).toContainEqual(NORMAL_RULE);
-    expect(appliedRules).toContainEqual(CONTEXT_RULE);
+    expect(appliedRules).toContainEqual(CONTEXT_RULE_META);
     expect(messages[0].role).toBe("system");
     expect(messages[0].content).toContain("Base System Message");
-    expect(messages[0].content).toContain(CONTEXT_RULE.rule);
+    expect(messages[0].content).not.toContain(CONTEXT_RULE.rule);
+    const tool = messages.find((m) => m.role === "tool")!;
+    expect(tool.content).toContain("Search result with");
+    expect(tool.content).toContain(CONTEXT_RULE.rule);
   });
 
-  test("system message should only apply rules triggered by the last user message", () => {
+  test("a rule the first message triggers goes in the system message; a later message without the trigger changes nothing", () => {
     // First user message with trigger for LAST_MESSAGE_RULE
     const firstUserMessage = {
       role: "user",
@@ -771,12 +791,17 @@ describe("constructMessages", () => {
       {},
     );
 
-    // LAST_MESSAGE_RULE should not be applied since the trigger is not in the last message
-    expect(appliedRules).toHaveLength(1);
-    expect(appliedRules).toContainEqual(NORMAL_RULE); // Normal rule should always apply
+    // The first message's rules are part of the system message from the
+    // first request on, so they stay there
+    expect(appliedRules).toHaveLength(2);
+    expect(appliedRules).toContainEqual(NORMAL_RULE);
+    expect(appliedRules).toContainEqual(LAST_MESSAGE_RULE);
     expect(messages[0].role).toBe("system");
     expect(messages[0].content).toContain("Base System Message");
-    expect(messages[0].content).not.toContain(LAST_MESSAGE_RULE.rule);
+    expect(messages[0].content).toContain(LAST_MESSAGE_RULE.rule);
+    expect(renderChatMessage(messages[messages.length - 1])).toBe(
+      "This is a normal message",
+    );
   });
 
   // Tests for the specific block in lines 135-142 handling toolCallState.output

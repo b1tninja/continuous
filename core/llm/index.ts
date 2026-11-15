@@ -55,6 +55,7 @@ import {
 import { withExponentialBackoff } from "../util/withExponentialBackoff.js";
 import {
   promptProgressOf,
+  strataRequestCache,
   streamsPromptProgress,
   withThinkingOff,
 } from "./localServers.js";
@@ -1286,6 +1287,9 @@ export abstract class BaseLLM implements ILLM {
         continue;
       }
       const readSpeed = Number((chunk as any).timings?.prompt_per_second);
+      // llama.cpp's own count of prompt tokens taken from its cache, for a
+      // server that does not put it in the usage (cached_tokens)
+      const cacheN = (chunk as any).timings?.cache_n;
       for (const chatChunk of messagesFromChatCompletionChunk(chunk as any)) {
         // llama.cpp and Strata time the prompt reading: the GUI uses it to say
         // how long a re-read would take
@@ -1297,6 +1301,21 @@ export abstract class BaseLLM implements ILLM {
           chatChunk.usage = {
             ...chatChunk.usage,
             promptTokensPerSecond: readSpeed,
+          };
+        }
+        if (
+          chatChunk.role === "assistant" &&
+          chatChunk.usage &&
+          chatChunk.usage.promptTokensDetails?.cachedTokens === undefined &&
+          typeof cacheN === "number" &&
+          cacheN > 0
+        ) {
+          chatChunk.usage = {
+            ...chatChunk.usage,
+            promptTokensDetails: {
+              ...chatChunk.usage.promptTokensDetails,
+              cachedTokens: cacheN,
+            },
           };
         }
         yield chatChunk;
@@ -1439,6 +1458,7 @@ export abstract class BaseLLM implements ILLM {
   ): AsyncGenerator<ChatMessage, PromptLog> {
     this.lastRequestId = undefined;
     this.assertCredentialsResolved();
+    const startedAt = Date.now();
 
     // Apply per-model tool overrides if configured
     let effectiveTools = options.tools;
@@ -1695,11 +1715,35 @@ export abstract class BaseLLM implements ILLM {
   requests when not using tools, so it's the simplest option to always add to history.
   */
 
+    // K4: a local Strata server that did not say in the stream how much of
+    // the prompt it took from its cache says it in /metrics, read once now
+    const serverCache =
+      usage &&
+      (usage as Usage).promptTokensDetails?.cachedTokens === undefined &&
+      !signal.aborted
+        ? await strataRequestCache(this.apiBase, {
+            startedAt,
+            promptTokens: (usage as Usage).promptTokens,
+          })
+        : undefined;
+
     return {
       modelTitle: this.title ?? completionOptions.model,
       modelProvider: this.underlyingProviderName,
       prompt,
       completion: completion.join(""),
+      ...(serverCache && {
+        serverCache: {
+          promptTokens: serverCache.promptTokens,
+          reused: serverCache.reused,
+          ...(serverCache.promptRead !== undefined && {
+            promptRead: serverCache.promptRead,
+          }),
+          ...(serverCache.promptMs !== undefined && {
+            promptMs: serverCache.promptMs,
+          }),
+        },
+      }),
     };
   }
 
