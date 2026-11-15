@@ -740,10 +740,19 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
     }
   }
 
-  // For remote environments (SSH, WSL, Dev Container, Codespaces, etc.),
-  // delegate to VS Code's integrated terminal which handles remote execution.
-  // Note: output capture and waitForCompletion are not yet supported for remotes.
-  await extras.ide.runCommand(command);
+  return runInRemoteTerminal(extras.ide, command);
+};
+
+/**
+ * For remote environments (SSH, WSL, Dev Container, Codespaces, etc.),
+ * delegate to VS Code's integrated terminal which handles remote execution.
+ * Note: output capture and waitForCompletion are not yet supported for remotes.
+ */
+async function runInRemoteTerminal(
+  ide: Parameters<ToolImpl>[1]["ide"],
+  command: string,
+) {
+  await ide.runCommand(command);
   return [
     {
       name: "Terminal",
@@ -753,4 +762,4 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
       status: "Command executed",
     },
   ];
-};
+}
