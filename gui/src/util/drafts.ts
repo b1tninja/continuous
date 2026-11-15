@@ -340,6 +340,40 @@ export function saveDraft(
   return draft;
 }
 
+/**
+ * Drafts this page has already shown or saved, by key, and the session they
+ * belong to. Module state, so it lasts as long as the panel's page: after a
+ * reload, an extension restart or a crash it starts empty and a draft that
+ * comes back gets the notice, while the input remounting in the same page
+ * (Settings and back) brings the text back without one. Opening another
+ * session forgets the list, so a draft met again after a switch is announced.
+ */
+const shownThisPage = new Set<string>();
+let shownSession: string | undefined;
+
+/** The panel shows `sessionId`; a change of session forgets what was shown. */
+export function enterDraftSession(sessionId: string): void {
+  if (sessionId === shownSession) return;
+  shownSession = sessionId;
+  shownThisPage.clear();
+}
+
+/** The draft is on screen (restored, or typed and saved) in this page. */
+export function markDraftShown(sessionId: string, inputId: string): void {
+  if (sessionId === shownSession)
+    shownThisPage.add(draftKey(sessionId, inputId));
+}
+
+export function wasDraftShown(sessionId: string, inputId: string): boolean {
+  return shownThisPage.has(draftKey(sessionId, inputId));
+}
+
+/** As after a reload: nothing has been shown. For tests. */
+export function resetShownDrafts(): void {
+  shownThisPage.clear();
+  shownSession = undefined;
+}
+
 /** The notice shown when a draft comes back. */
 export function restoredDraftNotice(
   draft: Pick<StoredDraft, "droppedImages" | "textOnly">,

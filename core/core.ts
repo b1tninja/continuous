@@ -208,6 +208,7 @@ import type { ProviderModelFacts } from "./util/providerModelLookup";
 import { ConfigYaml } from "@continuedev/config-yaml";
 import { getDiffFn, GitDiffCache } from "./autocomplete/snippets/gitDiffCache";
 import { stringifyMcpPrompt } from "./commands/slash/mcpSlashCommand";
+import { annotateAwsProfileKinds } from "./config/awsProfileKind";
 import { createNewAssistantFile } from "./config/createNewAssistantFile";
 import {
   existingMcpServerNames,
@@ -1527,11 +1528,13 @@ export class Core {
         models: getGlobalModelsPath(),
       });
       return {
-        connections: await annotateKeyStorage(connections, {
-          ide: this.ide,
-          continueDir: getContinueGlobalPath(),
-          secureStorageAvailable,
-        }),
+        connections: annotateAwsProfileKinds(
+          await annotateKeyStorage(connections, {
+            ide: this.ide,
+            continueDir: getContinueGlobalPath(),
+            secureStorageAvailable,
+          }),
+        ),
         secureStorageAvailable,
         preferredKeyStorage:
           remembered === "env" || !secureStorageAvailable

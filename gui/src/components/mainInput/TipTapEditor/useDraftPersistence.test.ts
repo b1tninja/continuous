@@ -4,7 +4,12 @@ import Paragraph from "@tiptap/extension-paragraph";
 import Text from "@tiptap/extension-text";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loadDraft, MAIN_DRAFT_INPUT, saveDraft } from "../../../util/drafts";
+import {
+  loadDraft,
+  MAIN_DRAFT_INPUT,
+  resetShownDrafts,
+  saveDraft,
+} from "../../../util/drafts";
 import {
   DRAFT_SAVE_DEBOUNCE_MS,
   useDraftPersistence,
@@ -43,6 +48,7 @@ function settle() {
 
 beforeEach(() => {
   localStorage.clear();
+  resetShownDrafts();
   vi.useFakeTimers();
 });
 afterEach(() => {
@@ -67,7 +73,8 @@ describe("useDraftPersistence", () => {
     expect(loadDraft("s1", MAIN_DRAFT_INPUT)).toBeDefined();
     view.unmount();
 
-    // The webview reloads: a new editor, the same session
+    // The webview reloads: a new page, a new editor, the same session
+    resetShownDrafts();
     const second = makeEditor();
     const reloaded = mount(main(second, "s1"));
     expect(second.getText()).toBe("a long prompt");
@@ -76,6 +83,57 @@ describe("useDraftPersistence", () => {
     );
     act(() => reloaded.result.current.dismissNotice());
     expect(reloaded.result.current.notice).toBeUndefined();
+  });
+
+  it("brings the text back without a notice when the input only remounts (Settings and back)", () => {
+    const first = makeEditor();
+    const view = mount(main(first, "s1"));
+    type(first, "half a thought");
+    view.unmount();
+
+    const second = makeEditor();
+    const back = mount(main(second, "s1"));
+    expect(second.getText()).toBe("half a thought");
+    expect(back.result.current.notice).toBeUndefined();
+  });
+
+  it("keeps the notice of a restored draft from coming back on a remount", () => {
+    saveDraft("s1", MAIN_DRAFT_INPUT, docOf("from before the reload"));
+    const first = makeEditor();
+    const view = mount(main(first, "s1"));
+    expect(view.result.current.notice).toBe("Restored your unsent message.");
+    view.unmount();
+
+    const second = makeEditor();
+    const back = mount(main(second, "s1"));
+    expect(second.getText()).toBe("from before the reload");
+    expect(back.result.current.notice).toBeUndefined();
+  });
+
+  it("announces a draft met again after switching to another session", () => {
+    const editor = makeEditor();
+    const view = mount(main(editor, "s1"));
+    type(editor, "s1's draft");
+    view.rerender(main(editor, "s2"));
+    expect(view.result.current.notice).toBeUndefined();
+
+    view.rerender(main(editor, "s1"));
+    expect(editor.getText()).toBe("s1's draft");
+    expect(view.result.current.notice).toBe("Restored your unsent message.");
+  });
+
+  it("announces a draft after a switch even when the input remounts with the session", () => {
+    const first = makeEditor();
+    const a = mount(main(first, "s1"));
+    type(first, "s1's draft");
+    a.unmount();
+    const other = mount(main(makeEditor(), "s2"));
+    other.unmount();
+
+    const again = makeEditor();
+    const back = mount(main(again, "s1"));
+    expect(again.getText()).toBe("s1's draft");
+    expect(back.result.current.notice).toBe("Restored your unsent message.");
   });
 
   it("saves at once when the page goes away, before the debounce", () => {
@@ -167,6 +225,7 @@ describe("useDraftPersistence", () => {
     view.unmount();
 
     // Reload: the message renders its own content, and the edit comes back
+    resetShownDrafts();
     const again = makeEditor(docOf("original"));
     const reloaded = mount(props(again));
     expect(again.getText()).toBe("original plus more");

@@ -8,7 +8,12 @@ Staging note for the next release. Fold it into that release's `<tag>.md` (the r
 
 ## Behaviour changes
 
+- Add model > CometAPI no longer offers Claude Sonnet 4.5 (retires 2026-11-30; CometAPI has no Sonnet 5.5 preset yet) or the retired Claude Opus 4.1, Claude Opus 4.1 Thinking, Claude Sonnet 4, Claude Sonnet 4 Thinking and Claude 3.7 Sonnet Latest; Claude Haiku 4.5 stays. Existing configs and pricing are unchanged.
 - A tool turned off while the prompt cache is warm stays in the request's tool list until the cache goes cold, after compaction or in a new session, and a call to it is refused with a result that says why and recorded in the audit trail. To apply tool changes at once as before, choose "Apply tool changes at once" in the prompt cache menu, or set `CONTINUE_TOOL_CHANGES=now` for `cn`.
 - On models with preserved thinking's prefix check (Claude Fable 5.2 and Mythos 5.2, and depending on the account Fable 5.1, Mythos 5.1, Opus 5.5, Sonnet 5.5 and Haiku 5.5), the reasoning from before a tool list change is no longer sent back once the change applies, because those models refuse it.
 
 ## Fixes
+
+- An unsent message no longer comes back with the "Restored your unsent message" notice after a trip to Settings (or another page of the panel) and back; the text returns quietly. The notice still shows after a window reload, an extension update or a crash, and when you return to a session after opening another.
+- **Open the Audit Inbox** lands on the Inbox each time it runs, also after you switched the Permissions page to another view by hand.
+- Settings > Providers says how an AWS profile signs in: SSO, `credential_process`, an assumed role, a web identity token, or access keys in `~/.aws/config` or `~/.aws/credentials`. It reads only the key names in the profile's `~/.aws/config` section and never opens `~/.aws/credentials`.

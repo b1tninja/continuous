@@ -11,7 +11,11 @@ export default defineConfig({
       "**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*",
     ],
     globalSetup: "./test/vitest.global-setup.ts",
-    setupFiles: ["./test/liveProviderGuard.setup.ts", "./test/vitest.setup.ts"],
+    setupFiles: [
+      "./test/liveProviderGuard.setup.ts",
+      "./test/noMetadataServer.setup.ts",
+      "./test/vitest.setup.ts",
+    ],
     fileParallelism: false,
     include: ["**/*.vitest.ts"],
   },

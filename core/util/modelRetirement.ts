@@ -86,6 +86,23 @@ function dayNumber(iso: string): number {
   return Math.floor(Date.parse(`${iso.slice(0, 10)}T00:00:00Z`) / 86_400_000);
 }
 
+/**
+ * A row's state on `now` (YYYY-MM-DD). The checked-in `state` is what the
+ * source page said on `fetchedOn`; once a firm retirement date has come, the
+ * model is retired whatever the row says, so nobody has to edit the table on
+ * the day. A "not sooner than" date never retires a model by itself.
+ */
+export function rowStateOn(row: RetirementRow, now: string): RetirementState {
+  if (
+    row.retiresAt &&
+    !row.notSoonerThan &&
+    dayNumber(row.retiresAt) <= dayNumber(now)
+  ) {
+    return "retired";
+  }
+  return row.state;
+}
+
 export interface RetirementInput {
   provider: string | undefined;
   model: string | undefined;
@@ -104,6 +121,7 @@ interface Facts {
 
 function mergeFacts(
   row: RetirementRow | undefined,
+  now: string,
   live?: LiveLifecycle,
 ): Facts {
   const liveState =
@@ -115,7 +133,7 @@ function mergeFacts(
   const retiresAt =
     live?.retiresAt?.slice(0, 10) ?? row?.retiresAt ?? undefined;
   return {
-    state: liveState ?? row?.state ?? "active",
+    state: liveState ?? (row ? rowStateOn(row, now) : "active"),
     ...(retiresAt ? { retiresAt } : {}),
     ...((live?.deprecatedAt?.slice(0, 10) ?? row?.deprecatedAt)
       ? { deprecatedAt: live?.deprecatedAt?.slice(0, 10) ?? row?.deprecatedAt! }
@@ -184,7 +202,7 @@ export function retirementNotice(
   }
   const row = findRetirementRow(input.provider, model, input.rows);
   if (!row && !input.live) return undefined;
-  const f = mergeFacts(row, input.live);
+  const f = mergeFacts(row, input.now, input.live);
   const daysLeft = f.retiresAt
     ? dayNumber(f.retiresAt) - dayNumber(input.now)
     : undefined;

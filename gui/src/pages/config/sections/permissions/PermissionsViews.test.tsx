@@ -1,6 +1,11 @@
 import { act, fireEvent, screen } from "@testing-library/react";
 import { listEffectiveRules } from "core/tools/permissions/effectiveRules";
 import { DEFAULT_POLICY_LEVELS } from "core/tools/permissions/policy";
+import {
+  useLocation,
+  useNavigate,
+  type NavigateFunction,
+} from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { MockIdeMessenger } from "../../../../context/MockIdeMessenger";
 import { setupStore } from "../../../../redux/store";
@@ -11,6 +16,15 @@ const report = {
   ...listEffectiveRules({ levels: DEFAULT_POLICY_LEVELS, user: {} }),
   userFile: { path: "config.yaml", state: "ok" as const, hash: "h1" },
 };
+
+/** The router's navigate, as the panel's `navigateTo` listener calls it. */
+let navigate: NavigateFunction;
+let search = "";
+function RouterProbe() {
+  navigate = useNavigate();
+  search = useLocation().search;
+  return null;
+}
 
 async function setup(path?: string) {
   const ideMessenger = new MockIdeMessenger();
@@ -27,11 +41,17 @@ async function setup(path?: string) {
   }));
   h["audit/inbox"] = vi.fn(async () => ({ items: [], hiddenOlder: 0 }));
   const store = setupStore({ ideMessenger });
-  await renderWithProviders(<PermissionsSection />, {
-    store,
-    mockIdeMessenger: ideMessenger,
-    ...(path ? { routerProps: { initialEntries: [path] } as any } : {}),
-  });
+  await renderWithProviders(
+    <>
+      <PermissionsSection />
+      <RouterProbe />
+    </>,
+    {
+      store,
+      mockIdeMessenger: ideMessenger,
+      ...(path ? { routerProps: { initialEntries: [path] } as any } : {}),
+    },
+  );
   await act(async () => {});
   return h;
 }
@@ -63,6 +83,20 @@ describe("Permissions views", () => {
       "true",
     );
     expect(h["audit/inbox"]).toHaveBeenCalledTimes(1);
+  });
+
+  it("lands on the Inbox each time the palette command runs, after a change of view by hand", async () => {
+    const inbox = "/config?tab=permissions&view=inbox";
+    await setup(inbox);
+    expect(search).toBe("?tab=permissions");
+    const selected = (id: string) =>
+      screen.getByTestId(id).getAttribute("aria-selected");
+    for (const other of ["view-rules", "view-recent"]) {
+      await act(async () => fireEvent.click(screen.getByTestId(other)));
+      expect(selected(other)).toBe("true");
+      await act(async () => navigate(inbox));
+      expect(selected("view-inbox"), `back from ${other}`).toBe("true");
+    }
   });
 
   it("moves between the views with the arrow keys", async () => {
