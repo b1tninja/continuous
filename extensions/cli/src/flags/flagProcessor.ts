@@ -4,6 +4,13 @@
 
 import { setAutoReviewEnabled } from "../permissions/coreRules.js";
 import {
+  checkPolicyFile,
+  headlessLegacyAllow,
+  headlessPolicyNotice,
+  isPolicyFileSpec,
+  resolvePolicyFile,
+} from "../permissions/headlessPolicy.js";
+import {
   auditFileEditsAtLoad,
   auditLevelChange,
 } from "../permissions/policyAudit.js";
@@ -92,8 +99,16 @@ export function processCommandFlags(options: {
   // Edits made to the file since the last run are audited as such
   auditFileEditsAtLoad();
 
-  // The level of each policy area (--policy)
-  if (options.policy !== undefined) {
+  // The level of each policy area (--policy): a preset, levels, or a file
+  // in the permissions.yaml format that stands in for the person's own
+  if (options.policy !== undefined && isPolicyFileSpec(options.policy)) {
+    const file = resolvePolicyFile(options.policy);
+    const missing = checkPolicyFile(file);
+    if (missing) throw new Error(`--policy: ${missing}`);
+    const before = getPolicyLevels();
+    for (const notice of loadPolicyFile(file)) logger.warn(notice);
+    auditLevelChange(before, getPolicyLevels(), "flag", "flag");
+  } else if (options.policy !== undefined) {
     const parsed = parsePolicySpec(options.policy);
     if (!parsed.ok) throw new Error(`--policy: ${parsed.error}`);
     // stderr, so a JSON run's stdout stays what it was
@@ -135,4 +150,25 @@ export function processCommandFlags(options: {
     mode,
     permissionOverrides,
   };
+}
+
+/**
+ * The one stderr line a headless run (`-p`, `serve`) starts with: the levels
+ * it runs at and where they came from (CO2). stderr, so a JSON run's stdout
+ * is unchanged.
+ */
+export function announceHeadlessPolicy(
+  options: { auto?: boolean; readonly?: boolean; policy?: string },
+  write: (line: string) => void = (l) => process.stderr.write(l),
+): void {
+  const mode = convertLegacyModeFlags(options.readonly, options.auto);
+  let source: string | undefined;
+  if (options.auto) source = "--auto";
+  else if (options.policy !== undefined) source = `--policy ${options.policy}`;
+  const notice = headlessPolicyNotice({
+    levels: effectiveLevels(mode ?? "normal"),
+    ...(source ? { source } : {}),
+    legacy: headlessLegacyAllow() && !options.auto,
+  });
+  write(`${notice}\n`);
 }

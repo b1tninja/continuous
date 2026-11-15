@@ -194,7 +194,7 @@ The interactive terminal agent shows one line in its header, once per user: "Per
 
 ## A permissions.yaml that does not parse
 
-`~/.continuous/permissions.yaml` that exists but is not valid YAML, or has the wrong structure (an unknown top-level key, or `allow`, `ask` or `exclude` that is not a list), is no longer read as "no rules". `cn -p` and `cn serve` refuse to start and exit with code 2, naming the file and the line and column of the error, never its contents. Pass `--ignore-broken-config` to continue with the file ignored; headless runs then use only the defaults, which allow `Bash`. The interactive agent starts and prints a WARNING block. A missing file is fine. `continuous permissions add` will not write over a broken file.
+`~/.continuous/permissions.yaml` that exists but is not valid YAML, or has the wrong structure (an unknown top-level key, or `allow`, `ask` or `exclude` that is not a list), is no longer read as "no rules". `cn -p` and `cn serve` refuse to start and exit with code 2, naming the file and the line and column of the error, never its contents. Pass `--ignore-broken-config` to continue with the file ignored; headless runs then use only the defaults, where `Bash` asks and is refused. The interactive agent starts and prints a WARNING block. A missing file is fine. `continuous permissions add` will not write over a broken file.
 
 ## Raising a level in the terminal agent
 

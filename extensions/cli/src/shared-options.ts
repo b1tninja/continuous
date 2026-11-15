@@ -18,7 +18,7 @@ export function addCommonOptions(command: Command): Command {
     )
     .option(
       "--policy <spec>",
-      "Who decides what a rule leaves open, per area (context, tools, edits, plan, questions): a preset (careful, acceptEdits, handsOff, reviewer, idgaf) or area=level pairs such as tools=permissive,plan=manual. Levels: manual, cautious, automatic, permissive, idgaf.",
+      "Who decides what a rule leaves open, per area (context, tools, edits, plan, questions): a preset (careful, acceptEdits, handsOff, reviewer, idgaf) or area=level pairs such as tools=permissive,plan=manual. Levels: manual, cautious, automatic, permissive, idgaf. Or a path to a policy file in the permissions.yaml format. Headless runs (-p, serve) are at your saved levels unless this or --auto is given, and a call that would ask is refused.",
     )
     .option("--verbose", "Enable verbose logging")
     .option(
