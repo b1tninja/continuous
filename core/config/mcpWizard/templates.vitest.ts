@@ -28,7 +28,6 @@ const IDS = [
   "sequential-thinking",
   "github",
   "playwright",
-  "sqlite",
 ];
 
 /** The draft with every required value filled in, as the Simple screen would. */
@@ -47,7 +46,7 @@ function filled(t: McpTemplate): McpServerDraft {
 }
 
 describe("the bundled file", () => {
-  it("holds exactly the eight templates", () => {
+  it("holds exactly the seven templates", () => {
     expect(MCP_TEMPLATES.map((t) => t.id)).toEqual(IDS);
   });
 
@@ -165,12 +164,22 @@ describe("templateToDraft", () => {
       expect.objectContaining({ name: "--repository", isRequired: false }),
     ]);
     expect(git.fields[0].argIndex).toBeUndefined();
-    const sqlite = templateToDraft(get("sqlite"));
-    expect(sqlite.draft.args).toEqual([
-      "mcp-server-sqlite@2025.4.25",
-      "--db-path",
+  });
+
+  it("puts a required named argument's flag and an empty value slot in the draft", () => {
+    const t = structuredClone(get("git")) as McpTemplate;
+    t.package.packageArguments![0].isRequired = true;
+    const { draft, fields } = templateToDraft(t);
+    expect(draft.args).toEqual([
+      "mcp-server-git@2026.11.11",
+      "--repository",
       "",
     ]);
+    expect(fields[0]).toMatchObject({ isRequired: true, argIndex: 2 });
+  });
+
+  it("bundles no SQLite server: the reference one is archived upstream", () => {
+    expect(MCP_TEMPLATES.some((t) => /sqlite/i.test(t.id))).toBe(false);
   });
 
   it("leaves an optional variable out of the draft until it is filled in", () => {
@@ -187,7 +196,7 @@ describe("templateToDraft", () => {
 
   it("summarises the cards for the Start step", () => {
     const cards = templateSummaries();
-    expect(cards).toHaveLength(8);
+    expect(cards).toHaveLength(7);
     expect(cards.find((c) => c.id === "fetch")).toMatchObject({
       runtimeHint: "uvx",
       pinned: "mcp-server-fetch@2026.11.11",

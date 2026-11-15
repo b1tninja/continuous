@@ -185,9 +185,9 @@ describe("registration", () => {
 });
 
 describe("mcp/listTemplates and mcp/parsePaste", () => {
-  it("lists the eight templates", async () => {
+  it("lists the seven templates", async () => {
     const list = await call<any[]>("mcp/listTemplates");
-    expect(list.map((t) => t.id)).toHaveLength(8);
+    expect(list.map((t) => t.id)).toHaveLength(7);
     expect(list.every((t) => t.pinned && t.versionChecked)).toBe(true);
   });
 

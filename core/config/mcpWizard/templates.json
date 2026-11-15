@@ -147,31 +147,6 @@
           }
         ]
       }
-    },
-    {
-      "id": "sqlite",
-      "title": "SQLite",
-      "description": "Query and change a SQLite database file. This reference server is archived: no security fixes.",
-      "category": "data",
-      "repository": "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/sqlite",
-      "package": {
-        "registryType": "pypi",
-        "identifier": "mcp-server-sqlite",
-        "version": "2025.4.25",
-        "versionChecked": "2026-11-15",
-        "runtimeHint": "uvx",
-        "transport": { "type": "stdio" },
-        "packageArguments": [
-          {
-            "type": "named",
-            "name": "--db-path",
-            "valueHint": "db_path",
-            "description": "The database file; it is created when it does not exist",
-            "isRequired": true,
-            "format": "filepath"
-          }
-        ]
-      }
     }
   ]
 }

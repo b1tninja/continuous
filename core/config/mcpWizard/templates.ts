@@ -2,7 +2,7 @@ import data from "./templates.json";
 import type { McpDraftValue, McpServerDraft } from "./types";
 
 /*
-  MCPW6: the eight bundled templates (plans/research/mcp-server-wizard.md
+  MCPW6: the seven bundled templates (plans/research/mcp-server-wizard.md
   section 12.5, Start step). The data is one file, templates.json, in the
   MCP Registry's server.json field names, so a template and a registry entry
   fill the Simple screen the same way: `isRequired` makes a field,
