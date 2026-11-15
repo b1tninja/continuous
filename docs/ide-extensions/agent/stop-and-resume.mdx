@@ -59,6 +59,22 @@ In `continuous` (the terminal UI) the same rules apply:
 | `Esc` while the agent works | Asks **Stop the response?** `Enter` stops, `Esc` keeps going, any other key closes the question and is typed as usual. Typed text is kept. |
 | `Ctrl+C` with text typed | Asks **Clear the input?** `Enter` clears it, and `Up` brings it back. |
 | `Ctrl+C` on an empty prompt while the agent works | Asks **Stop the response?** |
-| `Ctrl+C` twice within a second | Exits, as before. |
+| `Ctrl+C` twice within a second while a turn, a tool call or a loop runs | Asks **Exit and stop the agent?** `Enter` stops the turn, saves it and exits; `Esc` stays. A held `Ctrl+C` repeating is not a second press. |
+| `Ctrl+C` twice within a second while idle | Exits, as before. |
+| `Ctrl+D` | Exits at once when nothing runs and nothing is typed; otherwise asks **Exit and stop the agent?** |
+
+A stopped reply keeps what the model wrote: it stays in the conversation, is saved with the session marked as stopped, and `Enter` on the empty prompt resumes from it (the model is asked to continue where it left off).
+
+On a permission prompt:
+
+- `Esc` (or `Ctrl+C`) is **No, skip this call**: the model gets the call back as denied and the turn goes on.
+- **No, and tell Continue what to do differently** (`n`) ends the turn, so it asks **Stop the response?** first; `Esc` goes back to the prompt.
 
 Editing an earlier message (`Esc` twice, then pick the message) saves the conversation as `<title> (before edit)` before it rewinds, and says so; `/resume` opens the copy. `/clear` starts a new session and keeps the old one for `/resume`.
+
+## JetBrains
+
+The chat panel in JetBrains is the same page, so everything under "Stop a reply", "Start a new chat while the agent works" and "Edit an earlier message" applies. JetBrains' **New Session** and focus-the-chat actions send the same message as `Ctrl+L` in VS Code and ask the same way. Two differences:
+
+- There is no **Stop Response** or **Resume Response** action in JetBrains; use `Esc` in the empty input, the **Stop** button and **Resume response** in the chat.
+- `Esc` in the empty input while a reply streams asks to stop instead of closing the sidebar. With text typed, or while nothing streams, it still closes the sidebar.
