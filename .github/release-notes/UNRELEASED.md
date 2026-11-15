@@ -8,6 +8,7 @@ Staging note for the next release. Fold it into that release's `<tag>.md` (the r
 - The IDE History page groups sessions by workspace folder, the open workspace first and expanded; **Group by: Date** keeps the old view.
 - In the IDE, an unsent message is kept per session: the chat input and an edit of an earlier message that is in progress come back after a window reload, an extension update or a crash, with a notice. @-mention chips come back as chips; a pasted image is not kept and the notice says so. Sending clears it, and opening another session shows that session's draft.
 - Command Palette: **Open Permissions**, **Open the Audit Inbox**, **Open Stats**, **Stop Response**, **Resume Response**, **Start Loop**, **Stop Loop**, **Show Agents** and **Test Connection of the Chat Model**, each doing what its control in the panel does. None has a default key.
+- `continuous acp` lists and reopens earlier sessions: `session/list` (filtered by the editor's folder, paged), `session/load`, which replays the conversation and its tool calls, and `session/resume`. It now advertises `loadSession`. Sessions saved by the terminal agent and by the IDE both open. The protocol version stays 1.
 
 ## Behaviour changes
 
