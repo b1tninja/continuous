@@ -554,6 +554,83 @@ export function sessionExists(sessionId: string): boolean {
   );
 }
 
+/** A saved session as `continuous acp` lists it (`session/list`). */
+export interface SavedSessionInfo {
+  sessionId: string;
+  title: string;
+  /** As saved: a path (the CLI) or a URI (the IDE); "" when none was saved */
+  workspaceDirectory: string;
+  /** When the session file was last written (ISO 8601) */
+  updatedAt: string;
+}
+
+/**
+ * Every saved session, `.json` (the CLI) and `.jsonl` (the IDE's log), with
+ * its folder and title, in no particular order. A session saved in both
+ * formats is listed once, from the `.jsonl`: the file `openSavedSession`
+ * reads. The folder and title come from sessions.json when it lists the
+ * session; a file it does not list is read for them (a damaged one is set
+ * aside, as `--resume` does, and left out). The time is the file's, so it is
+ * the last activity whichever side wrote it.
+ */
+export function listSavedSessions(): SavedSessionInfo[] {
+  const sessionDir = getSessionDir();
+  const listed = new Map<string, BaseSessionMetadata>();
+  try {
+    for (const meta of historyManager.list({})) {
+      listed.set(meta.sessionId, meta);
+    }
+  } catch (error) {
+    logger.debug("sessions.json could not be read for session/list", error);
+  }
+  const names = new Set(fs.readdirSync(sessionDir).filter(isSessionFileName));
+  const sessions: SavedSessionInfo[] = [];
+  for (const name of names) {
+    if (name.endsWith(".json") && names.has(`${name}l`)) continue;
+    const file = path.join(sessionDir, name);
+    const sessionId = name.replace(/\.jsonl?$/, "");
+    let mtime: Date;
+    try {
+      mtime = fs.statSync(file).mtime;
+    } catch {
+      continue;
+    }
+    let meta: { title?: string; workspaceDirectory?: string } | undefined =
+      listed.get(sessionId);
+    if (!meta?.workspaceDirectory) {
+      try {
+        const read = readSessionFile(file);
+        if (!read || "damaged" in read) continue;
+        meta = read.session;
+      } catch (error) {
+        logger.debug(`Session file ${file} could not be read`, error);
+        continue;
+      }
+    }
+    sessions.push({
+      sessionId,
+      title: meta?.title || DEFAULT_SESSION_TITLE,
+      workspaceDirectory: meta?.workspaceDirectory ?? "",
+      updatedAt: mtime.toISOString(),
+    });
+  }
+  return sessions;
+}
+
+/**
+ * Open a saved session by id and make it the current one (`session/load`
+ * and `session/resume` of `continuous acp`). `undefined` when no session of
+ * that id is saved. Throws when its file is damaged (it is set aside) or
+ * cannot be read, rather than opening it as an empty session.
+ */
+export function openSavedSession(sessionId: string): Session | undefined {
+  if (!sessionExists(sessionId)) return undefined;
+  const result = historyManager.loadWithStatus(sessionId);
+  if (result.damaged) throw new Error(damagedSessionNotice(result.damaged));
+  SessionManager.getInstance().setSession(result.session);
+  return result.session;
+}
+
 export interface LoadSessionOptions {
   /** The folder whose sessions come first; `process.cwd()` by default */
   cwd?: string;

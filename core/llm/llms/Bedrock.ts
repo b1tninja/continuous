@@ -1592,6 +1592,8 @@ class Bedrock extends BaseLLM {
     modelId: string = this.model,
   ): Message[] {
     const replaysRedactedThinking = /claude/i.test(modelId);
+    // Claude refuses a thinking block without its signature
+    const requiresSignedThinking = replaysRedactedThinking;
     let currentRole: "user" | "assistant" = "user";
     let currentBlocks: ContentBlock[] = [];
 
@@ -1726,11 +1728,23 @@ class Bedrock extends BaseLLM {
             };
             currentBlocks.push(block);
           } else {
+            // Claude checks a thinking block's signature: one without (the
+            // reply was stopped or cut off before its signature arrived, or
+            // the thinking came from a model that does not sign, before a
+            // switch) fails the whole request, "messages.N.content.0.thinking.
+            // signature: Field required". Left out, the request is accepted,
+            // in a past turn and in the current tool-use turn alike (measured
+            // on Bedrock with Claude Haiku 4.5, 2026-11-14).
+            // The Anthropic provider drops these the same way. Other families
+            // do not sign their reasoning and take it back as it is.
+            if (!message.signature && requiresSignedThinking) continue;
             const block: ContentBlock.ReasoningContentMember = {
               reasoningContent: {
                 reasoningText: {
                   text: (message.content as string) || "",
-                  signature: message.signature,
+                  ...(message.signature
+                    ? { signature: message.signature }
+                    : {}),
                 },
               },
             };
