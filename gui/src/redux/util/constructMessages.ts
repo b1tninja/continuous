@@ -101,6 +101,23 @@ export function ruleNoteText(rule: RuleWithSource): string {
   return `<rule${name}>\n${rule.rule}\n</rule>`;
 }
 
+function ruleSortKey(rule: RuleWithSource): string {
+  return [
+    rule.sourceFile ?? "",
+    rule.slug ?? "",
+    rule.name ?? "",
+    rule.source ?? "",
+    rule.rule,
+  ].join("\u0000");
+}
+
+/** A fixed order for rules, by file, name and text: code-unit order, no locale. */
+export function compareRules(a: RuleWithSource, b: RuleWithSource): number {
+  const ka = ruleSortKey(a);
+  const kb = ruleSortKey(b);
+  return ka < kb ? -1 : ka > kb ? 1 : 0;
+}
+
 /**
  * Which rules go in the system message and which with a message. Mutates
  * `msgs`: a rule a later user or tool message is the first to match is
@@ -111,9 +128,14 @@ export function ruleNoteText(rule: RuleWithSource): string {
 function rulesForMessages(
   msgs: MessageWithContextItems[],
   baseSystemMessage: string | undefined,
-  availableRules: RuleWithSource[],
+  configRules: RuleWithSource[],
   rulePolicies: RulePolicies,
 ): { systemMessage: string; appliedRules: RuleMetadata[] } {
+  // In a fixed order, not the config's: a reload can list the same rules in
+  // another order (a colocated rules.md that changed goes to the end of the
+  // list until the next full scan), and two rules that swap places leave the
+  // prompt the same length but different after the tools
+  const availableRules = [...configRules].sort(compareRules);
   const firstIndex = msgs.findIndex((m) => m.message.role === "user");
   const first = firstIndex >= 0 ? msgs[firstIndex] : undefined;
   const system = getSystemMessageWithRules({

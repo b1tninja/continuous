@@ -35,6 +35,7 @@ import {
   withoutGenerationPrompt,
 } from "../../util/test/qwenChatTemplate";
 import { createMockStore, getEmptyRootState } from "../../util/test/mockStore";
+import { updateConfig } from "../slices/configSlice";
 import {
   clearDanglingMessages,
   enqueueMessage,
@@ -488,6 +489,102 @@ describe("every request path extends the previous request's prompt", () => {
     expect(JSON.stringify(last.messages[0].content)).not.toContain(
       "keep every function pure",
     );
+  });
+
+  it("the rule order does not follow the order a config reload lists the rules in", async () => {
+    // Two rules scoped to the same file, and a global one: the first message
+    // matches all three, so all three are in the system message
+    const scoped: RuleWithSource[] = [
+      {
+        name: "lexer-style",
+        rule: "Name every token kind in upper case.",
+        source: "colocated-markdown" as any,
+        sourceFile: "file:///repo/src/rules.md",
+        globs: "**/lexer.ts",
+      },
+      {
+        name: "lexer-tests",
+        rule: "Give every token kind its own test case.",
+        source: "colocated-markdown" as any,
+        sourceFile: "file:///repo/.continuous/rules/lexer-tests.md",
+        globs: "**/lexer.ts",
+      },
+    ];
+    const s = setup({ rules: [RULES[0], ...scoped] });
+    await s.step("send", () => send(s, "Look at the lexer."));
+    // A reload lists the same rules in another order (a rules.md that
+    // changed goes to the end until the next full scan)
+    const config = s.getState().config.config;
+    for (const rules of [
+      [scoped[1], RULES[0], scoped[0]],
+      [scoped[0], scoped[1], RULES[0]],
+    ]) {
+      s.store.dispatch(updateConfig({ ...config, rules }));
+      await s.step("after-reload", () => send(s, "Go on."));
+    }
+    expect(s.sent).toHaveLength(3);
+    const system = JSON.stringify(wire(s.sent[0]).messages[0].content);
+    expect(system).toContain("upper case");
+    expect(system).toContain("own test case");
+    expect(broken(s.sent)).toEqual([]);
+  });
+
+  it("after a compaction, the next requests extend the first request after it", async () => {
+    // What loadSession brings back after "Compact": the summary on the item
+    // the compaction ran at; only the items after it are sent
+    const history = longHistory(12);
+    const at = history.length - 1;
+    history[at] = {
+      ...history[at],
+      conversationSummary: "The lexer was fixed in twelve turns.",
+    };
+    const s = setup({ history, rules: RULES });
+    await s.step("after-compaction", () => send(s, "Now the parser."));
+    s.replies.push(toolCallReply(READ, { filepath: "src/parser.ts" }));
+    s.replies.push([[{ role: "assistant", content: "Read it." }]]);
+    await s.step("next", () => send(s, "Read the parser."));
+    await s.step("next", () => send(s, "And fix it."));
+
+    expect(s.sent).toHaveLength(4);
+    const first = wire(s.sent[0]);
+    expect(JSON.stringify(first.messages[0].content)).toContain(
+      "Previous conversation summary",
+    );
+    // Only the new message is sent after the summary
+    expect(first.messages.map((m: any) => m.role)).toEqual(["system", "user"]);
+    expect(broken(s.sent)).toEqual([]);
+  });
+
+  it("Try again right after a compaction sends the same request", async () => {
+    const history = longHistory(12);
+    const at = history.length - 1;
+    history[at] = {
+      ...history[at],
+      conversationSummary: "The lexer was fixed in twelve turns.",
+    };
+    const s = setup({ history, rules: RULES });
+    s.replies.push(new Error("Request timed out."));
+    await s.step("after-compaction", () => send(s, "Now the parser."));
+    const input = s.getState().session.mainEditorContentTrigger;
+    await s.step("try-again", () =>
+      s.store.dispatch(retryFailedRequest({ input }) as any),
+    );
+    s.replies.push(toolCallReply(READ, { filepath: "src/parser.ts" }));
+    s.replies.push(new Error("Request timed out."));
+    await s.step("tool", () => send(s, "Read the parser."));
+    await s.step("try-again", () =>
+      s.store.dispatch(retryFailedRequest({}) as any),
+    );
+
+    const [failed, retry] = s.sent;
+    expect(wire(retry).messages).toEqual(wire(failed).messages);
+    const failedContinuation = s.sent[3];
+    const retriedContinuation = s.sent[4];
+    expect(retriedContinuation.label).toBe("try-again");
+    expect(wire(retriedContinuation).messages).toEqual(
+      wire(failedContinuation).messages,
+    );
+    expect(broken(s.sent)).toEqual([]);
   });
 
   it("Try again after a failed continuation sends the same request, with the tool result", async () => {
