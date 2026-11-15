@@ -244,6 +244,7 @@ import {
 import {
   ProviderSetupError,
   readProviderConnections,
+  removeProviderConnection,
   saveProviderModels,
   validateSaveRequest,
 } from "./config/providerSetup";
@@ -814,6 +815,35 @@ export class Core {
       } catch (e) {
         return {
           converted: 0,
+          error: e instanceof Error ? e.message : String(e),
+        };
+      }
+    });
+
+    // Settings > Providers: Remove. Only config.yaml entries go; the account
+    // in providers.yaml and stored keys stay.
+    on("config/removeProviderConnection", async (msg) => {
+      const { provider, connection, account } = msg.data;
+      try {
+        const result = removeProviderConnection(
+          { provider, connection: connection ?? {}, account },
+          { models: getGlobalModelsPath() },
+        );
+        if (!result) {
+          return {
+            removed: [],
+            error: "The selected config is not a local YAML file",
+          };
+        }
+        if (result.removed.length > 0) {
+          await this.configHandler.reloadConfig(
+            "Provider connection removed (config/removeProviderConnection message)",
+          );
+        }
+        return result;
+      } catch (e) {
+        return {
+          removed: [],
           error: e instanceof Error ? e.message : String(e),
         };
       }

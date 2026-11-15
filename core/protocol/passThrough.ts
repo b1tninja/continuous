@@ -33,6 +33,7 @@ export const WEBVIEW_TO_CORE_PASS_THROUGH: (keyof ToCoreFromWebviewProtocol)[] =
     "providers/save",
     "providers/delete",
     "config/convertConnectionToAccount",
+    "config/removeProviderConnection",
     "config/addConnectedModel",
     "config/findPlaintextKeys",
     "config/movePlaintextKeys",
