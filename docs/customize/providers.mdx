@@ -55,7 +55,7 @@ A workspace's `.continuous/providers.yaml` adds accounts for that workspace. An 
 
 ## Manage accounts in the GUI
 
-**Settings > Models > Provider accounts** lists every account, where its key is kept (never the key itself), and how many models use it.
+**Settings > Providers > Provider accounts** lists every account, where its key is kept (never the key itself), and how many models use it.
 
 - **Add** and **Edit** write `~/.continuous/providers.yaml`. A key you enter goes to the editor's secure storage, or to `~/.continuous/.env` if you choose it or secure storage is unavailable. The file only gets a `${{ secrets.CONTINUOUS_<NAME>_API_KEY }}` reference. Leaving the key blank when editing keeps the current one.
 - Renaming an account also renames the `connection:` of every model in your local configs that uses it.

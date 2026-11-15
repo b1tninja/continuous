@@ -11,12 +11,14 @@ import type { ToWebviewProtocol } from "core/protocol";
 /** The panel routes the page commands open; gui/src/util/navigation.ts. */
 export const PALETTE_ROUTES = {
   permissions: "/config?tab=permissions",
+  providers: "/config?tab=providers",
   auditInbox: "/config?tab=permissions&view=inbox",
   stats: "/stats",
 } as const;
 
 export const PALETTE_COMMAND_IDS = [
   "continuous.openPermissions",
+  "continuous.openProviders",
   "continuous.openAuditInbox",
   "continuous.openStats",
   "continuous.startLoop",
@@ -80,6 +82,7 @@ export function paletteCommands(
 
   return {
     "continuous.openPermissions": open(PALETTE_ROUTES.permissions),
+    "continuous.openProviders": open(PALETTE_ROUTES.providers),
     "continuous.openAuditInbox": open(PALETTE_ROUTES.auditInbox),
     "continuous.openStats": open(PALETTE_ROUTES.stats),
     "continuous.startLoop": action("startLoop", (a) => a !== "running"),

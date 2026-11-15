@@ -113,6 +113,7 @@ describe("Command Palette commands", () => {
   it("opens each page through the panel's navigateTo route", async () => {
     const cases = [
       ["continuous.openPermissions", PALETTE_ROUTES.permissions],
+      ["continuous.openProviders", PALETTE_ROUTES.providers],
       ["continuous.openAuditInbox", PALETTE_ROUTES.auditInbox],
       ["continuous.openStats", PALETTE_ROUTES.stats],
     ] as const;
@@ -128,6 +129,8 @@ describe("Command Palette commands", () => {
     expect(PALETTE_ROUTES.auditInbox).toBe(
       "/config?tab=permissions&view=inbox",
     );
+    // Settings > Providers (gui/src/util/navigation.ts CONFIG_ROUTES.PROVIDERS)
+    expect(PALETTE_ROUTES.providers).toBe("/config?tab=providers");
   });
 
   it("sends each chat action to the panel, and says so when there was nothing to act on", async () => {

@@ -519,6 +519,12 @@
         "group": "Continuous"
       },
       {
+        "command": "continuous.openProviders",
+        "category": "Continuous",
+        "title": "Open Providers",
+        "group": "Continuous"
+      },
+      {
         "command": "continuous.openAuditInbox",
         "category": "Continuous",
         "title": "Open the Audit Inbox",
