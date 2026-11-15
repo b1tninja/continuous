@@ -9,6 +9,7 @@ import { withoutPrompts } from "./promptLogs.js";
 import { stripPromptsFromSessionBytes } from "./promptLogsFile.js";
 import { NEW_SESSION_TITLE } from "./constants.js";
 import {
+  getGlobalDirPath,
   getSessionBlobFolderPath,
   getSessionDataFolderPath,
   getSessionFilePath,
@@ -33,7 +34,44 @@ import {
   sessionBudgetWarning,
   SLOW_SESSION_SAVE_MS,
 } from "./sessionFile.js";
-import { markSessionOpen } from "./sessionLeases.js";
+import {
+  forgetSessionOpen,
+  markSessionOpen,
+  openSessions,
+} from "./sessionLeases.js";
+import {
+  deleteFromTrash,
+  emptyTrash,
+  isSafeSessionId,
+  listTrash,
+  liveSessionExists,
+  moveSessionToTrash,
+  purgeExpiredTrash,
+  restoreSessionFromTrash,
+  type TrashedSession,
+} from "./sessionTrash.js";
+
+export type { TrashedSession } from "./sessionTrash.js";
+
+/** What `HistoryManager.trash` did. */
+export type TrashSessionResult =
+  | {
+      status: "trashed";
+      sessionId: string;
+      deletedAt: number;
+      purgeAfter: number;
+    }
+  | {
+      /** Open in another running process: nothing was moved. */
+      status: "open-elsewhere";
+      sessionId: string;
+      pid: number;
+      host: string;
+      at: number;
+    };
+
+const TRASH_PURGE_EVERY_MS = 10 * 60 * 1000;
+
 function safeParseArray<T>(
   value: string,
   errorMessage: string = "Error parsing array",
@@ -402,6 +440,7 @@ export class HistoryManager {
   ) {}
 
   list(options: ListHistoryOptions): BaseSessionMetadata[] {
+    this.purgeTrashNowAndThen();
     const filepath = getSessionsListPath();
     if (!fs.existsSync(filepath)) {
       return [];
@@ -480,9 +519,128 @@ export class HistoryManager {
     );
   }
 
+  /**
+   * Moves the session to the trash (core/util/sessionTrash.ts), restorable
+   * for 7 days. Writes this process still has queued for it land first, so
+   * the trashed copy is the whole session. When another running process
+   * (another window, a terminal agent) has it open, nothing moves unless
+   * `force`: the answer says where it is open, for the caller to ask.
+   */
+  async trash(
+    sessionId: string,
+    options: { force?: boolean; now?: number } = {},
+  ): Promise<TrashSessionResult> {
+    if (!isSafeSessionId(sessionId)) {
+      throw new Error(`Session ${sessionId} does not exist`);
+    }
+    try {
+      // A new session's first write may still be queued
+      await this.log.flush(sessionId);
+    } catch {
+      // what is on disk is trashed; the queued rest is dropped below
+    }
+    if (!liveSessionExists(sessionId)) {
+      throw new Error(`Session ${sessionId} does not exist`);
+    }
+    if (!options.force) {
+      const open = openSessions({ exceptPid: process.pid }).get(sessionId);
+      if (open) {
+        return {
+          status: "open-elsewhere",
+          sessionId,
+          pid: open.pid,
+          host: open.host,
+          at: open.at,
+        };
+      }
+    }
+    this.log.drop(sessionId);
+    const listed = readSessionsList(getSessionsListPath()).find(
+      (s) => s.sessionId === sessionId,
+    );
+    const file = fs.existsSync(getSessionLogFilePath(sessionId))
+      ? getSessionLogFilePath(sessionId)
+      : getSessionFilePath(sessionId);
+    const metadata = listed ??
+      metadataFromSessionFile(file) ?? {
+        sessionId,
+        title: "",
+        dateCreated: String(Date.now()),
+        workspaceDirectory: "",
+      };
+    const trashed = moveSessionToTrash(sessionId, metadata, {
+      root: getGlobalDirPath(),
+      now: options.now,
+    });
+    updateSessionsList((list) => list.filter((s) => s.sessionId !== sessionId));
+    forgetSessionOpen(sessionId);
+    return {
+      status: "trashed",
+      sessionId,
+      deletedAt: trashed.deletedAt,
+      purgeAfter: trashed.purgeAfter,
+    };
+  }
+
+  /**
+   * Puts a trashed session back, with the list entry it had. Throws when it
+   * is not in the trash or a session with its id exists again.
+   */
+  restore(sessionId: string): BaseSessionMetadata {
+    const trashed = restoreSessionFromTrash(sessionId, {
+      root: getGlobalDirPath(),
+    });
+    const entry = { ...trashed.metadata, sessionId };
+    updateSessionsList((list) => {
+      const rest = list.filter((s) => s.sessionId !== sessionId);
+      // sessions.json is in creation order: back to the place it had
+      const created =
+        Number(entry.dateCreated) || Date.parse(entry.dateCreated);
+      const at = rest.findIndex((s) => {
+        const t = Number(s.dateCreated) || Date.parse(s.dateCreated);
+        return Number.isFinite(t) && Number.isFinite(created) && t > created;
+      });
+      if (at === -1) rest.push(entry);
+      else rest.splice(at, 0, entry);
+      return rest;
+    });
+    return entry;
+  }
+
+  /** What is in the trash, newest deletion first (expired ones are removed). */
+  listTrash(now?: number): TrashedSession[] {
+    return listTrash({ root: getGlobalDirPath(), now });
+  }
+
+  /** Removes one trashed session for good. */
+  deleteFromTrash(sessionId: string): boolean {
+    return deleteFromTrash(sessionId, { root: getGlobalDirPath() });
+  }
+
+  /** Removes everything in the trash for good. */
+  emptyTrash(): number {
+    return emptyTrash({ root: getGlobalDirPath() });
+  }
+
+  private lastTrashPurge = 0;
+
+  /** Expired trash goes when the list is read, at most every 10 minutes. */
+  private purgeTrashNowAndThen(): void {
+    const now = Date.now();
+    if (now - this.lastTrashPurge < TRASH_PURGE_EVERY_MS) return;
+    this.lastTrashPurge = now;
+    try {
+      purgeExpiredTrash({ root: getGlobalDirPath(), now });
+    } catch {
+      // tried again later
+    }
+  }
+
+  /** Every session and everything in the trash, for good ("Clear chats"). */
   clearAll() {
     this.log.dropAll();
     fs.rmSync(getSessionsFolderPath(), { recursive: true, force: true });
+    emptyTrash({ root: getGlobalDirPath() });
   }
 
   /**

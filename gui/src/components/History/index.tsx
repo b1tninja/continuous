@@ -1,7 +1,10 @@
 import { BaseSessionMetadata } from "core";
+import type { SessionSearchResult } from "core/util/sessionSearch";
+import type { TrashedSession } from "core/util/sessionTrash";
 import MiniSearch from "minisearch";
 import React, {
   Fragment,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -20,7 +23,11 @@ import {
   setAllSessionMetadata,
 } from "../../redux/slices/sessionSlice";
 import { setDialogMessage, setShowDialog } from "../../redux/slices/uiSlice";
-import { refreshSessionMetadata } from "../../redux/thunks/session";
+import {
+  refreshSessionMetadata,
+  restoreTrashedSession,
+  trashSession,
+} from "../../redux/thunks/session";
 import { getFontSize, getPlatform } from "../../util";
 import { clearDraftsExcept } from "../../util/drafts";
 import { ROUTES } from "../../util/navigation";
@@ -31,7 +38,12 @@ import {
 import ConfirmationDialog from "../dialogs/ConfirmationDialog";
 import { Button } from "../ui";
 import { HistoryTableRow } from "./HistoryTableRow";
+import { TrashSection } from "./TrashSection";
 import { groupSessionsByDate, parseDate, splitArchivedSessions } from "./util";
+
+/** Message text is searched (in core) from this many characters on. */
+export const MESSAGE_SEARCH_MIN_CHARS = 3;
+const MESSAGE_SEARCH_DEBOUNCE_MS = 250;
 
 export function History() {
   const dispatch = useAppDispatch();
@@ -71,6 +83,56 @@ export function History() {
   }, [allSessionMetadata]);
 
   const platform = useMemo(() => getPlatform(), []);
+
+  // Titles are searched here at once; message text is searched in core
+  // over the newest sessions (core/util/sessionSearch.ts), a moment later
+  const [messageSearch, setMessageSearch] = useState<{
+    query: string;
+    result?: SessionSearchResult;
+    searching: boolean;
+  } | null>(null);
+  useEffect(() => {
+    const query = searchTerm.trim();
+    if (query.length < MESSAGE_SEARCH_MIN_CHARS) {
+      setMessageSearch(null);
+      return;
+    }
+    let cancelled = false;
+    setMessageSearch((prev) => ({
+      query,
+      result: prev?.query === query ? prev.result : undefined,
+      searching: true,
+    }));
+    const timer = setTimeout(async () => {
+      try {
+        const response = await ideMessenger.request("history/search", {
+          query,
+        });
+        if (cancelled) return;
+        setMessageSearch({
+          query,
+          result: response.status === "success" ? response.content : undefined,
+          searching: false,
+        });
+      } catch {
+        if (!cancelled) setMessageSearch({ query, searching: false });
+      }
+    }, MESSAGE_SEARCH_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [searchTerm, ideMessenger]);
+  const messageMatches = useMemo(
+    () =>
+      new Map(
+        (messageSearch?.result?.hits ?? []).map((hit) => [
+          hit.sessionId,
+          hit.snippet,
+        ]),
+      ),
+    [messageSearch],
+  );
 
   const filteredAndSortedSessions: BaseSessionMetadata[] = useMemo(() => {
     // 1. Exact phrase matching
@@ -112,14 +174,18 @@ export function History() {
 
     return allSessionMetadata
       .filter((session) => {
-        return searchTerm === "" || sessionIds.includes(session.sessionId);
+        return (
+          searchTerm === "" ||
+          sessionIds.includes(session.sessionId) ||
+          messageMatches.has(session.sessionId)
+        );
       })
       .sort(
         (a, b) =>
           parseDate(b.dateCreated).getTime() -
           parseDate(a.dateCreated).getTime(),
       );
-  }, [allSessionMetadata, searchTerm, minisearch]);
+  }, [allSessionMetadata, searchTerm, minisearch, messageMatches]);
 
   // Archived sessions leave the date groups for a group of their own,
   // collapsed until opened; a search looks through both
@@ -150,12 +216,124 @@ export function History() {
     searchTerm !== "" ||
     (openGroups[key] ?? (isCurrent || (!hasCurrentGroup && index === 0)));
 
+  // Delete moves a session to the trash; the line below the search box
+  // offers Undo, and the Trash group at the bottom keeps it 7 days
+  const [trash, setTrash] = useState<TrashedSession[]>([]);
+  const [undo, setUndo] = useState<{ sessionId: string; title: string } | null>(
+    null,
+  );
+  const [trashError, setTrashError] = useState<string | undefined>();
+  const undoButtonRef = useRef<HTMLButtonElement>(null);
+  const refreshTrash = useCallback(async () => {
+    try {
+      const response = await ideMessenger.request(
+        "history/listTrash",
+        undefined,
+      );
+      if (response.status === "success") setTrash(response.content ?? []);
+    } catch {
+      // the trash is shown again on the next change
+    }
+  }, [ideMessenger]);
+  useEffect(() => {
+    void refreshTrash();
+  }, [refreshTrash]);
+  useEffect(() => {
+    // The deleted row had focus: Undo takes it, so the keyboard is not lost
+    if (undo) undoButtonRef.current?.focus();
+  }, [undo]);
+
+  const deleteToTrash = async (
+    session: BaseSessionMetadata,
+    force = false,
+  ): Promise<void> => {
+    setTrashError(undefined);
+    let result;
+    try {
+      result = await dispatch(
+        trashSession({ id: session.sessionId, force }),
+      ).unwrap();
+    } catch (error) {
+      setTrashError(
+        `“${session.title}” could not be deleted: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return;
+    }
+    if (result.status === "open-elsewhere") {
+      dispatch(
+        setDialogMessage(
+          <ConfirmationDialog
+            title="Session open elsewhere"
+            text={`“${session.title}” is open in another window or terminal agent (process ${result.pid}). If it is moved to the trash, that window may save it again. Move it to the trash anyway?`}
+            confirmText="Move to trash"
+            onConfirm={() => void deleteToTrash(session, true)}
+          />,
+        ),
+      );
+      dispatch(setShowDialog(true));
+      return;
+    }
+    setUndo({ sessionId: session.sessionId, title: session.title });
+    void refreshTrash();
+  };
+
+  const restoreFromTrash = async (sessionId: string): Promise<void> => {
+    setTrashError(undefined);
+    try {
+      await dispatch(restoreTrashedSession(sessionId)).unwrap();
+    } catch (error) {
+      setTrashError(
+        `The session could not be restored: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    setUndo((u) => (u?.sessionId === sessionId ? null : u));
+    void refreshTrash();
+  };
+
+  const confirmDeletePermanently = (entry: TrashedSession) => {
+    dispatch(
+      setDialogMessage(
+        <ConfirmationDialog
+          title="Delete permanently"
+          text={`Delete “${entry.metadata.title || "Untitled session"}” permanently? It cannot be restored.`}
+          confirmText="Delete permanently"
+          onConfirm={async () => {
+            await ideMessenger.request("history/deleteFromTrash", {
+              id: entry.sessionId,
+            });
+            setUndo((u) => (u?.sessionId === entry.sessionId ? null : u));
+            void refreshTrash();
+          }}
+        />,
+      ),
+    );
+    dispatch(setShowDialog(true));
+  };
+
+  const confirmEmptyTrash = () => {
+    dispatch(
+      setDialogMessage(
+        <ConfirmationDialog
+          title="Empty trash"
+          text={`Delete the ${trash.length} session(s) in the trash permanently? They cannot be restored.`}
+          confirmText="Empty trash"
+          onConfirm={async () => {
+            await ideMessenger.request("history/emptyTrash", undefined);
+            setUndo(null);
+            void refreshTrash();
+          }}
+        />,
+      ),
+    );
+    dispatch(setShowDialog(true));
+  };
+
   const showClearSessionsDialog = () => {
     dispatch(
       setDialogMessage(
         <ConfirmationDialog
           title={`Clear sessions`}
-          text={`Are you sure you want to permanently delete all chat sessions, including the current chat session?`}
+          text={`Are you sure you want to permanently delete all chat sessions, including the current chat session and the trash?`}
           onConfirm={async () => {
             // optimistic update
             dispatch(setAllSessionMetadata([]));
@@ -165,6 +343,8 @@ export function History() {
             // The sessions' unsent drafts go with them
             clearDraftsExcept([]);
             void dispatch(refreshSessionMetadata({}));
+            setUndo(null);
+            void refreshTrash();
 
             // start a new session
             dispatch(newSession());
@@ -202,6 +382,58 @@ export function History() {
           />
         )}
       </div>
+
+      <div
+        role="status"
+        aria-live="polite"
+        className="mx-1 text-xs text-description"
+        data-testid="history-message-search-status"
+      >
+        {messageSearch &&
+          (messageSearch.searching
+            ? "Searching message text…"
+            : messageSearch.result
+              ? `Message text: ${messageSearch.result.hits.length} session(s) match${
+                  messageSearch.result.stoppedBy
+                    ? ` (searched the newest ${messageSearch.result.scanned} of ${messageSearch.result.total})`
+                    : ""
+                }`
+              : "")}
+      </div>
+
+      {(undo || trashError) && (
+        <div
+          role="status"
+          className="mx-1 my-1 flex items-center gap-2 rounded-md bg-input px-2 py-1 text-xs"
+          data-testid="history-undo"
+        >
+          <span className="min-w-0 flex-1 break-all">
+            {trashError ?? `“${undo!.title}” moved to the trash.`}
+          </span>
+          {undo && !trashError && (
+            <button
+              type="button"
+              ref={undoButtonRef}
+              className="cursor-pointer rounded border-none bg-transparent px-1 text-xs font-semibold text-link underline"
+              onClick={() => void restoreFromTrash(undo.sessionId)}
+              data-testid="history-undo-button"
+            >
+              Undo
+            </button>
+          )}
+          <button
+            type="button"
+            aria-label="Dismiss"
+            className="cursor-pointer border-none bg-transparent p-0 text-description"
+            onClick={() => {
+              setUndo(null);
+              setTrashError(undefined);
+            }}
+          >
+            <XMarkIcon className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       <div className="thin-scrollbar flex w-full flex-1 flex-col overflow-y-auto">
         {active.length === 0 && archived.length === 0 && (
@@ -261,6 +493,8 @@ export function History() {
                       key={session.sessionId}
                       sessionMetadata={session}
                       index={sessionIndex}
+                      onDelete={deleteToTrash}
+                      match={messageMatches.get(session.sessionId)}
                     />
                   ))}
                 </Fragment>
@@ -323,6 +557,8 @@ export function History() {
                             key={session.sessionId}
                             sessionMetadata={session}
                             index={first + i}
+                            onDelete={deleteToTrash}
+                            match={messageMatches.get(session.sessionId)}
                           />
                         ))}
                     </Fragment>
@@ -351,6 +587,8 @@ export function History() {
                       sessionMetadata={session}
                       index={active.length + i}
                       archived
+                      onDelete={deleteToTrash}
+                      match={messageMatches.get(session.sessionId)}
                     />
                   ))}
                 </tbody>
@@ -358,6 +596,12 @@ export function History() {
             )}
           </div>
         )}
+        <TrashSection
+          entries={trash}
+          onRestore={(entry) => void restoreFromTrash(entry.sessionId)}
+          onDeletePermanently={confirmDeletePermanently}
+          onEmpty={confirmEmptyTrash}
+        />
       </div>
 
       <div className="flex flex-col items-end justify-center border-0 border-t border-solid border-border px-2 py-3 text-xs">
