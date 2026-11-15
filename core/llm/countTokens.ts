@@ -16,6 +16,7 @@ import {
 import { normalizeTurns, type TurnRepair } from "./normalizeTurns.js";
 
 import { renderChatMessage } from "../util/messageContent.js";
+import { SUMMARY_MESSAGE_PREFIX } from "../util/summaryMessage.js";
 import { isTaskPlanBlockText } from "../util/taskPlan.js";
 import { AsyncEncoder, LlamaAsyncEncoder } from "./asyncEncoder.js";
 import { ageRequest, type AgeingState } from "../util/contextAgeing.js";
@@ -408,24 +409,36 @@ function pruneRawPromptFromTop(
   return pruneStringFromTop(modelName, maxTokens, prompt);
 }
 
+/** The user message that carries a compaction summary (C104). */
+function isSummaryMessage(message: ChatMessage | undefined): boolean {
+  if (message?.role !== "user") return false;
+  const content = message.content;
+  const text =
+    typeof content === "string"
+      ? content
+      : content.find((part) => part.type === "text")?.text;
+  return !!text?.startsWith(SUMMARY_MESSAGE_PREFIX);
+}
+
 /**
  * The history without every message that starts within the first
  * `dropTokens` tokens of it, counted from the start. A tool result goes with
  * its call, so no result is left without the call that produced it, and
  * `keep` (the user's last message in a tool loop) is never dropped and takes
- * no room in the count.
+ * no room in the count. So does the compaction summary, which belongs to the
+ * head.
  */
 function dropOldestBlocks<T extends ChatMessage & { tokens: number }>(
   history: T[],
   dropTokens: number,
-  keep: T | undefined,
+  keep: ReadonlySet<T>,
 ): T[] {
   if (dropTokens <= 0) return history;
   const kept: T[] = [];
   let position = 0;
   let callDropped = false;
   for (const message of history) {
-    if (message === keep) {
+    if (keep.has(message)) {
       kept.push(message);
       continue;
     }
@@ -638,10 +651,16 @@ function compileChatMessages({
     currentTotal + systemMsgTokens + toolTokens + lastMessagesTokens,
     limits,
   );
+  // The compaction summary (util/summaryMessage.ts) is the first message
+  // after the system message. It is part of the head: never dropped, and the
+  // blocks are counted from the turns after it.
+  const summary = isSummaryMessage(historyWithTokens[0])
+    ? historyWithTokens[0]
+    : undefined;
   const kept = dropOldestBlocks(
     historyWithTokens,
     blocks * limits.block,
-    protectedUser,
+    new Set([protectedUser, summary].filter((m) => m !== undefined)),
   );
   if (kept.length < historyWithTokens.length) {
     didPrune = true;

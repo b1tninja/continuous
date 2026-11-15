@@ -117,6 +117,13 @@ export const MIN_CALIBRATION = 0.6;
 export const MAX_CALIBRATION = 2;
 /** Weight of the newest request in the smoothed ratio. */
 export const CALIBRATION_SMOOTHING = 0.3;
+/**
+ * Once there is a ratio, a sample outside this range of it is ignored: one odd
+ * request (a prompt counted differently, a server that answered from
+ * elsewhere) must not swing the budget.
+ */
+export const MIN_SAMPLE_RELATIVE = 0.7;
+export const MAX_SAMPLE_RELATIVE = 1.5;
 /** Smaller prompts are mostly template overhead and say little about the ratio. */
 export const MIN_CALIBRATION_SAMPLE_TOKENS = 1024;
 
@@ -159,8 +166,9 @@ export function tokenCalibrationFor(model: string): number | undefined {
 /**
  * The usage path: fold one answered request into the model's ratio. The
  * first sample is taken as it is, later ones are smoothed, and the result is
- * clamped to [MIN_CALIBRATION, MAX_CALIBRATION]. A missing count or a prompt
- * too small to say anything is ignored. Returns the new ratio.
+ * clamped to [MIN_CALIBRATION, MAX_CALIBRATION]. A missing count, a prompt
+ * too small to say anything, or a sample outside [0.7, 1.5] times the current
+ * ratio is ignored. Returns the ratio after the sample.
  */
 export function learnTokenCalibration(
   model: string,
@@ -176,6 +184,13 @@ export function learnTokenCalibration(
   }
   const sample = providerTokens / estimatedTokens;
   const previous = calibrations.get(model);
+  if (
+    previous !== undefined &&
+    (sample < previous * MIN_SAMPLE_RELATIVE ||
+      sample > previous * MAX_SAMPLE_RELATIVE)
+  ) {
+    return previous;
+  }
   const smoothed =
     previous === undefined
       ? sample
