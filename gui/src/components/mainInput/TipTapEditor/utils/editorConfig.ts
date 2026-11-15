@@ -8,7 +8,7 @@ import { Plugin } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { useEditor } from "@tiptap/react";
 import { InputModifiers } from "core";
-import { useRef } from "react";
+import { MutableRefObject, useRef } from "react";
 import { IIdeMessenger } from "../../../../context/IdeMessenger";
 import { useSubmenuContextProviders } from "../../../../context/SubmenuContextProviders";
 import { useInputHistory } from "../../../../hooks/useInputHistory";
@@ -82,8 +82,10 @@ export function createEditorConfig(options: {
   props: TipTapEditorProps;
   ideMessenger: IIdeMessenger;
   dispatch: AppDispatch;
+  /** Called after a message is submitted, so its saved draft can go */
+  onSubmittedRef?: MutableRefObject<(() => void) | undefined>;
 }) {
-  const { props, ideMessenger, dispatch } = options;
+  const { props, ideMessenger, dispatch, onSubmittedRef } = options;
 
   const { getSubmenuContextItems } = useSubmenuContextProviders();
   const isStreaming = useAppSelector((state) => state.session.isStreaming);
@@ -383,6 +385,7 @@ export function createEditorConfig(options: {
     }
 
     props.onEnter(json, modifiers, editor);
+    onSubmittedRef?.current?.();
   };
 
   return { editor, onEnter, placeholderTextRef };
