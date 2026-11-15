@@ -17,6 +17,7 @@ import {
 } from "../../redux/slices/tabsSlice";
 import { archiveSessions } from "../../redux/slices/uiSlice";
 import { AppDispatch, RootState } from "../../redux/store";
+import { confirmSessionSwitch } from "../../redux/thunks/interruptConfirm";
 import { loadSession, saveCurrentSession } from "../../redux/thunks/session";
 import { varWithFallback } from "../../styles/theme";
 import { TabActionsMenu } from "./TabActionsMenu";
@@ -210,7 +211,15 @@ export const TabBar = React.forwardRef<HTMLDivElement>((_, ref) => {
     );
   }, [currentSessionId, currentSessionTitle]);
 
-  const handleNewTab = async () => {
+  /** `asked`: the switch was already confirmed (or nobody clicked: no tabs) */
+  const handleNewTab = async (asked = false) => {
+    // Running work is stopped only when the person says so (NI1)
+    if (
+      !asked &&
+      !(await dispatch(confirmSessionSwitch("newSession")).unwrap())
+    ) {
+      return;
+    }
     // Save current session before creating new one
     if (hasHistory) {
       await dispatch(
@@ -232,13 +241,19 @@ export const TabBar = React.forwardRef<HTMLDivElement>((_, ref) => {
 
   useEffect(() => {
     if (!tabs.length) {
-      handleNewTab();
+      void handleNewTab(true);
     }
   }, [tabs.map((t) => t.id).join(",")]);
 
-  const handleTabClick = async (id: string) => {
+  const handleTabClick = async (id: string, asked = false) => {
     const targetTab = tabs.find((tab) => tab.id === id);
-    if (!targetTab) return;
+    if (!targetTab || targetTab.isActive) return;
+    if (
+      !asked &&
+      !(await dispatch(confirmSessionSwitch("switchTab")).unwrap())
+    ) {
+      return;
+    }
 
     if (targetTab.sessionId) {
       // Switch to existing session
@@ -253,16 +268,23 @@ export const TabBar = React.forwardRef<HTMLDivElement>((_, ref) => {
     dispatch(setActiveTab(id));
   };
 
-  const handleTabClose = async (id: string) => {
+  const handleTabClose = async (id: string, asked = false) => {
     //if (tabs.length <= 1) return;
 
     const isClosingActive = tabs.find((t) => t.id === id)?.isActive;
+    if (
+      isClosingActive &&
+      !asked &&
+      !(await dispatch(confirmSessionSwitch("switchTab")).unwrap())
+    ) {
+      return;
+    }
     const filtered = tabs.filter((t) => t.id !== id);
 
     if (isClosingActive) {
       const lastTab = filtered[filtered.length - 1];
       if (filtered.length) {
-        await handleTabClick(lastTab.id);
+        await handleTabClick(lastTab.id, true);
         dispatch(
           setTabs(
             filtered.map((tab, i) => ({
@@ -285,6 +307,12 @@ export const TabBar = React.forwardRef<HTMLDivElement>((_, ref) => {
   const handleTabArchive = async (id: string) => {
     const tab = tabs.find((t) => t.id === id);
     if (!tab) return;
+    if (
+      tab.isActive &&
+      !(await dispatch(confirmSessionSwitch("switchTab")).unwrap())
+    ) {
+      return;
+    }
     const sessionId = tab.isActive ? currentSessionId : tab.sessionId;
     if (tab.isActive && hasHistory) {
       await dispatch(
@@ -294,7 +322,7 @@ export const TabBar = React.forwardRef<HTMLDivElement>((_, ref) => {
     if (sessionId && (!tab.isActive || hasHistory)) {
       dispatch(archiveSessions({ sessionIds: [sessionId] }));
     }
-    await handleTabClose(id);
+    await handleTabClose(id, true);
   };
 
   return (
