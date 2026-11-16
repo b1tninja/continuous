@@ -1553,6 +1553,13 @@ export interface ChatHistoryItem {
   appliedRules?: RuleMetadata[];
   conversationSummary?: string;
   /**
+   * The session's history length when `conversationSummary` was made. Items
+   * from this index on were added after the compaction. On a model with
+   * preserved thinking's prefix check, reasoning minted before it is not sent
+   * again: it was produced with the summarised turns in front of it.
+   */
+  conversationSummaryHistoryLength?: number;
+  /**
    * Set on the last item kept from a turn that the person stopped or that
    * failed, or that a reload cut off. The chat offers Resume for it.
    */
@@ -1577,6 +1584,11 @@ export interface ChatHistoryItem {
 export interface LLMFullCompletionOptions extends BaseCompletionOptions {
   log?: boolean;
   model?: string;
+  /**
+   * Per request, never from config: sent as `strata_prefix` to a local
+   * OpenAI-compatible server (the compaction pre-warm, C106).
+   */
+  strataPrefix?: StrataPrefix;
 }
 
 export type ToastType = "info" | "error" | "warning";
@@ -1673,6 +1685,36 @@ export interface ILLMLogger {
   createInteractionLog(): ILLMInteractionLog;
 }
 
+/** The part of a model's `contextManagement` settings the IDE uses. */
+export interface ModelContextManagement {
+  /**
+   * Planned compaction: prepare the summary in the background past the
+   * prepare threshold. Unset: on for a local server, off otherwise.
+   */
+  plannedCompaction?: boolean;
+  /**
+   * Pre-warm the compacted prompt once its summary is ready (C106):
+   * experimental, "off" by default until the Strata live check; "local" on
+   * Strata and llama.cpp servers. "always"
+   * would add cloud providers, which is not built yet (C109), so it acts as
+   * "local" for now.
+   */
+  prewarm?: PrewarmSetting;
+}
+
+/** `contextManagement.prewarm` (decision D6). */
+export type PrewarmSetting = "off" | "local" | "always";
+
+/**
+ * Strata's `strata_prefix` request field: the checkpoint at the end of the
+ * first `messages` messages (or `tokens` tokens, or `chars` characters of
+ * message `message`) is pinned. Only one pin per engine.
+ */
+export type StrataPrefix =
+  | { messages: number }
+  | { tokens: number }
+  | { message: number; chars: number };
+
 export interface LLMOptions {
   model: string;
 
@@ -1752,6 +1794,9 @@ export interface LLMOptions {
 
   /** Tool overrides for this model */
   toolOverrides?: ToolOverride[];
+
+  /** The model's `contextManagement` settings the IDE reads. */
+  contextManagement?: ModelContextManagement;
 }
 
 type RequireAtLeastOne<T, Keys extends keyof T = keyof T> = Pick<
@@ -2385,6 +2430,9 @@ export interface ModelDescription {
 
   /** Tool overrides for this model */
   toolOverrides?: ToolOverride[];
+
+  /** The model's `contextManagement` settings the IDE reads. */
+  contextManagement?: ModelContextManagement;
 }
 
 export interface JSONEmbedOptions {

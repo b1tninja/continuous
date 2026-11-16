@@ -375,6 +375,7 @@ const FIELD_GROWTH: Record<keyof ChatHistoryItem, GrowthClass> = {
   reasoning: "bounded",
   appliedRules: "bounded",
   conversationSummary: "bounded",
+  conversationSummaryHistoryLength: "bounded",
   interrupted: "bounded",
   removedByUser: "bounded",
   cachePin: "request-time",

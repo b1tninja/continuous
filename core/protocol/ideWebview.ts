@@ -12,6 +12,7 @@ import {
   SetCodeToEditPayload,
   ShowFilePayload,
 } from "../";
+import type { InstructionFilesState } from "../config/markdown/instructionFiles";
 
 export type ToIdeFromWebviewProtocol = ToIdeFromWebviewOrCoreProtocol & {
   /**
@@ -19,6 +20,13 @@ export type ToIdeFromWebviewProtocol = ToIdeFromWebviewOrCoreProtocol & {
    * reads them. A host without it answers with an error, read as none.
    */
   "policy/sessionIdgaf": [{ areas?: string[] }, { areas: string[] }];
+  /**
+   * What the last config load did with instruction files (hidden characters,
+   * secrets, the cap, an `AGENTS.md` withheld in Restricted Mode). `load`
+   * reads the withheld agent files for this window's session and reloads. A
+   * host without it answers with an error, read as nothing to show.
+   */
+  "instructionFiles/state": [{ load?: boolean }, InstructionFilesState];
   openUrl: [string, void];
   applyToFile: [ApplyToFilePayload, void];
   overwriteFile: [{ filepath: string; prevFileContent: string | null }, void];

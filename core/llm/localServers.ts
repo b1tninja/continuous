@@ -790,6 +790,60 @@ export function resetStrataServers(): void {
 }
 
 /**
+ * True when `/v1/models` answers as vLLM does: entries `owned_by: "vllm"`, or
+ * with vLLM's `max_model_len`.
+ */
+async function isVllm(
+  apiBase: string,
+  apiKey: string | undefined,
+  fetchFn: FetchFn,
+  timeoutMs: number,
+): Promise<boolean> {
+  const data = await getJson(
+    new URL("models", withSlash(apiBase)),
+    fetchFn,
+    timeoutMs,
+    apiKey ? { headers: { Authorization: `Bearer ${apiKey}` } } : {},
+  );
+  const entries: any[] = Array.isArray(data?.data) ? data.data : [];
+  return entries.some(
+    (m) => m?.owned_by === "vllm" || typeof m?.max_model_len === "number",
+  );
+}
+
+const fullPromptCountServers = new Map<string, Promise<boolean>>();
+
+/**
+ * Whether the server at `apiBase` reports the whole prompt, the cached part
+ * included, in the usage's `prompt_tokens`: Strata (`/v1/status`), llama.cpp's
+ * `llama-server` (`/props`) and vLLM (`/v1/models`). Other servers are not
+ * assumed to: Ollama's native `prompt_eval_count` leaves out cached tokens,
+ * and LM Studio and the rest are unmeasured. Asked once per address.
+ */
+export function reportsFullPromptTokens(
+  apiBase: string,
+  apiKey?: string,
+  fetchFn: FetchFn = fetch,
+): Promise<boolean> {
+  const known = fullPromptCountServers.get(apiBase);
+  if (known) return known;
+  const pending = (async () => {
+    if (!isLocalApiBase(apiBase)) return false;
+    if (await isStrataServer(apiBase, fetchFn)) return true;
+    const caps = await serverCapabilities(apiBase, apiKey, fetchFn);
+    if (caps.llamaCppStyle) return true;
+    return isVllm(apiBase, apiKey, fetchFn, 3000);
+  })().catch(() => false);
+  fullPromptCountServers.set(apiBase, pending);
+  return pending;
+}
+
+/** Forget which servers report the whole prompt (tests). */
+export function resetFullPromptCountServers(): void {
+  fullPromptCountServers.clear();
+}
+
+/**
  * After a request to a local Strata server, its own record of the request
  * from `/metrics`. Undefined for any other server, a cloud address or no
  * answer. Read once per request, never polled.
