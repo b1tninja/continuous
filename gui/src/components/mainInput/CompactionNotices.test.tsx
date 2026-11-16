@@ -208,13 +208,23 @@ describe("the forced-path hold", () => {
     modifiers: { useCodebase: false, noContext: true },
   };
 
-  async function holdSetup() {
+  async function holdSetup(extra: { pruned?: boolean } = {}) {
     const t = await setup(<CompactionHoldNotice />, 12);
     await act(async () => {
-      t.store.dispatch(setCompactionHold(held));
+      t.store.dispatch(setCompactionHold({ ...held, ...extra }));
     });
     return t;
   }
+
+  it("says so when the conversation is already being cut (D9)", async () => {
+    await holdSetup({ pruned: true });
+    const notice = await screen.findByTestId("compaction-hold");
+    expect(notice.textContent).toContain(
+      "The conversation is already past the point where the oldest turns are dropped to fit, so each cut reads about 390k tokens again.",
+    );
+    expect(notice.textContent).not.toContain("would be read again");
+    expect(screen.getByTestId("compaction-hold-compact")).toBeInTheDocument();
+  });
 
   it("says what the message would cost and offers the two choices", async () => {
     await holdSetup();
