@@ -13,11 +13,13 @@ This page is for site operators who found `Continuous-User` or `Continuous-Crawl
 
 The string carries the product and its release, and nothing about the person: no operating system, no editor, no machine or session id. A person can change it in their own configuration, so not every request from the software carries these tokens.
 
-These tokens are being introduced. Releases before the change send `node-fetch` (and the docs indexer's browser mode sends a Chrome string).
+A request to the person's own search endpoint carries `Continuous-User/<major>.<minor>` without the link to this page. The docs indexer's GitHub mode uses the GitHub API and sends that client's own string.
+
+Releases 2.26 and earlier send `node-fetch` instead (and the docs indexer's browser mode a Chrome string).
 
 ## robots.txt
 
-Both tokens are valid `robots.txt` product tokens (RFC 9309), so a group can name either one:
+Both tokens are valid `robots.txt` product tokens (RFC 9309), so a group can name either one. The check is made under these tokens even when the person has chosen another User-Agent string: the agent checks `robots.txt` as who it is, not as what it sends. For example:
 
 ```
 User-agent: Continuous-Crawler
@@ -36,7 +38,7 @@ The planned behaviour, being built now:
 
 ## Other behaviour
 
-- No cookies are sent or stored, and no `Referer` is sent.
+- No cookies are sent or stored and no `Referer` is sent. `From` and `Accept-Language` are sent only if the person configured them.
 - Each fetch reads one page, with a size cap (2 MiB by default) and a time limit (20 seconds). A limit of 10 requests per host per minute from one person's session is planned.
 - Requests are not signed. Web Bot Auth is not implemented, because a per-install key would identify the person across sites.
 

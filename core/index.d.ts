@@ -1233,9 +1233,21 @@ export interface Usage {
   promptTokens: number;
   /**
    * How fast the server read the part of the prompt it did not have cached,
-   * in tokens per second (llama.cpp's and Strata's `timings.prompt_per_second`).
+   * in tokens per second (llama.cpp's and Strata's `timings.prompt_per_second`;
+   * on Ollama recomputed without the cached tokens).
    */
   promptTokensPerSecond?: number;
+  /**
+   * The server's own clock for the request, when it sends one: llama.cpp's
+   * and Strata's `timings`, Ollama's durations. Bedrock's single latency
+   * number is `response.latencyMs`.
+   */
+  serverTimings?: ServerTimings;
+  /**
+   * This client's timing of the request (`core/llm/requestTiming.ts`), as it
+   * stood when the usage arrived.
+   */
+  timing?: RequestTiming;
   /**
    * What the provider said about the response itself, apart from token counts.
    * Each field is set only when the provider sends it.
@@ -1274,6 +1286,105 @@ export interface Usage {
     rejectedPredictionTokens?: number;
     audioTokens?: number;
   };
+}
+
+/**
+ * A server's own timing of one request, in llama.cpp's `timings` names
+ * (camelCased). Each field is set only when the server sends it.
+ */
+export interface ServerTimings {
+  /**
+   * Prompt tokens the server read, not taken from its cache (llama.cpp
+   * `prompt_n`; on Ollama `prompt_eval_count` minus the cached count).
+   */
+  promptN?: number;
+  /** Prompt tokens taken from its cache (`cache_n`, Ollama `prompt_eval_cached_count`). */
+  cacheN?: number;
+  /** Time spent reading the prompt (`prompt_ms`, Ollama `prompt_eval_duration`). */
+  promptMs?: number;
+  /** `promptN` per second of `promptMs`: the read speed over uncached tokens. */
+  promptPerSecond?: number;
+  /** Tokens written (`predicted_n`, Ollama `eval_count`). */
+  predictedN?: number;
+  /** Time spent writing them (`predicted_ms`, Ollama `eval_duration`). */
+  predictedMs?: number;
+  /** The server's decode speed (`predicted_per_second`, Ollama `eval_count / eval_duration`). */
+  predictedPerSecond?: number;
+  /** Speculative draft tokens offered (`draft_n`; llama.cpp and Strata only). */
+  draftN?: number;
+  /** Of those, accepted (`draft_n_accepted`). */
+  draftNAccepted?: number;
+  /** Time spent loading the model (Ollama `load_duration`). */
+  loadMs?: number;
+  /** The whole request on the server's clock (Ollama `total_duration`). */
+  totalMs?: number;
+}
+
+/**
+ * Where a timing number came from: the server's own clock or count, this
+ * client's clock, or an estimate from characters (shown with `~`).
+ */
+export type TimingSource = "server" | "measured" | "estimate";
+
+export interface TimedValue {
+  value: number;
+  source: TimingSource;
+}
+
+/** What a request is doing, as its stream tells. */
+export type RequestPhase =
+  "waiting" | "reading" | "thinking" | "writing" | "tool-call" | "held";
+
+/**
+ * One request's timing, folded from its stream (J15,
+ * plans/research/throughput-latency-display.md section 6.1). Times are
+ * epoch milliseconds on this client's clock.
+ */
+export interface RequestTiming {
+  sentAt: number;
+  headersAt?: number;
+  /** The first chunk that says anything (progress, hold, output, usage). */
+  firstEventAt?: number;
+  /** The first output token: reasoning, text or a tool-call delta. */
+  firstOutputAt?: number;
+  /** The first text or tool-call delta (after any thinking). */
+  firstContentAt?: number;
+  lastOutputAt?: number;
+  endAt?: number;
+  phase: RequestPhase;
+  phaseSince: number;
+  /** Each phase change, in order (a new tool name counts as one). */
+  phases: { phase: RequestPhase; at: number; tool?: string }[];
+  /** The tool whose call is being written, in phase `tool-call`. */
+  toolName?: string;
+  /** Characters of reasoning, text and tool arguments. */
+  outputChars: number;
+  /** Bytes of tool-call arguments. */
+  toolArgBytes?: number;
+  /** The model thought without its text being sent (Anthropic "omitted"). */
+  thinkingHidden?: boolean;
+  /** Time to first token, always measured here. */
+  firstTokenMs?: TimedValue;
+  outputTokens?: TimedValue;
+  /** Tokens per second: live a `~` estimate; at the end server, measured or estimate. */
+  outputRate?: TimedValue;
+  promptTokens?: number;
+  /** The prompt read, only from the server; `rate` only when it timed it. */
+  prefill?: {
+    read: number;
+    cached: number;
+    ms?: number;
+    rate?: number;
+    source: TimingSource;
+  };
+  /** Speculative drafts, only from the server. */
+  drafts?: { offered: number; accepted: number };
+  /** Bedrock `metrics.latencyMs`. */
+  serverLatencyMs?: number;
+  /** Ollama `load_duration`. */
+  loadMs?: number;
+  /** When the last delta arrived, set while no delta has come for STALL_MS. */
+  stalledSince?: number;
 }
 
 /**
@@ -1642,6 +1753,8 @@ export interface LLMInteractionEnd extends LLMInteractionBase {
   generatedTokens: number;
   thinkingTokens: number;
   usage: Usage | undefined;
+  /** The request's timing at its end (chat requests). */
+  timing?: RequestTiming;
 }
 
 export interface LLMInteractionSuccess extends LLMInteractionEnd {

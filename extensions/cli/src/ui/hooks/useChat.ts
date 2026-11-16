@@ -21,6 +21,7 @@ import { ModelNoteGate, onModelInUse } from "../../services/modelInUse.js";
 import {
   createSession,
   forkIntoNewSession,
+  keepCopyBeforeEdit,
   loadSession,
   loadSessionById,
   onLoopChange,
@@ -35,7 +36,7 @@ import {
 import { telemetryService } from "../../telemetry/telemetryService.js";
 import { formatError } from "../../util/formatError.js";
 import { logger } from "../../util/logger.js";
-import { setUserNoticeSink } from "../../util/userNotice.js";
+import { setUserNoticeSink, userNotice } from "../../util/userNotice.js";
 
 import {
   handleAutoCompaction,
@@ -55,6 +56,7 @@ import {
   setupRemotePolling,
 } from "./useChat.remote.helpers.js";
 import { handleBashModeProcessing } from "./useChat.shellMode.js";
+import { continueStoppedReply, keepStoppedReply } from "./useChat.stopped.js";
 import {
   createStreamCallbacks,
   executeStreaming,
@@ -195,6 +197,8 @@ export function useChat({
   const modelStreamingRef = useRef(false);
   // The running response was ended by "Steer now": send the queue at once
   const steerNowRef = useRef(false);
+  // The text the request in flight has streamed so far (Stop keeps it)
+  const partialReplyRef = useRef("");
   const [isChatHistoryInitialized, setIsChatHistoryInitialized] = useState(
     // If we're resuming and found a saved session, we're already initialized
     // If we're forking and found a session to fork from, we're already initialized
@@ -429,6 +433,19 @@ export function useChat({
       streamCallbacks.onModelStreaming = (streaming: boolean) => {
         modelStreamingRef.current = streaming;
       };
+      // What the request in flight has streamed, for Stop to keep; a reply
+      // that completed is written to the history by the stream itself
+      partialReplyRef.current = "";
+      const onContent = streamCallbacks.onContent;
+      streamCallbacks.onContent = (text: string) => {
+        partialReplyRef.current += text;
+        onContent(text);
+      };
+      const onContentComplete = streamCallbacks.onContentComplete;
+      streamCallbacks.onContentComplete = (text: string) => {
+        partialReplyRef.current = "";
+        return onContentComplete(text);
+      };
 
       // Execute streaming chat response
       await executeStreaming({
@@ -553,6 +570,20 @@ export function useChat({
         lastUserOrToolIndex = i;
         break;
       }
+    }
+
+    // A stopped partial reply is kept: the model is asked to go on from it
+    const continued = continueStoppedReply(chatHistory);
+    if (continued) {
+      setChatHistory(continued);
+      setWasInterrupted(false);
+      messageQueue.resume();
+      if (messageQueue.getQueueLength() > 0) {
+        await drainQueue();
+        return true;
+      }
+      await executeStreamingResponse(continued, compactionIndex);
+      return true;
     }
 
     if (lastUserOrToolIndex >= 0) {
@@ -942,17 +973,12 @@ export function useChat({
       messageQueue.pause();
       abortController.abort();
 
-      // Remove the last message if it's from assistant (partial response)
-      setChatHistory((current) => {
-        const lastMessage = current[current.length - 1];
-        if (
-          lastMessage?.message.role === "assistant" &&
-          !lastMessage.toolCallStates?.length
-        ) {
-          return current.slice(0, -1);
-        }
-        return current;
-      });
+      // The partial reply is kept, marked stopped, and saved with the
+      // session (the history service writes it), as the IDE keeps it. An
+      // empty one goes.
+      const partial = partialReplyRef.current;
+      partialReplyRef.current = "";
+      setChatHistory((current) => keepStoppedReply(current, partial));
 
       setWasInterrupted(true);
       setIsWaitingForResponse(false);
@@ -986,6 +1012,23 @@ export function useChat({
       messageIndex,
       currentHistoryLength: chatHistory.length,
     });
+
+    // What the edit replaces is kept as a session of its own (NI7)
+    const replaced = chatHistory
+      .slice(messageIndex)
+      .filter((item) => item.message.role !== "system").length;
+    const kept = replaced > 0 ? keepCopyBeforeEdit(chatHistory) : undefined;
+    if (kept) {
+      userNotice(
+        `Edited: the ${replaced} replaced message${replaced === 1 ? " is" : "s are"} kept in "${kept.title}"; /resume opens it.`,
+        `edit-copy:${kept.sessionId}`,
+      );
+    } else if (replaced > 0) {
+      userNotice(
+        "Edited: the replaced messages could not be saved as a copy.",
+        `edit-copy-failed:${Date.now()}`,
+      );
+    }
 
     // Rewind chat history to exclude the message being edited
     const rewindedHistory = chatHistory.slice(0, messageIndex);

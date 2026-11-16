@@ -17,6 +17,7 @@ import { useAppSelector } from "../../../../redux/hooks";
 import { selectUseActiveFile } from "../../../../redux/selectors";
 import { AppDispatch } from "../../../../redux/store";
 import { exitEdit } from "../../../../redux/thunks/edit";
+import { askToStopResponse } from "../../../../redux/thunks/interruptConfirm";
 import { getFontSize, isJetBrains } from "../../../../util";
 import { CodeBlock, Mention, PromptBlock, SlashCommand } from "../extensions";
 import { TipTapEditorProps } from "../TipTapEditor";
@@ -270,6 +271,18 @@ export function createEditorConfig(options: {
             Escape: () => {
               if (inDropdownRef.current) {
                 return false;
+              }
+              // The stop key (NI8): Esc on an empty main input while the
+              // reply streams asks "Stop the response?" (Enter stops, Esc
+              // keeps going); it never stops on its own. With text typed,
+              // Esc does what it always did.
+              if (
+                props.isMainInput &&
+                isStreamingRef.current &&
+                this.editor.isEmpty
+              ) {
+                void dispatch(askToStopResponse());
+                return true;
               }
               // In JetBrains, this is how we close the sidebar when the input box is focused
               if (isJetBrains()) {

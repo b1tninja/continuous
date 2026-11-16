@@ -10,8 +10,8 @@ import {
   FetchFunction,
   RequestOptions,
 } from "../../index.js";
+import { decodeBytes } from "../../util/boundedBody";
 import { fetchFavicon } from "../../util/fetchFavicon";
-import { readBodyCapped, withDeadline } from "../../util/boundedBody";
 import {
   classifyContentType,
   mediaType,
@@ -28,7 +28,9 @@ import {
   assertNoUserinfo,
   classifyFetchTarget,
 } from "../../util/fetchUrlSafety";
-import { fetchWithGuardedRedirects } from "../../util/guardedFetch";
+import { withProvenance, type FetchPurpose } from "../../util/fetchRecord";
+import { guardedWebRequest } from "../../util/guardedFetch";
+import { modelToolFetch } from "../../util/modelToolFetch";
 import { readUserFetchLimits } from "../../util/userFetchLimits";
 
 class URLContextProvider extends BaseContextProvider {
@@ -43,9 +45,16 @@ class URLContextProvider extends BaseContextProvider {
     query: string,
     extras: ContextProviderExtras,
   ): Promise<ContextItem[]> {
-    return await getUrlContextItems(query, extras.fetch, {
-      requestOptions: extras.config?.requestOptions,
-    });
+    // Not `extras.fetch`, which carries the global request headers (often a
+    // gateway token) to every host: a site the person names gets the
+    // transport settings only, as the fetch tool's sites do
+    return await getUrlContextItems(
+      query,
+      modelToolFetch(extras.config ?? {}),
+      {
+        requestOptions: extras.config?.requestOptions,
+      },
+    );
   }
 }
 
@@ -54,12 +63,11 @@ export default URLContextProvider;
 export interface UrlFetchOptions {
   /**
    * For URLs chosen by the model (the fetch tool) rather than typed by the
-   * user: follow redirects one at a time and refuse one that leads from a
-   * public address to a non-public one (loopback, private network, the cloud
-   * metadata address), skip the favicon lookup, which would fetch another
-   * URL from the page, and refuse a URL that carries a credential-shaped
-   * value. A URL that is itself non-public is the caller's decision (the
-   * tool asks for approval first).
+   * user: skip the favicon lookup, which would fetch another URL from the
+   * page, and refuse a URL that carries a credential-shaped value. Redirects
+   * are guarded for both (every hop re-checked, a public-to-non-public hop
+   * refused). A URL that is itself non-public is the caller's decision (the
+   * tool asks for approval first; a person who types one meant it).
    */
   guardRedirects?: boolean;
   /** For the favicon lookup, which does not go through `fetchFn`. */
@@ -68,6 +76,10 @@ export interface UrlFetchOptions {
   maxBytes?: number;
   /** Deadline in milliseconds for the whole request including the body. Default: 20 s. */
   deadlineMs?: number;
+  /** The tool call that asked, for the fetch record. */
+  callId?: string;
+  /** Which path is fetching. Default: `tool` with `guardRedirects`, else `url`. */
+  purpose?: FetchPurpose;
 }
 
 export async function getUrlContextItems(
@@ -76,51 +88,41 @@ export async function getUrlContextItems(
   options: UrlFetchOptions = {},
 ): Promise<ContextItem[]> {
   const startUrl = new URL(query.trim());
-  let url = startUrl;
+  const byModel = !!options.guardRedirects;
   // Before any network call, and for typed and model-chosen URLs alike
   assertFetchableScheme(startUrl);
   assertNoUserinfo(startUrl);
-  if (options.guardRedirects) assertNoSecretInUrl(startUrl);
+  if (byModel) assertNoSecretInUrl(startUrl);
 
   const limits = readUserFetchLimits();
   const maxBytes = options.maxBytes ?? limits.maxBytes;
   const deadlineMs = options.deadlineMs ?? limits.deadlineMs;
 
-  const icon = options.guardRedirects
+  const icon = byModel
     ? undefined
     : await fetchFavicon(startUrl, options.requestOptions);
-  const { text, truncated, contentType } = await withDeadline(
+  const resp = await guardedWebRequest(startUrl, {
+    purpose: options.purpose ?? (byModel ? "tool" : "url"),
+    origin: byModel ? "model" : "person",
+    fetchFn,
+    maxBytes,
     deadlineMs,
-    async (signal) => {
-      const resp = options.guardRedirects
-        ? await fetchWithGuardedRedirects(
-            startUrl,
-            fetchFn,
-            {
-              classify: classifyFetchTarget,
-              // The page is labelled with where it was read, not where the
-              // model pointed: a redirect can lead to another host
-              onFinalUrl: (final) => {
-                url = final;
-              },
-            },
-            { signal },
-          )
-        : await fetchFn(startUrl, { signal } as never);
-
-      // Check if the response is not OK
-      if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
-      }
-      const contentType: string | null =
-        resp.headers?.get?.("content-type") ?? null;
-      if (classifyContentType(contentType) === "binary") {
-        throw binaryRefusal(contentType);
-      }
-      const body = await readBodyCapped(resp, { maxBytes, signal, deadlineMs });
-      return { ...body, contentType };
+    guard: { classify: classifyFetchTarget },
+    callId: options.callId,
+    accept: ({ headers }) => {
+      const type = headers.get("content-type");
+      if (classifyContentType(type) === "binary") throw binaryRefusal(type);
     },
-  );
+  });
+  if (!resp.ok) {
+    // The status only: an error page is not shown to the model
+    throw new Error(`HTTP ${resp.status} ${resp.statusText}`.trim());
+  }
+  // The page is labelled with where it was read, not where it was pointed:
+  // a redirect can lead to another host
+  const url = resp.finalUrl;
+  const { contentType, truncated } = resp;
+  const text = decodeBytes(resp.data, contentType, truncated);
 
   let kind: BodyKind = classifyContentType(contentType);
   if (kind === "unknown") kind = sniffBody(text);
@@ -132,7 +134,8 @@ export async function getUrlContextItems(
     {
       icon,
       description: url.toString(),
-      content: sanitizeFetchedText(markdown),
+      // Where it was read, its status, size and hash, ahead of the page
+      content: withProvenance(resp.record, sanitizeFetchedText(markdown)),
       name:
         sanitizeFetchedText(title).replace(/\s+/g, " ").trim() || url.pathname,
       uri: {
