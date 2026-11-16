@@ -22,10 +22,7 @@ import { getTotalSessionCost } from "../session.js";
 import { bashToolEvents } from "../util/cli.js";
 import { logger } from "../util/logger.js";
 
-import {
-  ActionStatus,
-  READING_REPLY_MESSAGE,
-} from "./components/ActionStatus.js";
+import { ActionStatus, spinnerMessage } from "./components/ActionStatus.js";
 import { BottomStatusBar } from "./components/BottomStatusBar.js";
 import { ResourceDebugBar } from "./components/ResourceDebugBar.js";
 import { ScreenContent } from "./components/ScreenContent.js";
@@ -214,6 +211,7 @@ const TUIChat: React.FC<TUIChatProps> = ({
     setChatHistory,
     isWaitingForResponse,
     isReadingReply,
+    promptProgress,
     liveReasoning,
     responseStartTime,
     isCompacting,
@@ -452,7 +450,7 @@ const TUIChat: React.FC<TUIChatProps> = ({
         <ActionStatus
           visible={isWaitingForResponse && !!responseStartTime}
           startTime={responseStartTime || 0}
-          message={isReadingReply ? READING_REPLY_MESSAGE : ""}
+          message={spinnerMessage(isReadingReply, promptProgress)}
           showSpinner={true}
           additionalHint={
             isBashToolRunning ? "ctrl+b to background" : undefined
