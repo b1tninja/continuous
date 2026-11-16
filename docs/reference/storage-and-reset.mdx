@@ -36,6 +36,7 @@ The VS Code extension and the terminal agent keep everything on your machine: on
 | `index/`                   | The codebase and docs indexes, and `globalContext.json` (selected config and other choices) | Delete; it is rebuilt                       |
 | `trusted-project.json`     | Projects whose own configuration you trusted                                | `continuous project revoke` in that project, or delete      |
 | `trusted-hooks.json`       | Projects whose hooks you trusted                                            | `continuous hooks revoke` in that project, or delete        |
+| `hook-notices.json`        | One-time hook notices already shown (`~/.claude` hooks are opt-in)          | delete, and the notice shows again                          |
 | `mcp-tool-pins.json`       | The MCP tool definitions you approved                                       | Delete; each tool asks again                                |
 | `measured-facts.json`      | What `test-connection` saw on your endpoints                                | Delete                                                      |
 | `retirement-notices.json`  | Which model retirement notices were shown or dismissed                      | Delete                                                      |

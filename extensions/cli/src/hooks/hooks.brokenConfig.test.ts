@@ -30,8 +30,25 @@ describe("hook settings files that do not parse", () => {
     fs.mkdirSync(path.join(cwd, ".claude"), { recursive: true });
     delete process.env.CONTINUOUS_GLOBAL_DIR;
     delete process.env.CONTINUE_GLOBAL_DIR;
+    // These tests are about ~/.claude/settings.json, which is read only with
+    // the opt-in (D-023)
+    optInToClaude(true);
     setTrustProjectHooksForRun(true);
     resetWarnOnce();
+  });
+  const optInToClaude = (value: boolean) => {
+    fs.mkdirSync(path.join(home, ".continuous"), { recursive: true });
+    fs.writeFileSync(
+      path.join(home, ".continuous", "settings.json"),
+      JSON.stringify({ hooks: { readClaudeSettings: value } }),
+    );
+  };
+
+  it("a broken ~/.claude file is not reported when it is not read", () => {
+    optInToClaude(false);
+    fs.writeFileSync(path.join(home, ".claude", "settings.json"), "{ ,");
+    const loaded = loadHooksConfig(cwd, home);
+    expect(loaded.broken).toBeUndefined();
   });
   afterEach(() => {
     setTrustProjectHooksForRun(false);
