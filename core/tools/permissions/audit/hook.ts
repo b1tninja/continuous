@@ -31,6 +31,8 @@ export interface AuditCallContext {
   loopItem?: string;
   /** Which agent made the call; absent for a host that does not say */
   agent?: AuditAgent;
+  /** The shell the decision read a terminal command with, and how it is known */
+  shell?: { kind: string; source: "spawned" | "terminal" };
 }
 
 export function auditPolicyOf(policy: ToolPolicy): AuditPolicy {
@@ -102,6 +104,9 @@ function baseInput(
     ...(level ? { level } : {}),
     ...(ctx.loopItem ? { loopItem: ctx.loopItem } : {}),
     ...(ctx.agent ? { agent: ctx.agent, mode: ctx.agent.mode } : {}),
+    ...(ctx.shell && ctx.toolName === "run_terminal_command"
+      ? { reading: { shell: ctx.shell.kind, shellSource: ctx.shell.source } }
+      : {}),
     ...taintedField(ctx.session),
   };
 }

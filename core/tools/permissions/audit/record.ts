@@ -79,7 +79,13 @@ export function auditAgentOf(
 
 /** What the command analysis found; every part is optional while it is wired up */
 export interface AuditReading {
+  /** The grammar the command was read with: bash, powershell, cmd, unknown */
   shell?: string;
+  /**
+   * How that shell is known: "spawned" when this process starts it (a fact),
+   * "terminal" when the command goes to a terminal whose shell it cannot see
+   */
+  shellSource?: "spawned" | "terminal";
   understood?: boolean;
   verdict?: "reads" | "writes" | "unsure";
   effects?: string[];
