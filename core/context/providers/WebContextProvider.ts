@@ -5,6 +5,8 @@ import {
   ContextProviderExtras,
 } from "../..";
 
+import { modelToolFetch } from "../../util/modelToolFetch";
+
 import { fetchSearchResults } from "./webSearchBackend";
 
 /**
@@ -29,7 +31,9 @@ export default class WebContextProvider extends BaseContextProvider {
     return await fetchSearchResults(
       extras.fullInput,
       this.options.n ?? WebContextProvider.DEFAULT_N,
-      extras.fetch,
+      // Not `extras.fetch`: the global request headers are not the search
+      // endpoint's to receive
+      modelToolFetch(extras.config ?? {}),
     );
   }
 }

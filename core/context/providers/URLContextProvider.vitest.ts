@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { gzipSync } from "node:zlib";
 import nodeFetch from "node-fetch";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { PROVENANCE_LINE } from "../../util/fetchRecord";
 import { setHostResolver } from "../../util/networkAddress";
 import { secretCases } from "../../util/secretScan/fixtures";
 import { getUrlContextItems } from "./URLContextProvider";
@@ -114,6 +115,10 @@ afterAll(async () => {
 
 const guarded = { guardRedirects: true };
 
+/** The page text, without the provenance line every fetched item starts with. */
+const page = (item: { content: string }) =>
+  item.content.replace(PROVENANCE_LINE, "");
+
 describe("byte cap and deadline", () => {
   it("returns a page under the cap with no warning", async () => {
     const items = await getUrlContextItems(`${base}/plain`, fetchFn, guarded);
@@ -126,7 +131,7 @@ describe("byte cap and deadline", () => {
       ...guarded,
       maxBytes: 10_000,
     });
-    expect(items[0].content.length).toBeLessThanOrEqual(10_000);
+    expect(page(items[0]).length).toBeLessThanOrEqual(10_000);
     expect(items[1].name).toBe("Truncation warning");
     expect(items[1].content).toMatch(/longer than 10000 bytes/);
   });
@@ -137,7 +142,7 @@ describe("byte cap and deadline", () => {
       maxBytes: 50_000,
       deadlineMs: 5000,
     });
-    expect(items[0].content.length).toBe(50_000);
+    expect(page(items[0]).length).toBe(50_000);
     expect(items[1].name).toBe("Truncation warning");
   });
 
@@ -157,7 +162,7 @@ describe("byte cap and deadline", () => {
       ...guarded,
       maxBytes: 100_000,
     });
-    expect(items[0].content.length).toBe(100_000);
+    expect(page(items[0]).length).toBe(100_000);
     expect(items[1].name).toBe("Truncation warning");
   });
 
@@ -172,14 +177,14 @@ describe("byte cap and deadline", () => {
 describe("content types", () => {
   it("returns JSON as indented text (T19)", async () => {
     const [item] = await getUrlContextItems(`${base}/json`, fetchFn, guarded);
-    expect(item.content).toBe(
+    expect(page(item)).toBe(
       JSON.stringify({ name: "x", items: [1, 2, { a: true }] }, null, 2),
     );
   });
 
   it("returns plain text and markdown, not an empty string (T20)", async () => {
     const [plain] = await getUrlContextItems(`${base}/plain`, fetchFn, guarded);
-    expect(plain.content).toBe("RFC 9999\n\nThis is plain text.\n");
+    expect(page(plain)).toBe("RFC 9999\n\nThis is plain text.\n");
     const [md] = await getUrlContextItems(`${base}/markdown`, fetchFn, guarded);
     expect(md.content).toContain("Some *markdown*");
     // comments are removed from text too
@@ -301,6 +306,6 @@ describe("URL checks before any network call", () => {
       `https://example.com/?k=${value}`,
       fetch as never,
     );
-    expect(items[0].content).toBe("ok");
+    expect(page(items[0])).toBe("ok");
   });
 });

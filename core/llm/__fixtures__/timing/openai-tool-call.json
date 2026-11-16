@@ -1,0 +1,60 @@
+{
+  "_comment": "What the OpenAI adapter path (messagesFromChatCompletionChunk) yields for a Chat Completions stream with stream_options.include_usage: text, then a tool call whose name comes on the first delta and whose arguments come in pieces, then the usage chunk before [DONE]. No server timing. `at` is milliseconds after the request was sent. Synthesized; no API was called.",
+  "events": [
+    {
+      "at": 900,
+      "message": { "role": "assistant", "content": "Let me edit it." }
+    },
+    {
+      "at": 1100,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "toolCalls": [
+          {
+            "id": "call_1",
+            "index": 0,
+            "type": "function",
+            "function": { "name": "edit_file", "arguments": "" }
+          }
+        ]
+      }
+    },
+    {
+      "at": 1600,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "toolCalls": [
+          {
+            "index": 0,
+            "type": "function",
+            "function": { "arguments": "{\"path\":\"src/a.ts\",\"edit\":\"" }
+          }
+        ]
+      }
+    },
+    {
+      "at": 2900,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "toolCalls": [
+          {
+            "index": 0,
+            "type": "function",
+            "function": { "arguments": "const é = 1;\"}" }
+          }
+        ]
+      }
+    },
+    {
+      "at": 3000,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "usage": { "promptTokens": 5000, "completionTokens": 84 }
+      }
+    }
+  ]
+}

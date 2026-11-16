@@ -10,8 +10,11 @@ import {
   resumeResponseThunk,
   startLoopFromPaletteThunk,
   stopLoopFromPaletteThunk,
-  stopResponseThunk,
 } from "../redux/thunks/paletteCommands";
+import {
+  askToStopResponse,
+  selectCanStop,
+} from "../redux/thunks/interruptConfirm";
 import { ROUTES } from "../util/navigation";
 import { useWebviewListener } from "./useWebviewListener";
 
@@ -27,10 +30,17 @@ export function usePaletteCommandListeners() {
   const navigate = useNavigate();
   const openModelConfig = useModelConfigDialog();
 
+  // A command can be bound to one key, so it asks first, as Esc does (NI8).
+  // The answer is whether there was anything to stop, at once: the question
+  // in the panel does the rest.
   useWebviewListener(
     "stopResponse",
-    async () => dispatch(stopResponseThunk()).unwrap(),
-    [dispatch],
+    async () => {
+      if (!selectCanStop(store.getState())) return false;
+      void dispatch(askToStopResponse());
+      return true;
+    },
+    [dispatch, store],
   );
 
   useWebviewListener(

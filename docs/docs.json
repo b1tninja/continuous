@@ -51,6 +51,7 @@
                   "ide-extensions/agent/terminal-environment",
                   "ide-extensions/agent/permissions-page",
                   "ide-extensions/agent/model-setup",
+                  "ide-extensions/agent/stop-and-resume",
                   "ide-extensions/agent/accessibility",
                   "ide-extensions/agent/how-to-customize",
                   "ide-extensions/agent/context-selection"

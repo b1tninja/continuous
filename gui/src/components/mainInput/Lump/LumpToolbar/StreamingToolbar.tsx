@@ -28,7 +28,8 @@ function useElapsedSeconds(active: boolean): number {
 const SHOW_SECONDS_AFTER = 10;
 
 interface StreamingToolbarProps {
-  onStop: () => void;
+  /** `fromKeyboard`: Enter or Space on the button, not a pointer click */
+  onStop: (fromKeyboard: boolean) => void;
   displayText?: string;
 }
 
@@ -63,7 +64,12 @@ export function StreamingToolbar({
       )}
       <button
         type="button"
-        onClick={onStop}
+        // A click is a deliberate pointer action and stops at once; Enter or
+        // Space on the button asks first, as every stop key does (NI8). Esc
+        // on an empty input is the shortcut.
+        onClick={(event) => onStop(event.detail === 0)}
+        aria-keyshortcuts="Escape"
+        title="Stop the response (Esc on an empty input asks first)"
         className="min-h-6 cursor-pointer border-none bg-transparent px-1.5 py-0.5 text-2xs hover:brightness-125"
       >
         <span className="text-description">{displayText}</span>

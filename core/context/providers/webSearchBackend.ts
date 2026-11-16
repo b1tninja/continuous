@@ -42,11 +42,19 @@ export function isWebSearchConfigured(
   return getWebSearchBackend(env) !== undefined;
 }
 
+/**
+ * Query the person's search endpoint through the shared fetch guard, with the
+ * person's byte cap and deadline. `fetchFn` must not add the global request
+ * headers (pass `modelToolFetch(config)`): only the endpoint's own key is
+ * sent, and only to the endpoint. An error says the status and never quotes
+ * the response body.
+ */
 export const fetchSearchResults = async (
   query: string,
   n: number,
   fetchFn: FetchFunction,
   backend: WebSearchBackend | undefined = getWebSearchBackend(),
+  options: { callId?: string } = {},
 ): Promise<ContextItem[]> => {
   if (!backend) {
     throw new Error(
@@ -57,23 +65,51 @@ export const fetchSearchResults = async (
   url.searchParams.set("q", query);
   url.searchParams.set("format", "json");
 
-  const resp = await fetchFn(url, {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-      ...(backend.apiKey ? { Authorization: `Bearer ${backend.apiKey}` } : {}),
+  // Loaded on demand: this module is also imported for
+  // `isWebSearchConfigured` by code that must not pull in the network stack
+  const [{ guardedWebRequest }, { decodeBytes }, { readUserFetchLimits }] =
+    await Promise.all([
+      import("../../util/guardedFetch"),
+      import("../../util/boundedBody"),
+      import("../../util/userFetchLimits"),
+    ]);
+  const limits = readUserFetchLimits();
+  const resp = await guardedWebRequest(url, {
+    purpose: "search",
+    origin: "config",
+    fetchFn,
+    init: {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        ...(backend.apiKey
+          ? { Authorization: `Bearer ${backend.apiKey}` }
+          : {}),
+      },
     },
+    maxBytes: limits.maxBytes,
+    deadlineMs: limits.deadlineMs,
+    callId: options.callId,
   });
   if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Web search failed (${resp.status}): ${text}`);
+    throw new Error(`Web search failed (HTTP ${resp.status})`);
   }
-  const body = (await resp.json()) as {
-    results?: { title?: string; url?: string; content?: string }[];
-  };
-  return (body.results ?? []).slice(0, n).map((r) => ({
-    name: r.title ?? r.url ?? "Search result",
-    description: r.url ?? "",
-    content: r.content ?? "",
-  }));
+  if (resp.truncated) {
+    throw new Error(
+      `Web search failed: the response is larger than ${limits.maxBytes} bytes`,
+    );
+  }
+  let body: { results?: { title?: string; url?: string; content?: string }[] };
+  try {
+    body = JSON.parse(decodeBytes(resp.data, resp.contentType, false));
+  } catch {
+    throw new Error("Web search failed: the response is not JSON");
+  }
+  return (Array.isArray(body?.results) ? body.results : [])
+    .slice(0, n)
+    .map((r) => ({
+      name: r.title ?? r.url ?? "Search result",
+      description: r.url ?? "",
+      content: r.content ?? "",
+    }));
 };

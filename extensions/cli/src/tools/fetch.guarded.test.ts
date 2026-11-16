@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const calls: { url: string; init: any; options: any }[] = [];
+let reply: (url: string) => Response = () =>
+  new Response("page body", { headers: { "content-type": "text/plain" } });
 
 // The network layer: record what reaches the HTTP client instead of sending it
 vi.mock("@continuedev/fetch", async (importActual) => {
@@ -10,9 +12,7 @@ vi.mock("@continuedev/fetch", async (importActual) => {
     fetchwithRequestOptions: vi.fn(
       async (url: any, init: any, options: any) => {
         calls.push({ url: String(url), init, options });
-        return new Response("page body", {
-          headers: { "content-type": "text/plain" },
-        });
+        return reply(String(url));
       },
     ),
   };
@@ -32,6 +32,8 @@ import { fetchTool } from "./fetch.js";
 describe("CLI Fetch uses the hardened fetch", () => {
   beforeEach(() => {
     calls.length = 0;
+    reply = () =>
+      new Response("page body", { headers: { "content-type": "text/plain" } });
     config = {
       requestOptions: {
         proxy: "http://proxy.corp:3128",
@@ -64,5 +66,26 @@ describe("CLI Fetch uses the hardened fetch", () => {
     config = null;
     await fetchTool.run({ url: "http://93.184.216.34/page" });
     expect(typeof calls[0].init.lookup).toBe("function");
+  });
+
+  it("starts the output with the core provenance line", async () => {
+    const out = await fetchTool.run({ url: "http://93.184.216.34/page" });
+    expect(out).toMatch(
+      /^\[fetched http:\/\/93\.184\.216\.34\/page · 200 text\/plain · 9 B · .* · sha256:[0-9a-f]{12} · robots: not checked · rule: builtin:public · unencrypted\]\n\npage body/,
+    );
+  });
+
+  it("refuses a redirect to the metadata address, as the IDE tool does", async () => {
+    reply = (url) =>
+      url.includes("169.254")
+        ? new Response("metadata", { status: 200 })
+        : new Response(null, {
+            status: 302,
+            headers: { location: "http://169.254.169.254/latest/meta-data/" },
+          });
+    await expect(
+      fetchTool.run({ url: "http://93.184.216.34/page" }),
+    ).rejects.toThrow(/non-public address \(169\.254\.169\.254/);
+    expect(calls.map((c) => c.url)).toEqual(["http://93.184.216.34/page"]);
   });
 });

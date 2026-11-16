@@ -28,9 +28,11 @@ import { CachingOffNotice } from "../../components/mainInput/CachingOffNotice";
 import { ToolDialectNotice } from "../../components/mainInput/ToolDialectNotice";
 import { ColdCacheNotice } from "../../components/mainInput/ColdCacheNotice";
 import { SessionLoadNotice } from "../../components/mainInput/SessionLoadNotice";
+import { EditUndoLine } from "../../components/mainInput/EditUndoLine";
 import { IdgafNotice } from "../../components/mainInput/IdgafNotice";
 import { InstructionFileNotice } from "../../components/mainInput/InstructionFileNotice";
 import { AgentsList } from "../../components/BackgroundMode/AgentsList";
+import { InterruptConfirm } from "../../components/InterruptConfirm";
 import { NeedsYouTray } from "../../components/loop/NeedsYouTray";
 import { LoopInbox } from "../../components/mainInput/LoopInbox";
 import {
@@ -65,6 +67,7 @@ import {
   QueuedMessage,
   moveQueuedMessage,
   removeQueuedMessage,
+  setEditUndo,
   setLoadingSessionId,
   steerQueuedMessages,
   takeQueuedMessages,
@@ -73,6 +76,7 @@ import {
 import { streamEditThunk } from "../../redux/thunks/edit";
 import { loadLastSession } from "../../redux/thunks/session";
 import { streamResponseThunk } from "../../redux/thunks/streamResponse";
+import { keepReplacedTurns } from "../../redux/thunks/editCopy";
 import ResumeResponse from "../../components/StepContainer/ResumeResponse";
 import { ToolCallDiv } from "./ToolCallDiv";
 import { McpAppTurn } from "./ToolCallDiv/McpAppTurn";
@@ -288,6 +292,14 @@ export function Chat() {
           }),
         );
       } else {
+        // An earlier message edited: what it replaces is kept (NI7). Any
+        // other message ends the last edit's undo line.
+        const before = stateSnapshot.session.history;
+        if (index !== undefined && index < before.length) {
+          void dispatch(keepReplacedTurns({ index, before }));
+        } else if (stateSnapshot.session.editUndo) {
+          dispatch(setEditUndo(undefined));
+        }
         void dispatch(
           streamResponseThunk({
             editorState,
@@ -620,6 +632,7 @@ export function Chat() {
         <CacheMissNotice />
         <ColdCacheNotice />
         <SessionLoadNotice />
+        <EditUndoLine />
         <InstructionFileNotice />
         <CachingOffNotice />
         <PendingToolChangesNotice />
@@ -637,6 +650,8 @@ export function Chat() {
           onRemove={(id) => dispatch(removeQueuedMessage(id))}
           onMove={(id, to) => dispatch(moveQueuedMessage({ id, to }))}
         />
+        {/* Before a key stops the reply or a switch stops the agent */}
+        <InterruptConfirm />
         <ContinueInputBox
           isMainInput
           isLastUserInput={false}

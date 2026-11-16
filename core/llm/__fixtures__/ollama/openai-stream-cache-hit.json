@@ -1,0 +1,45 @@
+{
+  "_comment": "Synthesized from Ollama's openai/openai.go and middleware/openai.go at 15af2b261c: with stream_options.include_usage, the finish chunk is followed by one chunk with empty choices, the usage (prompt_tokens_details.cached_tokens from prompt_eval_cached_count) and timings from ToTimings, where prompt_n is the whole prompt and prompt_per_second = prompt_n / prompt_ms, cached tokens included. The same request as native-chat-cache-hit.json. No server was called.",
+  "chunks": [
+    {
+      "id": "chatcmpl-1",
+      "object": "chat.completion.chunk",
+      "model": "qwen3:8b",
+      "choices": [
+        {
+          "index": 0,
+          "delta": { "role": "assistant", "content": "Hello" },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "id": "chatcmpl-1",
+      "object": "chat.completion.chunk",
+      "model": "qwen3:8b",
+      "choices": [{ "index": 0, "delta": {}, "finish_reason": "stop" }]
+    },
+    {
+      "id": "chatcmpl-1",
+      "object": "chat.completion.chunk",
+      "model": "qwen3:8b",
+      "choices": [],
+      "usage": {
+        "prompt_tokens": 20000,
+        "completion_tokens": 300,
+        "total_tokens": 20300,
+        "prompt_tokens_details": { "cached_tokens": 19000 }
+      },
+      "timings": {
+        "prompt_n": 20000,
+        "prompt_ms": 250,
+        "prompt_per_token_ms": 0.0125,
+        "prompt_per_second": 80000,
+        "predicted_n": 300,
+        "predicted_ms": 6000,
+        "predicted_per_token_ms": 20,
+        "predicted_per_second": 50
+      }
+    }
+  ]
+}

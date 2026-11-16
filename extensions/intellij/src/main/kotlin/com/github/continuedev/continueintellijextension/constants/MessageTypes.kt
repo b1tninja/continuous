@@ -178,6 +178,7 @@ class MessageTypes {
             "policy/preview",
             "policy/rules",
             "policy/test",
+            "web/fetchLog",
             "llm/compileChat",
             "streamDiffLines",
             "getDiffLines",

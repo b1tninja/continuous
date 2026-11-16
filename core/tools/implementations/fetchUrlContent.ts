@@ -12,8 +12,10 @@ export const fetchUrlContentImpl: ToolImpl = async (args, extras) => {
 
   // Scheme, userinfo and secret checks, the byte ceiling, the deadline and
   // the content-type rules are in getUrlContextItems
+  // and the item starts with the fetch's provenance line
   const contextItems = await getUrlContextItems(url, extras.fetch, {
     guardRedirects: true,
+    callId: extras.toolCallId,
   });
 
   // Where the page was really read, after any redirects
