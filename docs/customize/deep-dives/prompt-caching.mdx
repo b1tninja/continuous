@@ -56,6 +56,40 @@ models:
 `ttl` accepts `5m`, `1h` or `auto` (the Auto row above). It only chooses the lifetime and does not turn caching on; `promptCaching: true` (or the toolbar) does that. A choice in the toolbar other than "Config default" overrides it for that session. If the model cannot take a 1-hour lifetime (see Bedrock below), `1h` is sent as the 5-minute default. In JSON configuration the same field is `cacheBehavior.ttl`.
 The `cn` command line reaches Claude through shared adapters and reads the same `cacheBehavior.ttl` and `promptCaching`, on both Anthropic and Bedrock. `1h` puts a 1-hour lifetime on every cache point (on Bedrock only for the models listed under Bedrock below; others get 5 minutes). `auto` is applied by the CLI itself, which has no toolbar: it counts the session's requests that carry cache points, and moves to 1 hour at the fifth, or after a pause of more than 5 and up to 55 minutes, the same two rules as above. It has no chat mode, so every CLI session counts as an Agent session. On Anthropic the CLI's cache points are on unless the adapter's `cachingStrategy` is `none`, and in an agent loop they now go on the last tool results, which is where the new content is. On Bedrock they are now on when the config says nothing about caching for Claude models, with the Auto lifetime, and for the Nova models listed below, with Nova's 5-minute default; off for any other model. `promptCaching: false` turns them off. In Loop mode the CLI also pins a cache point at each item's first message, so a retry or a subagent that starts from the item's context reads the same cached prefix instead of writing it again; the pin takes one of the two conversation cache points.
 
+### Subagents
+
+A subagent run uses the 5-minute lifetime, whatever the chat's lifetime is: its requests come seconds apart, so a 1-hour entry is rarely read after 5 minutes. Set `cacheBehavior.subagentTtl` on the model the subagent runs on to change it:
+
+```yaml title="config.yaml"
+models:
+  - name: Claude Sonnet
+    provider: anthropic
+    model: claude-sonnet-4-6
+    apiKey: ${{ secrets.ANTHROPIC_API_KEY }}
+    cacheBehavior:
+      ttl: auto
+      subagentTtl: 1h # 5m | 1h | auto | inherit
+```
+
+| Value          | Lifetime of the run's requests                                                                                     |
+| -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `5m` (default) | 5 minutes                                                                                                          |
+| `1h`           | 1 hour                                                                                                             |
+| `auto`         | The Auto rules above, applied to the run's own requests: 5 minutes, then 1 hour from its fifth request or after a pause of more than 5 and up to 55 minutes |
+| `inherit`      | What the chat would use: the toolbar choice, then `cacheBehavior.ttl`                                              |
+
+`subagentTtl` only chooses the lifetime. A run caches when the chat would cache on that model, and Off in the toolbar stays off. It applies to the subagent tool and to Loop workers in the chat window, and to `cn` subagents (models with the `subagent` role), where `inherit` means the model's own `cacheBehavior.ttl`.
+
+### Precedence
+
+From strongest to weakest:
+
+1. `CONTINUOUS_FORCE_CACHE_5M=1` in the environment of the editor or of `cn`. A debug override: every request asks for 5 minutes, whatever the settings below say. Only the value `1` turns it on. The prompt cache button does not know about it, so its tooltip can still show 1 hour.
+2. For a subagent run, `cacheBehavior.subagentTtl` (default `5m`).
+3. The toolbar choice, other than "Config default".
+4. `cacheBehavior.ttl`.
+5. Auto, where caching is on by default (above), or the provider's 5-minute default.
+
 
 
 ## What gets cached

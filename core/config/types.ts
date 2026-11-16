@@ -861,6 +861,7 @@ declare global {
     cacheSystemMessage?: boolean;
     cacheConversation?: boolean;
     ttl?: "auto" | "5m" | "1h";
+    subagentTtl?: "5m" | "1h" | "auto" | "inherit";
   }
   
   export interface ClientCertificateOptions {
