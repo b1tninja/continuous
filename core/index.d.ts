@@ -1237,6 +1237,11 @@ export interface Usage {
    */
   serverTimings?: ServerTimings;
   /**
+   * This client's timing of the request (`core/llm/requestTiming.ts`), as it
+   * stood when the usage arrived.
+   */
+  timing?: RequestTiming;
+  /**
    * What the provider said about the response itself, apart from token counts.
    * Each field is set only when the provider sends it.
    */
@@ -1306,6 +1311,73 @@ export interface ServerTimings {
   loadMs?: number;
   /** The whole request on the server's clock (Ollama `total_duration`). */
   totalMs?: number;
+}
+
+/**
+ * Where a timing number came from: the server's own clock or count, this
+ * client's clock, or an estimate from characters (shown with `~`).
+ */
+export type TimingSource = "server" | "measured" | "estimate";
+
+export interface TimedValue {
+  value: number;
+  source: TimingSource;
+}
+
+/** What a request is doing, as its stream tells. */
+export type RequestPhase =
+  "waiting" | "reading" | "thinking" | "writing" | "tool-call" | "held";
+
+/**
+ * One request's timing, folded from its stream (J15,
+ * plans/research/throughput-latency-display.md section 6.1). Times are
+ * epoch milliseconds on this client's clock.
+ */
+export interface RequestTiming {
+  sentAt: number;
+  headersAt?: number;
+  /** The first chunk that says anything (progress, hold, output, usage). */
+  firstEventAt?: number;
+  /** The first output token: reasoning, text or a tool-call delta. */
+  firstOutputAt?: number;
+  /** The first text or tool-call delta (after any thinking). */
+  firstContentAt?: number;
+  lastOutputAt?: number;
+  endAt?: number;
+  phase: RequestPhase;
+  phaseSince: number;
+  /** Each phase change, in order (a new tool name counts as one). */
+  phases: { phase: RequestPhase; at: number; tool?: string }[];
+  /** The tool whose call is being written, in phase `tool-call`. */
+  toolName?: string;
+  /** Characters of reasoning, text and tool arguments. */
+  outputChars: number;
+  /** Bytes of tool-call arguments. */
+  toolArgBytes?: number;
+  /** The model thought without its text being sent (Anthropic "omitted"). */
+  thinkingHidden?: boolean;
+  /** Time to first token, always measured here. */
+  firstTokenMs?: TimedValue;
+  outputTokens?: TimedValue;
+  /** Tokens per second: live a `~` estimate; at the end server, measured or estimate. */
+  outputRate?: TimedValue;
+  promptTokens?: number;
+  /** The prompt read, only from the server; `rate` only when it timed it. */
+  prefill?: {
+    read: number;
+    cached: number;
+    ms?: number;
+    rate?: number;
+    source: TimingSource;
+  };
+  /** Speculative drafts, only from the server. */
+  drafts?: { offered: number; accepted: number };
+  /** Bedrock `metrics.latencyMs`. */
+  serverLatencyMs?: number;
+  /** Ollama `load_duration`. */
+  loadMs?: number;
+  /** When the last delta arrived, set while no delta has come for STALL_MS. */
+  stalledSince?: number;
 }
 
 /**
@@ -1667,6 +1739,8 @@ export interface LLMInteractionEnd extends LLMInteractionBase {
   generatedTokens: number;
   thinkingTokens: number;
   usage: Usage | undefined;
+  /** The request's timing at its end (chat requests). */
+  timing?: RequestTiming;
 }
 
 export interface LLMInteractionSuccess extends LLMInteractionEnd {

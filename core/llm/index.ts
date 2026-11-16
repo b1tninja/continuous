@@ -31,6 +31,7 @@ import {
   PromptLog,
   PromptTemplate,
   RequestOptions,
+  RequestTiming,
   TabAutocompleteOptions,
   TemplateType,
   Tool,
@@ -64,6 +65,7 @@ import {
 } from "./localServers.js";
 import { providerModelFactsFor } from "./providerModelInfoStore.js";
 import { resolveModelLimits, type LimitInputs } from "./providerModelLimits.js";
+import { RequestTimer, withTiming } from "./requestTiming.js";
 import { withServerTimings } from "./serverTimings.js";
 import { retryStreamOnDroppedConnection } from "./utils/streamRetry.js";
 
@@ -516,6 +518,7 @@ export abstract class BaseLLM implements ILLM {
     interaction: ILLMInteractionLog | undefined,
     usage: Usage | undefined,
     error?: any,
+    timing?: RequestTiming,
   ): InteractionStatus {
     let promptTokens = this.countTokens(prompt);
     let generatedTokens = this.countTokens(completion);
@@ -545,6 +548,7 @@ export abstract class BaseLLM implements ILLM {
         generatedTokens,
         thinkingTokens,
         usage,
+        ...(timing && { timing }),
       });
       return "success";
     } else {
@@ -555,6 +559,7 @@ export abstract class BaseLLM implements ILLM {
           generatedTokens,
           thinkingTokens,
           usage,
+          ...(timing && { timing }),
         });
         return "cancelled";
       } else {
@@ -567,6 +572,7 @@ export abstract class BaseLLM implements ILLM {
           generatedTokens,
           thinkingTokens,
           usage,
+          ...(timing && { timing }),
         });
         return "error";
       }
@@ -1553,6 +1559,9 @@ export abstract class BaseLLM implements ILLM {
     const completion: string[] = [];
     let usage: Usage | undefined = undefined;
     let citations: null | string[] = null;
+    // J15: what the request does and how fast, from its own stream. Started
+    // again when the request goes out (after any /props probe below).
+    let timer = new RequestTimer();
 
     try {
       if (this.templateMessages) {
@@ -1562,6 +1571,7 @@ export abstract class BaseLLM implements ILLM {
           completionOptions,
         )) {
           completion.push(chunk);
+          timer.chunk({ role: "assistant", content: chunk });
           interaction?.logItem({
             kind: "chunk",
             chunk: chunk,
@@ -1632,8 +1642,12 @@ export abstract class BaseLLM implements ILLM {
             this.connectionRetryDelaysMs,
           );
 
+          timer = new RequestTimer();
           for await (const chunk of iterable) {
-            const result = this.processChatChunk(chunk, interaction);
+            const result = this.processChatChunk(
+              withTiming(chunk, timer),
+              interaction,
+            );
             completion.push(...result.completion);
             thinking.push(...result.thinking);
             if (result.usage !== null) {
@@ -1654,12 +1668,16 @@ export abstract class BaseLLM implements ILLM {
             }
           }
 
+          timer = new RequestTimer();
           for await (const chunk of retryStreamOnDroppedConnection(
             () => this._streamChat(messages, signal, completionOptions),
             signal,
             this.connectionRetryDelaysMs,
           )) {
-            const result = this.processChatChunk(chunk, interaction);
+            const result = this.processChatChunk(
+              withTiming(chunk, timer),
+              interaction,
+            );
             completion.push(...result.completion);
             thinking.push(...result.thinking);
             if (result.usage !== null) {
@@ -1688,6 +1706,8 @@ export abstract class BaseLLM implements ILLM {
         thinking.join(""),
         interaction,
         usage,
+        undefined,
+        timer.finish(usage),
       );
     } catch (e) {
       this._learnFromContextOverflow(e, completionOptions.model, messages);
@@ -1708,6 +1728,7 @@ export abstract class BaseLLM implements ILLM {
         interaction,
         usage,
         e,
+        timer.finish(usage, { stopped: true }),
       );
       throw e;
     } finally {
@@ -1720,6 +1741,7 @@ export abstract class BaseLLM implements ILLM {
           interaction,
           usage,
           "cancel",
+          timer.finish(usage, { stopped: true }),
         );
       }
     }
