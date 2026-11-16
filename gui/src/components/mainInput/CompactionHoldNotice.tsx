@@ -45,7 +45,9 @@ export function CompactionHoldNotice() {
       className="mx-1 mb-1 flex flex-col gap-1 rounded border border-solid border-warning py-1 pr-1 pl-2 text-xs text-foreground"
     >
       <span>
-        {`Your message is waiting. It takes the conversation past the point where the oldest turns are dropped to fit, and about ${formatTokens(hold.rereadTokens)} tokens would be read again.`}
+        {hold.pruned
+          ? `Your message is waiting. The conversation is already past the point where the oldest turns are dropped to fit, so each cut reads about ${formatTokens(hold.rereadTokens)} tokens again.`
+          : `Your message is waiting. It takes the conversation past the point where the oldest turns are dropped to fit, and about ${formatTokens(hold.rereadTokens)} tokens would be read again.`}
         {estimate && ` ${estimate.line}`}
       </span>
       <div className="flex flex-wrap gap-2">

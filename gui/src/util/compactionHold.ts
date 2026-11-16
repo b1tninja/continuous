@@ -27,6 +27,10 @@ import {
  *    key repeat and not the default, so holding Enter cannot choose it; the
  *    plan's later turns are not held again.
  *
+ * A message is also held when the last request was already pruned (the
+ * GUI's estimate can sit under the threshold while core cuts: images,
+ * context items and the token ratio are counted differently there).
+ *
  * Only with planned compaction on (D6), and only for the person's own
  * messages from the chat input, never for a loop or a resumed turn: those,
  * and the agent's requests between tool rounds, compact with nobody asked
@@ -41,6 +45,11 @@ export interface CompactionHoldDecision {
   forceAtTokens: number;
   /** A summary is ready, so Compact now needs no summary request */
   prepared: boolean;
+  /**
+   * The last request was already pruned: the conversation is past the drop
+   * even if the estimate here says it is under the threshold
+   */
+  pruned: boolean;
 }
 
 /** Rough tokens of a draft: four characters each, as the meter estimates. */
@@ -70,7 +79,10 @@ export function compactionHoldFor(
   if (preparedAppliesAtTurn(state)) return undefined;
   const forceAt = forceAtTokens(plan, model);
   const totalTokens = plan.tokens.total + Math.max(0, newTokens);
-  if (totalTokens < forceAt) return undefined;
+  // Core already dropped the oldest block for the last request: the next
+  // one is cut as well, whatever this estimate says (C117, decision D9)
+  const pruned = !!state.session.isPruned;
+  if (totalTokens < forceAt && !pruned) return undefined;
   return {
     plan,
     rereadTokens: plan.tokens.span + plan.tokens.tail + Math.max(0, newTokens),
@@ -80,6 +92,7 @@ export function compactionHoldFor(
       state,
       state.session.history.length - 1,
     ),
+    pruned,
   };
 }
 

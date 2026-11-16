@@ -46,6 +46,7 @@ export const streamResponseThunk = createAsyncThunk<
             planId: hold.plan.id,
             rereadTokens: hold.rereadTokens,
             prepared: hold.prepared,
+            ...(hold.pruned && { pruned: true }),
             editorState,
             modifiers,
             ...(index !== undefined && { index }),
