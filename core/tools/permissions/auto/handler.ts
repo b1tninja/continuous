@@ -123,6 +123,8 @@ const FINAL_SOURCES: DecisionSource[] = [
   "protected-path",
   "safety-floor",
   "tainted-session",
+  // B92: a secret read then a network call is the person's to approve
+  "secret-egress",
 ];
 
 /**
@@ -298,7 +300,10 @@ export async function autoReviewToolCall(
       toolName: req.toolName,
       args: req.parsedArgs,
       history: req.history,
-      environment: { ...deps.environment, ...tainted },
+      environment: {
+        ...deps.environment,
+        ...(tainted.taint ? { taint: tainted.taint } : {}),
+      },
       settings: deps.permissions?.auto,
       guidance,
     },

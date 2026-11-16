@@ -223,9 +223,11 @@ describe("@web (the search backend)", () => {
       );
       expect(items[0].name).toBe("T");
       expectNoGlobalHeaders();
+      // UA-3: the product token without the info URL
       expect(calls[0].init.headers).toEqual({
         Accept: "application/json",
         Authorization: "Bearer search-key",
+        "User-Agent": expect.stringMatching(/^Continuous-User\/\d+\.\d+$/),
       });
       expect(getFetchLog().list()[0].purpose).toBe("search");
     } finally {
@@ -247,7 +249,10 @@ describe("@web (the search backend)", () => {
         await import("./WebContextProvider");
       await new WebContextProvider({}).getContextItems("", extras("q"));
       expect(calls[1].url).toBe("https://other.example/s");
-      expect(calls[1].init.headers).toEqual({ Accept: "application/json" });
+      expect(calls[1].init.headers).toEqual({
+        Accept: "application/json",
+        "User-Agent": expect.stringMatching(/^Continuous-User\/\d+\.\d+$/),
+      });
     } finally {
       vi.unstubAllEnvs();
     }

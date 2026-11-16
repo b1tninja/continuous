@@ -4,6 +4,7 @@
  * editing them asks again.
  */
 
+import * as path from "node:path";
 import * as readline from "node:readline/promises";
 
 import { getProjectHookFiles, loadHooksConfig } from "../hooks/hookConfig.js";
@@ -11,6 +12,7 @@ import { getUserHookFiles } from "../hooks/hookListing.js";
 import { hooksTestCommand } from "../hooks/hooksTest.js";
 import {
   fingerprintProjectHooks,
+  getGlobalDir,
   isProjectTrusted,
   listProjectHandlers,
   revokeProject,
@@ -41,13 +43,25 @@ function describe(cwd: string, files: ProjectHookFile[]): void {
   out();
 }
 
-/** The user's own hooks, each file with what it defines. They always run. */
+/**
+ * The user's own hooks, each file with what it defines and whether it runs:
+ * the Continuous file always does, `~/.claude` only when opted in.
+ */
 function describeUserHooks(cwd: string): void {
   const files = getUserHookFiles(cwd);
   if (files.length === 0) return;
-  out("Your own hooks (always run, from your settings):");
+  out("Your own hooks (from your settings):");
   for (const file of files) {
     out(`  ${file.path}`);
+    if (file.notRead) {
+      out(
+        `    not read: hooks from Claude Code's settings are opt-in. Set "hooks": { "readClaudeSettings": true } in ${continuousSettingsFile(cwd)} to run them.`,
+      );
+      for (const line of listProjectHandlers([file], cwd)) {
+        out(`    skipped ${line}`);
+      }
+      continue;
+    }
     if (file.unreadable) {
       out(
         "    could not be read as a JSON object: none of its hooks run. Fix the file.",
@@ -57,6 +71,12 @@ function describeUserHooks(cwd: string): void {
     for (const line of listProjectHandlers([file], cwd)) out(`    ${line}`);
   }
   out();
+}
+
+/** The user's Continuous settings file, where `hooks.readClaudeSettings` goes. */
+function continuousSettingsFile(cwd: string): string {
+  const dir = getGlobalDir(cwd);
+  return dir ? path.join(dir, "settings.json") : "~/.continuous/settings.json";
 }
 
 async function confirm(question: string): Promise<boolean> {

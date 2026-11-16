@@ -158,6 +158,7 @@
         "app.ncompass.tech",
         "app.tensorix.ai",
         "azure.microsoft.com",
+        "bun.sh",
         "chat.asksage.ai",
         "claude.ai",
         "cloud.cerebras.ai",
@@ -198,6 +199,7 @@
         "novita.ai",
         "ollama.ai",
         "openai.com",
+        "pipx.pypa.io",
         "platform.claude.com",
         "platform.deepseek.com",
         "platform.inceptionlabs.ai",
@@ -221,6 +223,7 @@
         "www.cometapi.com",
         "www.ibm.com",
         "www.ovhcloud.com",
+        "www.python.org",
         "z.ai"
       ]
     }

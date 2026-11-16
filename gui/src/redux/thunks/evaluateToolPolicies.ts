@@ -315,6 +315,8 @@ async function reviewOpenCalls(
         r.source !== "protected-path" &&
         // The tainted-session rule's ask is the person's, not the reviewer's
         r.source !== "tainted-session" &&
+        // So is the secret-read plus network pair's (B92)
+        r.source !== "secret-egress" &&
         // Plan mode's hold is for the user, not the reviewer
         r.source !== "plan-mode" &&
         // Manual asks every time; only an area set to Automatic has a reviewer
@@ -492,6 +494,7 @@ export async function evaluateToolPolicies(
       reason &&
       (source === "protected-path" ||
         source === "tainted-session" ||
+        source === "secret-egress" ||
         source === "ask-rule" ||
         source === "manual" ||
         source === "auto" ||

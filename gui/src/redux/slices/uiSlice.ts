@@ -69,6 +69,12 @@ type UIState = {
    * opens its list, takes focus and clears this. Not persisted.
    */
   agentsPanelFocusRequested?: boolean;
+  /**
+   * The question asked before a key or a session switch would stop running
+   * work (NI1, NI8): its id (the waiting promise, thunks/interruptConfirm)
+   * and what it is about. One at a time. Not persisted.
+   */
+  interruptConfirm?: InterruptConfirmRequest;
   /** Model the user picked by hand per mode; wins over `modeModels` until reload. */
   modeModelOverrides: Partial<Record<MessageModes, string>>;
   ttsActive: boolean;
@@ -106,6 +112,15 @@ export interface PolicyExtras {
    * Written only by the Custom policy page; never decides a call.
    */
   customSet?: StoredCustomSet;
+}
+
+/** What stopping is for: the reply alone, or a session switch over running work. */
+export type InterruptAction =
+  "stop" | "newSession" | "openSession" | "switchTab";
+
+export interface InterruptConfirmRequest {
+  id: number;
+  action: InterruptAction;
 }
 
 export const DEFAULT_TOOL_SETTING: ToolPolicy = "allowedWithPermission";
@@ -325,6 +340,12 @@ export const uiSlice = createSlice({
     setAgentsPanelFocusRequested: (state, action: PayloadAction<boolean>) => {
       state.agentsPanelFocusRequested = action.payload || undefined;
     },
+    setInterruptConfirm: (
+      state,
+      action: PayloadAction<InterruptConfirmRequest | undefined>,
+    ) => {
+      state.interruptConfirm = action.payload;
+    },
     restoreAgents: (state, action: PayloadAction<{ keys: string[] }>) => {
       if (!state.archivedAgents) return;
       for (const key of action.payload.keys) delete state.archivedAgents[key];
@@ -383,6 +404,7 @@ export const {
   archiveAgents,
   restoreAgents,
   setAgentsPanelFocusRequested,
+  setInterruptConfirm,
   archiveSessions,
   restoreSessions,
   setModeModelOverride,

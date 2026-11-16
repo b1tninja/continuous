@@ -7,7 +7,8 @@
  * - .continue/settings.local.json (project-local, gitignored)
  *
  * Also supports Claude Code's native locations for cross-compatibility:
- * - ~/.claude/settings.json
+ * - ~/.claude/settings.json (only with `hooks.readClaudeSettings: true` in the
+ *   user's Continuous settings file; D-023)
  * - .claude/settings.json
  * - .claude/settings.local.json
  *
@@ -33,6 +34,7 @@ import {
   realPath,
 } from "./hookTrust.js";
 import type { ProjectHookFile } from "./hookTrust.js";
+import { READ_CLAUDE_SETTINGS_KEY } from "./types.js";
 import type {
   HookMatcherGroup,
   HookSettingsFile,
@@ -54,12 +56,67 @@ function loadSettingsFile(
       ? undefined
       : "has the wrong structure (expected a JSON object)",
   );
-  if (result.status === "ok") return result.value;
+  if (result.status === "ok") return liftReadClaudeSettings(result.value);
   if (result.status === "broken") {
     logger.warn(`Hooks settings file ${filePath} is broken: ${result.error}`);
     broken?.push({ path: result.path, error: result.error });
   }
   return null;
+}
+
+/**
+ * Takes `hooks.readClaudeSettings` out of the event map, so nothing that walks
+ * the events sees a boolean, and puts it on the file as `readClaudeSettings`.
+ * Done for every file; only the user's Continuous file is asked for the value.
+ */
+export function liftReadClaudeSettings(
+  settings: HookSettingsFile,
+): HookSettingsFile {
+  const hooks = settings.hooks as Record<string, unknown> | undefined;
+  if (
+    !hooks ||
+    typeof hooks !== "object" ||
+    !Object.prototype.hasOwnProperty.call(hooks, READ_CLAUDE_SETTINGS_KEY)
+  ) {
+    return settings;
+  }
+  const { [READ_CLAUDE_SETTINGS_KEY]: flag, ...events } = hooks;
+  return {
+    ...settings,
+    hooks: events as HooksConfig,
+    readClaudeSettings: flag,
+  };
+}
+
+/** `~/.claude/settings.json`, Claude Code's user settings file. */
+export function getClaudeUserSettingsPath(homeDir?: string): string {
+  return path.join(homeDir ?? os.homedir(), ".claude", "settings.json");
+}
+
+/** How many handlers a hooks map defines. */
+export function countHookHandlers(hooks: HooksConfig | undefined): number {
+  let n = 0;
+  for (const groups of Object.values(hooks ?? {})) {
+    for (const group of Array.isArray(groups) ? groups : []) {
+      n += Array.isArray(group?.hooks) ? group.hooks.length : 0;
+    }
+  }
+  return n;
+}
+
+/**
+ * The value of `hooks.readClaudeSettings` in the user's Continuous settings
+ * file, or undefined when it is not set (or the file is absent or broken).
+ * Only that file is asked: a project, or `~/.claude` itself, cannot opt in.
+ */
+export function readClaudeSettingsSetting(
+  cwd: string,
+  homeDir?: string,
+): unknown {
+  const globalDir = getGlobalDir(cwd, homeDir);
+  if (!globalDir) return undefined;
+  return loadSettingsFile(path.join(globalDir, "settings.json"))
+    ?.readClaudeSettings;
 }
 
 /**
@@ -85,14 +142,14 @@ function mergeHooksConfigs(
 }
 
 /**
- * Settings files that belong to the user. These always load.
+ * Settings files that belong to the user. The Continuous one always loads;
+ * `~/.claude/settings.json` loads only with `hooks.readClaudeSettings: true`.
  */
 export function getUserSettingsFilePaths(
   cwd: string,
   homeDir?: string,
 ): string[] {
-  const home = homeDir ?? os.homedir();
-  const paths = [path.join(home, ".claude", "settings.json")];
+  const paths = [getClaudeUserSettingsPath(homeDir)];
   // Undefined when CONTINUE_GLOBAL_DIR points inside the project; see hookTrust.
   const globalDir = getGlobalDir(cwd, homeDir);
   if (globalDir) paths.push(path.join(globalDir, "settings.json"));
@@ -165,6 +222,19 @@ export interface LoadedHooksConfig {
    * loaded. Project files are listed only when they would have been read.
    */
   broken?: BrokenConfigFile[];
+  /**
+   * `~/.claude/settings.json` defines hooks that were not loaded because
+   * `hooks.readClaudeSettings` is not `true`. `settingUnset` is true when the
+   * setting is absent, as opposed to set to `false`: only then is the
+   * one-time notice due.
+   */
+  skippedClaudeHooks?: SkippedClaudeHooks;
+}
+
+export interface SkippedClaudeHooks {
+  path: string;
+  handlers: number;
+  settingUnset: boolean;
 }
 
 /**
@@ -183,8 +253,10 @@ function markAsProject(hooks: HooksConfig): HooksConfig {
 }
 
 /**
- * Load hook configurations and merge them. The user's own files always load.
- * The project's files load only if the user trusted this project with these
+ * Load hook configurations and merge them. The user's Continuous file always
+ * loads; `~/.claude/settings.json` only with `hooks.readClaudeSettings: true`
+ * there (its `managedHooksOnly: true` counts either way, since it only narrows
+ * what runs). The project's files load only if the user trusted this project with these
  * exact hooks, or passed --trust-project-hooks for this run; otherwise they
  * are reported in `untrustedProject` and nothing from them runs, including a
  * `disableAllHooks` that would silence the user's own hooks. With
@@ -199,8 +271,12 @@ export function loadHooksConfig(
   let disabled = false;
   let managedOnly = false;
   const broken: BrokenConfigFile[] = [];
-  const withBroken = (r: LoadedHooksConfig): LoadedHooksConfig =>
-    broken.length > 0 ? { ...r, broken } : r;
+  let skippedClaudeHooks: SkippedClaudeHooks | undefined;
+  const withBroken = (r: LoadedHooksConfig): LoadedHooksConfig => ({
+    ...r,
+    ...(broken.length > 0 ? { broken } : {}),
+    ...(skippedClaudeHooks ? { skippedClaudeHooks } : {}),
+  });
 
   const apply = (settings: {
     hooks?: HooksConfig;
@@ -211,10 +287,27 @@ export function loadHooksConfig(
       mergedHooks = mergeHooksConfigs(mergedHooks, settings.hooks);
   };
 
+  const claudePath = getClaudeUserSettingsPath(homeDir);
+  const optIn = readClaudeSettingsSetting(cwd, homeDir);
   for (const filePath of getUserSettingsFilePaths(cwd, homeDir)) {
-    const settings = loadSettingsFile(filePath, broken);
+    const isClaude = filePath === claudePath;
+    // A `~/.claude` file that is not being read cannot be broken for us: it
+    // must not stop a headless start.
+    const readHooks = !isClaude || optIn === true;
+    const settings = loadSettingsFile(filePath, readHooks ? broken : undefined);
     if (!settings) continue;
-    apply(settings);
+    if (readHooks) {
+      apply(settings);
+    } else {
+      const handlers = countHookHandlers(settings.hooks);
+      if (handlers > 0) {
+        skippedClaudeHooks = {
+          path: filePath,
+          handlers,
+          settingUnset: optIn === undefined,
+        };
+      }
+    }
     // Only the user's own files can switch this on, and only with `true`.
     if (settings.managedHooksOnly === true) managedOnly = true;
   }
@@ -287,20 +380,49 @@ export function getMatchingHookGroups(
       return true;
     }
 
-    // Regex match
-    let regex: RegExp;
-    try {
-      regex = new RegExp(group.matcher);
-    } catch {
-      // A matcher that does not compile must not switch the hook off: a guard
-      // that silently never runs is the dangerous direction. Treat it as
-      // matching, so the hook runs, and say so once.
-      warnOnce(
-        `matcher:${group.matcher}`,
-        `Hook matcher "${group.matcher}" for event ${eventName} is not a valid regular expression, so the hook runs on every ${eventName} event. Fix the matcher.`,
-      );
-      return true;
-    }
-    return regex.test(matcherValue);
+    return matcherAccepts(group.matcher, matcherValue, eventName);
   });
+}
+
+/**
+ * A matcher made only of these characters is a name or a list of names, not a
+ * regular expression. This is Claude Code's rule (code.claude.com/docs/en/hooks,
+ * "Matcher patterns"), so a shared hooks file means the same thing in both.
+ */
+const EXACT_MATCHER = /^[A-Za-z0-9_\- ,|]+$/;
+
+/**
+ * Whether one matcher accepts a value, the way Claude Code decides it: a
+ * matcher of letters, digits, `_`, `-`, spaces, `,` and `|` is compared as an
+ * exact name, or a list of names split on `|` or `,` (`Edit|Write`,
+ * `Edit, Write`), so `Edit` no longer matches `NotebookEdit`. Any other
+ * character makes it a JavaScript regular expression tested unanchored, as
+ * before (`mcp__.*`, `Notebook.*`, `^Edit$`).
+ */
+export function matcherAccepts(
+  matcher: string,
+  value: string,
+  eventName: string,
+): boolean {
+  if (matcher === "" || matcher === "*") return true;
+  if (EXACT_MATCHER.test(matcher)) {
+    return matcher
+      .split(/[|,]/)
+      .map((name) => name.trim())
+      .some((name) => name !== "" && name === value);
+  }
+  let regex: RegExp;
+  try {
+    regex = new RegExp(matcher);
+  } catch {
+    // A matcher that does not compile must not switch the hook off: a guard
+    // that silently never runs is the dangerous direction. Treat it as
+    // matching, so the hook runs, and say so once.
+    warnOnce(
+      `matcher:${matcher}`,
+      `Hook matcher "${matcher}" for event ${eventName} is not a valid regular expression, so the hook runs on every ${eventName} event. Fix the matcher.`,
+    );
+    return true;
+  }
+  return regex.test(value);
 }
