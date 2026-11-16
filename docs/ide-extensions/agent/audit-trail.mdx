@@ -89,7 +89,7 @@ continuous audit prune [--days <n>] [--dry-run]
 
 The [Permissions page](/ide-extensions/agent/permissions-page) shows how your rules are used, read from the audit trail through a small index, `audit-index.json`, in the audit directory. The index holds daily counts per rule and per call shape (asked, allowed, denied, answered by you, decided by the reviewer), masked, never raw arguments, and is rebuilt if the trail files change. It is derived data: delete it and it is rebuilt. It is refreshed when the page is opened, and there is no command for it.
 
-Each rule shows "Asked n times, matched n times in 30 days". A rule with no use shows "No use in the N days the audit covers", worded with the days the trail actually covers and only a hint: nothing is removed. **Most asked in 30 days** lists up to 10 asks you answered the same way at least 3 times, passed through the same checks as `continuous audit suggest` (always-on rules, protected paths, Ask rules, risky commands, paths outside the workspace) before a rule is offered. **Review** opens the rule editor with the rule filled in; nothing is saved from the list.
+Each rule shows "Asked n times, matched n times in 30 days". A rule with no use shows "No use in the N days the audit covers", worded with the days the trail actually covers and only a hint: nothing is removed. **Most asked in 30 days** lists up to 10 asks you answered the same way at least 3 times, passed through the same checks as `continuous audit suggest` (locked rules, protected paths, Ask rules, risky commands, paths outside the workspace) before a rule is offered. **Review** opens the rule editor with the rule filled in; nothing is saved from the list.
 
 ## Measure the reviewer on your own work
 

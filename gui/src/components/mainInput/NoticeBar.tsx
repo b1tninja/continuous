@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 
 /**
  * A one-line, dismissible notice above the chat input. Notices here never
- * block sending: they say what is about to cost money and offer a cheaper way.
+ * block sending: they say what is about to cost money and offer a cheaper way,
+ * or state once what a level lets through (the IDGAF line). None asks.
  */
 export function NoticeBar(props: {
   testId: string;

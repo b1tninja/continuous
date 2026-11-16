@@ -58,7 +58,7 @@ export function policySaveLoosenings(
       const level = parsePolicyLevel(after)!;
       out.push({
         key: `levels.${area}`,
-        text: `${POLICY_AREA_LABELS[area]}: ${policyLevelLabel(area, was)} → ${policyLevelLabel(area, level)}${level === "idgaf" ? " (this session only; nothing is refused or asked, the Always-on Never list included)" : ""}`,
+        text: `${POLICY_AREA_LABELS[area]}: ${policyLevelLabel(area, was)} → ${policyLevelLabel(area, level)}${level === "idgaf" ? " (this session only; nothing is refused or asked, locked rules included)" : ""}`,
       });
     }
   }
@@ -77,7 +77,7 @@ export function policySaveLoosenings(
       if (!kept.has(rule.trim())) {
         out.push({
           key: "floor",
-          text: `Remove the Always-on Never rule ${rule}`,
+          text: `Remove the locked rule ${rule}`,
         });
       }
     }

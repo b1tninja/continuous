@@ -265,7 +265,8 @@ export const POLICY_PRESETS: Record<
   },
   idgaf: {
     label: "IDGAF",
-    description: "Everything runs and nothing asks. Every rule is ignored.",
+    description:
+      "Everything runs and nothing asks. Every rule is ignored, locked rules included.",
     levels: {
       context: "idgaf",
       tools: "idgaf",
@@ -310,7 +311,7 @@ export const POLICY_LEVEL_DESCRIPTIONS: Record<
       "Reads what your Always rules and tool settings cover, asks otherwise.",
     automatic: "As Cautious, and a reviewer model decides what is left.",
     permissive: "Reads anything no rule stops.",
-    idgaf: "Reads anything. Every rule is ignored.",
+    idgaf: "Reads anything. Every rule is ignored, locked rules included.",
   },
   tools: {
     manual: "Asks before each command and tool.",
@@ -318,20 +319,20 @@ export const POLICY_LEVEL_DESCRIPTIONS: Record<
       "Runs what your Always rules and tool settings cover, asks otherwise.",
     automatic: "As Cautious, and a reviewer model decides what is left.",
     permissive: "Runs anything no rule stops.",
-    idgaf: "Runs anything. Every rule is ignored.",
+    idgaf: "Runs anything. Every rule is ignored, locked rules included.",
   },
   edits: {
     manual: "You review each diff.",
     cautious: "Accepts what your Always rules cover, you review the rest.",
     automatic: "A reviewer model accepts, refuses or sends it to you.",
     permissive: "Accepts anything no rule stops.",
-    idgaf: "Accepts everything. Every rule is ignored.",
+    idgaf: "Accepts everything. Every rule is ignored, locked rules included.",
   },
   plan: {
     manual: "In Loop, every plan and re-plan waits for you.",
     cautious: "In Loop, re-plans that add no to-do go on. A first plan waits.",
     automatic:
-      "In Loop, a reviewer model judges each plan and waits if unsure.",
+      "In Loop, as Permissive until a plan reviewer exists: plans go on, a re-plan may add a few to-dos.",
     permissive: "In Loop, plans go on. A re-plan may add a few to-dos.",
     idgaf: "In Loop, every plan goes on. Nothing is checked.",
   },
@@ -635,15 +636,12 @@ export function planHandoff(input: PlanHandoffInput): PlanHandoff {
     case "permissive": {
       // The person opted out of plan cards: a re-plan goes on, even one that
       // changed a check (the loop's notice says so). A reviewer model for
-      // plans is not built, so Automatic goes on without a cap. At Permissive
-      // only the cap on new to-dos (the Plan edits setting) holds one back.
+      // plans is not built, so Automatic works as Permissive (UJ10): only the
+      // cap on new to-dos (the Plan edits setting) holds a re-plan back.
       const name = policyLevelLabel("plan", level);
       if (first) return { decision: "go", reason: `Plan edits is ${name}.` };
-      const max =
-        level === "permissive"
-          ? (policy.maxNewPlanItems ?? DEFAULT_MAX_NEW_PLAN_ITEMS)
-          : undefined;
-      return max !== undefined && added > max
+      const max = policy.maxNewPlanItems ?? DEFAULT_MAX_NEW_PLAN_ITEMS;
+      return added > max
         ? {
             decision: "wait",
             reason: `The re-plan adds ${count(added)}, more than ${max}.`,

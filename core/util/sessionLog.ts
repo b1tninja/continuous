@@ -70,6 +70,7 @@ export const SESSION_META_ORDER: MetaKey[] = [
   "loop",
   "loopRequested",
   "forkedFrom",
+  "idgafAreas",
 ];
 
 /**
@@ -100,6 +101,7 @@ export function orderSessionForSave(session: Session): Session {
   if (session.loop) ordered.loop = session.loop;
   if (session.loopRequested) ordered.loopRequested = true;
   if (session.forkedFrom) ordered.forkedFrom = session.forkedFrom;
+  if (session.idgafAreas?.length) ordered.idgafAreas = session.idgafAreas;
   return ordered;
 }
 

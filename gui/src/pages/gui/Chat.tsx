@@ -28,6 +28,7 @@ import { CachingOffNotice } from "../../components/mainInput/CachingOffNotice";
 import { ToolDialectNotice } from "../../components/mainInput/ToolDialectNotice";
 import { ColdCacheNotice } from "../../components/mainInput/ColdCacheNotice";
 import { SessionLoadNotice } from "../../components/mainInput/SessionLoadNotice";
+import { IdgafNotice } from "../../components/mainInput/IdgafNotice";
 import { InstructionFileNotice } from "../../components/mainInput/InstructionFileNotice";
 import { AgentsList } from "../../components/BackgroundMode/AgentsList";
 import { NeedsYouTray } from "../../components/loop/NeedsYouTray";
@@ -615,6 +616,7 @@ export function Chat() {
       <div className={"relative shrink-0"}>
         <CompactionHoldNotice />
         <CompactionPreparedNotice />
+        <IdgafNotice />
         <CacheMissNotice />
         <ColdCacheNotice />
         <SessionLoadNotice />

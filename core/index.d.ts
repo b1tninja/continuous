@@ -437,6 +437,13 @@ export interface Session {
    * the fork kept (absent when it kept all of them). See core/util/forkSession.ts.
    */
   forkedFrom?: { sessionId: string; index?: number };
+  /**
+   * Optional, written by `cn`: the policy areas that were at IDGAF while this
+   * session ran. IDGAF is per session and never restored: `--resume` starts at
+   * the configured levels and says so in one line (ID 5). The IDE keeps
+   * IDGAF across a reload of the same editor session instead (#828).
+   */
+  idgafAreas?: string[];
 }
 
 /** Where one plan item is in Loop mode. The task list shows it too. */
