@@ -279,6 +279,8 @@ export interface CompactionHoldState {
   rereadTokens: number;
   /** A summary is ready: Compact now saves it with no request */
   prepared?: boolean;
+  /** The last request was already pruned to fit */
+  pruned?: boolean;
   editorState: JSONContent;
   modifiers: InputModifiers;
   index?: number;

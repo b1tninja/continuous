@@ -3,6 +3,7 @@ import type { ModelDescription } from "core";
 import { describe, expect, it, vi } from "vitest";
 import {
   continueAfterCompactionHold,
+  setIsPruned,
   setPreparedCompaction,
 } from "../redux/slices/sessionSlice";
 import type { RootState } from "../redux/store";
@@ -94,6 +95,33 @@ describe("compactionHoldFor", () => {
     );
   });
 
+  it("holds under the threshold when the last request was already pruned (D9)", () => {
+    // 72%: the estimate is under the drop, but core cut the last request
+    const state = stateWith(10);
+    expect(compactionHoldFor(state, 0)).toBeUndefined();
+    state.session.isPruned = true;
+    const hold = compactionHoldFor(state, 0)!;
+    expect(hold).toMatchObject({ pruned: true, prepared: false });
+    expect(hold.totalTokens).toBeLessThan(hold.forceAtTokens);
+    // Not after Continue anyway for the same plan
+    state.session.compactionHoldContinued = hold.plan.id;
+    expect(compactionHoldFor(state, 0)).toBeUndefined();
+  });
+
+  it("does not hold a pruned conversation with nothing to compact", () => {
+    // Below the prepare threshold: no plan, so the drop is the only way
+    const small = stateWith(5);
+    small.session.isPruned = true;
+    expect(compactionHoldFor(small, 0)).toBeUndefined();
+    // Planned compaction off
+    const off = stateWith(10, {
+      ...strata,
+      contextManagement: { plannedCompaction: false },
+    });
+    off.session.isPruned = true;
+    expect(compactionHoldFor(off, 0)).toBeUndefined();
+  });
+
   it("does not hold when a pre-warmed summary is ready: it is applied instead", () => {
     const state = stateWith(12);
     const plan = currentCompactionPlan(state)!;
@@ -182,6 +210,25 @@ describe("the send path", () => {
     expect(state().session.compactionHold).toMatchObject({
       planId: currentCompactionPlan(state())!.id,
       editorState: text("Next"),
+    });
+    expect(state().session.history).toHaveLength(length);
+    expect(compiles).toHaveLength(0);
+  });
+
+  it("holds the person's message when the last request was pruned, under the threshold (D9)", async () => {
+    const { s, compiles, state } = store(10);
+    s.dispatch(setIsPruned(true));
+    const length = state().session.history.length;
+    await s.dispatch(
+      streamResponseThunk({
+        editorState: text("Next"),
+        modifiers: { useCodebase: false, noContext: true },
+        holdBeforeForcedReread: true,
+      }) as any,
+    );
+    expect(state().session.compactionHold).toMatchObject({
+      planId: currentCompactionPlan(state())!.id,
+      pruned: true,
     });
     expect(state().session.history).toHaveLength(length);
     expect(compiles).toHaveLength(0);
