@@ -145,6 +145,8 @@ export const WEBVIEW_TO_CORE_PASS_THROUGH: (keyof ToCoreFromWebviewProtocol)[] =
     "policy/test",
     "audit/overview",
     "web/fetchLog",
+    "web/endTurn",
+    "web/closeSession",
     "tools/autoReview",
     "audit/answer",
     "audit/autoAnswer",

@@ -422,6 +422,7 @@ describe("streamResponseThunk - tool calls", () => {
       },
       // Cautious, the default Tools level: a runaway command is stopped
       runawayAction: "stop",
+      sessionId: expect.any(String),
     });
 
     // Verify that multiple compilation calls were made (due to tool call continuation)
@@ -898,6 +899,7 @@ describe("streamResponseThunk - tool calls", () => {
       },
       // Cautious, the default Tools level: a runaway command is stopped
       runawayAction: "stop",
+      sessionId: expect.any(String),
     });
 
     // Verify that multiple compilation calls were made (due to tool call continuation)
@@ -2146,6 +2148,7 @@ describe("streamResponseThunk - tool calls", () => {
       },
       // Cautious, the default Tools level: a runaway command is stopped
       runawayAction: "stop",
+      sessionId: expect.any(String),
     });
 
     // Verify second streaming call was made for continuation

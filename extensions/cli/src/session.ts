@@ -29,6 +29,7 @@ import {
   sessionMatchesWorkspace,
   type WorkspaceMatchOptions,
 } from "core/util/sessionWorkspace.js";
+import { webContentStore } from "core/util/web/contentStore.js";
 import { v4 as uuidv4 } from "uuid";
 
 import { DEFAULT_SESSION_TITLE } from "./constants/session.js";
@@ -106,6 +107,17 @@ export function getSessionFilePath(): string {
   return path.join(sessionDir, `${sessionId}.json`);
 }
 
+/**
+ * A session leaving this process (a new one, a fork, a resume of another, a
+ * clear) takes its fetched pages with it (core/util/web/contentStore.ts). A
+ * fork has a new id, so it starts with none.
+ */
+function closeWebPages(previous: Session | null, next?: Session): void {
+  if (previous && previous.sessionId !== next?.sessionId) {
+    webContentStore.deleteSession(previous.sessionId);
+  }
+}
+
 // Singleton for current session management
 class SessionManager {
   private static instance: SessionManager;
@@ -149,6 +161,7 @@ class SessionManager {
   }
 
   setSession(session: Session): void {
+    closeWebPages(this.currentSession, session);
     // A loop saved mid-run comes back stopped, so a resumed session never
     // starts work by itself (core/util/loopMode.ts restoreLoop).
     if (session.loop !== undefined) {
@@ -210,6 +223,7 @@ class SessionManager {
   }
 
   clear(): void {
+    closeWebPages(this.currentSession);
     this.currentSession = null;
     notifyTaskPlanListeners(undefined);
     notifyLoopListeners(undefined);
@@ -1002,6 +1016,7 @@ export async function trashSessionById(
   if (manager.hasSession() && manager.getSessionId() === sessionId) {
     return { status: "current", sessionId };
   }
+  webContentStore.deleteSession(sessionId);
   return historyManager.trash(sessionId, options);
 }
 

@@ -414,6 +414,11 @@ describe("streamResponseThunk", () => {
       expect.any(AbortSignal),
     );
 
+    // The person's message ends the last turn's turn-scoped web pages
+    expect(postSpy).toHaveBeenCalledWith("web/endTurn", {
+      sessionId: initialState.session.id,
+    });
+
     // Verify dev data logging call
     expect(postSpy).toHaveBeenCalledWith("devdata/log", {
       name: "chatInteraction",
@@ -769,6 +774,7 @@ describe("streamResponseThunk", () => {
       },
       // Cautious, the default Tools level: a runaway command is stopped
       runawayAction: "stop",
+      sessionId: expect.any(String),
     });
 
     // Verify that multiple compilation calls were made (due to tool call continuation)

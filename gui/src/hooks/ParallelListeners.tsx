@@ -217,6 +217,17 @@ function ParallelListeners() {
     }
   }, [sessionId]);
 
+  // A session no longer open here (a new one, or another one loaded) keeps
+  // no fetched pages in the web content store
+  const openSessionId = useRef(sessionId);
+  useEffect(() => {
+    const previous = openSessionId.current;
+    openSessionId.current = sessionId;
+    if (previous && previous !== sessionId) {
+      ideMessenger.post("web/closeSession", { sessionId: previous });
+    }
+  }, [sessionId]);
+
   // ON LOAD
   useEffect(() => {
     // Override persisted state

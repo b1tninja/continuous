@@ -110,6 +110,8 @@ export const callToolById = createAsyncThunk<
         : {}),
       // Output that looks like a runaway: stopped, unless Tools lets it run
       runawayAction: runawayActionForLevel(getState().ui?.policyLevels?.tools),
+      // The session whose fetched pages the web tools read
+      sessionId: getState().session.id,
     });
     if (result.status === "error") {
       throw new Error(result.error);

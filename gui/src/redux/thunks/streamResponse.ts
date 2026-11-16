@@ -53,6 +53,11 @@ export const streamResponseThunk = createAsyncThunk<
     // A summary prepared for this conversation is saved before the message
     // is added, so this turn is the switch-over (C105, C106, D3)
     if (atEnd) applyPreparedCompactionForTurn(dispatch, getState);
+    // The person's message starts a new turn: the last one's turn-scoped
+    // pages (no-store, credentialed, non-public) leave the web content store
+    extra.ideMessenger.post("web/endTurn", {
+      sessionId: getState().session.id,
+    });
 
     await dispatch(
       streamThunkWrapper(async () => {

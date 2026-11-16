@@ -179,6 +179,8 @@ class MessageTypes {
             "policy/rules",
             "policy/test",
             "web/fetchLog",
+            "web/endTurn",
+            "web/closeSession",
             "llm/compileChat",
             "streamDiffLines",
             "getDiffLines",

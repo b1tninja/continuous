@@ -19,6 +19,7 @@ import { resolveSubagentModel } from "core/subagents/model";
 import type { AuditAgent } from "core/tools/permissions/audit/record";
 import { subagentAuditAgent } from "core/tools/permissions/audit/identity";
 import { modeModelFor } from "core/util/modelUse";
+import { subagentStoreId } from "core/util/web/contentStoreIds";
 import {
   SubagentRunStatus,
   SubagentToolCallSummary,
@@ -314,6 +315,11 @@ export interface SubagentDriveInput {
   workspaceDirs?: string[];
   /** Who the audit trail names for this run's calls, under the parent's session */
   audit?: { sessionId: string; agent: AuditAgent };
+  /**
+   * The run's own id in the web content store (`subagentStoreId`): its
+   * fetched pages are its own, never its parent's. Undefined: none.
+   */
+  webSessionId?: string;
   /**
    * The run's message queue in the registry (the parent's tool call id).
    * Undefined for a run nobody messages (a Loop worker).
@@ -675,6 +681,7 @@ export async function driveSubagent(
           ...(allowOutsideWorkspaceOf(getState())
             ? { allowOutsideWorkspace: true }
             : {}),
+          ...(input.webSessionId ? { sessionId: input.webSessionId } : {}),
         }),
         signal,
       );
@@ -818,6 +825,8 @@ export async function runSubagentTool(
 
   let release: (() => void) | undefined;
   let local: LocalSession = newLocalSession(args.prompt);
+  // The run's fetched pages, dropped when it ends: the parent gets its answer
+  const webSessionId = subagentStoreId(getState().session.id, toolCallId);
 
   const finish = (status: SubagentRunStatus, error?: string) => {
     const texts = assistantTexts(local.history);
@@ -927,6 +936,7 @@ export async function runSubagentTool(
           { runId: toolCallId, name: definition.name },
           getState,
         ),
+      webSessionId,
       audit: {
         sessionId: getState().session.id,
         agent: subagentAuditAgent(
@@ -947,6 +957,7 @@ export async function runSubagentTool(
     release?.();
     unregister();
     parentSignal.removeEventListener("abort", onParentAbort);
+    ideMessenger.post("web/closeSession", { sessionId: webSessionId });
   }
 
   // Messages the run ended before reading: kept in its record as not

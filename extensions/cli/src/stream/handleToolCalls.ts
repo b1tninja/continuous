@@ -58,6 +58,8 @@ interface HandleToolCallsOptions {
   reasoning?: StreamedReasoning;
   /** The turn's signal, passed on to tool runs. */
   abortSignal?: AbortSignal;
+  /** The web content store's session, passed on to tool runs. */
+  sessionId?: string;
 }
 
 /** Records a tool's result on the local history's assistant message. */
@@ -226,6 +228,7 @@ export async function handleToolCalls(
     usage,
     reasoning,
     abortSignal,
+    sessionId,
   } = options;
   const itemReasoning = historyReasoning(reasoning);
   const chatHistorySvc = services.chatHistory;
@@ -354,6 +357,7 @@ export async function handleToolCalls(
     callbacks,
     isHeadless,
     abortSignal,
+    sessionId,
   );
 
   // A subagent keeps its own history and turns the service off, so the results
