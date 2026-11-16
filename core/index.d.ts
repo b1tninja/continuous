@@ -2381,6 +2381,12 @@ export interface ToolExtras {
    * runaway, from the Tools policy level ("stop" or "keep-running").
    */
   runawayAction?: "stop" | "keep-running";
+  /**
+   * The session the call belongs to (a subagent's run has its own), so a
+   * tool can find that session's pages in the web content store
+   * (core/util/web/contentStore.ts). Unset when the caller has no session.
+   */
+  sessionId?: string;
 }
 
 export interface McpToolMeta {

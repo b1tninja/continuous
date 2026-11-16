@@ -288,6 +288,7 @@ import { ContinueError, ContinueErrorReason } from "./util/errors";
 import { shareSession } from "./util/historyUtils";
 import { Logger } from "./util/Logger.js";
 import { MessageAbortControllers } from "./util/messageAbortControllers";
+import { webContentStore } from "./util/web/contentStore";
 import { setWebAgentVersion } from "./web/webHeaders";
 
 export class Core {
@@ -518,9 +519,11 @@ export class Core {
   /** The session trash and message-text search of the History page (NI10). */
   private registerHistoryTrashHandlers() {
     const on = this.messenger.on.bind(this.messenger);
-    on("history/trash", (msg) =>
-      historyManager.trash(msg.data.id, { force: msg.data.force }),
-    );
+    on("history/trash", (msg) => {
+      // The session's fetched pages go with it, whether or not it is restored
+      webContentStore.deleteSession(msg.data.id);
+      return historyManager.trash(msg.data.id, { force: msg.data.force });
+    });
     on("history/restore", (msg) => historyManager.restore(msg.data.id));
     on("history/listTrash", () => historyManager.listTrash());
     on("history/deleteFromTrash", (msg) => {
@@ -1256,6 +1259,12 @@ export class Core {
     });
 
     on("web/fetchLog", async ({ data }) => getFetchLog().list(data?.session));
+    on("web/endTurn", ({ data }) => {
+      webContentStore.endTurn(data.sessionId);
+    });
+    on("web/closeSession", ({ data }) => {
+      webContentStore.deleteSession(data.sessionId);
+    });
   }
 
   /**
@@ -1467,6 +1476,7 @@ export class Core {
     });
 
     on("history/delete", (msg) => {
+      webContentStore.deleteSession(msg.data.id);
       historyManager.delete(msg.data.id);
     });
 
@@ -1497,6 +1507,7 @@ export class Core {
     });
 
     on("history/clear", (msg) => {
+      webContentStore.clearAll();
       historyManager.clearAll();
     });
 
@@ -2557,13 +2568,20 @@ export class Core {
     on(
       "tools/call",
       async ({
-        data: { toolCall, workspaceDirs, allowOutsideWorkspace, runawayAction },
+        data: {
+          toolCall,
+          workspaceDirs,
+          allowOutsideWorkspace,
+          runawayAction,
+          sessionId,
+        },
       }) =>
         this.handleToolCall(
           toolCall,
           workspaceDirs,
           allowOutsideWorkspace,
           runawayAction,
+          sessionId,
         ),
     );
 
@@ -2758,6 +2776,7 @@ export class Core {
     workspaceDirs?: string[],
     allowOutsideWorkspace?: boolean,
     runawayAction?: "stop" | "keep-running",
+    sessionId?: string,
   ) {
     const { config } = await this.configHandler.loadConfig();
     if (!config) {
@@ -2813,6 +2832,9 @@ export class Core {
         onPartialOutput,
         codeBaseIndexer: this.codeBaseIndexer,
         ...(runawayAction ? { runawayAction } : {}),
+        // Only the caller's: a subagent's call is decided under its parent's
+        // session but has a store of its own
+        ...(sessionId ? { sessionId } : {}),
       });
     } catch (e) {
       trail.outcome({

@@ -838,6 +838,12 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
        * "keep-running" (Permissive and IDGAF).
        */
       runawayAction?: "stop" | "keep-running";
+      /**
+       * The session the call belongs to (a subagent's run: its own store id,
+       * `subagentStoreId`), for the web content store. Without it the tool
+       * has no session and nothing is stored.
+       */
+      sessionId?: string;
     },
     {
       contextItems: ContextItem[];
@@ -897,6 +903,17 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
     { session?: string } | undefined,
     import("../util/fetchRecord").FetchRecord[],
   ];
+  /**
+   * The session's turn is over (sent when the person's next message starts
+   * one): its `no-store`, credentialed and non-public pages leave the web
+   * content store (core/util/web/contentStore.ts).
+   */
+  "web/endTurn": [{ sessionId: string }, void];
+  /**
+   * The session is no longer open here (a new session or another one was
+   * opened, or a subagent's run finished): its pages leave the store.
+   */
+  "web/closeSession": [{ sessionId: string }, void];
   /** Run one call through the real evaluator and explain it. Nothing runs. */
   "policy/test": [
     Omit<

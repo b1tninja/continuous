@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 
 import type { ChatHistoryItem } from "core";
 import { costMarkOf, costSince } from "core/util/loopCost.js";
+import {
+  subagentStoreId,
+  webContentStore,
+} from "core/util/web/contentStore.js";
 
 import { emitAgent, ensureMainAgent, tokensOf } from "../agents/feed.js";
 import { getSubagentModel } from "../contextManagement.js";
@@ -17,7 +21,7 @@ import {
 import { serviceContainer } from "../services/ServiceContainer.js";
 import type { ToolPermissionServiceState } from "../services/ToolPermissionService.js";
 import { ModelServiceState, SERVICE_NAMES } from "../services/types.js";
-import { getSessionUsage } from "../session.js";
+import { getCurrentSession, getSessionUsage } from "../session.js";
 import { streamChatResponse } from "../stream/streamChatResponse.js";
 import type { StreamCallbacks } from "../stream/streamChatResponse.types.js";
 import type { ToolCallPreview, ToolPermissionPrompt } from "../tools/types.js";
@@ -103,6 +107,15 @@ async function buildAgentSystemMessage(
   }
 
   return baseMessage;
+}
+
+/** The session the run was started from, or none (a run with no session). */
+function parentSessionId(): string {
+  try {
+    return getCurrentSession().sessionId;
+  } catch {
+    return "no-session";
+  }
 }
 
 function abortReason(signal: AbortSignal): string {
@@ -445,6 +458,9 @@ async function runSubAgent(
         : undefined,
     };
 
+    // The run's own pages in the web content store, gone when it ends: the
+    // parent gets the answer in text, never the run's store
+    const webSessionId = subagentStoreId(parentSessionId(), agentId);
     try {
       let continuations = 0;
       for (;;) {
@@ -459,7 +475,7 @@ async function runSubAgent(
           // the child history must not overwrite the parent session. The
           // requests are the subagent's use, not the parent turn's (a Loop
           // item's prompt and tail would otherwise reach it).
-          { persistSession: false, use: "subagent" },
+          { persistSession: false, use: "subagent", webSessionId },
         );
         if (signal.aborted) break;
 
@@ -509,6 +525,7 @@ async function runSubAgent(
         "The subagent stopped after a tool call without giving a final answer.",
       );
     } finally {
+      webContentStore.deleteSession(webSessionId);
       escapeEvents.removeListener("user-escape", escapeHandler);
       signal.removeEventListener("abort", onAbort);
       prompts?.rejectPending();
