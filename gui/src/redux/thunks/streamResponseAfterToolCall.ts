@@ -12,6 +12,10 @@ import {
 } from "../slices/sessionSlice";
 import { ThunkApiType } from "../store";
 import { addUserInputToHistory } from "./addUserInputToHistory";
+import {
+  compactAtToolRound,
+  toolRoundCompactionNeed,
+} from "./compactAtToolRound";
 import { addItemBudgetNote } from "./loopHolds";
 import { streamNormalInput } from "./streamNormalInput";
 import { checkpointSession } from "./session";
@@ -119,6 +123,19 @@ export const streamResponseAfterToolCall = createAsyncThunk<
           const lastCall = assistantMessage.toolCallStates?.at(-1);
           if (lastCall) {
             addItemBudgetNote(dispatch, getState, lastCall.toolCallId);
+          }
+          // Past the force threshold the next request would drop the oldest
+          // block: a summary is saved instead, with nobody asked (C117)
+          const need = toolRoundCompactionNeed(getState());
+          if (need) {
+            const compacted = await compactAtToolRound({
+              need,
+              dispatch,
+              getState,
+              extra,
+              signal: getState().session.streamAborter.signal,
+            });
+            if (compacted === "aborted") return;
           }
           unwrapResult(await dispatch(streamNormalInput({ depth: depth + 1 })));
         } else if (

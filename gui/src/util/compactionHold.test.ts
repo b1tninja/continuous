@@ -77,7 +77,7 @@ const text = (s: string): JSONContent => ({
 });
 
 describe("compactionHoldFor", () => {
-  it("holds past the force threshold (85% on a local server) and not before", () => {
+  it("holds past the force threshold (85% of the window less core's 5% headroom on a local server) and not before", () => {
     // 72%: prepared, not forced
     expect(compactionHoldFor(stateWith(10), 0)).toBeUndefined();
     // 79% with a big message pushing it past 85%
@@ -86,7 +86,8 @@ describe("compactionHoldFor", () => {
     expect(big?.totalTokens).toBeGreaterThanOrEqual(85_000);
     // 86%
     const hold = compactionHoldFor(stateWith(12), 10)!;
-    expect(hold.forceAtTokens).toBe(85_000);
+    // Where core's block drop starts: 85% of 100k / 1.05
+    expect(hold.forceAtTokens).toBe(80_952);
     expect(hold.plan.state).toBe("force");
     expect(hold.rereadTokens).toBe(
       hold.plan.tokens.span + hold.plan.tokens.tail + 10,

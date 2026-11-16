@@ -1,6 +1,7 @@
 import { createAsyncThunk, createNextState } from "@reduxjs/toolkit";
 import type { ModelDescription } from "core";
 import { computeContextBreakdown } from "core/llm/contextBreakdown";
+import { CORRECTION_HEADROOM } from "core/llm/contextOverflow";
 import { prewarmAllowed, prewarmSetting } from "core/llm/localPrewarm";
 import { isLocalApiBase } from "core/llm/localServers";
 import {
@@ -165,8 +166,12 @@ function measuredConversation(
   }
 
   // The provider's count of the last request, when it is close enough to the
-  // estimate to describe this conversation (after a compaction it does not)
-  const last = state.session.usage?.lastRequest;
+  // estimate to describe this conversation (after a compaction it does not).
+  // A pruned request counted only what was left of the conversation, so its
+  // ratio would make the whole conversation look smaller than it is.
+  const last = state.session.isPruned
+    ? undefined
+    : state.session.usage?.lastRequest;
   const estimated = head + estimates.reduce((a, b) => a + b, 0);
   const ratio =
     last && estimated > 0
@@ -184,6 +189,26 @@ function measuredConversation(
       : COMPACTION_THRESHOLDS.cloud,
     modelKey: `${model.provider}/${model.model}`,
   };
+}
+
+/**
+ * Where the block drop starts, in the plan's tokens (decision D3's force
+ * share of the window). On a local server core prunes against the window less
+ * the 5% headroom of its usage calibration (core/llm/contextOverflow.ts), so
+ * the same share of that smaller window: the hold and the tool-round
+ * compaction must come before the drop, not after it.
+ */
+export function forceAtTokens(
+  plan: Pick<CompactionPlan, "window">,
+  model: ModelDescription,
+): number {
+  const local = isLocalModel(model);
+  const shares = local
+    ? COMPACTION_THRESHOLDS.local
+    : COMPACTION_THRESHOLDS.cloud;
+  return Math.floor(
+    (plan.window * shares.force) / (local ? CORRECTION_HEADROOM : 1),
+  );
 }
 
 /** The plan for the session as it stands, keeping the stored boundary. */
@@ -251,7 +276,7 @@ function summaryPrefix(
 }
 
 /** Decision in section 6.1: a short first request is quoted word for word. */
-function withQuotedRequest(
+export function withQuotedRequest(
   state: RootState,
   plan: CompactionPlan,
   summary: string,
