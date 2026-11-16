@@ -23,7 +23,7 @@ vi.mock("core/tools/permissions/audit/global.js", () => ({
   }),
 }));
 
-// HEADLESS_FETCH_FOLLOWS_WEB_LEVEL flipped, as it will be in 2.36
+// HEADLESS_FETCH_FOLLOWS_WEB_LEVEL flipped, as it will be in 2.38
 vi.mock("../permissions/headlessPolicy.js", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("../permissions/headlessPolicy.js")>();
@@ -54,7 +54,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("headless cn with HEADLESS_FETCH_FOLLOWS_WEB_LEVEL = true (2.36)", () => {
+describe("headless cn with HEADLESS_FETCH_FOLLOWS_WEB_LEVEL = true (2.38)", () => {
   it("Cautious acts as Listed: a host nobody allowed is refused, with no transition line", async () => {
     const lines: string[] = [];
     vi.spyOn(process.stderr, "write").mockImplementation((l: any) => {
@@ -69,7 +69,7 @@ describe("headless cn with HEADLESS_FETCH_FOLLOWS_WEB_LEVEL = true (2.36)", () =
     );
     expect(r.approved).toBe(false);
     expect(r.denialMessage).toContain("headless");
-    expect(lines.some((l) => l.includes("from 2.36"))).toBe(false);
+    expect(lines.some((l) => l.includes("from 2.38"))).toBe(false);
   });
 
   it("an allowed host still runs", async () => {

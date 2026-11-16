@@ -226,11 +226,7 @@ export function webHeadlessLine(
 
 /** A protection that asks below IDGAF (step 8). */
 export type WebProtection =
-  | "private"
-  | "confusable"
-  | "robots"
-  | "reputation"
-  | "guard";
+  "private" | "confusable" | "robots" | "reputation" | "guard";
 
 export interface WebCallFacts {
   level: WebLevel;
