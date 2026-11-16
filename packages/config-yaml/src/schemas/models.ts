@@ -94,6 +94,11 @@ export const cacheBehaviorSchema = z.object({
   // after a pause that a 1-hour entry would have covered. Does not turn
   // caching on by itself.
   ttl: z.enum(["auto", "5m", "1h"]).optional(),
+  // Lifetime of a subagent run's cache entries (C85). Default "5m": a run's
+  // requests come seconds apart. "1h" and "auto" (5 minutes, then 1 hour from
+  // the run's fifth request) are the opt-in; "inherit" follows the chat's
+  // setting as before.
+  subagentTtl: z.enum(["5m", "1h", "auto", "inherit"]).optional(),
 });
 export type CacheBehavior = z.infer<typeof cacheBehaviorSchema>;
 

@@ -7,6 +7,7 @@ import { services } from "../services/index.js";
 import { getSessionTaskPlan } from "../session.js";
 import {
   cliToolListForRequest,
+  heldToolsLifetimeMs,
   noteToolHoldRequest,
   withoutReasoningBefore,
 } from "../tools/toolListHold.js";
@@ -87,6 +88,6 @@ export function noteHeldToolsUsage(
         cacheWriteTokens: usage.prompt_tokens_details?.cache_write_tokens,
       },
     },
-    lifetimeMs: model.cacheBehavior?.ttl === "1h" ? 60 * 60_000 : undefined,
+    lifetimeMs: heldToolsLifetimeMs(model.cacheBehavior?.ttl),
   });
 }

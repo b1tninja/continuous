@@ -2189,6 +2189,13 @@ export interface CacheBehavior {
    * caching on. A choice in the chat toolbar overrides it.
    */
   ttl?: "auto" | "5m" | "1h";
+  /**
+   * Lifetime of a subagent run's cache entries. Default "5m". "1h", or
+   * "auto" (5 minutes, then 1 hour from the run's fifth request), is the
+   * opt-in; "inherit" follows the chat toolbar and `ttl`. Does not turn
+   * caching on. CONTINUOUS_FORCE_CACHE_5M=1 overrides it.
+   */
+  subagentTtl?: "5m" | "1h" | "auto" | "inherit";
 }
 
 export interface ClientCertificateOptions {
