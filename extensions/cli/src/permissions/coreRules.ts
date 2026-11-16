@@ -33,6 +33,7 @@ import { readUserGuidance } from "core/util/userGuidance.js";
 import { createLlmApi } from "../config.js";
 import { logger } from "../util/logger.js";
 
+import { getPolicyExtras } from "./policyLevels.js";
 import type {
   PermissionCheckResult,
   PermissionMode,
@@ -328,7 +329,10 @@ export async function evaluateWithCoreRules(
   const useReviewer = !!input.autoReview;
   // The tainted-session rule needs the engine even without rules or levels
   const taint = taintInput(SESSION_ID, undefined);
-  if (!engineApplies(input, useReviewer, !!taint.taint)) return undefined;
+  // B92: a secret read makes every later network call the engine's, rule or not
+  if (!engineApplies(input, useReviewer, !!taint.taint || !!taint.secretRead)) {
+    return undefined;
+  }
   const call = toCoreCall(cliToolName, args);
   const mcp = input.mcp ?? call?.mcp;
   if (!call && !mcp) return undefined;
@@ -343,6 +347,8 @@ export async function evaluateWithCoreRules(
         ...(input.mcpDefinitionChange
           ? { mcpDefinitionChange: input.mcpDefinitionChange }
           : {}),
+        // B92: a server the person marked trusted in their own permissions.yaml
+        ...(mcpServerTrusted(mcp.serverName) ? { mcpServerTrusted: true } : {}),
       }
     : {
         group: "Built-In",
@@ -430,6 +436,15 @@ export async function evaluateWithCoreRules(
     ...taint,
   });
   return rulesVerdict(input, basePolicy, result, processedArgs);
+}
+
+/** Marked `trusted` under `mcpServers` in the person's own permissions.yaml. */
+function mcpServerTrusted(server: string): boolean {
+  try {
+    return getPolicyExtras().mcpServers?.[server] === "trusted";
+  } catch {
+    return false;
+  }
 }
 
 /** The tool's preprocess result and the path facts, as one `processedArgs`. */
@@ -565,7 +580,8 @@ export function keepCoreVerdict(
     verdict.source === "floor" ||
     verdict.source === "protected-path" ||
     verdict.source === "safety-floor" ||
-    verdict.source === "tainted-session"
+    verdict.source === "tainted-session" ||
+    verdict.source === "secret-egress"
   ) {
     return verdict;
   }

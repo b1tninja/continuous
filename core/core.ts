@@ -2643,7 +2643,8 @@ export class Core {
           ...(dirs[0] ? { cwd: uriToPath(dirs[0]) } : {}),
           ...deputyWorkspace(dirs),
           shell: shell.kind,
-          // The tainted-session rule's fact; nothing when the rule is off
+          // The tainted-session rule's fact (nothing when the rule is off)
+          // and B92's secret read (whatever the rule says)
           ...taintInput(sessionId, callId),
         });
         // Core keeps the Questions level it was last told, for what is asked
