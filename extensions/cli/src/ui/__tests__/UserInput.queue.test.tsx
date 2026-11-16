@@ -3,6 +3,7 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { messageQueue } from "../../stream/messageQueue.js";
+import { CONFIRM_ARM_MS } from "../hooks/useInterruptConfirm.js";
 import { UserInput } from "../UserInput.js";
 
 const UP = "\x1b[A";
@@ -156,6 +157,12 @@ describe("UserInput and the message queue", () => {
         await messageQueue.enqueueMessage("typed later");
 
         stdin.write(CTRL_C);
+        // Ctrl+C asks first; nothing is cleared or put back until Enter
+        expect(messageQueue.list().map((m) => m.message)).toEqual([
+          "typed later",
+        ]);
+        await vi.advanceTimersByTimeAsync(CONFIRM_ARM_MS);
+        stdin.write(ENTER);
         expect(messageQueue.list().map((m) => m.message)).toEqual([
           "first thought" + NL + "second thought and more",
           "typed later",
@@ -165,12 +172,18 @@ describe("UserInput and the message queue", () => {
       }
     });
 
-    it("still just clears an ordinary draft", () => {
-      const { stdin, unmount } = renderInput({ isWaitingForResponse: true });
+    it("still just clears an ordinary draft", async () => {
+      const { stdin, lastFrame, unmount } = renderInput({
+        isWaitingForResponse: true,
+      });
       try {
         stdin.write("a draft");
         stdin.write(CTRL_C);
+        await vi.advanceTimersByTimeAsync(CONFIRM_ARM_MS);
+        stdin.write(ENTER);
+        await vi.advanceTimersByTimeAsync(30);
         expect(messageQueue.getQueueLength()).toBe(0);
+        expect(lastFrame()).not.toContain("a draft");
       } finally {
         unmount();
       }
@@ -185,6 +198,7 @@ describe("UserInput and the message queue", () => {
         expect(messageQueue.list().map((m) => m.message)).toEqual(["queued"]);
         stdin.write("new draft");
         stdin.write(CTRL_C);
+        stdin.write(ENTER);
         expect(messageQueue.list().map((m) => m.message)).toEqual(["queued"]);
       } finally {
         unmount();

@@ -14,6 +14,7 @@ import { IdeMessengerContext } from "../../context/IdeMessenger";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import { archiveSessions, restoreSessions } from "../../redux/slices/uiSlice";
 import { exitEdit } from "../../redux/thunks/edit";
+import { confirmSessionSwitch } from "../../redux/thunks/interruptConfirm";
 import {
   getSession,
   loadSession,
@@ -89,6 +90,13 @@ export function HistoryTableRow({
   };
 
   const openSession = async () => {
+    // Running work is stopped only when the person says so (NI1)
+    if (
+      sessionMetadata.sessionId !== currentSessionId &&
+      !(await dispatch(confirmSessionSwitch("openSession")).unwrap())
+    ) {
+      return;
+    }
     await dispatch(exitEdit({}));
     if (sessionMetadata.sessionId !== currentSessionId) {
       await dispatch(
