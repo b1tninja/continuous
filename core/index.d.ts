@@ -2410,6 +2410,12 @@ export interface Tool {
   originalFunctionName?: string;
   /** An MCP tool from a server the open folder brought, not the person's own config */
   mcpFromWorkspace?: boolean;
+  /**
+   * An MCP tool from a server the person marked `trusted` under `mcpServers`
+   * in their own permissions.yaml (never one the open folder brought). Its
+   * calls are not a network call for the secret-read plus network pair (B92).
+   */
+  mcpServerTrusted?: boolean;
   systemMessageDescription?: {
     prefix: string;
     exampleArgs?: Array<[string, string | number]>;

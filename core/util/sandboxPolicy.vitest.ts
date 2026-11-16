@@ -59,7 +59,11 @@ describe("compileSandboxConfig: the default read policy", () => {
     ]) {
       expect(denied, d).toContain(d);
     }
-    expect(p.config.filesystem.allowRead).toEqual([]);
+    // Only the project's plans folders are allowed back (S9-X3)
+    expect(p.config.filesystem.allowRead).toEqual([
+      `${WS}/.continue/plans`,
+      `${WS}/.continuous/plans`,
+    ]);
     expect(p.notEnforced.map((n) => n.id)).toContain("open-reads");
   });
 
@@ -140,6 +144,18 @@ describe("S9-X3: the decided read policy", () => {
     // A project .npmrc is still a secret wherever it sits
     expect(plan().config.filesystem.denyRead).toContain(`${WS}/**/.npmrc`);
     expect(plan().notEnforced.map((n) => n.id)).toContain("allowed-home-reads");
+  });
+
+  it("keeps the project's plans readable inside the denied policy folders; writes stay protected", () => {
+    for (const readPolicy of ["open", "workspace-only"] as const) {
+      const f = plan({ readPolicy }).config.filesystem;
+      for (const d of [".continue", ".continuous"]) {
+        expect(f.denyRead).toContain(`${WS}/${d}`);
+        expect(f.allowRead, `${readPolicy} ${d}`).toContain(`${WS}/${d}/plans`);
+        expect(f.denyWrite).toContain(`${WS}/${d}`);
+        expect(f.allowWrite).not.toContain(`${WS}/${d}/plans`);
+      }
+    }
   });
 
   it("a deny rule of the person's on ~/.npmrc is not allowed back", () => {

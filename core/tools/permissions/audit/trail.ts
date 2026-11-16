@@ -5,6 +5,7 @@ import {
   policyDraft,
   settingDraft,
   shadowDraft,
+  secretReadDraft,
   taintDraft,
   turnDraft,
   type AuditAgent,
@@ -15,6 +16,7 @@ import {
   type PolicyInput,
   type SettingInput,
   type ShadowInput,
+  type SecretReadInput,
   type TaintInput,
 } from "./record";
 import { pruneAudit, type PruneResult } from "./reader";
@@ -277,6 +279,14 @@ export class AuditTrail {
   /** The session of a call whose decision was written and whose outcome was not. */
   sessionOf(callId: string): string | undefined {
     return this.pending.get(callId)?.input.session;
+  }
+
+  /** B92: a secret was read in a session (what read it, never the content). */
+  secretRead(input: SecretReadInput): void {
+    this.guard(() => {
+      const result = this.writer.write(secretReadDraft(input));
+      if (!result.ok) this.fail(result.error);
+    });
   }
 
   /** Delete files past the retention. Never throws. */

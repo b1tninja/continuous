@@ -159,6 +159,8 @@ export interface EvaluateInput extends TaintedSessionInput {
         | "evaluateToolCallPolicy"
         | "readonly"
         | "mcpDefinitionChange"
+        | "mcpFromWorkspace"
+        | "mcpServerTrusted"
       > & { function?: Pick<Tool["function"], "parameters"> })
     | undefined;
   toolName: string;

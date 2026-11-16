@@ -33,6 +33,7 @@ import { readUserGuidance } from "core/util/userGuidance.js";
 import { createLlmApi } from "../config.js";
 import { logger } from "../util/logger.js";
 
+import { getPolicyExtras } from "./policyLevels.js";
 import type {
   PermissionCheckResult,
   PermissionMode,
@@ -346,6 +347,8 @@ export async function evaluateWithCoreRules(
         ...(input.mcpDefinitionChange
           ? { mcpDefinitionChange: input.mcpDefinitionChange }
           : {}),
+        // B92: a server the person marked trusted in their own permissions.yaml
+        ...(mcpServerTrusted(mcp.serverName) ? { mcpServerTrusted: true } : {}),
       }
     : {
         group: "Built-In",
@@ -433,6 +436,15 @@ export async function evaluateWithCoreRules(
     ...taint,
   });
   return rulesVerdict(input, basePolicy, result, processedArgs);
+}
+
+/** Marked `trusted` under `mcpServers` in the person's own permissions.yaml. */
+function mcpServerTrusted(server: string): boolean {
+  try {
+    return getPolicyExtras().mcpServers?.[server] === "trusted";
+  } catch {
+    return false;
+  }
 }
 
 /** The tool's preprocess result and the path facts, as one `processedArgs`. */
