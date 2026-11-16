@@ -62,6 +62,8 @@ export interface FetchRecord {
   robots: RobotsVerdict;
   /** The rule that let the request through, or refused it */
   rule: string;
+  /** The User-Agent sent on the last request (`""`: sent empty), so the panel can show it (UA-6) */
+  userAgent?: string;
   /** The final URL was plain http */
   unencrypted: boolean;
   outcome: FetchOutcome;
@@ -94,6 +96,7 @@ export class FetchRecorder {
   private status?: number;
   private contentType?: string;
   rule: string;
+  userAgent?: string;
 
   constructor(
     private readonly base: {
@@ -142,6 +145,7 @@ export class FetchRecorder {
       durationMs: Date.now() - this.started,
       robots: "not-checked" as const,
       rule: this.rule,
+      userAgent: this.userAgent,
       unencrypted: final.startsWith("http:"),
       outcome,
       error: error?.slice(0, MAX_ERROR_CHARS),
