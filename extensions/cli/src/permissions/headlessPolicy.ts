@@ -91,7 +91,7 @@ export function headlessPolicyNotice(args: {
   legacy?: boolean;
 }): string {
   if (args.legacy) {
-    return `continuous: ${HEADLESS_LEGACY_ENV}=1: Bash and unlisted tools are allowed in this headless run, as before 2.18.0. This switch is removed in the next release; pass --auto or --policy instead.`;
+    return `continuous: ${HEADLESS_LEGACY_ENV}=1 is set in the environment: Bash and unlisted tools are allowed in every headless run while it is set, not only this one, as before 2.18.0. This switch is removed in the next release; pass --auto or --policy instead.`;
   }
   const where = args.source
     ? `at ${args.source}`

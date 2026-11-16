@@ -2,6 +2,7 @@ import { isPosixShell, type ShellKind } from "../../util/shell";
 import { parseCommand } from "./command";
 import { detectCommandShell, familyOf } from "./detectShell";
 import { canonicalCmdlet, isPowerShellAlias } from "./powershell";
+import { decodeEncodedCommand } from "./shellContext";
 import {
   commandName,
   dequote,
@@ -37,6 +38,18 @@ const GIT_OPTS_WITH_ARG = new Set([
 const XARGS_OPTS_WITH_ARG = new Set(["-n", "-I", "-P", "-d", "-L", "-s", "-E"]);
 const MAX_DEPTH = 4;
 const MAX_CANDIDATES = 800;
+
+/**
+ * PowerShell's `-EncodedCommand` under any spelling the host takes: `-e`,
+ * `-ec`, `-en`, `-enc` up to the whole word, with `-`, `/` or a look-alike
+ * dash, in any case. `-ex` and `-ep` are `-ExecutionPolicy`.
+ */
+function isEncodedCommandFlag(word: string): boolean {
+  const m = /^[-/–—―]([A-Za-z]+)$/.exec(word);
+  if (!m) return false;
+  const n = m[1].toLowerCase();
+  return n === "ec" || "encodedcommand".startsWith(n);
+}
 
 /** An alias's cmdlet in its usual capitalisation: `Remove-Item`, not `remove-item`. */
 function canonicalCmdletName(alias: string): string {
@@ -100,6 +113,14 @@ function nested(
   } else if (PS_SHELLS.has(name)) {
     const k = tail.findIndex((w) => /^-(c|command)$/i.test(w));
     if (k >= 0) run(tail.slice(k + 1).join(" "), "powershell");
+    // -EncodedCommand hides the script from every rule: read it decoded. One
+    // that cannot be decoded is code the text does not show, so fail closed.
+    const e = tail.findIndex(isEncodedCommandFlag);
+    if (e >= 0) {
+      const decoded = decodeEncodedCommand(tail[e + 1] ?? "");
+      if (decoded === undefined) cap.truncated = true;
+      else run(decoded, "powershell");
+    }
   } else if (name === "cmd") {
     const k = tail.findIndex((w) => /^\/[ck]$/i.test(w));
     if (k >= 0) run(tail.slice(k + 1).join(" "), "cmd");

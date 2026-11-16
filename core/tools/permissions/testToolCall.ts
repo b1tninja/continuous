@@ -334,7 +334,7 @@ function buildSteps(facts: Facts, result: ToolCallTestResult): TestStep[] {
   const labels: Record<string, string> = {
     lint: "Command check",
     safety: "Built-in rule check",
-    floor: "Always-on rules",
+    floor: "Locked rules",
     deny: "Never rules",
     protected: "Protected paths",
     ask: "Ask rules",

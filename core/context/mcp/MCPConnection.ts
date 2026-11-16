@@ -301,6 +301,17 @@ class MCPConnection {
   }
 
   /**
+   * What a stdio server has written to stderr since it was last started,
+   * bounded by `StdioOutputBuffer` and masked with the server's own
+   * environment. Empty for a remote server. The add wizard's probe reads it.
+   */
+  getCapturedStderr(): string {
+    return this.stdioStderr.isEmpty
+      ? ""
+      : this.stdioStderr.render(this.stdioEnv);
+  }
+
+  /**
    * The person approved these tools (or all of them): pin them and tell the
    * manager, which reloads the config. The new tool list then goes through
    * the warm-cache hold like any other change (core/tools/toolListHold.ts).

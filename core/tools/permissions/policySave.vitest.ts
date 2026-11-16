@@ -123,7 +123,7 @@ describe("policySaveLoosenings: what a save loosens", () => {
     );
     expect(text).toContain("Tool use: Cautious → Permissive");
     expect(text).toContain(
-      "Remove the Always-on Never rule runTerminalCommand(terraform destroy*)",
+      "Remove the locked rule runTerminalCommand(terraform destroy*)",
     );
     expect(text).toContain(
       "Trust the read-only hints of the MCP server github",

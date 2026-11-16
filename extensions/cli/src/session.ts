@@ -33,6 +33,7 @@ import { v4 as uuidv4 } from "uuid";
 
 import { DEFAULT_SESSION_TITLE } from "./constants/session.js";
 import { env } from "./env.js";
+import { noteResumedSession } from "./permissions/idgafNotices.js";
 import { resetCliToolListHold } from "./tools/toolListHold.js";
 import { logger } from "./util/logger.js";
 import { userNotice } from "./util/userNotice.js";
@@ -654,7 +655,7 @@ export function loadSession(options: LoadSessionOptions = {}): Session | null {
   const chosen = resumeSessionId;
   if (chosen) {
     const session = loadSessionById(chosen);
-    if (session) SessionManager.getInstance().setSession(session);
+    if (session) resumeSession(session);
     return session;
   }
   const cwd = path.resolve(options.cwd ?? process.cwd());
@@ -725,7 +726,7 @@ export function loadSession(options: LoadSessionOptions = {}): Session | null {
     };
 
     const resume = (session: Session, otherFolder: boolean): Session => {
-      SessionManager.getInstance().setSession(session);
+      resumeSession(session);
       if (passedOver.length > 0) {
         userNotice(resumedEarlierNotice(passedOver, session));
       } else if (otherFolder) {
@@ -760,6 +761,15 @@ export function loadSession(options: LoadSessionOptions = {}): Session | null {
     logger.error("Error loading session:", error);
     return null;
   }
+}
+
+/**
+ * The session `--resume` continues becomes the current one. IDGAF it ran at
+ * is not restored, and one line says so (ID 5).
+ */
+function resumeSession(session: Session): void {
+  noteResumedSession(session);
+  SessionManager.getInstance().setSession(session);
 }
 
 /** Said when this folder has no session and another folder's was resumed. */

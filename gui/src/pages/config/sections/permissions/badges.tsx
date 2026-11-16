@@ -7,7 +7,7 @@ import { cn } from "../../../../util/cn";
 
 export const SOURCE_LABEL: Record<RuleSource, string> = {
   builtin: "Built-in",
-  floor: "Always on",
+  floor: "Locked rule",
   "user-config": "You",
   "permissions-yaml": "CLI file",
   assistant: "Assistant",
@@ -17,7 +17,7 @@ export const SOURCE_LABEL: Record<RuleSource, string> = {
 export const SOURCE_HELP: Record<RuleSource, string> = {
   builtin: "A built-in rule: shipped with the product",
   floor:
-    "An always-on rule (floor:) in your permissions.yaml. It binds at every level.",
+    "A locked rule (floor:) in your permissions.yaml. It binds at every level below IDGAF; at IDGAF it is recorded, not applied.",
   "user-config": "Your own config.yaml",
   "permissions-yaml":
     "The CLI's lists in your permissions.yaml. Weighed by the CLI first.",

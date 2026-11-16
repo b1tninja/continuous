@@ -59,6 +59,9 @@ export function orderSession(session: Session): Session {
   if (session.forkedFrom) {
     ordered.forkedFrom = session.forkedFrom;
   }
+  if (session.idgafAreas?.length) {
+    ordered.idgafAreas = session.idgafAreas;
+  }
   return ordered;
 }
 
