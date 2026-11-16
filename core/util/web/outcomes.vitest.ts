@@ -172,7 +172,7 @@ describe("exact texts (section 6.2)", () => {
       noscript: "You need to enable JavaScript to run this app.",
     };
     expect(needsJsOutcome(base).text).toBe(
-      `${head}\nNo browser tool is configured. Look for another source: the project's docs repository, an API, an llms.txt or a .md version of the page. Or tell the person this page needs a browser; they have been offered one.`,
+      `${head}\nNo browser tool is configured; the person can add one (Playwright MCP) in Settings. Look for another source: the project's docs repository, an API, an llms.txt or a .md version of the page, or tell the person this page needs a browser.`,
     );
     expect(
       needsJsOutcome({
@@ -234,7 +234,7 @@ describe("exact texts (section 6.2)", () => {
       now: NOW,
     });
     expect(o.text).toBe(
-      "Not fetched yet: docs.example.com answered 429 Too Many Requests and asks to wait 120 seconds (Retry-After). It can be fetched again after 10:06:00 UTC; a call before then is answered from this result without contacting the site. Do other work meanwhile.",
+      "Not fetched yet: docs.example.com answered 429 Too Many Requests and asks to wait 120 seconds (Retry-After). Wait until 10:06:00 UTC before fetching it again; an earlier call gets the same answer from the site. Do other work meanwhile.",
     );
     expect(o.retryAt).toBe("2026-11-15T10:06:00.000Z");
     expect(
@@ -246,7 +246,7 @@ describe("exact texts (section 6.2)", () => {
       }).text,
     ).toContain("answered 503 Service Unavailable and asks to wait 30 seconds");
     expect(rateLimitedOutcome({ host, status: 429, now: NOW }).text).toBe(
-      "Not fetched yet: docs.example.com answered 429 Too Many Requests and gives no Retry-After, so wait at least 60 seconds. It can be fetched again after 10:05:00 UTC; a call before then is answered from this result without contacting the site. Do other work meanwhile.",
+      "Not fetched yet: docs.example.com answered 429 Too Many Requests and gives no Retry-After, so wait at least 60 seconds. Wait until 10:05:00 UTC before fetching it again; an earlier call gets the same answer from the site. Do other work meanwhile.",
     );
   });
 

@@ -555,9 +555,11 @@ export function needsJsOutcome(p: {
   } else if (browser.kind === "configured") {
     tail = `A browser server (${browser.server}) is configured but its tools are not available in this session. Ask the person to turn them on if this page is needed.`;
   } else {
-    // TODO(WB44): "they have been offered one" is the IDE card, which WB44 builds.
+    // TODO(WB44): restore the note's ending, "Or tell the person this page
+    // needs a browser; they have been offered one.", once the IDE card that
+    // offers it exists. Until then the text says only what is true.
     tail =
-      "No browser tool is configured. Look for another source: the project's docs repository, an API, an llms.txt or a .md version of the page. Or tell the person this page needs a browser; they have been offered one.";
+      "No browser tool is configured; the person can add one (Playwright MCP) in Settings. Look for another source: the project's docs repository, an API, an llms.txt or a .md version of the page, or tell the person this page needs a browser.";
   }
   return outcome("needs-js", `${head}\n${tail}`, {
     host: p.host,
@@ -622,11 +624,13 @@ export function rateLimitedOutcome(p: {
   const at =
     p.retryAfter?.at ??
     new Date(now.getTime() + DEFAULT_RATE_LIMIT_WAIT_SECONDS * 1000);
-  // TODO(WB42): the repeat guard answers a call before `at` from this result;
-  // until it merges, such a call reaches the site again.
+  // TODO(WB42): restore the note's second sentence, "It can be fetched again
+  // after <time> UTC; a call before then is answered from this result without
+  // contacting the site.", once the repeat guard answers such a call. Until
+  // then an earlier call does reach the site, so the text says only that.
   return outcome(
     "rate-limited",
-    `Not fetched yet: ${p.host} answered ${statusWithReason(p.status)} and ${wait}. It can be fetched again after ${hhmmss(at)} UTC; a call before then is answered from this result without contacting the site. Do other work meanwhile.`,
+    `Not fetched yet: ${p.host} answered ${statusWithReason(p.status)} and ${wait}. Wait until ${hhmmss(at)} UTC before fetching it again; an earlier call gets the same answer from the site. Do other work meanwhile.`,
     { host: p.host, httpStatus: p.status, retryAt: at.toISOString() },
   );
 }
