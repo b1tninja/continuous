@@ -19,7 +19,19 @@ import { announceHeadlessPolicy } from "../flags/flagProcessor.js";
 import { capAtDefaults } from "../safeMode.js";
 
 import { evaluateWithCoreRules, setAutoReviewEnabled } from "./coreRules.js";
-import { headlessPolicyNotice } from "./headlessPolicy.js";
+import { CLI_SESSION_ID } from "./coreRules.js";
+import {
+  getDefaultToolPolicies,
+  PLAN_MODE_POLICIES,
+} from "./defaultPolicies.js";
+import {
+  HEADLESS_FETCH_FOLLOWS_WEB_LEVEL,
+  HEADLESS_FETCH_TRANSITION_NOTE,
+  headlessPolicyNotice,
+  noteHeadlessFetchTransition,
+  resetHeadlessRefusalNotes,
+  webFetchDefault,
+} from "./headlessPolicy.js";
 import {
   describePolicy,
   effectiveLevels,
@@ -31,6 +43,8 @@ import {
   savePolicyFile,
   setPolicyLevels,
 } from "./policyLevels.js";
+import { generatePolicyRule } from "./policyWriter.js";
+import { CLI_WEB_SESSION } from "./webSession.js";
 
 /**
  * WB45 in the CLI: the Web level through the existing `--policy area=level`
@@ -42,6 +56,7 @@ afterEach(() => {
   resetPolicyLevels();
   setAutoReviewEnabled(false);
   resetWebGrantsForTests();
+  resetHeadlessRefusalNotes();
 });
 
 const careful = DEFAULT_POLICY_LEVELS;
@@ -153,10 +168,13 @@ describe("the headless start-up line", () => {
     expect(line).toContain("Web Cautious (unattended: only allowed domains)");
   });
 
-  it("says so when the CLI's own lists let Fetch run on any domain", () => {
-    const line = headlessPolicyNotice({ levels: careful, fetchAllowed: true });
+  it("says so while headless Fetch is in the one-release transition", () => {
+    const line = headlessPolicyNotice({
+      levels: careful,
+      fetchTransition: true,
+    });
     expect(line).toContain(
-      "Web Cautious (unattended: fetches run where your tool settings allow them; one that would ask is refused)",
+      "Web Cautious (unattended: public hosts still run in this release; from 2.36 only allowed domains)",
     );
   });
 
@@ -237,5 +255,77 @@ describe("core's engine decides a CLI Fetch", () => {
     );
     expect(v?.decision).toBe("deny");
     expect(v?.reason).toContain("cloud metadata");
+  });
+});
+
+describe("webFetchDefault: a Fetch only the default list allowed", () => {
+  it("interactive: follows the Web level at Cautious or stricter", () => {
+    for (const level of ["off", "manual", "cautious", "listed"] as const) {
+      expect(webFetchDefault({ level, headless: false })).toBe("follow");
+    }
+    for (const level of ["automatic", "permissive", "idgaf"] as const) {
+      expect(webFetchDefault({ level, headless: false })).toBe("keep");
+    }
+  });
+
+  it("headless: the transition while the flag is false, follows once it is true", () => {
+    expect(HEADLESS_FETCH_FOLLOWS_WEB_LEVEL).toBe(false);
+    expect(webFetchDefault({ level: "cautious", headless: true })).toBe(
+      "transition",
+    );
+    expect(
+      webFetchDefault({
+        level: "cautious",
+        headless: true,
+        headlessFollows: true,
+      }),
+    ).toBe("follow");
+    expect(
+      webFetchDefault({
+        level: "listed",
+        headless: true,
+        headlessFollows: true,
+      }),
+    ).toBe("follow");
+    expect(
+      webFetchDefault({
+        level: "permissive",
+        headless: true,
+        headlessFollows: true,
+      }),
+    ).toBe("keep");
+  });
+
+  it("the transition line is given once per run", () => {
+    const out: string[] = [];
+    noteHeadlessFetchTransition((l) => out.push(l));
+    noteHeadlessFetchTransition((l) => out.push(l));
+    expect(out).toEqual([
+      `continuous: ${HEADLESS_FETCH_TRANSITION_NOTE}
+`,
+    ]);
+    expect(HEADLESS_FETCH_TRANSITION_NOTE).toBe(
+      "Headless fetches follow your Web level from 2.36: keep this with --allow Fetch, --policy web=permissive, or allow the domains in permissions.yaml.",
+    );
+  });
+
+  it("only the product's default Fetch entries are marked", () => {
+    const marked = [
+      ...getDefaultToolPolicies(false),
+      ...getDefaultToolPolicies(true),
+      ...PLAN_MODE_POLICIES,
+    ].filter((p) => p.productDefault);
+    expect(marked.map((p) => p.tool)).toEqual(["Fetch", "Fetch", "Fetch"]);
+  });
+
+  it("Always allow writes the exact host, never every URL", () => {
+    expect(
+      generatePolicyRule("Fetch", { url: "https://Docs.Example.com/a" }),
+    ).toBe("host:docs.example.com");
+    expect(generatePolicyRule("Fetch", {})).toBe("Fetch");
+  });
+
+  it("the ask's session grant lands in the session core's engine reads", () => {
+    expect(CLI_WEB_SESSION).toBe(CLI_SESSION_ID);
   });
 });

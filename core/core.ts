@@ -108,6 +108,7 @@ import {
 import { getWebConfig } from "./util/webConfig";
 import { forgetWebGrants, webGrantsFor } from "./tools/permissions/webGrants";
 import { webCallContext } from "./tools/permissions/webPolicy";
+import { readUserHostAllow } from "./tools/permissions/webHostRules";
 import {
   confirmInIde,
   registerRuleEditorHandlers,
@@ -2614,6 +2615,7 @@ export class Core {
             config: getWebConfig(),
             grants: webGrantsFor(sessionId),
             userMessages: history?.userMessages,
+            hostAllow: readUserHostAllow(),
           }),
           trustedDomains: readUserTrustedDomains(),
           envNames: readUserEnvNames(),

@@ -38,6 +38,7 @@ Most of this is written for you: the toolbar and **Settings, Tools** in the exte
 | `levels.edits`           | level                                  | `manual`                                 | extension, `/policy`                         |
 | `levels.plan`            | level                                  | `cautious`                               | extension, `/policy`                         |
 | `levels.questions`       | level                                  | `cautious`                               | extension, `/policy`                         |
+| `levels.web`             | level, or `off` / `listed`             | none: follows `levels.tools`             | `/policy`, by hand                           |
 | `levels.custom`          | `from:` a preset, `levels:` the five levels | none                                | extension (Custom policy)                    |
 | `plan.maxNewItems`       | whole number, 0 or more                | `5`                                      | extension                                    |
 | `plan.allowTerminal`     | `true` / `false` (or `on` / `off`)     | `false`                                  | by hand, extension (Custom policy) |
@@ -55,6 +56,8 @@ Most of this is written for you: the toolbar and **Settings, Tools** in the exte
 ### `levels`
 
 One level per area: `manual`, `cautious`, `automatic`, `permissive` or `idgaf`, in any case. `yolo` is read as `idgaf`.
+
+`levels.web` also takes `off` (no agent web tools) and `listed` (only the hosts you allowed, never asks). When it is absent, Web follows `levels.tools`; an unknown value or `idgaf` is read as absent, with a notice. See [The Web level](/customize/web#the-web-level).
 
 IDGAF is never saved. A stored `idgaf` or `yolo` is read as that area's default, with the notice `levels.<area>: idgaf is for one session only, so <default> applies.` The notice goes to the log, not to a dialog. A preset is not stored either: the file holds the five levels, and the preset is worked out from them.
 
@@ -142,7 +145,9 @@ The Permissions page shows them as locked. Change them in this file, or in the e
 
 The terminal agent's own rule lists, in its dialect: a tool name such as `Write`, or a tool with a pattern, `Bash(npm test)`. `exclude` means the model is not offered the tool at all. They are weighed before the `toolPermissions` rules of `config.yaml`, and the Permissions page shows them with the badge **CLI file**. The extension reads them and never writes them.
 
-Choosing **Continue + always allow** in the terminal agent appends a rule to `allow`: the exact command for `Bash`, and the bare tool name for anything else.
+Choosing **Continue + always allow** in the terminal agent appends a rule to `allow`: the exact command for `Bash`, `host:<host>` for `Fetch` (**Always allow `<host>`**), and the bare tool name for anything else.
+
+A `host:` entry in `allow` (`host:docs.example.com`, or `host:*.example.com` for the subdomains) allows the agent's fetch to that host at every Web level below Manual. The extension reads these entries too. See [The Web level](/customize/web#the-web-level).
 
 ## Things to know
 

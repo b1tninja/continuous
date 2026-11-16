@@ -146,10 +146,14 @@ const SESSION_ID = CLI_SESSION_ID;
  * The Web area's facts for this process's session (WB45): `web.enabled` as
  * resolved, the session's grants and blocks, and the URLs the person wrote.
  */
-export function cliWebContext(history?: ChatHistoryItem[]): WebCallContext {
+export function cliWebContext(
+  history?: ChatHistoryItem[],
+  hostAllow?: readonly string[],
+): WebCallContext {
   return webCallContext({
     config: getWebConfig(),
     grants: webGrantsFor(SESSION_ID),
+    ...(hostAllow?.length ? { hostAllow } : {}),
     ...(history
       ? { userMessages: buildReviewHistory(history).userMessages }
       : {}),

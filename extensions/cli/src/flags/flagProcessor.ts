@@ -8,6 +8,7 @@ import { setAutoReviewEnabled } from "../permissions/coreRules.js";
 import { getDefaultToolPolicies } from "../permissions/defaultPolicies.js";
 import {
   checkPolicyFile,
+  HEADLESS_FETCH_FOLLOWS_WEB_LEVEL,
   HEADLESS_LEGACY_ENV,
   headlessLegacyAllow,
   headlessPolicyNotice,
@@ -209,7 +210,8 @@ export function announceHeadlessPolicy(
     ...(source ? { source } : {}),
     legacy,
     webEnabled: getWebConfig().enabled,
-    fetchAllowed: defaultListsAllowFetch(),
+    fetchTransition:
+      !HEADLESS_FETCH_FOLLOWS_WEB_LEVEL && defaultListsAllowFetch(),
   });
   write(`${notice}\n`);
   // B21: a loosening from the environment is audited apart from IDGAF

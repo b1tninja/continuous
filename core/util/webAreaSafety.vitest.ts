@@ -162,3 +162,41 @@ describe("web.enabled", () => {
     }
   });
 });
+
+describe("host: rules", () => {
+  it("match whole labels; a bad rule allows nothing", async () => {
+    const {
+      hostRuleMatches,
+      hostAllowRules,
+      hostAllowRuleFor,
+      readUserHostAllow,
+    } = await import("../tools/permissions/webHostRules");
+    expect(hostRuleMatches("host:example.com", "example.com")).toBe(true);
+    expect(hostRuleMatches("host:example.com", "a.example.com")).toBe(false);
+    expect(hostRuleMatches("host:*.example.com", "a.example.com")).toBe(true);
+    expect(hostRuleMatches("host:*.example.com", "example.com")).toBe(false);
+    expect(hostRuleMatches("host:*.example.com", "aexample.com")).toBe(false);
+    expect(hostRuleMatches("host:*", "example.com")).toBe(false);
+    expect(hostRuleMatches("host:ex*.com", "example.com")).toBe(false);
+    expect(hostRuleMatches("host:", "example.com")).toBe(false);
+    expect(hostAllowRules(["Read", "host:a.test", "Fetch(x)", 3])).toEqual([
+      "host:a.test",
+    ]);
+    expect(hostAllowRuleFor("https://Docs.Example.com:8443/x")).toBe(
+      "host:docs.example.com",
+    );
+    expect(hostAllowRuleFor("ftp://x.test/")).toBeUndefined();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "host-rules-"));
+    try {
+      const file = path.join(dir, "permissions.yaml");
+      fs.writeFileSync(
+        file,
+        "allow:\n  - Read\n  - host:docs.example.com\nlevels:\n  web: listed\n",
+      );
+      expect(readUserHostAllow(file)).toEqual(["host:docs.example.com"]);
+      expect(readUserHostAllow(path.join(dir, "missing.yaml"))).toEqual([]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

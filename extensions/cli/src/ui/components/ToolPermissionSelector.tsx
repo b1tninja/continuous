@@ -1,10 +1,12 @@
 import { maskCommandForDisplay } from "core/tools/permissions/displayMask.js";
+import { hostAllowRuleFor } from "core/tools/permissions/webHostRules.js";
 import { Box, Text, useInput } from "ink";
 import React, { useState } from "react";
 
 import { ToolCallTitle } from "src/tools/ToolCallTitle.js";
 
 import { generatePolicyRule } from "../../permissions/policyWriter.js";
+import { grantWebHostForSession } from "../../permissions/webSession.js";
 import { ToolCallPreview } from "../../tools/types.js";
 import { defaultBoxStyles } from "../styles.js";
 
@@ -21,6 +23,8 @@ interface PermissionOption {
   approved: boolean;
   createPolicy?: boolean;
   stopStream?: boolean;
+  /** "Allow <host> for this session": a Web session grant (WB45) */
+  grantHost?: string;
 }
 
 interface ToolPermissionSelectorProps {
@@ -36,6 +40,41 @@ interface ToolPermissionSelectorProps {
     stopStream?: boolean,
   ) => void;
 }
+
+/** The host a Fetch asks about, for the Web options; undefined for any other tool. */
+function fetchHost(toolName: string, toolArgs: any): string | undefined {
+  if (toolName !== "Fetch") return undefined;
+  const rule = hostAllowRuleFor(toolArgs?.url);
+  return rule ? rule.slice("host:".length) : undefined;
+}
+
+/**
+ * A Fetch asks about a domain (WB45): allow it for this session (a grant),
+ * always (a `host:` allow rule in your permissions.yaml), or not.
+ */
+const getWebOptions = (host: string): PermissionOption[] => [
+  {
+    id: "approve",
+    name: `Allow ${host} for this session`,
+    color: "green",
+    approved: true,
+    grantHost: host,
+  },
+  {
+    id: "approve_policy",
+    name: `Always allow ${host}`,
+    color: "cyan",
+    approved: true,
+    createPolicy: true,
+  },
+  {
+    id: "deny_stop",
+    name: "No",
+    color: "yellow",
+    approved: false,
+    stopStream: true,
+  },
+];
 
 const getPermissionOptions = (rule: string): PermissionOption[] => {
   return [
@@ -67,9 +106,22 @@ export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
 }) => {
   // Named in full, because it is saved for every later session
   // The rule that is saved is the real one; the line that names it is masked
-  const permissionOptions = getPermissionOptions(
-    maskCommandForDisplay(generatePolicyRule(toolName, toolArgs)),
-  );
+  const host = fetchHost(toolName, toolArgs);
+  const permissionOptions = host
+    ? getWebOptions(host)
+    : getPermissionOptions(
+        maskCommandForDisplay(generatePolicyRule(toolName, toolArgs)),
+      );
+  // Enter passes the option as it is; the shortcuts pass booleans, as before
+  const choose = (option: PermissionOption, asSelected = false) => {
+    if (option.grantHost) grantWebHostForSession(option.grantHost);
+    onResponse(
+      requestId,
+      option.approved,
+      asSelected ? option.createPolicy : !!option.createPolicy,
+      asSelected ? option.stopStream : !!option.stopStream,
+    );
+  };
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [initialHasShownDangerousCommand] = useState(
     hasShownDangerousCommandWarning,
@@ -80,31 +132,25 @@ export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
 
   useInput((input, key) => {
     if (key.return) {
-      const selectedOption = permissionOptions[selectedIndex];
-      onResponse(
-        requestId,
-        selectedOption.approved,
-        selectedOption.createPolicy,
-        selectedOption.stopStream,
-      );
+      choose(permissionOptions[selectedIndex], true);
       return;
     }
 
-    // Tab to continue (approve)
+    // Tab to continue (approve; for a Fetch, for this session)
     if (key.tab && !key.shift) {
-      onResponse(requestId, true, false, false);
+      choose(permissionOptions[0]);
       return;
     }
 
     // "a" to continue and always allow; Shift+Tab cycles modes elsewhere
     if (input === "a" && !key.ctrl && !key.meta) {
-      onResponse(requestId, true, true, false);
+      choose(permissionOptions[1]);
       return;
     }
 
     // Escape or Ctrl+C to reject with stop stream
     if (key.escape || (key.ctrl && input === "c")) {
-      onResponse(requestId, false, false, true);
+      choose(permissionOptions[2]);
       return;
     }
 
@@ -118,9 +164,9 @@ export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
 
     // Also support y/n for quick responses
     if (input === "y" || input === "Y") {
-      onResponse(requestId, true, false, false);
+      choose(permissionOptions[0]);
     } else if (input === "n" || input === "N") {
-      onResponse(requestId, false, false, true);
+      choose(permissionOptions[2]);
     }
   });
 

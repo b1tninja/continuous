@@ -14,6 +14,7 @@ import {
   type WebLevel,
 } from "./policy";
 import type { WebGrantView } from "./webGrants";
+import { hostRuleMatches } from "./webHostRules";
 
 /**
  * The Web area (plans/research/web-fetch-large-pages-and-policy.md, section 8;
@@ -195,11 +196,10 @@ export function webHeadlessLine(
   web: EffectiveWebLevel,
   options: {
     /**
-     * The fetch tool's own setting runs it (the CLI's default lists allow
-     * `Fetch`): at Cautious that setting covers every domain, so say so
-     * rather than claim only allowed domains run.
+     * The terminal agent's one-release transition: headless Fetch to
+     * a public host still runs at Cautious, from its default list.
      */
-    toolSettingRuns?: boolean;
+    transition?: boolean;
   } = {},
 ): string {
   const name = `${WEB_AREA_LABEL} ${webLevelLabel(web.level)}`;
@@ -211,8 +211,8 @@ export function webHeadlessLine(
     case "manual":
       return `${name} (unattended: every fetch refused)`;
     case "cautious":
-      return options.toolSettingRuns
-        ? `${name} (unattended: fetches run where your tool settings allow them; one that would ask is refused)`
+      return options.transition
+        ? `${name} (unattended: public hosts still run in this release; from 2.36 only allowed domains)`
         : `${name} (unattended: only allowed domains)`;
     case "automatic":
       return `${name} (unattended: the reviewer decides; unsure is refused)`;
@@ -581,6 +581,12 @@ export interface WebCallContext {
   grants?: WebGrantView;
   /** URLs in the person's own messages this session (urlsInUserMessages). */
   userUrls?: readonly string[];
+  /**
+   * `host:` allow rules from the person's own permissions.yaml (`allow:`
+   * list) or `--allow host:<h>`: `host:example.com` is that host only,
+   * `host:*.example.com` its subdomains only (whole labels, webHostRules.ts).
+   */
+  hostAllow?: readonly string[];
   /** Nobody can be asked: an ask is refused here rather than by the host. */
   unattended?: boolean;
 }
@@ -599,6 +605,7 @@ export function webCallContext(args: {
   grants?: WebGrantView;
   userMessages?: readonly string[];
   unattended?: boolean;
+  hostAllow?: readonly string[];
 }): WebCallContext {
   return {
     ...(args.config?.enabled === false ? { enabled: false } : {}),
@@ -610,6 +617,7 @@ export function webCallContext(args: {
       ? { userUrls: urlsInUserMessages(args.userMessages) }
       : {}),
     ...(args.unattended ? { unattended: true } : {}),
+    ...(args.hostAllow?.length ? { hostAllow: [...args.hostAllow] } : {}),
   };
 }
 
@@ -675,16 +683,22 @@ function factsOf(
   };
   const hard = urlHardRefusal(url);
   if (hard) facts.hardRefusal = hard;
+  // The person's own `host:` allow rules
+  const hostRule = host
+    ? input.web?.hostAllow?.find((r) => hostRuleMatches(r, host))
+    : undefined;
   if (result.source === "idgaf") {
     Object.assign(facts, idgafFacts(result));
   } else if (result.policy === "disabled") {
     if (result.source === "floor" && result.rule) facts.floorRule = result.rule;
     else facts.denied = result.reason ?? "Refused by a rule.";
   } else if (result.policy === "allowedWithPermission") {
+    // A host rule answers it at every level; a grant or the URL they wrote, below Listed
     const answered =
-      web.level !== "listed" &&
-      ((!!host && !!input.web?.grants?.isGranted(host)) ||
-        urlIsFromUser(url, input.web?.userUrls));
+      !!hostRule ||
+      (web.level !== "listed" &&
+        ((!!host && !!input.web?.grants?.isGranted(host)) ||
+          urlIsFromUser(url, input.web?.userUrls)));
     const protection = protectionOf(result, answered);
     if (protection) facts.protection = protection;
     else if (
@@ -709,15 +723,14 @@ function factsOf(
       facts.toolSettingRuns = true;
     }
   }
-  // trustedDomains stands in for `host:` allow rules (WB21) at Listed only:
-  // at the other levels it keeps its meaning (another host asks), so a list
-  // saved before the Web area runs nothing it did not run before
-  if (
-    !facts.hostAllowed &&
-    web.level === "listed" &&
-    host &&
-    input.trustedDomains?.length
-  ) {
+  if (hostRule && !facts.hostAllowed) {
+    facts.hostAllowed = {
+      reason: `Allowed: your rule ${hostRule} covers ${host}.`,
+    };
+  }
+  // trustedDomains stands in for `host:` allow rules until WB21 (DC-5): the
+  // domain and its subdomains, read from the person's own config.yaml only
+  if (!facts.hostAllowed && host && input.trustedDomains?.length) {
     if (hostTrusted(host, input.trustedDomains)) {
       facts.hostAllowed = {
         reason: `Allowed: ${host} is one of your trusted domains.`,

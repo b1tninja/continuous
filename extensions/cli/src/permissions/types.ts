@@ -16,6 +16,11 @@ export interface ToolPermissionPolicy {
    * subagent or write the parent's task list): IDGAF does not lift it.
    */
   structural?: boolean;
+  /**
+   * One of the product's own default entries, not the person's: the Web
+   * level decides over a default `Fetch: allow` (WB45, webFetchDefault).
+   */
+  productDefault?: boolean;
 }
 
 export interface ToolPermissions {

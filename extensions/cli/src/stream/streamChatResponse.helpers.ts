@@ -11,7 +11,10 @@ import {
   flagToolText,
   stripsHiddenCharacters,
 } from "core/tools/permissions/injection.js";
+import { hostAllowRules } from "core/tools/permissions/webHostRules.js";
+import { effectiveWebLevel } from "core/tools/permissions/webPolicy.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
+import { getWebConfig } from "core/util/webConfig.js";
 import { ChatCompletionToolMessageParam } from "openai/resources/chat/completions.mjs";
 
 import { ToolPermissionServiceState } from "src/services/ToolPermissionService.js";
@@ -41,6 +44,8 @@ import {
 import {
   headlessAskRefusal,
   noteHeadlessRefusal,
+  noteHeadlessFetchTransition,
+  webFetchDefault,
 } from "../permissions/headlessPolicy.js";
 import { announceIdgaf } from "../permissions/idgafNotices.js";
 import { checkToolPermission } from "../permissions/permissionChecker.js";
@@ -264,20 +269,71 @@ function mcpPinChange(server: string, tool: string) {
 }
 
 /** The Web area's facts; a session without a chat history (a test, a worker) still gets web.enabled and grants. */
-function webContextSafely() {
+function webContextSafely(hostAllow: string[]) {
   let history;
   try {
     history = services.chatHistory?.getHistory?.();
   } catch {
     history = undefined;
   }
-  return cliWebContext(Array.isArray(history) ? history : undefined);
+  return cliWebContext(Array.isArray(history) ? history : undefined, hostAllow);
+}
+
+/**
+ * WB45: a Fetch only the product's default list allowed follows the Web
+ * level at Cautious or stricter, so it asks; headless keeps the default
+ * until 2.36 and says so once (webFetchDefault). Every other result is
+ * returned as it is.
+ */
+function webFetchPermission(
+  toolCall: PreprocessedToolCall,
+  check: ReturnType<typeof liftAtIdgaf>,
+  mode: "normal" | "plan" | "auto" | undefined,
+  opts: { headless: boolean },
+): ReturnType<typeof liftAtIdgaf>["permission"] {
+  if (
+    check.permission !== "allow" ||
+    check.idgafLifted ||
+    !check.matchedPolicy?.productDefault ||
+    toolCall.name !== "Fetch"
+  ) {
+    return check.permission;
+  }
+  const fetchDefault = webFetchDefaultFor(mode, opts.headless);
+  if (fetchDefault === "follow") return "ask";
+  if (fetchDefault === "transition") noteHeadlessFetchTransition();
+  return check.permission;
+}
+
+/** The Web level in force decides a default-allowed Fetch, or not; never throws. */
+function webFetchDefaultFor(
+  mode: "normal" | "plan" | "auto" | undefined,
+  headless: boolean,
+): ReturnType<typeof webFetchDefault> {
+  try {
+    const level = effectiveWebLevel(effectiveLevels(mode ?? "normal"), {
+      enabled: getWebConfig().enabled,
+    }).level;
+    return webFetchDefault({ level, headless });
+  } catch {
+    return "keep";
+  }
+}
+
+/** `host:` allow rules among the CLI's lists (permissions.yaml `allow:`, `--allow host:<h>`). */
+function hostAllowOf(permissions: ToolPermissions): string[] {
+  return hostAllowRules(
+    permissions.policies
+      .filter((p) => p.permission === "allow" && !p.argumentMatches)
+      .map((p) => p.tool),
+  );
 }
 
 async function coreRulesVerdict(
   toolCall: PreprocessedToolCall,
   cliPermission: "allow" | "ask",
   isHeadless?: boolean,
+  hostAllow: string[] = [],
 ): Promise<CoreVerdict | undefined> {
   const autoReview = isAutoReviewEnabled();
   try {
@@ -315,7 +371,7 @@ async function coreRulesVerdict(
       isHeadless: !!isHeadless,
       history: autoReview ? services.chatHistory.getHistory() : undefined,
       // WB45: web.enabled, the session's web grants, the URLs the person wrote
-      web: webContextSafely(),
+      web: webContextSafely(hostAllow),
       ...(mcpServer
         ? {
             mcp: {
@@ -456,7 +512,9 @@ async function decideToolApproval(
   );
   if (permissionCheck.idgafLifted)
     trace.idgafLifted = permissionCheck.idgafLifted;
-  let permission = permissionCheck.permission;
+  let permission = webFetchPermission(toolCall, permissionCheck, mode, {
+    headless: !!isHeadless,
+  });
 
   // PreToolUse hooks adjust the CLI policy first; the CLI's own exclude
   // always stands.
@@ -471,7 +529,12 @@ async function decideToolApproval(
   // reviewer may tighten the result, and an allow rule may loosen an "ask",
   // but not one a hook asked for: the hook wants the user to confirm.
   if (permission !== "exclude") {
-    const verdict = await coreRulesVerdict(toolCall, permission, isHeadless);
+    const verdict = await coreRulesVerdict(
+      toolCall,
+      permission,
+      isHeadless,
+      hostAllowOf(permissions),
+    );
     trace.verdict = verdict;
     if (verdict?.decision === "allow" && hookDecision !== "ask") {
       return { approved: true };

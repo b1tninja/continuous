@@ -652,18 +652,43 @@ describe("the level table through evaluate", () => {
     expect(evaluate("idgaf", url, { web: { grants } })).toBe(RUN);
   });
 
-  it("trustedDomains stands in for host: allow rules at Listed until WB21", () => {
+  it("trustedDomains stands in for host: allow rules until WB21, at Cautious too", () => {
     const url = "https://docs.trusted.example/x";
     const extra = {
       permissions: undefined,
       trustedDomains: ["trusted.example"],
     };
+    expect(evaluate("cautious", url, extra)).toBe(RUN);
     expect(evaluate("listed", url, extra)).toBe(RUN);
-    // At Cautious it keeps today's meaning: the tool's own setting asks
-    expect(evaluate("cautious", url, extra)).toBe(ASK);
-    // Not trusted: the level decides
+    expect(evaluate("automatic", url, extra)).toBe(RUN);
+    expect(evaluate("manual", url, extra)).toBe(ASK);
+    // Not trusted: the level decides (and ask-unknown-host asks)
     expect(evaluate("listed", "https://other.example/", extra)).toBe(NO);
     expect(evaluate("cautious", "https://other.example/", extra)).toBe(ASK);
+    expect(evaluate("permissive", "https://other.example/", extra)).toBe(ASK);
+    // Whole labels: a look-alike is not the trusted domain
+    expect(evaluate("cautious", "https://eviltrusted.example/", extra)).toBe(
+      ASK,
+    );
+  });
+
+  it("host: allow rules from the person's permissions.yaml, on whole labels", () => {
+    const web = { hostAllow: ["host:docs.example.com", "host:*.cdn.example"] };
+    const ok = (url: string, level: WebLevel = "cautious") =>
+      evaluate(level, url, { permissions: undefined, web });
+    expect(ok("https://docs.example.com/a")).toBe(RUN);
+    expect(ok("https://docs.example.com/a", "listed")).toBe(RUN);
+    expect(ok("https://DOCS.example.com./a")).toBe(RUN);
+    // The exact host only
+    expect(ok("https://example.com/")).toBe(ASK);
+    expect(ok("https://api.docs.example.com/")).toBe(ASK);
+    expect(ok("https://evil-docs.example.com/")).toBe(ASK);
+    expect(ok("https://docs.example.com.evil.test/")).toBe(ASK);
+    // `*.` is subdomains only, never the domain itself or part of a label
+    expect(ok("https://a.b.cdn.example/")).toBe(RUN);
+    expect(ok("https://cdn.example/")).toBe(ASK);
+    expect(ok("https://xcdn.example/")).toBe(ASK);
+    expect(ok("https://other.example/", "listed")).toBe(NO);
   });
 
   it("search counts its configured backend as an allowed domain", () => {
@@ -857,5 +882,86 @@ describe("levels.web in permissions.yaml", () => {
       expect(settings.levels[area]).toBeDefined();
     }
     expect(settings.levels.tools).toBe("permissive");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// No built-in pre-approved domains (Claude Code's CVE-2026-54316 came from one)
+
+describe("no host is allowed without the person", () => {
+  const POPULAR = [
+    "github.com",
+    "raw.githubusercontent.com",
+    "gist.githubusercontent.com",
+    "docs.python.org",
+    "developer.mozilla.org",
+    "www.npmjs.com",
+    "registry.npmjs.org",
+    "pypi.org",
+    "docs.anthropic.com",
+    "platform.claude.com",
+    "docs.continue.dev",
+    "stackoverflow.com",
+    "en.wikipedia.org",
+    "www.google.com",
+    "learn.microsoft.com",
+    "docs.rs",
+    "pkg.go.dev",
+    "localhost",
+  ];
+
+  const at = (
+    level: WebLevel,
+    host: string,
+    extra: Partial<EvaluateInput> = {},
+  ) =>
+    evaluateToolPolicyWithRules({
+      tool: fetchUrlContentTool,
+      toolName: "fetch_url_content",
+      basePolicy: "allowedWithPermission",
+      parsedArgs: { url: `https://${host}/` },
+      permissions: undefined,
+      approval: { levels: withWeb(level) },
+      ...extra,
+    }).policy;
+
+  it("at Cautious and Listed every host asks or is refused, with no rule, grant or list", () => {
+    for (const host of POPULAR) {
+      expect(at("cautious", host), host).toBe("allowedWithPermission");
+      expect(at("listed", host), host).toBe("disabled");
+      expect(at("manual", host), host).toBe("allowedWithPermission");
+    }
+  });
+
+  it("an empty context, an empty grant store and empty lists allow nothing", () => {
+    const web = webCallContext({
+      grants: new WebGrantStore(),
+      userMessages: [],
+      hostAllow: [],
+    });
+    for (const host of POPULAR) {
+      expect(at("listed", host, { web, trustedDomains: [] }), host).toBe(
+        "disabled",
+      );
+    }
+  });
+
+  it("the decision has no host of its own: only facts the caller gives allow", () => {
+    for (const host of POPULAR) {
+      const d = decideWebCall({ level: "listed", host });
+      expect(d.outcome, host).toBe("refused");
+    }
+  });
+
+  it("only search, whose backend the person configured, counts as allowed by itself", () => {
+    const search = evaluateToolPolicyWithRules({
+      tool: searchWebTool,
+      toolName: "search_web",
+      basePolicy: "allowedWithPermission",
+      parsedArgs: { query: "x" },
+      permissions: undefined,
+      approval: { levels: withWeb("listed") },
+    });
+    expect(search.reason).toContain("search backend you configured");
   });
 });
