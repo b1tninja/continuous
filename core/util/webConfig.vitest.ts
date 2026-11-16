@@ -290,7 +290,7 @@ describe("resolveWebConfig: old keys and variables", () => {
     expect(config.limits.timeoutSeconds).toBe(20);
   });
 
-  it("maps the environment variables, without a notice while their readers are unchanged", () => {
+  it("maps the environment variables, announcing only the search ones, whose reader now takes web.search", () => {
     const { config, deprecations } = resolveWebConfig({
       env: {
         CONTINUOUS_SPOTLIGHT_UNTRUSTED: "1",
@@ -310,7 +310,11 @@ describe("resolveWebConfig: old keys and variables", () => {
       "limits.modelChars": "env",
       search: "env",
     });
-    expect(deprecations).toEqual([]);
+    expect(deprecations.map((d) => [d.key, d.replacement])).toEqual([
+      ["CONTINUOUS_WEB_SEARCH_URL", "web.search.url"],
+      ["CONTINUOUS_WEB_SEARCH_KEY", "web.search.apiKey"],
+    ]);
+    expect(deprecations[0].message).toMatch(/still works for now/);
   });
 
   it("prefers the web: key over a variable", () => {
@@ -407,5 +411,175 @@ describe("the accessor and the person's file", () => {
     });
     applyWebConfig({ limits: { maxBytes: 1024 } }, {});
     expect(readUserFetchLimits().maxBytes).toBe(1024);
+  });
+});
+
+describe("resolveWebConfig: web.search (WB53)", () => {
+  it("keeps every personal key, and maps no variable over a provider of the person's own", () => {
+    const search = {
+      provider: "native",
+      fallback: "searxng",
+      fallbackUrl: "http://127.0.0.1:8888",
+      maxResults: 7,
+      maxPerTurn: 3,
+      monthlyLimit: 100,
+      country: "DE",
+      safeSearch: "strict",
+      native: { dynamicFiltering: false, google: "standard" },
+      custom: { method: "POST" },
+      mcp: { server: "brave", tool: "brave_web_search" },
+    };
+    const { config, notices, deprecations } = resolveWebConfig({
+      user: { search },
+      env: { CONTINUOUS_WEB_SEARCH_URL: "http://elsewhere" },
+    });
+    expect(config.search).toEqual(search);
+    expect(notices).toEqual([]);
+    expect(deprecations[0].message).toMatch(/was not used/);
+  });
+
+  it("lets another config set provider: off and lower limits, and nothing else", () => {
+    const { config, notices } = resolveWebConfig({
+      user: {
+        search: {
+          url: "http://127.0.0.1:8888",
+          maxResults: 8,
+          monthlyLimit: 0,
+          safeSearch: "moderate",
+        },
+      },
+      other: {
+        search: {
+          provider: "off",
+          maxResults: 2,
+          maxPerTurn: 1,
+          monthlyLimit: 50,
+          safeSearch: "strict",
+        },
+      },
+    });
+    expect(notices).toEqual([]);
+    expect(config.search).toEqual({
+      provider: "off",
+      url: "http://127.0.0.1:8888",
+      maxResults: 2,
+      maxPerTurn: 1,
+      monthlyLimit: 50,
+      safeSearch: "strict",
+    });
+    expect(config.sources).toMatchObject({
+      "search.provider": "assistant-config",
+      "search.maxResults": "assistant-config",
+      "search.monthlyLimit": "assistant-config",
+    });
+  });
+
+  it("ignores a looser limit, another provider, an endpoint or a key from another config", () => {
+    const { config, notices } = resolveWebConfig({
+      user: {
+        search: {
+          url: "http://127.0.0.1:8888",
+          maxResults: 3,
+          monthlyLimit: 10,
+        },
+      },
+      other: {
+        search: {
+          provider: "custom",
+          url: "https://collector.example",
+          apiKey: "theirs",
+          fallback: "custom",
+          maxResults: 9,
+          maxPerTurn: 50,
+          monthlyLimit: 0,
+          safeSearch: "off",
+        },
+      },
+    });
+    expect(config.search).toEqual({
+      url: "http://127.0.0.1:8888",
+      maxResults: 3,
+      monthlyLimit: 10,
+    });
+    const keys = notices.map((n) => n.split(/[: ]/)[0]).sort();
+    expect(keys).toEqual([
+      "web.search.apiKey",
+      "web.search.fallback",
+      "web.search.maxPerTurn",
+      "web.search.maxResults",
+      "web.search.monthlyLimit",
+      "web.search.provider",
+      "web.search.url",
+    ]);
+  });
+
+  it("says nothing when the loaded config repeats the person's own search block", () => {
+    const search = { provider: "searxng", url: "http://127.0.0.1:8888" };
+    const { notices } = resolveWebConfig({
+      user: { search },
+      other: { search },
+    });
+    expect(notices).toEqual([]);
+  });
+
+  it("warns about a key typed into web.search.apiKey, and not about a secret reference (SP-8)", () => {
+    const typed = resolveWebConfig({
+      user: { search: { provider: "brave", apiKey: "BSAx-literal-key" } },
+    });
+    expect(typed.config.search.apiKey).toBe("BSAx-literal-key");
+    expect(typed.deprecations).toHaveLength(1);
+    expect(typed.deprecations[0].key).toBe("web.search.apiKey");
+    expect(typed.deprecations[0].message).toContain(
+      "${{ secrets.BRAVE_SEARCH_KEY }}",
+    );
+    expect(typed.deprecations[0].message).toMatch(/later release will refuse/);
+    expect(typed.deprecations[0].message).not.toContain("BSAx");
+
+    for (const apiKey of [
+      "${{ secrets.BRAVE_SEARCH_KEY }}",
+      "${{ env.MY_KEY }}",
+    ]) {
+      expect(
+        resolveWebConfig({ user: { search: { provider: "brave", apiKey } } })
+          .deprecations,
+      ).toEqual([]);
+    }
+    expect(
+      resolveWebConfig({
+        user: { search: { fallback: "searxng", fallbackApiKey: "typed" } },
+      }).deprecations[0].message,
+    ).toContain("${{ secrets.SEARXNG_SEARCH_KEY }}");
+  });
+
+  it("fills a secret reference with the loaded config's rendered value", () => {
+    const { config, notices } = resolveWebConfig({
+      user: {
+        search: { url: "http://a", apiKey: "${{ secrets.WEB_SEARCH_KEY }}" },
+      },
+      other: { search: { url: "http://a", apiKey: "rendered" } },
+    });
+    expect(config.search.apiKey).toBe("rendered");
+    expect(notices).toEqual([]);
+  });
+
+  it("reports an unknown provider (SR-6)", () => {
+    const { notices } = resolveWebConfig({
+      user: { search: { provider: "bing", url: "http://a" } },
+    });
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatch(/"bing" is not a known search provider/);
+  });
+
+  it("drops a malformed search value and keeps the rest", () => {
+    const { config, notices } = resolveWebConfig({
+      user: {
+        search: { url: "http://a", maxResults: 50, safeSearch: "maybe" },
+      },
+    });
+    expect(config.search).toEqual({ url: "http://a" });
+    expect(notices.sort()).toEqual([
+      "web.search.maxResults in your config.yaml is not a valid value and was ignored.",
+      "web.search.safeSearch in your config.yaml is not a valid value and was ignored.",
+    ]);
   });
 });

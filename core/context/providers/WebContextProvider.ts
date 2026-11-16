@@ -10,8 +10,9 @@ import { modelToolFetch } from "../../util/modelToolFetch";
 import { fetchSearchResults } from "./webSearchBackend";
 
 /**
- * Only offered when the user has configured a search backend
- * (see webSearchBackend.ts); it never contacts a service of ours.
+ * Only offered when the person has picked a search provider in `web.search`
+ * (core/tools/webSearch); it never contacts a service of ours. It uses the
+ * same provider layer as `search_web`.
  */
 export default class WebContextProvider extends BaseContextProvider {
   private static DEFAULT_N = 6;

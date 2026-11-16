@@ -56,6 +56,10 @@ function writeUserConfig(yaml: string) {
   resetWebConfigForTests(file);
 }
 
+/** The person's search provider (WB53): `web.search` in their own config.yaml. */
+const SEARCH_YAML =
+  "  search:\n    provider: searxng\n    url: http://search.example/search\n";
+
 const transport = () => ({ proxy: proxyUrl, useSystemCa: false });
 const toolFetch = () => modelToolFetch({ requestOptions: transport() });
 
@@ -165,9 +169,8 @@ describe("the User-Agent on every path, as sent", () => {
   });
 
   it("the search backend: the product token without the info URL (UA-3)", async () => {
-    await fetchSearchResults("q", 1, toolFetch(), {
-      url: "http://search.example/search",
-    } as never);
+    writeUserConfig(`web:\n${SEARCH_YAML}`);
+    await fetchSearchResults("q", 1, toolFetch());
     expect(seen[0].headers["user-agent"]).toBe("Continuous-User/2.26");
     expect(seen[0].headers.accept).toBe("application/json");
     expectClean(seen[0]);
@@ -202,13 +205,13 @@ describe("the User-Agent on every path, as sent", () => {
 
 describe("the person's choices, as sent", () => {
   it("a preset applies to every path", async () => {
-    writeUserConfig("web:\n  userAgent:\n    preset: generic-agent\n");
+    writeUserConfig(
+      `web:\n  userAgent:\n    preset: generic-agent\n${SEARCH_YAML}`,
+    );
     await fetchUrlContentImpl({ url: "http://site.example/page" }, {
       fetch: toolFetch(),
     } as never);
-    await fetchSearchResults("q", 1, toolFetch(), {
-      url: "http://search.example/search",
-    } as never);
+    await fetchSearchResults("q", 1, toolFetch());
     expect(seen.map((s) => s.headers["user-agent"])).toEqual([
       "Mozilla/5.0 (compatible)",
       "Mozilla/5.0 (compatible)",
