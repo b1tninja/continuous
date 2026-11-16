@@ -111,6 +111,11 @@ const corrections = new Map<string, number>();
 
 /** Usage calibrations: the smoothed ratio of the provider's count to ours. */
 const calibrations = new Map<string, number>();
+/**
+ * The ratio the context budget is computed from: the smoothed ratio, moved
+ * only when it leaves a band of `CALIBRATION_BAND` around the last value used.
+ */
+const appliedCalibrations = new Map<string, number>();
 
 /** The usage calibration's bounds: it may give room back, within reason. */
 export const MIN_CALIBRATION = 0.6;
@@ -124,6 +129,18 @@ export const CALIBRATION_SMOOTHING = 0.3;
  */
 export const MIN_SAMPLE_RELATIVE = 0.7;
 export const MAX_SAMPLE_RELATIVE = 1.5;
+/**
+ * The budget follows the smoothed ratio only once it has moved this far (a
+ * share of the ratio in use). The block drop (contextThresholds.ts) cuts the
+ * history at a whole number of blocks of the budget, so a budget that moved
+ * with every request moved the cut by a few hundred tokens each time; in a
+ * long tool loop that crossed a message boundary every few requests, and each
+ * crossing changed the first message after the head, so the whole
+ * conversation was read again (about 68 s for 320k tokens on the owner's
+ * Strata, 2026-11-15). Inside the band the budget and the cut stay put. The
+ * band is half the 5% headroom, so the budget never passes the real window.
+ */
+export const CALIBRATION_BAND = 0.025;
 /** Smaller prompts are mostly template overhead and say little about the ratio. */
 export const MIN_CALIBRATION_SAMPLE_TOKENS = 1024;
 
@@ -131,13 +148,11 @@ const clamp = (value: number, low: number, high: number) =>
   Math.min(high, Math.max(low, value));
 
 /**
- * The factor the context length is divided by: the usage calibration (with
- * headroom) when there is one, raised to the overflow correction when the
- * provider has refused a prompt. Neither: 1.
+ * The factor the context length is divided by: the usage calibration in use (`CALIBRATION_BAND`), with headroom, when there is one, raised to the overflow correction when the provider has refused a prompt. Neither: 1.
  */
 export function contextCorrectionFor(model: string): number {
   const overflow = corrections.get(model);
-  const ratio = calibrations.get(model);
+  const ratio = appliedCalibrations.get(model);
   const calibrated =
     ratio === undefined
       ? undefined
@@ -197,12 +212,20 @@ export function learnTokenCalibration(
       : previous + CALIBRATION_SMOOTHING * (sample - previous);
   const ratio = clamp(smoothed, MIN_CALIBRATION, MAX_CALIBRATION);
   calibrations.set(model, ratio);
+  const applied = appliedCalibrations.get(model);
+  if (
+    applied === undefined ||
+    Math.abs(ratio - applied) > applied * CALIBRATION_BAND
+  ) {
+    appliedCalibrations.set(model, ratio);
+  }
   return ratio;
 }
 
 export function resetContextCorrections(): void {
   corrections.clear();
   calibrations.clear();
+  appliedCalibrations.clear();
 }
 
 /**

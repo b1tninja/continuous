@@ -349,6 +349,9 @@ export function expectedRoute(
   return routes[0];
 }
 
+/** The cause named when the request was pruned to fit the window. */
+export const PRUNED_CAUSE = "the oldest messages were dropped to fit";
+
 /** The cause named when the model differs from the previous request's. */
 export const MODEL_CHANGED = "the model changed";
 
@@ -458,7 +461,7 @@ export function detectCacheMiss(args: {
   // Once the window is full, every request drops the oldest messages, so the
   // start of the prompt moves and nothing can be read. That is not a fault in
   // the cache; it is the conversation not fitting.
-  if (args.pruned) causes.push("the oldest messages were dropped to fit");
+  if (args.pruned) causes.push(PRUNED_CAUSE);
   return { readTokens, expectedTokens: expected, causes };
 }
 

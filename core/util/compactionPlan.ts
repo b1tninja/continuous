@@ -188,8 +188,15 @@ export function firstAfterSummary(history: readonly ChatHistoryItem[]): number {
 
 /**
  * The earliest turn start whose turns from there on fit in `budget`, or the
- * last turn when even it does not fit (a turn is never split). Undefined when
- * that leaves nothing before it to summarise.
+ * last turn when even it does not fit. Undefined when that leaves nothing
+ * before it to summarise.
+ *
+ * When the newest turn alone is over the budget (an agent loop: one request,
+ * then hundreds of tool rounds), the tail starts at a tool round inside it
+ * instead (`roundBoundaries`): the earliest round whose rounds from there on
+ * fit, or the last round. Cutting only at turns would leave that whole loop
+ * verbatim, or with a single request, nothing to summarise at all, and the
+ * block drop the only way to fit (C117).
  */
 function chooseBoundary(
   history: readonly ChatHistoryItem[],
@@ -197,14 +204,39 @@ function chooseBoundary(
   tokensAt: (i: number) => number,
   budget: number,
 ): number | undefined {
-  const boundary = turnBoundaries(history);
+  const byTurn = earliestFitting(
+    turnBoundaries(history),
+    spanStart,
+    tokensAt,
+    budget,
+  );
+  if (byTurn && byTurn.suffix <= budget) return byTurn.at;
+  const byRound = earliestFitting(
+    roundBoundaries(history),
+    spanStart,
+    tokensAt,
+    budget,
+  );
+  return (byRound ?? byTurn)?.at;
+}
+
+/**
+ * The earliest boundary after `spanStart` whose suffix fits in `budget`, or
+ * the last boundary when none does, with the suffix's size.
+ */
+function earliestFitting(
+  boundary: readonly boolean[],
+  spanStart: number,
+  tokensAt: (i: number) => number,
+  budget: number,
+): { at: number; suffix: number } | undefined {
   let suffix = 0;
-  let chosen: number | undefined;
-  for (let i = history.length - 1; i > spanStart; i--) {
+  let chosen: { at: number; suffix: number } | undefined;
+  for (let i = boundary.length - 1; i > spanStart; i--) {
     suffix += tokensAt(i);
     if (!boundary[i]) continue;
     if (suffix > budget && chosen !== undefined) break;
-    chosen = i;
+    chosen = { at: i, suffix };
   }
   return chosen;
 }
@@ -215,6 +247,33 @@ function chooseBoundary(
  * its result. One pass over the history.
  */
 export function turnBoundaries(history: readonly ChatHistoryItem[]): boolean[] {
+  const open = uncrossed(history);
+  return history.map((item, i) => item.message.role === "user" && open[i]);
+}
+
+/**
+ * Where a tail may start inside a turn: at a user turn as `turnBoundaries`
+ * says, or at a later tool round: an answer right after a tool result, that
+ * no later tool result reaches back across. A turn's first answer stays with
+ * the request it answers. The tail then opens with the model's answer right
+ * after the summary, which is a user message, so the turns still alternate.
+ */
+export function roundBoundaries(
+  history: readonly ChatHistoryItem[],
+): boolean[] {
+  const open = uncrossed(history);
+  return history.map((item, i) => {
+    if (!open[i]) return false;
+    if (item.message.role === "user") return true;
+    return (
+      item.message.role === "assistant" &&
+      history[i - 1]?.message.role === "tool"
+    );
+  });
+}
+
+/** For each item: no tool result at or after it answers a call before it. */
+function uncrossed(history: readonly ChatHistoryItem[]): boolean[] {
   const callAt = new Map<string, number>();
   // blocked[i] > 0: some tool result at or after i answers a call before i
   const delta = new Array<number>(history.length + 1).fill(0);
@@ -233,9 +292,9 @@ export function turnBoundaries(history: readonly ChatHistoryItem[]): boolean[] {
     }
   });
   let blocked = 0;
-  return history.map((item, i) => {
+  return history.map((_, i) => {
     blocked += delta[i];
-    return item.message.role === "user" && blocked === 0;
+    return blocked === 0;
   });
 }
 
@@ -252,7 +311,7 @@ function stillValid(
     previous.spanStart === spanStart &&
     previous.spanEnd > spanStart &&
     previous.spanEnd < history.length &&
-    turnBoundaries(history)[previous.spanEnd] &&
+    roundBoundaries(history)[previous.spanEnd] &&
     spanHash(history, spanStart, previous.spanEnd) === previous.hash
   );
 }

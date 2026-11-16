@@ -6,6 +6,7 @@ import {
   type CompactionPlanResult,
   isCompactionPlan,
   planCompaction,
+  roundBoundaries,
   spanHash,
   tailBudget,
   turnBoundaries,
@@ -284,6 +285,95 @@ describe("planCompaction: boundaries", () => {
     ]);
     const result = expectPlan(plan(history, itemTokens));
     expect(result.quoteFirstUser).toBe(quoted);
+  });
+});
+
+describe("planCompaction: an agent loop (C117)", () => {
+  /** One request, then `rounds` tool rounds of a call and its result. */
+  function loop(rounds: number, resultTokens = 4_000) {
+    const history: ChatHistoryItem[] = [user("do the task")];
+    const itemTokens = [500];
+    for (let r = 0; r < rounds; r++) {
+      history.push(call(`c${r}`), toolResult(`c${r}`));
+      itemTokens.push(300, resultTokens);
+    }
+    return { history, itemTokens };
+  }
+
+  it("cuts at a tool round when one request holds the whole loop", () => {
+    // 1k head + 0.5k + 17 rounds of 4.3k = 74.6% of 100k
+    const { history, itemTokens } = loop(17);
+    expect(turnBoundaries(history).filter(Boolean)).toHaveLength(1);
+    const result = expectPlan(plan(history, itemTokens));
+    expect(result.state).toBe("prepare");
+    // The tail starts at a call that follows a result, and fits in 15k
+    expect(history[result.spanEnd].message.role).toBe("assistant");
+    expect(history[result.spanEnd - 1].message.role).toBe("tool");
+    expect(result.tokens.tail).toBeLessThanOrEqual(15_000);
+    expect(result.tokens.tail).toBeGreaterThan(15_000 - 4_300);
+    // The request itself is summarised and quoted word for word
+    expect(result.quoteFirstUser).toBe(0);
+  });
+
+  it("never starts the tail between a call and its result", () => {
+    const history = [
+      user("q"),
+      call("a"),
+      toolResult("a"),
+      // two calls in one answer, the second answered after a steer
+      {
+        message: {
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: "b",
+              type: "function",
+              function: { name: "read_file", arguments: "{}" },
+            },
+            {
+              id: "c",
+              type: "function",
+              function: { name: "read_file", arguments: "{}" },
+            },
+          ],
+        },
+        contextItems: [],
+      } as ChatHistoryItem,
+      toolResult("b"),
+      user("steer"),
+      toolResult("c"),
+      call("d"),
+      toolResult("d"),
+    ];
+    expect(roundBoundaries(history)).toEqual([
+      true,
+      false, // a turn's first answer stays with its request
+      false,
+      true,
+      false,
+      false, // "c" is answered after it
+      false,
+      true,
+      false,
+    ]);
+  });
+
+  it("keeps the round boundary while the loop goes on", () => {
+    const first = expectPlan(plan(loop(17).history, loop(17).itemTokens));
+    let previous = first;
+    for (let rounds = 18; rounds < 21; rounds++) {
+      const { history, itemTokens } = loop(rounds);
+      const next = expectPlan(plan(history, itemTokens, { previous }));
+      expect(next.spanEnd).toBe(first.spanEnd);
+      expect(next.id).toBe(first.id);
+      previous = next;
+    }
+    expect(previous.state).toBe("force");
+  });
+
+  it("leaves a turn of plain answers whole", () => {
+    expect(roundBoundaries(turns([[1, 1]]).history)).toEqual([true, false]);
   });
 });
 
