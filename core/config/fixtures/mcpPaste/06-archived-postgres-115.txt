@@ -1,0 +1,23 @@
+```json
+{
+  "mcp": {
+    "inputs": [
+      {
+        "type": "promptString",
+        "id": "pg_url",
+        "description": "PostgreSQL URL (e.g. postgresql://user:pass@localhost:5432/mydb)"
+      }
+    ],
+    "servers": {
+      "postgres": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-postgres",
+          "${input:pg_url}"
+        ]
+      }
+    }
+  }
+}
+```

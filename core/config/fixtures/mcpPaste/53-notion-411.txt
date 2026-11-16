@@ -1,0 +1,8 @@
+```bash
+# Example request
+curl -H "Authorization: Bearer your-token-here" \
+     -H "Content-Type: application/json" \
+     -H "mcp-session-id: your-session-id" \
+     -d '{"jsonrpc": "2.0", "method": "initialize", "params": {}, "id": 1}' \
+     http://localhost:3000/mcp
+```
