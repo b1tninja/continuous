@@ -28,6 +28,7 @@ import { CachingOffNotice } from "../../components/mainInput/CachingOffNotice";
 import { ToolDialectNotice } from "../../components/mainInput/ToolDialectNotice";
 import { ColdCacheNotice } from "../../components/mainInput/ColdCacheNotice";
 import { SessionLoadNotice } from "../../components/mainInput/SessionLoadNotice";
+import { InstructionFileNotice } from "../../components/mainInput/InstructionFileNotice";
 import { AgentsList } from "../../components/BackgroundMode/AgentsList";
 import { NeedsYouTray } from "../../components/loop/NeedsYouTray";
 import { LoopInbox } from "../../components/mainInput/LoopInbox";
@@ -617,6 +618,7 @@ export function Chat() {
         <CacheMissNotice />
         <ColdCacheNotice />
         <SessionLoadNotice />
+        <InstructionFileNotice />
         <CachingOffNotice />
         <PendingToolChangesNotice />
         <LargeMessageNotice />
