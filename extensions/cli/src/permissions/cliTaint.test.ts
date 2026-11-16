@@ -1,7 +1,10 @@
 import fs from "fs";
 import path from "path";
 
-import { taintRegistry } from "core/tools/permissions/taint/taintState.js";
+import {
+  secretReads,
+  taintRegistry,
+} from "core/tools/permissions/taint/taintState.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { handleUntaint, noteCliToolResult } from "./cliTaint.js";
@@ -42,6 +45,8 @@ const fetched = {
 
 beforeEach(() => {
   taintRegistry.reset();
+  // B92's secret read lasts the session; each test is a new one
+  secretReads.reset();
   setting.rule = "off";
   setting.folderTrusted = true;
 });

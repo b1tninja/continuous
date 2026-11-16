@@ -2604,7 +2604,8 @@ export class Core {
           ...deputyWorkspace(dirs),
           // The shell terminal commands run in
           shell: resolveShell().kind,
-          // The tainted-session rule's fact; nothing when the rule is off
+          // The tainted-session rule's fact (nothing when the rule is off)
+          // and B92's secret read (whatever the rule says)
           ...taintInput(sessionId, callId),
         });
         // Core keeps the Questions level it was last told, for what is asked

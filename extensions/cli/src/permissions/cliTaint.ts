@@ -5,6 +5,7 @@ import {
 } from "core/tools/permissions/taint/taintState.js";
 import {
   noteToolResult,
+  secretReadOf,
   taintLabels,
   untaintSession,
 } from "core/tools/permissions/taint/taintWiring.js";
@@ -15,8 +16,9 @@ import { CLI_SESSION_ID, toCoreCall } from "./coreRules.js";
  * The CLI's side of the tainted-session rule (plans/design/tainted-session.md).
  * One CLI process is one session for the rule: the main agent and every
  * subagent it starts share this key, so taint reaches a subagent and comes
- * back without any copying. Everything here does nothing while the person's
- * `taintedSessionRule` is `off`, which is the default.
+ * back without any copying. The labels do nothing while the person's
+ * `taintedSessionRule` is `off`, which is the default; a secret read is noted
+ * whatever the rule says (B92).
  */
 const CLI_TAINT_SESSION = CLI_SESSION_ID;
 
@@ -57,11 +59,16 @@ export function handleUntaint(args: readonly string[] = []): {
 } {
   const named = args.map((a) => a.trim()).filter(Boolean);
   const held = taintLabels(CLI_TAINT_SESSION);
+  // B92 holds until the session ends; /untaint says so rather than hiding it
+  const secretNote = secretReadOf(CLI_TAINT_SESSION)
+    ? ` A secret was read in this session, so a network call still asks (and is refused at IDGAF) until the session ends; /untaint does not change that.`
+    : "";
   if (held.length === 0) {
     return {
       exit: false,
       output:
-        "Nothing to acknowledge: no untrusted content has been marked in this session.",
+        "Nothing to acknowledge: no untrusted content has been marked in this session." +
+        secretNote,
     };
   }
   const unknown = named.filter(
@@ -84,6 +91,7 @@ export function handleUntaint(args: readonly string[] = []): {
     exit: false,
     output:
       `Acknowledged: untrusted content from ${cleared.join(", ")} no longer makes network, publish and credential calls ask.` +
-      (left.length ? ` Still marked: ${left.join(", ")}.` : ""),
+      (left.length ? ` Still marked: ${left.join(", ")}.` : "") +
+      secretNote,
   };
 }

@@ -328,7 +328,10 @@ export async function evaluateWithCoreRules(
   const useReviewer = !!input.autoReview;
   // The tainted-session rule needs the engine even without rules or levels
   const taint = taintInput(SESSION_ID, undefined);
-  if (!engineApplies(input, useReviewer, !!taint.taint)) return undefined;
+  // B92: a secret read makes every later network call the engine's, rule or not
+  if (!engineApplies(input, useReviewer, !!taint.taint || !!taint.secretRead)) {
+    return undefined;
+  }
   const call = toCoreCall(cliToolName, args);
   const mcp = input.mcp ?? call?.mcp;
   if (!call && !mcp) return undefined;
@@ -565,7 +568,8 @@ export function keepCoreVerdict(
     verdict.source === "floor" ||
     verdict.source === "protected-path" ||
     verdict.source === "safety-floor" ||
-    verdict.source === "tainted-session"
+    verdict.source === "tainted-session" ||
+    verdict.source === "secret-egress"
   ) {
     return verdict;
   }

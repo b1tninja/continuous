@@ -136,38 +136,51 @@ const slashes = (p: string) => p.replace(/\\/g, "/");
  * file (`cat .env`, `type ~/.aws/credentials`). It errs toward yes: a command
  * that only mentions a secret file is labelled too.
  */
-function commandReadsSecret(command: string, shell?: ShellKind): boolean {
+function commandSecretSource(
+  command: string,
+  shell?: ShellKind,
+): string | undefined {
   for (const c of commandCandidateSet(command, shell).list) {
     const words = c.trim().split(/\s+/).filter(Boolean);
     if (words.length === 0) continue;
-    const printed = words.some((w, i) =>
-      secretWordLabel(w, i === 0, words.length > 1, words[i - 1]),
-    );
-    if (printed || jqEnvironmentLabel(words)) return true;
-    if (words.slice(1).some((w) => isSecretPath(slashes(unquote(w))))) {
-      return true;
-    }
+    const printed =
+      words
+        .map((w, i) =>
+          secretWordLabel(w, i === 0, words.length > 1, words[i - 1]),
+        )
+        .find(Boolean) ?? jqEnvironmentLabel(words);
+    if (printed) return `a command that prints ${printed}`;
+    const named = words
+      .slice(1)
+      .map((w) => slashes(unquote(w)))
+      .find((w) => isSecretPath(w));
+    if (named) return `a command that names ${named}`;
   }
-  return false;
+  return undefined;
 }
 
 /**
- * Whether this call brought a secret into the conversation: a file tool's
- * read of a protected secret path (`isSecretPath`), or a command that prints
- * a credential or names a secret file. A confidentiality label: it says
- * private data entered, not that the content is untrusted.
+ * What brought a secret into the conversation, if this call did: a file
+ * tool's read of a protected secret path (`isSecretPath`), or a command that
+ * prints a credential or names a secret file. The tool and the path or the
+ * word, never the content. A confidentiality label: it says private data
+ * entered, not that the content is untrusted.
  */
-function readsSecret(call: SourceCall): boolean {
+export function secretSourceOfCall(call: SourceCall): string | undefined {
   const { toolName, parsedArgs } = call;
   if (CONTENT_READS.has(toolName)) {
-    const raw = str(parsedArgs[FILE_READS[toolName]]);
-    return !!raw && isSecretPath(slashes(raw.trim()));
+    const raw = str(parsedArgs[FILE_READS[toolName]])?.trim();
+    return raw && isSecretPath(slashes(raw)) ? `${toolName} ${raw}` : undefined;
   }
   if (toolName === BuiltInToolNames.RunTerminalCommand) {
     const command = str(parsedArgs.command);
-    return !!command && commandReadsSecret(command, call.shell);
+    return command ? commandSecretSource(command, call.shell) : undefined;
   }
-  return false;
+  return undefined;
+}
+
+function readsSecret(call: SourceCall): boolean {
+  return secretSourceOfCall(call) !== undefined;
 }
 
 /** The labels of the content this call brought into the conversation, if any. */
