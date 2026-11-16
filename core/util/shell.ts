@@ -271,3 +271,65 @@ export function resolveShell(opts: ShellEnvironment = {}): ResolvedShell {
     runsProfile: true,
   };
 }
+
+/**
+ * The editor's remote names for which the terminal tool starts the shell
+ * itself, on this machine. For any other (SSH, a WSL window, a dev container,
+ * Codespaces) the command is typed into the editor's integrated terminal on
+ * the other machine.
+ */
+export const LOCAL_REMOTE_NAMES: readonly string[] = ["", "local"];
+
+export interface ExecutionShell {
+  /** The grammar to read the command with; "unknown" when it cannot be told */
+  kind: ShellKind;
+  /**
+   * "spawned": this process starts the shell, so the kind is a fact.
+   * "terminal": the command is sent to a terminal whose shell this process
+   * cannot see (its profile on the other machine, or whatever is running in
+   * it), so the kind is unknown and never this machine's own shell.
+   */
+  source: "spawned" | "terminal";
+  /** Words for a person: "Windows PowerShell 5.1", "bash in WSL", "the remote terminal's shell". */
+  label: string;
+}
+
+/** The words for a shell this process starts itself. */
+export function shellLabel(shell: ResolvedShell): string {
+  const program = (shell.executable.split(/[\/]/).pop() ?? "").toLowerCase();
+  if (program === "wsl.exe") return "bash in WSL";
+  if (program === "docker" || program === "podman")
+    return "bash in a container";
+  // powershell.exe is Windows PowerShell, whose last version is 5.1; pwsh is 7 or later
+  if (program === "powershell.exe" || program === "powershell") {
+    return "Windows PowerShell 5.1";
+  }
+  if (program === "pwsh" || program === "pwsh.exe")
+    return "PowerShell 7 or later";
+  return shell.kind === "unknown"
+    ? `${program || "a shell"} (not a shell this product parses)`
+    : program || shell.kind;
+}
+
+/**
+ * The shell a terminal command will really be read by, and how that is known.
+ * The permission engine, the lint and the audit record must use this, not
+ * `resolveShell()` alone: in a remote window `resolveShell()` describes the
+ * machine the editor runs on (PowerShell on a Windows laptop) while the
+ * command is read by the terminal on the other side (bash on a Linux host).
+ * With no remote name (the CLI, a test) the shell is the one started here.
+ */
+export function executionShell(
+  remoteName?: string,
+  opts: ShellEnvironment = {},
+): ExecutionShell {
+  if (remoteName !== undefined && !LOCAL_REMOTE_NAMES.includes(remoteName)) {
+    return {
+      kind: "unknown",
+      source: "terminal",
+      label: `the shell of the editor's terminal (${remoteName})`,
+    };
+  }
+  const shell = resolveShell(opts);
+  return { kind: shell.kind, source: "spawned", label: shellLabel(shell) };
+}

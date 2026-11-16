@@ -6,7 +6,6 @@ import "./init.js";
 import { Command } from "commander";
 import { dismissCurrentNotice } from "core/util/retirementStartup.js";
 
-import { addRunLimitOptions } from "./budget/runLimits.js";
 import { acp } from "./commands/acp.js";
 import { agentsCommand } from "./commands/agents.js";
 import { auditCommand } from "./commands/audit.js";
@@ -31,10 +30,9 @@ import {
   handleValidationErrors,
   validateFlags,
 } from "./flags/flagValidator.js";
-import { addReasoningFlags } from "./flags/reasoningFlags.js";
 import { configureConsoleForHeadless, safeStderr } from "./init.js";
 import { applySafeMode, SAFE_FLAG_HELP } from "./safeMode.js";
-import { addCommonOptions, mergeParentOptions } from "./shared-options.js";
+import { addRootOptions, mergeParentOptions } from "./shared-options.js";
 import { markUnhandledError } from "./util/errorState.js";
 import { gracefulExit } from "./util/exit.js";
 import { logger } from "./util/logger.js";
@@ -157,7 +155,7 @@ program
 
 // Root command - chat functionality (default)
 // Add common options to the root command
-addReasoningFlags(addRunLimitOptions(addCommonOptions(program)))
+addRootOptions(program)
   .option("--safe", SAFE_FLAG_HELP)
   .argument("[prompt]", "Optional prompt to send to the assistant")
   .option("-p, --print", "Print response and exit (useful for pipes)")
@@ -230,6 +228,7 @@ addReasoningFlags(addRunLimitOptions(addCommonOptions(program)))
       config: options.config,
       resume: options.resume,
       fork: options.fork,
+      sessionPersistence: options.sessionPersistence,
       allow: options.allow,
       ask: options.ask,
       exclude: options.exclude,

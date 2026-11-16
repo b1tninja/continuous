@@ -358,17 +358,20 @@ function isValidExportedSession(data: unknown): data is ExportedSession {
 /**
  * `/export [path]`: a masked transcript of this session (Markdown, or HTML
  * for a .html path). `/export --json` opens the session picker that writes
- * the session JSON `/import` reads.
+ * the session JSON `/import` reads, scrubbed too. `--raw` masks nothing and
+ * says so (V13).
  */
 function handleExport(args: string[]): SlashCommandResult {
   if (args.includes("--json")) {
-    return { exit: false, openExportSelector: true };
+    return {
+      exit: false,
+      openExportSelector: args.includes("--raw") ? { raw: true } : true,
+    };
   }
   const result = exportCurrentSession(args);
-  return {
-    exit: false,
-    output: result.ok ? chalk.green(result.message) : chalk.red(result.message),
-  };
+  let color = result.ok ? chalk.green : chalk.red;
+  if (result.warning) color = chalk.yellow;
+  return { exit: false, output: color(result.message) };
 }
 
 function handleImport(args: string[]): SlashCommandResult {

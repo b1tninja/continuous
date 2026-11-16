@@ -131,7 +131,8 @@ export function PolicyCard() {
             <div key={rule.id} data-testid={`locked-${rule.id}`}>
               <div className="text-xs">{rule.label} (locked)</div>
               <div className="text-2xs text-description">
-                {rule.description} No setting, including IDGAF, turns this off.
+                {rule.description} No setting turns this off; at IDGAF it is
+                recorded, not applied.
               </div>
             </div>
           ))}
@@ -195,7 +196,7 @@ export function PolicyCard() {
           className="mt-2 mb-0 text-2xs text-description"
           data-testid="policy-floor"
         >
-          {floor.length} floor rule{floor.length === 1 ? "" : "s"} in
+          {floor.length} locked rule{floor.length === 1 ? "" : "s"} in
           permissions.yaml block these calls at every level below IDGAF. At
           IDGAF they are recorded, not applied. Edit the file to change them.
         </p>

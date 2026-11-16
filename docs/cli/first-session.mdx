@@ -79,7 +79,7 @@ Shift+Tab moves through four entries. The mode indicator shows the current one.
 | Entry  | What it is                                                                                                                                            | Flag at start |
 | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
 | normal | The default: reads run, edits and commands ask                                                                                                        |               |
-| plan   | Read-only. The edit tools are not offered; shell commands and MCP tools ask. The agent writes a plan file and offers **Build**, **Build in a loop** or **Keep planning** | `--readonly`  |
+| plan   | Read-only. The edit tools are not offered; shell commands and MCP tools ask. The agent writes a plan file and offers **Build**, **Build in a loop** or **Keep planning** (at Questions IDGAF the turn ends with the plan saved instead) | `--readonly`  |
 | loop   | Plan mode for the first message, then the plan is built in a loop without the Build question. See [Loop mode](/ide-extensions/agent/loop-mode)        |               |
 | auto   | Everything runs without asking. This is the IDGAF level on Context use, Tool use and File edits                                                       | `--auto`      |
 

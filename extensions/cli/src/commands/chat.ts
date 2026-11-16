@@ -27,7 +27,11 @@ import {
   ModelServiceState,
   SERVICE_NAMES,
 } from "../services/types.js";
-import { loadSession, updateSessionHistory } from "../session.js";
+import {
+  loadSession,
+  setSessionPersistence,
+  updateSessionHistory,
+} from "../session.js";
 import { streamChatResponse } from "../stream/streamChatResponse.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
 import { startTUIChat } from "../ui/index.js";
@@ -58,6 +62,7 @@ export interface ChatOptions extends ExtendedCommandOptions {
   outputSchema?: string; // --output-schema: a JSON Schema the final answer must match
   thinking?: string; // --thinking: fold, expanded or hide (ui/thinkingDisplay.ts)
   includeReasoning?: boolean; // --include-reasoning: stream-json `reasoning` lines
+  sessionPersistence?: boolean; // false: --no-session-persistence (-p only)
 }
 
 export async function initializeChatHistory(
@@ -545,6 +550,8 @@ export async function chat(prompt?: string, options: ChatOptions = {}) {
     if (options.headless) {
       // Headless path - no Ink, no TUI, works in TTY-less environments
       logger.debug("Running in headless mode (TTY-less compatible)");
+      // V11: -p --no-session-persistence writes no session file
+      if (options.sessionPersistence === false) setSessionPersistence(false);
       headless.beginHeadlessRun(options);
       await runHeadlessMode(prompt, options);
       return;

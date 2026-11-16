@@ -517,6 +517,71 @@ describe("runSubagentTool", () => {
   });
 });
 
+describe("a subagent run's cache lifetime (cacheBehavior.subagentTtl)", () => {
+  afterEach(() => {
+    delete model.cacheBehavior;
+  });
+
+  async function firstRequest(
+    setting: "5m" | "1h" | "auto" | "off",
+    subagentTtl?: "5m" | "1h" | "auto" | "inherit",
+  ) {
+    if (subagentTtl) model.cacheBehavior = { subagentTtl };
+    const { store, messenger } = makeStore(["s1"], {
+      promptCacheSettings: { Claude: setting },
+    });
+    const requests = script(messenger, [
+      [{ role: "assistant", content: "done" }],
+    ]);
+    await runSubagentTool(args(), "s1", extras(store, messenger));
+    return requests[0].completionOptions;
+  }
+
+  it("is 5 minutes by default, even when the chat uses 1 hour", async () => {
+    const options = await firstRequest("1h");
+    expect(options.promptCaching).toBe(true);
+    expect(options.promptCacheTtl).toBe("5m");
+  });
+
+  it("is 1 hour with subagentTtl 1h", async () => {
+    expect((await firstRequest("5m", "1h")).promptCacheTtl).toBe("1h");
+  });
+
+  it("follows the chat with subagentTtl inherit", async () => {
+    expect((await firstRequest("1h", "inherit")).promptCacheTtl).toBe("1h");
+  });
+
+  it("never turns caching on: off stays off with no lifetime", async () => {
+    const options = await firstRequest("off", "1h");
+    expect(options.promptCaching).toBe(false);
+    expect(options.promptCacheTtl).toBeUndefined();
+  });
+
+  it("with subagentTtl auto, moves to 1 hour at the run's fifth request", async () => {
+    model.cacheBehavior = { subagentTtl: "auto" };
+    const { store, messenger } = makeStore(["s1"], {
+      promptCacheSettings: { Claude: "1h" },
+    });
+    const turns: Turn[] = [];
+    for (let i = 0; i < 5; i++) {
+      turns.push([
+        toolCallChunk(`t${i}`, BuiltInToolNames.GrepSearch, { query: "foo" }),
+      ]);
+    }
+    turns.push([{ role: "assistant", content: "done" }]);
+    const requests = script(messenger, turns);
+    await runSubagentTool(args(), "s1", extras(store, messenger));
+    expect(requests.map((r) => r.completionOptions.promptCacheTtl)).toEqual([
+      "5m",
+      "5m",
+      "5m",
+      "5m",
+      "1h",
+      "1h",
+    ]);
+  });
+});
+
 /** A turn that sends the person's messages while it streams, then answers. */
 function sendingTurn(
   send: () => void,

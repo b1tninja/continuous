@@ -377,7 +377,9 @@ export function keyChanges(
   if (before.model !== after.model) changes.push(MODEL_CHANGED);
   if (before.tools !== after.tools) changes.push("the tools changed");
   if (before.system !== after.system) {
-    changes.push("the system prompt changed (a rule or a summary)");
+    // A compaction summary is not in it any more (C104): only the base prompt
+    // and the rules that apply to the whole conversation are
+    changes.push("the system prompt changed (the base prompt or a rule)");
   }
   if (before.messages && after.messages) {
     const i = firstChangedMessage(before.messages, after.messages);
@@ -465,7 +467,7 @@ export const MODEL_SWITCH_CAUSE = MODEL_CHANGED;
 export const AGEING_CAUSE =
   "old tool results were replaced by placeholders (history ageing)";
 export const SHORTER_PROMPT_CAUSE =
-  "the conversation was shortened (compaction or truncation)";
+  "the conversation was shortened (a compaction, or the oldest messages left out to fit)";
 
 /**
  * A request whose cache could not be read because of something the user or the

@@ -219,3 +219,21 @@ describe("handleValidationErrors", () => {
     }).not.toThrow();
   });
 });
+
+describe("--no-session-persistence (V11)", () => {
+  test("passes with -p", () => {
+    expect(
+      validateFlags({ sessionPersistence: false, print: true }).isValid,
+    ).toBe(true);
+  });
+
+  test("fails without -p", () => {
+    const result = validateFlags({ sessionPersistence: false });
+    expect(result.isValid).toBe(false);
+    expect(result.errors[0].code).toBe("NO_SESSION_PERSISTENCE_REQUIRES_PRINT");
+  });
+
+  test("the default (persistence on) needs nothing", () => {
+    expect(validateFlags({ sessionPersistence: true }).isValid).toBe(true);
+  });
+});

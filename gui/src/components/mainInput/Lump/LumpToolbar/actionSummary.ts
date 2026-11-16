@@ -2,6 +2,7 @@ import {
   maskArgsForDisplay,
   maskCommandForDisplay,
 } from "core/tools/permissions/displayMask";
+import { describeInterpreters } from "core/tools/permissions/shellContext";
 
 /**
  * What a person is shown about a tool call that waits for approval (or was
@@ -46,6 +47,26 @@ export function maskUrlForDisplay(url: string): string {
     "$1***@",
   );
   return maskCommandForDisplay(noUserinfo);
+}
+
+/**
+ * The interpreters a command hands its text to when that is not simply the
+ * terminal's own shell: `bash -c`, `cmd /c`, `wsl`, `ssh host`, a script file.
+ * Each has its own quoting and separators, so the card names them. Read from
+ * the real command, shown masked. Undefined for an ordinary command.
+ */
+export function runsThrough(command: string): string | undefined {
+  // The webview does not know the terminal's shell: only what the command
+  // itself launches is named
+  const found = describeInterpreters(command, undefined);
+  if (!found) return undefined;
+  const text = maskCommandForDisplay(found.text);
+  if (found.hidden) {
+    return `${text}. What that runs is not all written in this command.`;
+  }
+  return found.uncertain
+    ? `${text}. Which shell reads it there is not known here.`
+    : text;
 }
 
 function pretty(value: unknown): string {
@@ -158,6 +179,8 @@ export function describeAction(
       if (args.waitForCompletion === false) {
         fields.push({ label: "Runs", value: "in the background" });
       }
+      const through = runsThrough(String(args.command ?? ""));
+      if (through) fields.push({ label: "Runs through", value: through });
       return {
         kind: "Run terminal command",
         fields,

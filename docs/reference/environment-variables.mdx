@@ -33,6 +33,12 @@ See [Web search](/customize/web-search) and [cn serve](/guides/cn-serve).
 | `CONTINUE_AUDIT`                 | `off`, `0`, `false`, `no`, `disabled` / `on`, `1`, `true`, `yes`, `enabled` | Turn the audit trail off or on. Wins over `audit.enabled` in `config.yaml`. See [Audit trail](/ide-extensions/agent/audit-trail) | `core/tools/permissions/audit/global.ts`        |
 | `CONTINUOUS_SPOTLIGHT_UNTRUSTED` | `1`                                                        | Wrap fetched web pages in spotlight markers, as the setting does                                                                                   | `core/tools/implementations/fetchUrlContent.ts` |
 
+## Prompt caching
+
+| Variable                    | Values | What it does                                                                                                                                                                        | Read by                                                                                         |
+| --------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `CONTINUOUS_FORCE_CACHE_5M` | `1`    | Debug override: every prompt cache entry gets the 5-minute lifetime, over the toolbar, `cacheBehavior.ttl` and `cacheBehavior.subagentTtl`. See [Prompt caching](/customize/deep-dives/prompt-caching#precedence) | `core/llm/llms/anthropicCache.ts`, `packages/openai-adapters/src/apis/cacheTtl.ts` |
+
 ## Terminal agent output caps
 
 Positive whole numbers. Anything else keeps the default.

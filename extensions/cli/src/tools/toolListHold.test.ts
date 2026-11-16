@@ -1,12 +1,13 @@
 import type { ChatHistoryItem } from "core/index.js";
 import type { ChatCompletionTool } from "openai/resources.mjs";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyCliToolChangesNow,
   cliPendingToolChangesLine,
   cliToolListForRequest,
   cliWithheldRefusal,
+  heldToolsLifetimeMs,
   isSignificantReread,
   noteToolHoldRequest,
   resetCliToolListHold,
@@ -197,5 +198,23 @@ describe("preserved thinking after a tool change in the CLI (PR #893)", () => {
     expect(
       next([tool("a")], T0 + TOOL_HOLD_DEFAULT_LIFETIME_MS + 1).thinkingCut,
     ).toBeUndefined();
+  });
+});
+
+describe("heldToolsLifetimeMs", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("assumes 1 hour only for a fixed 1h lifetime", () => {
+    expect(heldToolsLifetimeMs("1h")).toBe(60 * 60_000);
+    expect(heldToolsLifetimeMs("auto")).toBeUndefined();
+    expect(heldToolsLifetimeMs("5m")).toBeUndefined();
+    expect(heldToolsLifetimeMs(undefined)).toBeUndefined();
+  });
+
+  it("assumes 5 minutes under CONTINUOUS_FORCE_CACHE_5M=1", () => {
+    vi.stubEnv("CONTINUOUS_FORCE_CACHE_5M", "1");
+    expect(heldToolsLifetimeMs("1h")).toBeUndefined();
   });
 });

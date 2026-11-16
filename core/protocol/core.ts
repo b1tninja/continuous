@@ -43,6 +43,7 @@ import type { ModeModelsInput } from "../config/yaml/saveModeModels";
 import type { RulesByModeInput } from "../config/yaml/saveRulesByMode";
 import type { CommunityPrice } from "../llm/communityCatalog";
 import type { DetectedLocalServer } from "../llm/localServers";
+import type { PrewarmResult } from "../llm/localPrewarm";
 import type { CatalogModel } from "../llm/openRouterCatalog";
 import type { SubagentLoadResult } from "../subagents/loadSubagents";
 import type { ApprovalSettings } from "../tools/permissions/approval";
@@ -722,6 +723,11 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
         messages: ChatMessage[];
         options: LLMFullCompletionOptions;
       };
+      /**
+       * A summary prepared in the background for exactly this span (planned
+       * compaction): saved at `index` with no summary request.
+       */
+      summary?: string;
     },
     string | undefined,
   ];
@@ -1027,4 +1033,46 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
   ];
   "loop/worktreeRemove": [{ repo: string; path: string; branch: string }, void];
   "loop/dirtyFiles": [{ repo: string }, string[]];
+  /**
+   * The summary "conversation/compact" would save at `index`, without saving
+   * it: planned compaction prepares it while the person is idle. Aborted by
+   * an "abort" message whose message id is `requestId`. Never throws: a
+   * background request that fails or is aborted must not show an error, so
+   * the failure comes back as `error`.
+   */
+  "conversation/summarize": [
+    {
+      index: number;
+      sessionId: string;
+      prefix?: {
+        messages: ChatMessage[];
+        options: LLMFullCompletionOptions;
+      };
+      requestId?: string;
+    },
+    { summary: string } | { error: string; aborted: boolean },
+  ];
+  /**
+   * The compaction pre-warm (C106): `messages` and `options` are the request
+   * the chat will send once the prepared summary is saved, built by
+   * buildChatRequest on that session. Core compiles them as "llm/compileChat"
+   * does and sends them to the selected chat model with `max_tokens: 1` (and
+   * Strata's `strata_prefix` pin at the end of the summary). Aborted by an
+   * "abort" message whose message id is `requestId`. Never throws.
+   */
+  "llm/prewarm": [
+    {
+      messages: ChatMessage[];
+      options: LLMFullCompletionOptions;
+      promptTokens: number;
+      liveTokens?: number;
+      requestId: string;
+    },
+    PrewarmResult,
+  ];
+  /**
+   * The selected chat model's Strata `/metrics`, for the Compact now
+   * estimate's speeds (one read-only GET). Undefined for any other server.
+   */
+  "llm/strataMetrics": [undefined, unknown];
 };

@@ -1,4 +1,5 @@
 import type { ChatHistoryItem, Usage } from "core/index.js";
+import { cacheTtlForcedTo5m } from "core/llm/llms/anthropicCache.js";
 import { totalInputTokens } from "core/llm/utils/cacheStats.js";
 import { findModelPricing } from "core/llm/utils/calculateRequestCost.js";
 import {
@@ -40,6 +41,15 @@ export const TOOL_HOLD_MIN_EXTRA_USD = 0.25;
 export const TOOL_HOLD_MIN_TOKENS_UNPRICED = 100_000;
 /** The CLI does not learn which lifetime Auto picked; 5 minutes is the safe guess. */
 export const TOOL_HOLD_DEFAULT_LIFETIME_MS = 5 * 60_000;
+
+/**
+ * The cache lifetime the hold assumes for a model's `cacheBehavior.ttl`: 1 hour
+ * only for a fixed "1h", and never while CONTINUOUS_FORCE_CACHE_5M=1 keeps
+ * every entry on 5 minutes. Undefined means TOOL_HOLD_DEFAULT_LIFETIME_MS.
+ */
+export function heldToolsLifetimeMs(ttl: unknown): number | undefined {
+  return ttl === "1h" && !cacheTtlForcedTo5m() ? 60 * 60_000 : undefined;
+}
 
 interface HoldState {
   warm?: { at: number; tokens: number; model: string; lifetimeMs: number };

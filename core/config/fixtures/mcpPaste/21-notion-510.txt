@@ -1,0 +1,12 @@
+```json
+{
+  "mcpServers": {
+    "notion-local-package": {
+      "command": "notion-mcp-server",
+      "env": {
+        "NOTION_TOKEN": "ntn_..."
+      }
+    }
+  }
+}
+```

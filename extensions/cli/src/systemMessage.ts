@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 
 import { parseMarkdownRule, RuleObject } from "@continuedev/config-yaml";
+import type { InstructionFileNotice } from "core/config/markdown/instructionFiles.js";
 import { CLI_TURN_TOOL_NAMES } from "core/llm/prompts/turns.js";
 import {
   actTurnTextFor,
@@ -15,7 +16,12 @@ import {
   loadAttributionSettings,
 } from "./attribution.js";
 import { processRule } from "./hubLoader.js";
-import { AGENT_FILES, rulesDirs } from "./instructionFiles.js";
+import {
+  AGENT_FILES,
+  readInstructionFile,
+  rulesDirs,
+  warnOnce,
+} from "./instructionFiles.js";
 import { PermissionMode } from "./permissions/types.js";
 import { isSafeMode } from "./safeMode.js";
 import { serviceContainer } from "./services/ServiceContainer.js";
@@ -125,10 +131,13 @@ export function loadMarkdownRulesWithMetadata(): RuleObject[] {
       }
 
       try {
-        const content = fs.readFileSync(filePath, "utf-8");
+        const notices: InstructionFileNotice[] = [];
+        const content = readInstructionFile(filePath, (n) => notices.push(n));
         const { frontmatter, markdown } = parseMarkdownRule(content);
 
+        // A prompt file is not an instruction: nothing to warn about here
         if (frontmatter.invokable) continue;
+        notices.forEach(warnOnce);
 
         const isAlwaysApply =
           frontmatter.alwaysApply === true ||
@@ -193,7 +202,7 @@ export async function constructSystemMessage(
       const filePath = path.join(process.cwd(), fileName);
 
       if (fs.existsSync(filePath)) {
-        agentContent = fs.readFileSync(filePath, "utf-8");
+        agentContent = readInstructionFile(filePath);
         break; // Use the first found agent file
       }
     }
