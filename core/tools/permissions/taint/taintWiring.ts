@@ -3,10 +3,16 @@ import {
   readTaintedSessionRule,
   type TaintedSessionRule,
 } from "./taintSetting";
-import { taintLabelsOfCall, type SourceCall } from "./taintSources";
+import {
+  secretSourceOfCall,
+  taintLabelsOfCall,
+  type SourceCall,
+} from "./taintSources";
 import {
   DEFAULT_TAINT_SESSION,
+  secretReads,
   taintRegistry,
+  type SecretRead,
   type TaintChange,
   type TaintClearReason,
   type TaintFact,
@@ -28,22 +34,30 @@ export function recordTaintChange(change: TaintChange): void {
 taintRegistry.setListener(recordTaintChange);
 
 /**
- * The few functions the hosts call. Each does nothing when the person's
- * `taintedSessionRule` is `off`, which is the default: no mark, no fact for
- * the evaluator or the reviewer, no field in the audit record.
+ * The few functions the hosts call. The taint labels do nothing when the
+ * person's `taintedSessionRule` is `off`, which is the default: no mark, no
+ * fact for the evaluator or the reviewer, no field in the audit record. The
+ * one exception is B92's secret read (`secretReads`), which is noted and
+ * handed to the evaluator whatever the rule says.
  */
 
-/** The evaluator input for a call: `{ taint }` for a tainted session, else nothing. */
+/**
+ * The evaluator input for a call: `{ taint }` for a tainted session (rule
+ * `ask` only) and `{ secretRead }` when a secret was read in the session
+ * (always), else nothing.
+ */
 export function taintInput(
   session: string | undefined,
   callId?: string,
   rule: TaintedSessionRule = readTaintedSessionRule(),
-): { taint?: TaintFact } {
-  if (rule !== "ask") return {};
+): { taint?: TaintFact; secretRead?: SecretRead } {
   const key = session ?? DEFAULT_TAINT_SESSION;
   if (callId) taintRegistry.bindCall(callId, key);
+  const secretRead = secretReads.get(key);
+  const secret = secretRead ? { secretRead } : {};
+  if (rule !== "ask") return secret;
   const taint = taintRegistry.fact(key);
-  return taint ? { taint } : {};
+  return taint ? { taint, ...secret } : secret;
 }
 
 /** The audit record's `tainted` field: source kinds, never content. */
@@ -73,13 +87,14 @@ export function noteToolResult(
   rule: TaintedSessionRule = readTaintedSessionRule(),
 ): TaintLabel | undefined {
   try {
-    if (rule !== "ask") return undefined;
-    const labels = taintLabelsOfCall(note.call);
-    if (labels.length === 0) return undefined;
     const session =
       note.session ??
       taintRegistry.sessionOfCall(note.callId) ??
       DEFAULT_TAINT_SESSION;
+    noteSecretRead(note, session);
+    if (rule !== "ask") return undefined;
+    const labels = taintLabelsOfCall(note.call);
+    if (labels.length === 0) return undefined;
     for (const label of labels) {
       taintRegistry.mark(session, label, note.turn, {
         source: note.call.toolName,
@@ -92,8 +107,24 @@ export function noteToolResult(
 }
 
 /**
+ * B92: the call read a secret (a protected secret path, `~/.npmrc` included,
+ * or a command that prints a credential). Noted whatever `taintedSessionRule`
+ * says. Never throws.
+ */
+function noteSecretRead(note: ToolResultNote, session: string): void {
+  if (note.call.mcp) return;
+  const source = secretSourceOfCall(note.call);
+  if (!source) return;
+  secretReads.mark(session, {
+    source,
+    ...(note.turn === undefined ? {} : { turn: note.turn }),
+  });
+}
+
+/**
  * The person acknowledged the content, or started over: the session is clean
  * again. `source` names the control that cleared it, for the audit record.
+ * Only a new session ends B92's secret read; acknowledging content does not.
  */
 export function untaintSession(
   session: string | undefined,
@@ -101,12 +132,16 @@ export function untaintSession(
   source?: string,
   labels?: readonly TaintLabel[],
 ): TaintLabel[] {
-  return taintRegistry.clear(
-    session ?? DEFAULT_TAINT_SESSION,
-    reason,
-    source,
-    labels,
-  );
+  const key = session ?? DEFAULT_TAINT_SESSION;
+  if (reason === "new-session") secretReads.clear(key);
+  return taintRegistry.clear(key, reason, source, labels);
+}
+
+/** B92: what read a secret in this session, if anything did. */
+export function secretReadOf(
+  session: string | undefined,
+): SecretRead | undefined {
+  return secretReads.get(session ?? DEFAULT_TAINT_SESSION);
 }
 
 /** The labels a session holds now, in their fixed order. */

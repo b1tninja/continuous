@@ -30,11 +30,16 @@ import { parsePermissions, uriToPath } from "./names";
 import { findProtected } from "./protectedCall";
 import type { Sink } from "./taint/taintSinks";
 import {
+  applySecretEgressRule,
   applyTaintedSessionRule,
   type TaintedSessionInput,
 } from "./taint/taintRule";
 import { runtimeWriteTarget } from "./runtimeWriteTarget";
-import { policyFileHit, POLICY_FILE_REASON } from "./selfProtect";
+import {
+  policyFileHit,
+  POLICY_FILE_REASON,
+  profileWriteHit,
+} from "./selfProtect";
 import type { ProtectedHit, ProtectedKind } from "./protected";
 import type { RuleSource, ToolPermissions } from "./rules";
 
@@ -201,18 +206,40 @@ export interface EvaluateInput extends TaintedSessionInput {
  * The policy for one tool call: the tool's own check first (command safety
  * floor, workspace-only reads), then the user's `toolPermissions` rules on top.
  * Without rules this returns exactly what it did before rules existed. At
- * IDGAF on the call's area every call runs (idgafRunsEverything).
+ * IDGAF on the call's area every call runs (idgafRunsEverything), except the
+ * secret-read plus network pair (B92), which is refused there and asks at
+ * every other level (applySecretEgressRule, the last step).
  */
 export function evaluateToolPolicyWithRules(
   input: EvaluateInput,
 ): ToolPolicyResult {
-  return idgafRunsEverything(
+  const result = idgafRunsEverything(
     input,
     applyTaintedSessionRule(
       input,
-      lockRuntimeWrites(input, lockPolicyFiles(input, evaluateRules(input))),
+      lockRuntimeWrites(
+        input,
+        lockPolicyFiles(
+          input,
+          refuseProfileWrites(input, evaluateRules(input)),
+        ),
+      ),
     ),
   );
+  return applySecretEgressRule(
+    input,
+    result,
+    () => callLevel(input) === "idgaf",
+  );
+}
+
+/** The level of the call's area, from its arguments; undefined without levels. */
+function callLevel(input: EvaluateInput): string | undefined {
+  return levelOfCall(input.approval, input.toolName, input.tool, {
+    parsedArgs: input.parsedArgs,
+    cwd: input.cwd,
+    shell: input.shell,
+  })?.level;
 }
 
 /** Says what IDGAF let through, for the decision chip, the transcript and the audit trail. */
@@ -343,6 +370,50 @@ function lockPolicyFiles(
     policy: refuse ? "disabled" : "allowedWithPermission",
     source: "floor",
     reason: `${POLICY_FILE_REASON} (${hit.path})`,
+  };
+}
+
+/**
+ * D-012: a write to a PowerShell profile (`Documents/WindowsPowerShell` or
+ * `Documents/PowerShell`, under the home folder or a OneDrive-redirected
+ * Documents, and `$PROFILE`) runs in every PowerShell session that starts
+ * later. It asks at every level as part of `protect-config`; Automatic,
+ * where nobody is there to say yes, refuses it. IDGAF is decided as
+ * Automatic here and then runs it (idgafRunsEverything), with this as the
+ * reason it would have stopped. With `protect-config` off it is not refused.
+ */
+export const PROFILE_WRITE_REASON =
+  "This writes a PowerShell profile, which runs in every PowerShell session that starts later, so Automatic refuses it. At the other levels it asks, and IDGAF runs it.";
+
+function refuseProfileWrites(
+  input: EvaluateInput,
+  result: ToolPolicyResult,
+): ToolPolicyResult {
+  const { tool, toolName } = input;
+  if (!tool || result.policy === "disabled") return result;
+  if (skippedProtections(input.approval).includes("config")) return result;
+  const level = callLevel(input);
+  if (level !== "automatic" && level !== "idgaf") return result;
+  const resolved = input.processedArgs?.resolvedPath as
+    ResolvedPath | null | undefined;
+  const isMcp = !!tool.uri?.startsWith("mcp:") && !!tool.originalFunctionName;
+  const hit = profileWriteHit({
+    toolName,
+    parsedArgs: input.parsedArgs,
+    resolvedPath: resolved ? uriToPath(resolved.uri) : undefined,
+    mcp: isMcp ? { readonly: !!tool.readonly } : undefined,
+    cwd: input.cwd,
+    shell: input.shell,
+    home: input.home,
+  });
+  // A scan that gave up cannot say the call is a write: it is left as it is
+  if (!hit || hit.capped) return result;
+  return {
+    ...result,
+    policy: "disabled",
+    source: "protected-path",
+    protection: "config",
+    reason: `${PROFILE_WRITE_REASON} (${hit.path})`,
   };
 }
 
