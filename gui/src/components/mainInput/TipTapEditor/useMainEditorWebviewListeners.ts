@@ -83,8 +83,10 @@ export function useMainEditorWebviewListeners({
       }
 
       setTimeout(() => {
-        editor?.commands.blur();
-        editor?.commands.focus("end");
+        // The editor may be gone by then (a session switch, an unmount)
+        if (!editor || editor.isDestroyed) return;
+        editor.commands.blur();
+        editor.commands.focus("end");
       }, 20);
     },
     [historyLength, editor, dispatch],
@@ -94,7 +96,8 @@ export function useMainEditorWebviewListeners({
     "focusContinueInputWithoutClear",
     async () => {
       setTimeout(() => {
-        editor?.commands.focus("end");
+        if (!editor || editor.isDestroyed) return;
+        editor.commands.focus("end");
       }, 20);
     },
     [editor],
@@ -115,7 +118,8 @@ export function useMainEditorWebviewListeners({
       );
 
       setTimeout(() => {
-        editor?.commands.focus("end");
+        if (!editor || editor.isDestroyed) return;
+        editor.commands.focus("end");
       }, 20);
     },
     [editor, dispatch],
@@ -172,6 +176,7 @@ export function useMainEditorWebviewListeners({
       }
 
       setTimeout(() => {
+        if (editor.isDestroyed) return;
         editor.commands.blur();
         editor.commands.focus("end");
       }, 20);
