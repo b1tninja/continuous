@@ -26,9 +26,12 @@ type AnyBody = {
 };
 
 export class FetchDeadlineError extends Error {
+  /** The deadline that passed, in milliseconds. */
+  readonly ms: number;
   constructor(ms: number) {
     super(`The request did not finish within ${Math.round(ms / 1000)} seconds`);
     this.name = "FetchDeadlineError";
+    this.ms = ms;
   }
 }
 

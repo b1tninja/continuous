@@ -49,8 +49,49 @@ import { nonPublicReason, normalizeHost, pinnedLookup } from "./networkAddress";
 // the `web:` config section exists.
 export const MAX_REDIRECTS = 5;
 
+/**
+ * The redirects did not end: the hop limit was reached, or a hop led back to
+ * a URL already visited. `cookieHops` counts the redirects that set a cookie,
+ * which this fetch never sends back (a sign-in or consent wall, outcome
+ * `needs-cookies`). The message is the refusal the guard always gave.
+ */
+export class RedirectLimitError extends FetchRefusedError {
+  constructor(
+    message: string,
+    readonly kind: "limit" | "loop",
+    /** Redirect responses followed or refused, the last included. */
+    readonly hops: number,
+    readonly cookieHops: number,
+    /** The host that sent the last redirect. */
+    readonly host: string,
+  ) {
+    super(message);
+    this.name = "RedirectLimitError";
+  }
+}
+
 /** Request headers that never cross to another origin on a redirect. */
 const CREDENTIAL_HEADERS = ["authorization", "cookie", "proxy-authorization"];
+
+/** The URL whose request threw, for the host an outcome names. */
+const failedRequestUrls = new WeakMap<object, URL>();
+
+/** The URL of the request that threw this error (the start, or a redirect's target). */
+export function requestUrlOfError(error: unknown): URL | undefined {
+  return error && typeof error === "object"
+    ? failedRequestUrls.get(error)
+    : undefined;
+}
+
+/** The record of a request that threw, for the provenance line of its outcome. */
+const failedRecords = new WeakMap<object, FetchRecord>();
+
+/** The fetch record `guardedWebRequest` made for the error it threw, if any. */
+export function recordOfError(error: unknown): FetchRecord | undefined {
+  return error && typeof error === "object"
+    ? failedRecords.get(error)
+    : undefined;
+}
 
 type Classify = (
   hostname: string,
@@ -169,7 +210,11 @@ function nextInit(init: Init, status: number): Init {
 }
 
 /** Throws when a redirect target must not be requested. */
-function checkLocation(next: URL, visited: Set<string>): void {
+function checkLocation(
+  next: URL,
+  visited: Set<string>,
+  from: { host: string; hops: number; cookieHops: number },
+): void {
   if (next.protocol !== "http:" && next.protocol !== "https:") {
     throw new FetchRefusedError(
       `Refused to follow a redirect to ${next.protocol} URL`,
@@ -187,8 +232,12 @@ function checkLocation(next: URL, visited: Set<string>): void {
     );
   }
   if (visited.has(next.href)) {
-    throw new FetchRefusedError(
+    throw new RedirectLimitError(
       `Refused: a redirect loop (${next.host} sent the request back to a URL already visited)`,
+      "loop",
+      from.hops,
+      from.cookieHops,
+      from.host,
     );
   }
 }
@@ -222,14 +271,27 @@ export async function fetchWithGuardedRedirects(
   }
   let request: Init = { ...init, headers: plainHeaders(init.headers) };
   const visited = new Set<string>([start.href]);
+  // Redirects that set a cookie: this fetch keeps none (TODO(WB39): the
+  // per-fetch host-only jar, IS-1, changes what counts here)
+  let cookieHops = 0;
   for (let hop = 0; ; hop++) {
-    const resp = await fetchFn(current, {
-      ...request,
-      redirect: "manual",
-      // Pinned even when empty: a direct connection then fails instead of
-      // resolving again. A proxy agent ignores it and resolves itself.
-      lookup: pinnedLookup(checked.addresses),
-    } as never);
+    let resp: any;
+    try {
+      resp = await fetchFn(current, {
+        ...request,
+        redirect: "manual",
+        // Pinned even when empty: a direct connection then fails instead of
+        // resolving again. A proxy agent ignores it and resolves itself.
+        lookup: pinnedLookup(checked.addresses),
+      } as never);
+    } catch (e) {
+      // Which hop's host failed (a DNS or TLS failure after a redirect names
+      // the redirect's host, not the start)
+      if (e && typeof e === "object" && !failedRequestUrls.has(e)) {
+        failedRequestUrls.set(e, current);
+      }
+      throw e;
+    }
     const status: number = resp.status;
     options.onHop?.(current, status);
     const location: string | null | undefined = resp.headers?.get?.("location");
@@ -237,15 +299,24 @@ export async function fetchWithGuardedRedirects(
       options.onFinalUrl?.(current);
       return resp;
     }
+    if (resp.headers?.get?.("set-cookie")) cookieHops++;
     discard(resp);
     if (hop >= limit) {
-      throw new FetchRefusedError(
+      throw new RedirectLimitError(
         `Too many redirects fetching ${start} (more than ${limit})`,
+        "limit",
+        hop + 1,
+        cookieHops,
+        current.host,
       );
     }
 
     const next = new URL(location, current);
-    checkLocation(next, visited);
+    checkLocation(next, visited, {
+      host: current.host,
+      hops: hop + 1,
+      cookieHops,
+    });
     visited.add(next.href);
 
     checked = await classify(next.hostname);
@@ -394,7 +465,8 @@ export async function guardedWebRequest(
     });
     return { ...out, record };
   } catch (e) {
-    recorder.fail(e);
+    const record = recorder.fail(e);
+    if (e && typeof e === "object") failedRecords.set(e, record);
     throw e;
   }
 }

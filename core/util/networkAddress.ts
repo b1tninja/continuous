@@ -206,15 +206,24 @@ const PIN_MS = 10 * 60 * 1000;
 
 let hostResolver: Resolver = resolveAll;
 const pinCache = new Map<string, { addresses: string[]; at: number }>();
+/**
+ * Why the last lookup of each host that failed failed (the resolver's code:
+ * `ENOTFOUND`, `EAI_AGAIN`, `ESERVFAIL`), so a fetch outcome can tell "no
+ * such domain" from "try again" (WB41). Bounded; cleared with the pins.
+ */
+const resolveFailures = new Map<string, string>();
+const MAX_RESOLVE_FAILURES = 256;
 
 /** Replace name resolution. Used by tests; pass undefined to restore DNS. */
 export function setHostResolver(resolver?: Resolver): void {
   hostResolver = resolver ?? resolveAll;
   pinCache.clear();
+  resolveFailures.clear();
 }
 
 export function clearPinnedHosts(): void {
   pinCache.clear();
+  resolveFailures.clear();
 }
 
 /**
@@ -232,10 +241,25 @@ export async function resolveHostAddresses(
   try {
     const addresses = (await hostResolver(host)).map(normalizeHost);
     pinCache.set(host, { addresses, at: Date.now() });
+    resolveFailures.delete(host);
     return addresses;
-  } catch {
+  } catch (e) {
+    resolveFailures.set(host, resolverErrorCode(e));
     return [];
   }
+}
+
+function resolverErrorCode(e: unknown): string {
+  if (resolveFailures.size >= MAX_RESOLVE_FAILURES) resolveFailures.clear();
+  const code = (e as { code?: unknown } | null)?.code;
+  if (typeof code === "string" && code) return code;
+  const message = e instanceof Error ? e.message : String(e);
+  return /^E[A-Z_]+$/.test(message) ? message : "ENOTFOUND";
+}
+
+/** The resolver's code for this host's last failed lookup, if the last lookup failed. */
+export function lastResolveFailure(hostname: string): string | undefined {
+  return resolveFailures.get(normalizeHost(hostname));
 }
 
 /** Addresses already checked for this host, if the pin window is still open. */

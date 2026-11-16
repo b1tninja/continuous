@@ -182,7 +182,10 @@ describe("@url", () => {
     const err = await new URLContextProvider({})
       .getContextItems("https://site.example/broken", extras())
       .catch((e: Error) => e);
-    expect((err as Error).message).toBe("HTTP 500 Error");
+    // The outcome's first sentence (WB41): our reason phrase, not the server's
+    expect((err as Error).message).toBe(
+      "Not read: site.example answered 500 Internal Server Error.",
+    );
     expect((err as Error).message).not.toContain("stack trace");
   });
 
