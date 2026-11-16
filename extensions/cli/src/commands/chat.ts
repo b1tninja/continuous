@@ -49,7 +49,7 @@ import {
 } from "../util/tokenizer.js";
 
 import { ExtendedCommandOptions } from "./BaseCommandOptions.js";
-import { processJsonOutput, stripThinkTags } from "./chatOutput.js";
+import { formatHeadlessAnswer } from "./chatOutput.js";
 import { handleTitleGeneration } from "./chatTitle.js";
 import { printRetirementNotice } from "./retirementNotice.js";
 
@@ -179,20 +179,7 @@ function processAndOutputResponse(
   // stream-json keeps the answer for its `result` line and prints nothing
   if (headless.noteHeadlessAnswer(finalResponse, silent, format)) return;
   if (isHeadless && finalResponse && finalResponse.trim()) {
-    let processedResponse = finalResponse;
-
-    // Strip think tags if --silent flag is enabled
-    if (silent) {
-      processedResponse = stripThinkTags(processedResponse);
-    }
-
-    // Process output based on format
-    const outputResponse =
-      format === "json"
-        ? processJsonOutput(processedResponse)
-        : processedResponse;
-
-    safeStdout(outputResponse + "\n");
+    safeStdout(formatHeadlessAnswer(finalResponse, silent, format) + "\n");
   }
 }
 

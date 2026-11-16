@@ -41,3 +41,16 @@ export function stripThinkTags(response: string): string {
 
   return cleaned;
 }
+
+/**
+ * The answer as headless mode prints it: think tags stripped with --silent,
+ * and wrapped as JSON with --format json
+ */
+export function formatHeadlessAnswer(
+  response: string,
+  silent?: boolean,
+  format?: string,
+): string {
+  const processed = silent ? stripThinkTags(response) : response;
+  return format === "json" ? processJsonOutput(processed) : processed;
+}
