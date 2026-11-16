@@ -153,7 +153,7 @@ describe("byte cap and deadline", () => {
         ...guarded,
         deadlineMs: 400,
       }),
-    ).rejects.toThrow(/did not finish within/);
+    ).rejects.toThrow(/did not finish answering within/);
     expect(Date.now() - started).toBeLessThan(3000);
   });
 
@@ -200,7 +200,11 @@ describe("content types", () => {
         guarded,
       ).catch((e: Error) => e);
       expect(err).toBeInstanceOf(Error);
-      expect((err as Error).message).toMatch(/^Refused: .*not text/);
+      // The outcome's first sentence, for @url (WB41)
+      expect((err as Error).message).toMatch(/^Not read: .* not text\.$/);
+      expect((err as { outcome?: { code: string } }).outcome?.code).toBe(
+        "not-text",
+      );
       expect((err as Error).message.length).toBeLessThan(160);
     },
   );
@@ -217,7 +221,7 @@ describe("content types", () => {
       getUrlContextItems("https://a.test/", (async () => resp) as never, {
         guardRedirects: true,
       }),
-    ).rejects.toThrow(/Refused/);
+    ).rejects.toThrow(/not text/);
     expect(body).not.toHaveBeenCalled();
   });
 
