@@ -51,6 +51,11 @@ import {
   leakedCallNudgeAllowed,
   noteLeakedCallNudge,
 } from "./leakedCallNudge.js";
+import {
+  promptProgressOf,
+  promptProgressSinkFor,
+  requestsPromptProgress,
+} from "./promptProgress.js";
 import { ReasoningAccumulator, type StreamedReasoning } from "./reasoning.js";
 import { resetRefusalCount } from "./refusalCap.js";
 import { resetRepeatGuard } from "./repeatGuard.js";
@@ -453,6 +458,14 @@ export async function processStreamingResponse(
     isCompacting,
     turnTail,
   });
+  // llama.cpp and Strata say how far they are in a long prompt when asked;
+  // asked only when someone will see it, and only of a server whose /props
+  // says it takes the field (J17)
+  const progressSink = promptProgressSinkFor(callbacks, !!isHeadless);
+  if (progressSink && (await requestsPromptProgress(model))) {
+    // Not an OpenAI field, so not in the SDK's type
+    (requestBody as unknown as Record<string, unknown>).return_progress = true;
+  }
   dumpPromptSegments({
     body: requestBody,
     systemMessage,
@@ -526,6 +539,15 @@ export async function processStreamingResponse(
         logger.debug("Stream aborted");
         break;
       }
+
+      // The server's prompt-reading update is not part of the reply; the
+      // first chunk that is not one means the reading is over
+      const progress = promptProgressOf(chunk);
+      if (progress) {
+        progressSink?.update(progress);
+        continue;
+      }
+      progressSink?.clear();
 
       // Track first token time
       firstTokenTime = trackFirstTokenTime(
@@ -618,6 +640,8 @@ export async function processStreamingResponse(
     }
 
     throw error;
+  } finally {
+    progressSink?.clear();
   }
 
   const toolCalls = Array.from(toolCallsMap.values());
