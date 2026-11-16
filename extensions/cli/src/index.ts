@@ -38,7 +38,7 @@ import { gracefulExit } from "./util/exit.js";
 import { logger } from "./util/logger.js";
 import { exitBecause } from "./util/processErrors.js";
 import { readStdinSync } from "./util/stdin.js";
-import { getVersion } from "./version.js";
+import { startupVersion } from "./webAgentVersion.js";
 
 // TUI lifecycle and two-stage exit state management
 let tuiUnmount: (() => void) | null;
@@ -151,7 +151,7 @@ program
   .description(
     "Continuous CLI - AI-powered development assistant. Starts an interactive session by default, use -p/--print for non-interactive output.",
   )
-  .version(getVersion(), "-v, --version", "Display version number");
+  .version(startupVersion(), "-v, --version", "Display version number");
 
 // Root command - chat functionality (default)
 // Add common options to the root command

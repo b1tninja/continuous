@@ -38,9 +38,21 @@ describe("E2E: Headless Mode - broken hook settings or permissions file", () => 
       timeout: 15000,
     });
 
+  // ~/.claude/settings.json is read (and so can be broken) only with the
+  // opt-in in the user's Continuous settings (D-023)
+  const optInToClaude = async () => {
+    const dir = path.join(context.testDir, ".continuous");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(dir, "settings.json"),
+      JSON.stringify({ hooks: { readClaudeSettings: true } }),
+    );
+  };
+
   it("exits 2 naming the file and the position when ~/.claude/settings.json is broken", async () => {
     const dir = path.join(context.testDir, ".claude");
     await fs.mkdir(dir, { recursive: true });
+    await optInToClaude();
     const file = path.join(dir, "settings.json");
     await fs.writeFile(file, '{ "apiKey": "sk-canary-value",\n}');
 
@@ -69,6 +81,7 @@ describe("E2E: Headless Mode - broken hook settings or permissions file", () => 
     const dir = path.join(context.testDir, ".claude");
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, "settings.json"), "{");
+    await optInToClaude();
 
     const result = await run(["--ignore-broken-config"]);
 

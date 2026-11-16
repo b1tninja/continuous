@@ -11,6 +11,7 @@ import {
 
 import { setHostResolver } from "../../util/networkAddress";
 import { resetWebConfigForTests, resolveWebConfig } from "../../util/webConfig";
+import { setWebAgentVersion } from "../../web/webHeaders";
 import {
   hitsFromResults,
   queryWithSite,
@@ -127,7 +128,6 @@ const CUSTOM_POST_FIXTURE = {
 
 const ctx = (fetchFn: never): WebSearchContext => ({
   fetchFn,
-  userAgent: "Continuous-User/2.28",
   limits: { maxBytes: 1 << 20, deadlineMs: 5000 },
 });
 
@@ -139,8 +139,12 @@ afterAll(() => setHostResolver(undefined));
 beforeEach(() => {
   guarded.calls.length = 0;
   resetWebConfigForTests("/nonexistent/continuous-test/config.yaml");
+  setWebAgentVersion("2.28.1");
 });
-afterEach(() => resetWebConfigForTests());
+afterEach(() => {
+  setWebAgentVersion(undefined);
+  resetWebConfigForTests();
+});
 
 describe("selection (SP-1, SR-1, SR-2, SR-6)", () => {
   it("is off by default: nothing set means no provider, no tool, no request", async () => {

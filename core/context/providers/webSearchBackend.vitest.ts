@@ -12,6 +12,7 @@ import { getConfigDependentToolDefinitions } from "../../tools";
 import { selectWebSearch } from "../../tools/webSearch/registry";
 import { setHostResolver } from "../../util/networkAddress";
 import { resetWebConfigForTests, resolveWebConfig } from "../../util/webConfig";
+import { setWebAgentVersion } from "../../web/webHeaders";
 import { contextProviderClassFromName } from ".";
 import {
   fetchSearchResults,
@@ -21,10 +22,12 @@ import {
 
 beforeAll(() => setHostResolver(async () => ["93.184.215.14"]));
 afterAll(() => setHostResolver(undefined));
-beforeEach(() =>
-  resetWebConfigForTests("/nonexistent/continuous-test/config.yaml"),
-);
+beforeEach(() => {
+  resetWebConfigForTests("/nonexistent/continuous-test/config.yaml");
+  setWebAgentVersion("2.28.4");
+});
 afterEach(() => {
+  setWebAgentVersion(undefined);
   vi.unstubAllEnvs();
   resetWebConfigForTests();
 });
@@ -102,7 +105,6 @@ test("queries only the configured endpoint, key as bearer, no identifying header
   );
   const items = await fetchSearchResults("hello", 1, fetchFn as any, {
     selection,
-    version: "2.28.4",
   });
   expect(items).toEqual([
     { name: "A", description: "https://a.example/", content: "aa" },

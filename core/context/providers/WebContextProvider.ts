@@ -5,7 +5,6 @@ import {
   ContextProviderExtras,
 } from "../..";
 
-import { productVersion } from "../../tools/webSearch/provider";
 import { modelToolFetch } from "../../util/modelToolFetch";
 
 import { fetchSearchResults } from "./webSearchBackend";
@@ -36,7 +35,6 @@ export default class WebContextProvider extends BaseContextProvider {
       // Not `extras.fetch`: the global request headers are not the search
       // endpoint's to receive
       modelToolFetch(extras.config ?? {}),
-      { version: await productVersion(extras.ide) },
     );
   }
 }

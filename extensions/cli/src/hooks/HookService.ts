@@ -10,6 +10,7 @@ import { logger } from "../util/logger.js";
 import { noticeBrokenConfig } from "../util/readPolicyFile.js";
 
 import { loadHooksConfig } from "./hookConfig.js";
+import { noticeSkippedClaudeHooks } from "./hookListing.js";
 import { runHooks } from "./hookRunner.js";
 import { BLOCKING_EVENTS } from "./types.js";
 import type { HookEventResult, HookInput, HooksConfig } from "./types.js";
@@ -63,6 +64,10 @@ export class HookService extends BaseService<HookServiceState> {
         `This project defines ${count} hook${count === 1 ? "" : "s"} that ${are} not running because ${has} not been trusted. Run \`continuous hooks\` to review ${it}.\n`,
       );
     }
+
+    // Hooks in ~/.claude no longer run unasked (D-023); say so once, and only
+    // to someone who has some.
+    noticeSkippedClaudeHooks(loaded.skippedClaudeHooks, this.cwd);
 
     const eventCount = Object.keys(loaded.hooks).length;
     const handlerCount = Object.values(loaded.hooks).reduce(

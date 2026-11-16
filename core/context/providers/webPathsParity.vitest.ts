@@ -226,10 +226,11 @@ describe("@web (the search backend)", () => {
       );
       expect(items[0].name).toBe("T");
       expectNoGlobalHeaders();
+      // UA-3: the product token without the info URL
       expect(calls[0].init.headers).toEqual({
         Accept: "application/json",
-        "User-Agent": "Continuous-User/0.0",
         Authorization: "Bearer search-key",
+        "User-Agent": expect.stringMatching(/^Continuous-User\/\d+\.\d+$/),
       });
       expect(getFetchLog().list()[0].purpose).toBe("search");
     } finally {
@@ -253,7 +254,7 @@ describe("@web (the search backend)", () => {
       expect(calls[1].url).toBe("https://other.example/s");
       expect(calls[1].init.headers).toEqual({
         Accept: "application/json",
-        "User-Agent": "Continuous-User/0.0",
+        "User-Agent": expect.stringMatching(/^Continuous-User\/\d+\.\d+$/),
       });
     } finally {
       vi.unstubAllEnvs();

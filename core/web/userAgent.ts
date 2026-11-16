@@ -6,8 +6,8 @@ import presetsFile from "./userAgentPresets.json";
 
 /**
  * The User-Agent choices for `web.userAgent` (plans/research/web-fetch-deep-dive.md,
- * section 3.4, as decided by the owner on 2026-11-15). Building the header and
- * sending it is WB17; this module only knows the choices and their strings.
+ * section 3.4, as decided by the owner on 2026-11-15). This module knows the
+ * choices and their strings; core/web/webHeaders.ts sends them (WB17).
  *
  * Browser presets live only in userAgentPresets.json, refreshed by a
  * maintainer with scripts/update-ua-presets.mjs once per release. Nothing
@@ -21,6 +21,18 @@ export const WEB_AGENT_INFO_URL =
 /** Product tokens, also the `robots.txt` tokens (RFC 9309 section 2.2.1: letters and hyphens only). */
 export const USER_PRODUCT_TOKEN = "Continuous-User";
 export const CRAWLER_PRODUCT_TOKEN = "Continuous-Crawler";
+
+/**
+ * The token a `robots.txt` check is made under. It never follows the preset:
+ * with a browser preset or a custom string the agent still checks robots as
+ * who it is (plans/research/web-fetch-large-pages-and-policy.md, section 10).
+ */
+export const ROBOTS_PRODUCT_TOKEN = USER_PRODUCT_TOKEN;
+
+/** The robots token for a purpose: `Continuous-Crawler` for the docs crawler, else `Continuous-User`. */
+export function robotsProductToken(purpose: UserAgentPurpose): string {
+  return purpose === "crawler" ? CRAWLER_PRODUCT_TOKEN : ROBOTS_PRODUCT_TOKEN;
+}
 
 /** `generic-agent`: says it is an automated client and names no product. */
 export const GENERIC_AGENT_USER_AGENT = "Mozilla/5.0 (compatible)";
@@ -58,10 +70,9 @@ export function majorMinor(version: string | undefined): string {
 }
 
 /**
- * `user`: a fetch made for the person (UA-1). `crawler`: the docs crawler
- * (UA-2). `search`: the person's own search provider, which gets the product
- * token without the info URL (UA-3): the person chose it, so it needs no page
- * explaining what the agent is.
+ * `user`: a fetch made for the person. `crawler`: the docs crawler. `search`:
+ * the person's own search backend, which gets the product token without the
+ * info URL (UA-3: the backend is the person's choice and needs no page).
  */
 export type UserAgentPurpose = "user" | "crawler" | "search";
 

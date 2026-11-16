@@ -51,7 +51,7 @@ This is a CLI tool for Continue Dev that provides an interactive AI-assisted dev
    - `fireHook.ts`: Convenience functions for firing events from integration points
    - `types.ts`: Claude Code-compatible type definitions for hook inputs/outputs
    - **Config locations** (lowest to highest precedence):
-     - `~/.claude/settings.json`, `~/.continue/settings.json` (user-global)
+     - `~/.claude/settings.json` (only with `hooks.readClaudeSettings: true` in the global `settings.json`), `~/.continuous/settings.json` (user-global)
      - `.claude/settings.json`, `.continue/settings.json` (project)
      - `.claude/settings.local.json`, `.continue/settings.local.json` (project-local)
    - **Exit code semantics**: 0 = proceed, 2 = block (stderr becomes feedback), other = non-blocking error

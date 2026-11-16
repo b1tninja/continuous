@@ -39,9 +39,10 @@ const seen = (name: string): any | undefined => {
 };
 
 function userHooks(hooks: unknown) {
-  fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+  // The user's Continuous settings file (CONTINUE_GLOBAL_DIR below)
+  fs.mkdirSync(path.join(home, ".continue"), { recursive: true });
   fs.writeFileSync(
-    path.join(home, ".claude", "settings.json"),
+    path.join(home, ".continue", "settings.json"),
     JSON.stringify({ hooks }),
   );
 }

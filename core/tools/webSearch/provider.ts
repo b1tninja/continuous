@@ -1,4 +1,4 @@
-import type { FetchFunction, IDE } from "../..";
+import type { FetchFunction } from "../..";
 
 /**
  * The web search provider layer (plans/research/web-search-providers.md,
@@ -72,8 +72,6 @@ export interface WebSearchContext {
   callId?: string;
   /** Body cap and total deadline; default: the person's web limits. */
   limits?: { maxBytes: number; deadlineMs: number };
-  /** The `User-Agent` value; `""` sends none. Default: `searchUserAgent()`. */
-  userAgent?: string;
 }
 
 /** Why a search failed, for `test()` and the outcomes of WB54. */
@@ -183,31 +181,6 @@ export function queryWithSite(
   return { q: `${query} site:${host}`, site: "query" };
 }
 
-/** The extension version for the User-Agent's major.minor; none when the IDE cannot say. */
-export async function productVersion(
-  ide: Pick<IDE, "getIdeInfo"> | undefined,
-): Promise<string | undefined> {
-  try {
-    return (await ide?.getIdeInfo())?.extensionVersion;
-  } catch {
-    return undefined;
-  }
-}
-
-/** The search User-Agent (UA-3) for the person's `web.userAgent`. */
-export async function searchUserAgent(
-  version: string | undefined,
-): Promise<string> {
-  const [{ userAgentFor }, { getWebConfig }] = await Promise.all([
-    import("../../web/userAgent"),
-    import("../../util/webConfig"),
-  ]);
-  return userAgentFor(getWebConfig().userAgent, {
-    purpose: "search",
-    version,
-  });
-}
-
 export interface SearchRequest {
   provider: string;
   url: URL;
@@ -240,11 +213,11 @@ export async function searchRequest(
       import("../../util/userFetchLimits"),
     ]);
   const limits = context.limits ?? readUserFetchLimits();
-  const userAgent = context.userAgent ?? (await searchUserAgent(undefined));
   const hasBody = request.json !== undefined;
+  // No User-Agent here: the guard sets the search one (UA-3, purpose
+  // `search` in core/web/webHeaders.ts) and no caller picks its own
   const headers: Record<string, string> = {
     Accept: "application/json",
-    ...(userAgent ? { "User-Agent": userAgent } : {}),
     ...(hasBody ? { "Content-Type": "application/json" } : {}),
     ...request.headers,
   };

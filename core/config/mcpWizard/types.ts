@@ -111,4 +111,9 @@ export interface McpServerDraft {
   headers?: McpDraftValue[];
   /** Connection timeout in milliseconds, written as `connectionTimeout`. */
   connectionTimeoutMs?: number;
+  /**
+   * Indexes of `args` that are credentials: each is stored as a secret and
+   * the file gets a reference in its place, as for env and headers.
+   */
+  secretArgs?: number[];
 }

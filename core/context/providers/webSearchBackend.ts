@@ -1,8 +1,5 @@
 import { ContextItem, FetchFunction } from "../..";
-import {
-  searchUserAgent,
-  type WebSearchQuery,
-} from "../../tools/webSearch/provider";
+import type { WebSearchQuery } from "../../tools/webSearch/provider";
 import {
   runWebSearch,
   selectWebSearch,
@@ -34,8 +31,6 @@ export function webSearchUnavailableReason(
 
 export interface FetchSearchOptions {
   callId?: string;
-  /** The product version, for the User-Agent's major.minor. */
-  version?: string;
   freshness?: WebSearchQuery["freshness"];
   site?: string;
   /** Default: the provider in force (`selectWebSearch()`). */
@@ -64,11 +59,7 @@ export const fetchSearchResults = async (
       freshness: options.freshness,
       site: options.site,
     },
-    {
-      fetchFn,
-      callId: options.callId,
-      userAgent: await searchUserAgent(options.version),
-    },
+    { fetchFn, callId: options.callId },
     options.selection,
   );
   return result.hits.map((hit) => ({
