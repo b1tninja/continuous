@@ -57,7 +57,13 @@ export function majorMinor(version: string | undefined): string {
   return m ? `${m[1]}.${m[2]}` : "0.0";
 }
 
-export type UserAgentPurpose = "user" | "crawler";
+/**
+ * `user`: a fetch made for the person (UA-1). `crawler`: the docs crawler
+ * (UA-2). `search`: the person's own search provider, which gets the product
+ * token without the info URL (UA-3): the person chose it, so it needs no page
+ * explaining what the agent is.
+ */
+export type UserAgentPurpose = "user" | "crawler" | "search";
 
 /**
  * The header value for a setting, or `""` for none. An unknown preset falls
@@ -75,5 +81,8 @@ export function userAgentFor(
   if (browser) return browser.userAgent;
   const token =
     options.purpose === "crawler" ? CRAWLER_PRODUCT_TOKEN : USER_PRODUCT_TOKEN;
-  return `${token}/${majorMinor(options.version)} (+${WEB_AGENT_INFO_URL})`;
+  const product = `${token}/${majorMinor(options.version)}`;
+  return options.purpose === "search"
+    ? product
+    : `${product} (+${WEB_AGENT_INFO_URL})`;
 }

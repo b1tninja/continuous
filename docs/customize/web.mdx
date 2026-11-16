@@ -11,7 +11,7 @@ Every place where Continuous fetches a web page, what each request sends, and th
 | `fetch_url_content` tool (IDE)       | the model                                          | guarded fetch: address pinned, each redirect re-checked        | 2 MiB after decompression, 20 s in all, 5 redirects, 20,000 characters to the model                              |
 | `Fetch` tool (`cn`)                  | the model                                          | the same guarded fetch                                         | as above; characters cut again at `CONTINUE_CLI_FETCH_MAX_OUTPUT_LENGTH` (default 20,000)                        |
 | `@url` context provider              | you                                                | the shared client, with node-fetch's own redirect handling     | 2 MiB, 20 s, content-type checks; no character cut                                                               |
-| `search_web` tool and `@web`         | the model (tool) or your message (`@web`)          | `GET <search URL>?q=…&format=json`                             | top 5 results, 8,000 characters each. Off unless a search endpoint is configured ([Web search](./web-search))   |
+| `search_web` tool and `@web`         | the model (tool) or your message (`@web`)          | the search provider in `web.search`, through the guarded fetch | top 5 results (`web.search.maxResults`), 8,000 characters each. Off until you pick a provider ([Web search](./web-search)) |
 | Docs crawler (Cheerio)               | a `docs:` entry in your config                     | guarded fetch, start host only                                 | depth 4, 1,000 pages, batches of 50 requests                                                                     |
 | Docs crawler (Chromium)              | a `docs:` entry, with `useChromiumForDocsCrawling` | a headless Chromium the extension downloads after asking you   | no navigation timeout                                                                                            |
 | Docs crawler (GitHub)                | a `docs:` entry on github.com                      | the GitHub API                                                 | none                                                                                                             |
@@ -26,7 +26,7 @@ Opening a link you click hands the URL to your system browser. An MCP server tha
 | ------------------------------ | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
 | Fetch tools, `@url`, favicon, Cheerio crawler | `node-fetch`                                                    | `Accept: */*`, `Accept-Encoding: gzip, deflate, br`. `@url` also sends every `requestOptions.headers` value; the tools do not |
 | Chromium crawler               | a Chrome 88 browser string                                                     | Chromium's own                                                                                                               |
-| Search backend                 | `node-fetch`                                                                   | `Accept: application/json`, `Authorization: Bearer <key>` when `CONTINUOUS_WEB_SEARCH_KEY` is set                            |
+| Search provider                | `Continuous-User/<major>.<minor>`, with no info URL (or your `web.userAgent` preset) | `Accept: application/json`, `Authorization: Bearer <key>` when `web.search.apiKey` is set; `Content-Type: application/json` for a `custom` POST |
 | GitHub crawler                 | Octokit's                                                                      | your GitHub token, if the docs entry has one                                                                                 |
 
 No request sends cookies, a `Referer`, a machine id, your operating system or your editor. The fetch tools refuse a URL with a user name or password in it, or one that carries something shaped like a secret. For the fetch tools, a URL that resolves to a private, loopback or link-local address asks first, and a redirect from a public address to a private one is refused.
@@ -87,7 +87,9 @@ Every key is optional. A malformed value is ignored with a notice in the config 
 | `crawler.contact`            | none                     | sent by the docs crawler as `From:`, only when set                                                                                   | accepted; sent from WB19                                         |
 | `crawler.concurrencyPerHost` | 2                        | requests in flight to one host                                                                                                       | accepted; the crawler still batches 50 until WB19                |
 | `crawler.minDelayMs`         | 1000                     | delay between two requests to one host, or `Crawl-delay` if larger                                                                   | accepted; from WB19                                              |
-| `search.provider`, `search.url`, `search.apiKey` | none | the search backend. Replaces `CONTINUOUS_WEB_SEARCH_URL` and `CONTINUOUS_WEB_SEARCH_KEY`                                       | accepted; the backend still reads the variables (WB1)            |
+| `search.provider`, `search.url`, `search.apiKey` | none | the search provider (`searxng` or `custom` in this release; `off`), its endpoint and a `${{ secrets.NAME }}` key. Replaces `CONTINUOUS_WEB_SEARCH_URL` and `CONTINUOUS_WEB_SEARCH_KEY`. See [Web search](./web-search) | in force (WB53); a key typed in is read with a warning |
+| `search.maxResults`, `search.safeSearch` | 5, none | results per search (1 to 10) and the safe-search level, where the provider has one | in force (WB53) |
+| `search.fallback`, `search.fallbackUrl`, `search.fallbackApiKey`, `search.maxPerTurn`, `search.monthlyLimit`, `search.country`, `search.native`, `search.custom`, `search.mcp` | none | the rest of the search block ([Web search](./web-search#settings)); `custom.method` is in force | accepted; read from WB54 to WB64 |
 
 The browser presets are Chrome, Edge and Firefox on Windows, macOS and Linux (`chrome-windows`, `edge-macos`, `firefox-linux` and so on) and `safari-macos`. They are listed, with the date they were last checked, in `core/web/userAgentPresets.json`, which a maintainer refreshes once per release with `node scripts/update-ua-presets.mjs`. Continuous never downloads presets.
 
@@ -101,7 +103,7 @@ Only your own `config.yaml` (in the global Continuous folder) may loosen a web s
 
 | Set only in your own config.yaml                                                                      | Any config may tighten                                                                                  |
 | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `userAgent`, `acceptLanguage`, `hosts`, `reputation.providers`, `crawler.contact`, `search`, `policy` | `enabled: false`                                                                                        |
+| `userAgent`, `acceptLanguage`, `hosts`, `reputation.providers`, `crawler.contact`, `search` (except the right-hand column), `policy` | `enabled: false`; `search.provider: off`, a lower `search.maxResults`, `search.maxPerTurn` or `search.monthlyLimit`, a stricter `search.safeSearch` |
 | `enabled: true` over a `false` of yours                                                                | `requireHttps: true`                                                                                    |
 | `robots: ignore`, or any mode looser than yours                                                       | a stricter `robots` (`respect` over `ask`)                                                              |
 | `spotlight: false` over a `true` of yours                                                             | `spotlight: true`                                                                                       |
@@ -118,7 +120,7 @@ A repository must not be able to make the agent pretend to be a browser, send a 
 | `toolPermissions.auto.environment.fetchTimeoutSeconds`  | `web.limits.timeoutSeconds` | yes; deprecation notice      |
 | `CONTINUOUS_SPOTLIGHT_UNTRUSTED=1`                      | `web.spotlight: true`     | yes, by the fetch tool itself  |
 | `CONTINUE_CLI_FETCH_MAX_OUTPUT_LENGTH`                  | `web.limits.modelChars`   | yes, by `cn`'s `Fetch` itself  |
-| `CONTINUOUS_WEB_SEARCH_URL`, `CONTINUOUS_WEB_SEARCH_KEY` | `web.search`             | yes, by the search backend     |
+| `CONTINUOUS_WEB_SEARCH_URL`, `CONTINUOUS_WEB_SEARCH_KEY` | `web.search.url`, `web.search.apiKey` | yes, while `web.search` names no provider and no URL; deprecation notice |
 
 The old spelling still works. When both are set, the `web:` key wins. A deprecation notice appears once per editor or `cn` process in the config errors (the IDE) or the log (`cn`), and every time in `continuous doctor config`, but only for an old key whose `web:` replacement is already in force; the variables are announced once their readers move to `web:`.
 
@@ -128,6 +130,7 @@ Built:
 
 - The guarded fetch for the tools: http and https only, no user names in URLs, a secret scan on the URL, the address resolved once and pinned, every redirect re-checked, public-to-private redirects refused, the byte cap and the deadline.
 - The `web:` section: schema, defaults, the tighten-only rule, the old keys as aliases, and `web.limits.maxBytes` and `web.limits.timeoutSeconds` in force.
+- The web search provider layer (WB53): `web.search` in force for `search_web` and `@web`, with the `searxng` and `custom` providers, the search User-Agent and the tighten-only rule for search.
 
 Planned, in the order they can land:
 

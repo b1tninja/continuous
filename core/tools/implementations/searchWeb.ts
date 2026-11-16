@@ -1,19 +1,18 @@
 import { ToolImpl } from ".";
 import { fetchSearchResults } from "../../context/providers/webSearchBackend";
 import { getStringArg } from "../parseArgs";
+import { productVersion } from "../webSearch/provider";
 
 const DEFAULT_WEB_SEARCH_CHAR_LIMIT = 8000;
 
 export const searchWebImpl: ToolImpl = async (args, extras) => {
   const query = getStringArg(args, "query");
 
-  const webResults = await fetchSearchResults(
-    query,
-    5,
-    extras.fetch,
-    undefined,
-    { callId: extras.toolCallId },
-  );
+  // The provider in force (web.search); the count is web.search.maxResults, default 5
+  const webResults = await fetchSearchResults(query, undefined, extras.fetch, {
+    callId: extras.toolCallId,
+    version: await productVersion(extras.ide),
+  });
 
   // Track truncated results
   const truncatedResults: string[] = [];

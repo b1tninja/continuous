@@ -15,6 +15,7 @@ import {
 } from "../../util/fetchFavicon";
 import { getFetchLog, resetFetchLogForTests } from "../../util/fetchRecord";
 import { setHostResolver } from "../../util/networkAddress";
+import { resetWebConfigForTests } from "../../util/webConfig";
 
 /**
  * WB23: `@url`, the favicon lookup, `@web` and `@google` get the fetch tool's
@@ -100,10 +101,15 @@ function expectNoGlobalHeaders() {
 }
 
 beforeAll(() => setHostResolver(async () => ["93.184.215.14"]));
-afterAll(() => setHostResolver(undefined));
+afterAll(() => {
+  setHostResolver(undefined);
+  resetWebConfigForTests();
+});
 beforeEach(() => {
   calls.length = 0;
   resetFetchLogForTests();
+  // Never the developer's own config.yaml: the search provider comes from the environment here
+  resetWebConfigForTests("/nonexistent/continuous-test/config.yaml");
 });
 
 describe("@url", () => {
@@ -222,6 +228,7 @@ describe("@web (the search backend)", () => {
       expectNoGlobalHeaders();
       expect(calls[0].init.headers).toEqual({
         Accept: "application/json",
+        "User-Agent": "Continuous-User/0.0",
         Authorization: "Bearer search-key",
       });
       expect(getFetchLog().list()[0].purpose).toBe("search");
@@ -244,7 +251,10 @@ describe("@web (the search backend)", () => {
         await import("./WebContextProvider");
       await new WebContextProvider({}).getContextItems("", extras("q"));
       expect(calls[1].url).toBe("https://other.example/s");
-      expect(calls[1].init.headers).toEqual({ Accept: "application/json" });
+      expect(calls[1].init.headers).toEqual({
+        Accept: "application/json",
+        "User-Agent": "Continuous-User/0.0",
+      });
     } finally {
       vi.unstubAllEnvs();
     }
