@@ -38,11 +38,17 @@ export function autoAnswerFor(
   };
 }
 
-/** The compact line for a closed question: "Auto-answered: <question> -> <answer>". */
+/**
+ * The compact line for a closed question: "Auto-answered: <question> -> <answer>".
+ * One line: the question and the answer are both the model's text, so a line
+ * break in either would let it write further lines of the record itself.
+ */
 export function autoAnsweredLine(question: string, answer: string): string {
-  const clip = (t: string, n: number) =>
-    t.length > n ? `${t.slice(0, n - 1)}…` : t;
-  return `Auto-answered: ${clip(question.replace(/\s+/g, " "), 100)} -> ${clip(answer, 100)}`;
+  const clip = (t: string, n: number) => {
+    const flat = t.replace(/\s+/g, " ");
+    return flat.length > n ? `${flat.slice(0, n - 1)}…` : flat;
+  };
+  return `Auto-answered: ${clip(question, 100)} -> ${clip(answer, 100)}`;
 }
 
 /** What a person at Questions: IDGAF is shown instead of a question. */

@@ -71,7 +71,7 @@ export function isBaseName(value: string | null): value is BaseName {
 /**
  * The Custom policy editor: start from a preset or from what is set now,
  * change the levels and the settings beside them, edit the Never, Ask, Always
- * and Always-on lists, then review every change and save. permissions.yaml is
+ * and locked-rule lists, then review every change and save. permissions.yaml is
  * written once by core's writer; each config.yaml change goes through the rule
  * editor's own checks, confirmation and audit, one at a time.
  */
@@ -336,9 +336,9 @@ function BaseStep({
           data-testid="custom-idgaf-note"
         >
           IDGAF is for one session: it is never saved, and the file keeps the
-          level it had. At IDGAF every rule is ignored, Always-on Never
-          included: the call runs and the audit trail records the rule that
-          would have stopped it.
+          level it had. At IDGAF every rule is ignored, locked rules included:
+          the call runs and the audit trail records the rule that would have
+          stopped it.
         </p>
       )}
     </fieldset>

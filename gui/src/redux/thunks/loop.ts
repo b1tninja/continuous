@@ -364,11 +364,11 @@ export const leaveLoopMode = createAsyncThunk<void, MessageModes, ThunkApiType>(
 
 /**
  * A plan presented while the person is in Loop is the first plan of the run,
- * and Plan edits decides whether it goes on by itself: Permissive and IDGAF
- * start the loop, Manual and Cautious leave the plan card for the person
- * (Build or Build in a loop), and Automatic waits too, as no reviewer for
- * plans exists yet. A loop already going is left alone: its own re-plan is
- * accepted as before.
+ * and Plan edits decides whether it goes on by itself: Automatic, Permissive
+ * and IDGAF start the loop (no reviewer for plans exists yet, so Automatic
+ * works as Permissive, its cap on new to-dos included), and Manual and
+ * Cautious leave the plan card for the person (Build or Build in a loop). A
+ * loop already going is left alone: its own re-plan is accepted as before.
  */
 export const startLoopIfRequested = createAsyncThunk<
   boolean,

@@ -17,7 +17,10 @@ In the terminal UI:
 /export                  # Markdown, named after the title and today's date, in the current folder
 /export notes/run.md
 /export run.html --force
+/export notes/run.md --raw   # unmasked, with a warning
 ```
+
+Each export says how many values it masked, for example `3 values masked.` `continuous export` prints that line on stderr, so stdout holds only the transcript.
 
 | Option        | Meaning                                                                       |
 | ------------- | ----------------------------------------------------------------------------- |
@@ -25,6 +28,7 @@ In the terminal UI:
 | `--out <file>`| Write to the file instead of stdout.                                          |
 | `--force`     | Replace the file if it exists. Without it the export refuses and writes nothing. |
 | `--reasoning` | Include the model's reasoning, which is left out by default.                  |
+| `--raw`       | Mask nothing. A warning says so. Use it only for a file you keep to yourself. |
 
 ## What a transcript holds
 
@@ -36,4 +40,6 @@ In the terminal UI:
 
 The HTML file is the same text, escaped, in one page with no script and a content security policy that blocks anything from loading.
 
-The session file itself, which `/import` reads, is still written by `/export --json`. That file is **not** masked.
+## The session file
+
+The session file itself, which `/import` reads, is written by `/export --json` (pick a session in the list). Every text in it goes through the secret scanner's at-rest rules, the ones that keep secrets out of `dev_data`: a value it recognises becomes `[REDACTED:<kind>:xxxx]`, and the line after the export says how many were replaced. The file still imports, with the placeholders in place of the values. `/export --json --raw` writes the session as it is, with a warning.

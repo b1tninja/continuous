@@ -1,0 +1,3 @@
+```
+npx @modelcontextprotocol/inspector uvx mcp-server-sentry --auth-token YOUR_SENTRY_TOKEN
+```

@@ -108,8 +108,14 @@ export function stripWindowsPathAliases(p: string): string {
     .join("/");
 }
 
-/** An 8.3 short name (`GITHUB~1`) inside a path. A bare `HEAD~1` has no slash. */
-const WINDOWS_SHORT_NAME = /^[A-Za-z0-9_$]{1,6}~[0-9](?:\.[A-Za-z0-9]{1,3})?$/;
+/**
+ * An 8.3 short name (`GITHUB~1`) inside a path. A bare `HEAD~1` has no slash.
+ * A short name keeps a `-` and the other punctuation 8.3 allows
+ * (`.git-credentials` is `GIT-CR~1`, `.vault-token` is `VAULT-~1`), and the
+ * number grows past one digit when many names share a prefix (`GIT-C~10`).
+ */
+const WINDOWS_SHORT_NAME =
+  /^[A-Za-z0-9_$!#%&'()@^`{}-]{1,6}~[0-9]{1,6}(?:\.[A-Za-z0-9_$!#%&'()@^`{}-]{1,3})?$/;
 
 export function hasWindowsShortName(p: string): boolean {
   if (!p.includes("/")) return false;

@@ -25,6 +25,7 @@ import { handleLLMError } from "../util/errorHandling";
 import { showTutorial } from "../util/tutorial";
 import { readSessionIdgaf, writeSessionIdgaf } from "../util/sessionIdgaf";
 import { getExtensionUri } from "../util/vscode";
+import { instructionFilesState } from "../util/workspaceConfigTrust";
 import { VsCodeIde } from "../VsCodeIde";
 import { VsCodeWebviewProtocol } from "../webviewProtocol";
 
@@ -270,6 +271,11 @@ export class VsCodeMessenger {
           : await writeSessionIdgaf(store, session, msg.data.areas);
       return { areas };
     });
+
+    // Instruction file notices and the Restricted Mode Load (X20)
+    this.onWebview("instructionFiles/state", async (msg) =>
+      instructionFilesState(msg.data?.load, await this.configHandlerPromise),
+    );
 
     this.onWebview("session/share", async (msg) => {
       await vscode.commands.executeCommand(

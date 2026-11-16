@@ -7,6 +7,7 @@ import {
   createSlice,
 } from "@reduxjs/toolkit";
 import { JSONContent } from "@tiptap/react";
+import type { CompactionPlan } from "core/util/compactionPlan";
 import {
   ApplyState,
   AssistantChatMessage,
@@ -44,7 +45,7 @@ import { NEW_SESSION_TITLE } from "core/util/constants";
 import {
   DROPPED_PROMPT_MARKER,
   keepLatestPromptOnly,
-  withoutPrompt,
+  withoutPromptKeepingHash,
 } from "core/util/promptLogs";
 import { restoreLoop } from "core/util/loopMode";
 import {
@@ -237,6 +238,84 @@ export function handleStreamingToolCallUpdates(
   }
 }
 
+/**
+ * Planned compaction (C105): the summary of a plan's span, made in the
+ * background while the person was idle (thunks/prepareCompaction.ts). It is
+ * used only while `planId` is the current plan's id, so any edit to the span
+ * makes it unusable.
+ */
+export interface PreparedCompaction {
+  sessionId: string;
+  planId: string;
+  spanStart: number;
+  spanEnd: number;
+  status: "running" | "ready";
+  /** The request to abort while running. */
+  requestId?: string;
+  /** Set when ready: what "Compact now" saves on item `spanEnd - 1`. */
+  summary?: string;
+  preparedAt?: number;
+  /**
+   * The pre-warm of the compacted prompt (C106): "done" when the local server
+   * has read it, so applying the summary re-reads nothing; "skipped" with why.
+   */
+  prewarm?: {
+    status: "running" | "done" | "skipped";
+    requestId?: string;
+    detail?: string;
+  };
+  /** "Not now": the summary is not applied at the next turn (Compact now still uses it). */
+  dismissed?: boolean;
+}
+
+/**
+ * The forced-path hold (C108, util/compactionHold.ts): a message that would
+ * take the prompt past the force threshold with no summary ready waits here
+ * until the person chooses Compact now or Continue anyway.
+ */
+export interface CompactionHoldState {
+  planId: string;
+  /** Tokens after the head the forced drop would read again */
+  rereadTokens: number;
+  /** A summary is ready: Compact now saves it with no request */
+  prepared?: boolean;
+  editorState: JSONContent;
+  modifiers: InputModifiers;
+  index?: number;
+}
+
+/**
+ * Saves a prepared summary on item `index`, as core's compactConversation
+ * does, and resets what a reloaded session starts without (loadSession,
+ * newSession): the prompt cache record, the held tool list and the
+ * reasoning cut. Shared by the reducer and the pre-warm (C106), so the
+ * pre-warmed request and the next real one are built from the same state.
+ */
+export function applySummaryToSession(
+  state: SessionState,
+  index: number,
+  summary: string,
+): void {
+  const item = state.history[index];
+  if (!item) return;
+  state.history[index] = {
+    ...item,
+    conversationSummary: summary,
+    // Reasoning minted before this point saw the summarised turns (C104)
+    conversationSummaryHistoryLength: state.history.length,
+  };
+  state.promptCache = { ...INITIAL_PROMPT_CACHE_STATE };
+  state.sentToolList = undefined;
+  state.applyToolChangesNext = undefined;
+  state.toolChangeChoiceMade = undefined;
+  state.thinkingCutAt = undefined;
+  state.isPruned = false;
+  state.contextRemovalUndo = undefined;
+  state.compactionPlan = undefined;
+  state.preparedCompaction = undefined;
+  state.compactionHold = undefined;
+}
+
 // We need this to handle reorderings (e.g. a mid-array deletion) of the messages array.
 // The proper fix is adding a UUID to all chat messages, but this is the temp workaround.
 export type ChatHistoryItemWithMessageId = ChatHistoryItem & {
@@ -344,6 +423,20 @@ type SessionState = {
   usage?: SessionUsage;
   inlineErrorMessage?: InlineErrorMessageType;
   compactionLoading: Record<number, boolean>; // Track compaction loading by message index
+  /**
+   * Planned compaction (C103): the plan for this conversation, passed back to
+   * the planner so its boundary stays put. Kept by prepareCompaction while
+   * nothing streams. Not saved: a loaded session plans again.
+   */
+  compactionPlan?: CompactionPlan;
+  /** The summary prepared for `compactionPlan` (C105). Not saved. */
+  preparedCompaction?: PreparedCompaction;
+  /** A message held before a forced re-read (C108). Not saved. */
+  compactionHold?: CompactionHoldState;
+  /** The plan whose hold was answered with Continue anyway: not held again. */
+  compactionHoldContinued?: string;
+  /** The plan whose prepared notice said pre-warm is off: said once a session. */
+  prewarmOffNoted?: string;
   /** Pre-edit file snapshots for "Restore to here"; see core/util/checkpoints.ts */
   checkpoints: TurnCheckpoint[];
   /** The agent's task list, saved with the session; see core/util/taskPlan.ts */
@@ -444,11 +537,11 @@ export const sessionSlice = createSlice({
         if (
           item.promptLogs?.some((log) => log.prompt !== DROPPED_PROMPT_MARKER)
         ) {
-          item.promptLogs = item.promptLogs.map(withoutPrompt);
+          item.promptLogs = item.promptLogs.map(withoutPromptKeepingHash);
         }
       }
       const added = payload.map((log, i) =>
-        i === payload.length - 1 ? log : withoutPrompt(log),
+        i === payload.length - 1 ? log : withoutPromptKeepingHash(log),
       );
       lastMessage.promptLogs = lastMessage.promptLogs
         ? lastMessage.promptLogs.concat(added)
@@ -1161,6 +1254,12 @@ export const sessionSlice = createSlice({
       state.applyToolChangesNext = undefined;
       state.toolChangeChoiceMade = undefined;
       state.thinkingCutAt = undefined;
+      // A plan and its summary belong to the conversation they were made for
+      state.compactionPlan = undefined;
+      state.preparedCompaction = undefined;
+      state.compactionHold = undefined;
+      state.compactionHoldContinued = undefined;
+      state.prewarmOffNoted = undefined;
       state.usage = payload?.usage;
       // A different conversation shares nothing with the cached one: its size,
       // timing, misses and what Auto learned all start over. Each conversation
@@ -1708,6 +1807,47 @@ export const sessionSlice = createSlice({
       state.newestToolbarPreviewForInput[payload.inputId] =
         payload.contextItemId;
     },
+    setCompactionPlan: (
+      state,
+      { payload }: PayloadAction<CompactionPlan | undefined>,
+    ) => {
+      state.compactionPlan = payload;
+    },
+    setPreparedCompaction: (
+      state,
+      { payload }: PayloadAction<PreparedCompaction | undefined>,
+    ) => {
+      state.preparedCompaction = payload;
+    },
+    /** Saves a prepared summary at once, with no request (C105, C108). */
+    applyPreparedSummary: (
+      state,
+      { payload }: PayloadAction<{ index: number; summary: string }>,
+    ) => {
+      applySummaryToSession(state, payload.index, payload.summary);
+    },
+    /** "Not now" on the prepared notice. */
+    dismissPreparedCompaction: (state) => {
+      if (state.preparedCompaction) state.preparedCompaction.dismissed = true;
+    },
+    setCompactionHold: (
+      state,
+      { payload }: PayloadAction<CompactionHoldState | undefined>,
+    ) => {
+      state.compactionHold = payload;
+    },
+    /** The prepared notice said pre-warm is off, for this plan. */
+    notePrewarmOff: (state, { payload }: PayloadAction<string>) => {
+      state.prewarmOffNoted ??= payload;
+    },
+    /** Continue anyway: the plan's later turns are not held again. */
+    continueAfterCompactionHold: (
+      state,
+      { payload }: PayloadAction<string>,
+    ) => {
+      state.compactionHoldContinued = payload;
+      state.compactionHold = undefined;
+    },
     setCompactionLoading: (
       state,
       action: PayloadAction<{ index: number; loading: boolean }>,
@@ -1873,6 +2013,13 @@ export const {
   setIsPruned,
   setContextPercentage,
   setCompactionLoading,
+  setCompactionPlan,
+  setPreparedCompaction,
+  applyPreparedSummary,
+  dismissPreparedCompaction,
+  setCompactionHold,
+  continueAfterCompactionHold,
+  notePrewarmOff,
 } = sessionSlice.actions;
 
 export const { selectIsGatheringContext } = sessionSlice.selectors;

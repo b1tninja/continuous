@@ -11,6 +11,7 @@ import {
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCompactionCacheNote } from "../../hooks/useCompactionCacheNote";
+import { useCompactionEstimate } from "../../hooks/useCompactionEstimate";
 import { useContextBreakdown } from "../../hooks/useContextBreakdown";
 import { useLastRequestContext } from "../../hooks/useLastRequestContext";
 import { useNow } from "../../hooks/useNow";
@@ -268,6 +269,7 @@ function ContextPanel({
   const removalUndo = useAppSelector((s) => s.session.contextRemovalUndo);
   const compactConversation = useCompactConversation();
   const compactionNote = useCompactionCacheNote();
+  const compactionEstimate = useCompactionEstimate();
   const now = useNow();
   const { breakdown } = useContextBreakdown();
 
@@ -329,7 +331,8 @@ function ContextPanel({
       {breakdown.pruneAtTokens !== undefined && (
         <span className="text-description-muted">
           Past {formatTokens(breakdown.pruneAtTokens)} tokens (the line on the
-          bar) the oldest messages are left out of each request.
+          bar) a block of the oldest messages is left out, all at once, so the
+          turns after it can reuse the prompt cache.
         </span>
       )}
 
@@ -409,6 +412,15 @@ function ContextPanel({
       <SessionAttachments />
 
       <SessionFileNote />
+
+      {history.length > 0 && compactionEstimate && (
+        <span
+          className="text-description-muted"
+          data-testid="context-compact-estimate"
+        >
+          {compactionEstimate.line}
+        </span>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <button

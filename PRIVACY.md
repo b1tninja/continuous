@@ -18,7 +18,7 @@ Everything lives under the global folder, `~/.continuous` (copied from `~/.conti
 
 New session and log files are written owner-only, and secrets the scanner recognises are masked before they reach disk. This is a safety net, not a guarantee: do not paste secrets into prompts.
 
-**Retention.** Nothing deletes by itself. `continuous clean` lists, and with `--yes` deletes, sessions older than 30 days, logs older than 14 days and `dev_data` older than 90 days; `--older-than 7d` sets one age for all. It does not securely erase: SSDs, snapshots and backups can keep copies. **Continuous: Clean up old sessions** (`continuous sessions clean`) removes the full prompts earlier releases stored in sessions and dev data; it asks first and keeps the originals in `cleanup-backups/` until you delete them. The audit trail has its own retention setting (30 days by default, `audit.retentionDays`).
+**Retention.** Nothing deletes by itself. `continuous clean` lists, and with `--yes` removes, sessions older than 30 days (to the trash, restorable for 7 days), logs older than 14 days and `dev_data` older than 90 days; `--older-than 7d` sets one age for all. It does not securely erase: SSDs, snapshots and backups can keep copies. **Continuous: Clean up old sessions** (`continuous sessions clean`) removes the full prompts earlier releases stored in sessions and dev data; it asks first and keeps the originals in `cleanup-backups/` until you delete them. The audit trail has its own retention setting (30 days by default, `audit.retentionDays`).
 
 ## Sent to the model providers you choose
 

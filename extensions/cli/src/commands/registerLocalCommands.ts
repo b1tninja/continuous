@@ -3,6 +3,7 @@ import type { Command } from "commander";
 import { registerCleanCommand } from "./clean.js";
 import { registerModelsCommand } from "./models.js";
 import { registerPlanCommand } from "./plan.js";
+import { registerMcpCommand } from "./registerMcpCommand.js";
 import { registerSecretsCommand } from "./secrets.js";
 import { registerSessionsCommand } from "./sessionsClean.js";
 
@@ -12,7 +13,8 @@ import { registerSessionsCommand } from "./sessionsClean.js";
  * product's own persisted files, dry run unless --yes), `sessions clean`
  * (old prompt logs out of saved sessions, dry run unless --yes) and `plan`
  * (`plan list` / `plan build`) and `models` (`models refresh` / `models list`,
- * the one explicit request for OpenRouter's public model list). Kept out of index.ts to hold its line limit.
+ * the one explicit request for OpenRouter's public model list) and `mcp`
+ * (add, add-json, list, test and remove MCP servers in config.yaml). Kept out of index.ts to hold its line limit.
  */
 export function registerLocalCommands(program: Command): void {
   registerSecretsCommand(program);
@@ -20,4 +22,5 @@ export function registerLocalCommands(program: Command): void {
   registerSessionsCommand(program);
   registerPlanCommand(program);
   registerModelsCommand(program);
+  registerMcpCommand(program);
 }

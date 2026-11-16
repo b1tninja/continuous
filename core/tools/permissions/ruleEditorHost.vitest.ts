@@ -111,7 +111,7 @@ describe("the written dialect", () => {
 });
 
 describe("refusal in the page's words", () => {
-  it("refuses an Always rule that an always-on rule already refuses", () => {
+  it("refuses an Always rule that a locked rule already refuses", () => {
     const msg = refusalFor({
       decision: "allow",
       rule: "runTerminalCommand(rm -rf build*)",
@@ -123,7 +123,7 @@ describe("refusal in the page's words", () => {
         },
       ],
     });
-    expect(msg).toMatch(/Always-on rule/);
+    expect(msg).toMatch(/a locked rule/);
     expect(msg).toMatch(/Never/);
     expect(msg).toMatch(/Nothing was changed/);
   });

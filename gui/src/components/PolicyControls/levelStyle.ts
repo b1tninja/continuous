@@ -49,6 +49,7 @@ export const CHIP =
 /**
  * What the top-level chip's tooltip and description say. The chip and the area
  * selectors already show which areas are at IDGAF and that nothing asks, so
- * this names only the part that is easy to miss: rules stop applying too.
+ * this names only the part that is easy to miss: rules stop applying too,
+ * the locked ones included.
  */
-export const IDGAF_SENTENCE = "Every rule is ignored.";
+export const IDGAF_SENTENCE = "Every rule is ignored, locked rules included.";

@@ -9,6 +9,12 @@ import {
   renderContextItems,
   renderContextItemsWithStatus,
 } from "../util/messageContent";
+import {
+  type ContextClass,
+  contextLimits,
+  countingSafetyBuffer,
+  outputReserve,
+} from "./contextThresholds";
 import { chatMessageIsEmpty } from "./messages";
 import type { PromptSegment } from "./promptSegments";
 
@@ -67,15 +73,6 @@ export const CHARS_PER_TOKEN = 4;
 /** What core counts for one image (core/llm/countTokens.ts countImageTokens). */
 export const IMAGE_TOKENS = 1024;
 /**
- * The reserve core keeps out of the input budget before it drops old messages
- * (core/llm/countTokens.ts compileChatMessages): a counting safety buffer of
- * 2 percent of the window, at most 1,000 tokens, and up to 1,000 tokens for
- * the reply. A test holds these to core's `getTokenCountingBufferSafety`.
- */
-export const SAFETY_BUFFER_MAX = 1000;
-export const SAFETY_BUFFER_FRACTION = 0.02;
-export const MIN_RESPONSE_TOKENS = 1000;
-/**
  * A provider count more than this many times the estimate is not shared out:
  * the estimate does not describe that request (a history that changed since,
  * tools counted differently), so scaling would inflate every category. The
@@ -120,8 +117,9 @@ export interface ContextBreakdown {
   /** Room left before the reserve, when the window is known. */
   freeTokens?: number;
   /**
-   * Where the chat starts dropping the oldest messages (the window less the
-   * reserve), when the window is known. The IDE has no automatic compaction.
+   * Where the chat starts dropping the oldest messages, a block at a time
+   * (the force threshold of contextThresholds.ts), when the window is known.
+   * The IDE has no automatic compaction.
    */
   pruneAtTokens?: number;
   /** Used share of the window, 0..1 (may pass 1 when over). */
@@ -139,6 +137,8 @@ export interface ContextBreakdownInput {
   contextLength?: number;
   /** The model's reply limit (`completionOptions.maxTokens`). */
   maxTokens?: number;
+  /** Local server or hosted provider: which thresholds apply. Cloud if unset. */
+  contextClass?: ContextClass;
   /** The provider's count for this context, when one is known. */
   reportedTokens?: number;
 }
@@ -147,11 +147,13 @@ export function estimateTextTokens(text: string | undefined): number {
   return text ? Math.ceil(text.length / CHARS_PER_TOKEN) : 0;
 }
 
-/** The reserve core keeps out of the input budget (see `SAFETY_BUFFER_MAX`). */
+/**
+ * The reserve core keeps out of the input budget (compileChatMessages): the
+ * counting safety buffer and the room for the reply (contextThresholds.ts).
+ */
 export function reservedTokensFor(window: number, maxTokens?: number): number {
-  const safety = Math.min(SAFETY_BUFFER_MAX, window * SAFETY_BUFFER_FRACTION);
   return Math.round(
-    safety + Math.min(MIN_RESPONSE_TOKENS, maxTokens ?? MIN_RESPONSE_TOKENS),
+    countingSafetyBuffer(window) + outputReserve(window, maxTokens),
   );
 }
 
@@ -381,7 +383,11 @@ export function computeContextBreakdown(
     const reservedTokens = reservedTokensFor(window, input.maxTokens);
     result.window = window;
     result.reservedTokens = reservedTokens;
-    result.pruneAtTokens = window - reservedTokens;
+    result.pruneAtTokens = contextLimits(
+      window,
+      input.maxTokens,
+      input.contextClass ?? "cloud",
+    ).forceAt;
     result.freeTokens = Math.max(0, window - reservedTokens - usedTokens);
     result.fraction = usedTokens / window;
   }

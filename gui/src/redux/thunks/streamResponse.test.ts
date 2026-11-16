@@ -827,8 +827,11 @@ describe("streamResponseThunk", () => {
                 completion: "I'll search the codebase for you.",
                 modelProvider: "anthropic",
                 modelTitle: "Claude 3.5 Sonnet",
-                // An older request: only the newest keeps its prompt
+                // An older request: only the newest keeps its prompt, the
+                // older keeps its size and hash for feedback (PERF10)
                 prompt: DROPPED_PROMPT_MARKER,
+                promptBytes: expect.any(Number),
+                promptSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
               },
             ],
             toolCallStates: [
