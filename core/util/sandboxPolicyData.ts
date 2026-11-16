@@ -74,7 +74,8 @@ export const LINUX_HOME_SECRETS: readonly string[] = [
 /**
  * A project's policy folders: rules, permissions, hooks and keys the product
  * loads. S9-X3: a sandboxed command neither reads nor writes them (writes are
- * also locked by `protect-config` and the locked paths).
+ * also locked by `protect-config` and the locked paths). Their `plans/`
+ * folder is allowed back for reads.
  */
 export const PROJECT_POLICY_DIRS: readonly string[] = [
   ".continuous",
@@ -84,8 +85,8 @@ export const PROJECT_POLICY_DIRS: readonly string[] = [
 /**
  * S9-X3's short allow list: home files a sandboxed command may read although
  * the protected lists name them (`.npmrc` is a credential file there). They
- * stay write-protected. Reading `~/.npmrc` through a tool or naming it in a
- * command still marks the session as having read a secret, so the
+ * stay write-protected. Reading `~/.npmrc` through a tool, or with a command
+ * that reads it, still marks the session as having read a secret, so the
  * secret-read plus network pair (B92) applies to what follows.
  */
 export const HOME_READ_ALLOWED: readonly string[] = [".gitconfig", ".npmrc"];
@@ -239,7 +240,7 @@ export function notEnforcedItems(
       "allowed-home-reads",
       "`~/.gitconfig` and `~/.npmrc` are readable",
       "The decided allow list (S9-X3): git and npm read them on every run. `~/.npmrc` can hold a registry token, so a command in the jail can read that token.",
-      "a read of `~/.npmrc` by a tool, or a command that names it, marks the session as having read a secret, and a network call after it asks at every level and is refused at IDGAF (B92); a read npm makes on its own is not seen",
+      "a read of `~/.npmrc` by a tool, or by a command that reads or sends it (`cat`, `curl -d @`), marks the session as having read a secret, and a network call after it asks at every level and is refused at IDGAF (B92); a read npm makes on its own is not seen",
     ),
   );
   if (readPolicy === "open") {

@@ -98,8 +98,10 @@ export function applyTaintedSessionRule(
 
 /**
  * B92, the exfiltration pair: a session that read a secret, then a call that
- * can send data out (a network destination, a push, a publish, an MCP send).
- * It does not depend on `taintedSessionRule`.
+ * can send data out (a network destination, a push, a publish, or a tool of
+ * an MCP server the person has not marked `trusted` in their own
+ * permissions.yaml; one the open folder brought never counts as trusted). It
+ * does not depend on `taintedSessionRule`.
  *
  * - Below IDGAF it asks the person, at every level: an allow (Permissive, an
  *   allow rule, a tool set to run on its own) becomes an ask, and an ask that
@@ -149,6 +151,15 @@ export function applySecretEgressRule(
   if (input.basePolicy === "disabled") return result;
   const sink = taintSinkFor(input, SECRET_ONLY);
   if (!sink || !EGRESS_SINKS.has(sink.class)) return result;
+  // A server the person trusts in their own permissions.yaml is theirs to
+  // send to; one the open folder brought never counts as trusted
+  if (
+    sink.class === "mcp-send" &&
+    input.tool?.mcpServerTrusted &&
+    !input.tool.mcpFromWorkspace
+  ) {
+    return result;
+  }
   // A refusal stays as it is (below IDGAF; IDGAF has run past every other one)
   if (result.policy === "disabled") {
     return { ...result, taintSink: result.taintSink ?? sink };

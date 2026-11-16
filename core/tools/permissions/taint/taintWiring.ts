@@ -4,6 +4,7 @@ import {
   type TaintedSessionRule,
 } from "./taintSetting";
 import {
+  secretSourceForAudit,
   secretSourceOfCall,
   taintLabelsOfCall,
   type SourceCall,
@@ -107,18 +108,27 @@ export function noteToolResult(
 }
 
 /**
- * B92: the call read a secret (a protected secret path, `~/.npmrc` included,
- * or a command that prints a credential). Noted whatever `taintedSessionRule`
- * says. Never throws.
+ * B92: the call read a secret (a file tool's read of a protected secret
+ * path, `~/.npmrc` included, a command that reads such a file or sends it, or
+ * one that prints a credential). Noted whatever `taintedSessionRule` says,
+ * with a `secret-read` audit record the first time. Never throws.
  */
 function noteSecretRead(note: ToolResultNote, session: string): void {
   if (note.call.mcp) return;
   const source = secretSourceOfCall(note.call);
   if (!source) return;
-  secretReads.mark(session, {
-    source,
-    ...(note.turn === undefined ? {} : { turn: note.turn }),
-  });
+  const turn = note.turn === undefined ? {} : { turn: note.turn };
+  if (!secretReads.mark(session, { source, ...turn })) return;
+  // The record a later `secret-egress` decision is explained by
+  try {
+    getAuditTrail().secretRead({
+      session,
+      source: secretSourceForAudit(note.call) ?? source,
+      ...turn,
+    });
+  } catch {
+    // the trail is best effort
+  }
 }
 
 /**

@@ -17,6 +17,7 @@ import {
   type BuiltinRuleId,
 } from "../tools/permissions/policy";
 import { canonicalRuleName } from "../tools/permissions/names";
+import { PROJECT_STATE_DIRS } from "./productPaths";
 import { isDestinationPattern, parseRule } from "../tools/permissions/rules";
 import { isNetSet } from "../tools/permissions/destinations";
 import {
@@ -375,6 +376,19 @@ function addSecrets(acc: Acc, ctx: Ctx): void {
       "the project's policy folders (PROJECT_POLICY_DIRS)",
     );
   }
+  // Plans are the person's working notes, not policy: readable again
+  // (writes stay as protect-config and the locked paths leave them)
+  put(
+    acc,
+    "allowRead",
+    ctx.roots.flatMap((r) =>
+      PROJECT_POLICY_DIRS.flatMap((d) =>
+        PROJECT_STATE_DIRS.map((s) => `${r}/${d}/${s}`),
+      ),
+    ),
+    "own-config",
+    "the project's plans folders (PROJECT_STATE_DIRS)",
+  );
   if (ctx.locked.length > 0) {
     put(acc, "denyWrite", ctx.locked, "locked-path", "lockedPaths");
   }

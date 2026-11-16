@@ -23,7 +23,14 @@ export type AuditBy = "rules" | "reviewer" | "person" | "system";
 export interface AuditEnvelope {
   v: typeof AUDIT_VERSION;
   ev:
-    "decision" | "outcome" | "turn" | "policy" | "shadow" | "setting" | "taint";
+    | "decision"
+    | "outcome"
+    | "turn"
+    | "policy"
+    | "shadow"
+    | "setting"
+    | "taint"
+    | "secret-read";
   /** UTC, ISO 8601 */
   ts: string;
   session: string;
@@ -318,7 +325,22 @@ export type AuditRecord =
   | PolicyEvent
   | ShadowEvent
   | SettingEvent
-  | TaintEvent;
+  | TaintEvent
+  | SecretReadEvent;
+
+/**
+ * B92: a secret was read in the session, so a later call that can send data
+ * out asks (and is refused at IDGAF) with source `secret-egress`. Written
+ * whatever `taintedSessionRule` says, once per session, when the session is
+ * marked. `source` is what read it with the path cut to the file's name
+ * (`read_file .npmrc`, `a command that reads credentials`), never the content.
+ * A separate `ev`, so a reader written before it existed skips it.
+ */
+export interface SecretReadEvent extends AuditEnvelope {
+  ev: "secret-read";
+  source: string;
+  maskedKinds?: string[];
+}
 
 /** A record as the builders produce it: the writer adds `v`, `ts` and `seq`. */
 export type AuditDraft = DistributiveOmit<AuditRecord, "v" | "seq" | "ts"> & {
@@ -569,6 +591,22 @@ export interface TaintInput {
 }
 
 const MAX_TAINT_FIELD_CHARS = 120;
+
+export interface SecretReadInput {
+  session: string;
+  source: string;
+  turn?: number;
+}
+
+export function secretReadDraft(input: SecretReadInput): AuditDraft {
+  const source = maskText(input.source);
+  return clean({
+    ...input,
+    ev: "secret-read" as const,
+    source: clipMasked(source.text, MAX_TAINT_FIELD_CHARS),
+    maskedKinds: source.kinds.length ? source.kinds : undefined,
+  }) as AuditDraft;
+}
 
 export function taintDraft(input: TaintInput): AuditDraft {
   const label = maskText(input.label);
