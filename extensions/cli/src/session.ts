@@ -33,6 +33,7 @@ import { v4 as uuidv4 } from "uuid";
 
 import { DEFAULT_SESSION_TITLE } from "./constants/session.js";
 import { env } from "./env.js";
+import { noteResumedSession } from "./permissions/idgafNotices.js";
 import { resetCliToolListHold } from "./tools/toolListHold.js";
 import { logger } from "./util/logger.js";
 import { userNotice } from "./util/userNotice.js";
@@ -398,10 +399,26 @@ function hasSessionContent(session: Session): boolean {
   return nonSystemMessages.length > 0;
 }
 
+let persistSessions = true;
+
+/**
+ * `-p --no-session-persistence` (V11): the run keeps its session in memory
+ * only, so `saveSession` writes nothing to `sessions/` (no file, no list
+ * entry). A session it resumes is read and left as it was.
+ */
+export function setSessionPersistence(enabled: boolean): void {
+  persistSessions = enabled;
+}
+
+export function isSessionPersistenceEnabled(): boolean {
+  return persistSessions;
+}
+
 /**
  * Save the current session to file
  */
 export function saveSession(): void {
+  if (!persistSessions) return;
   let sessionId = "";
   try {
     const manager = SessionManager.getInstance();
@@ -654,7 +671,7 @@ export function loadSession(options: LoadSessionOptions = {}): Session | null {
   const chosen = resumeSessionId;
   if (chosen) {
     const session = loadSessionById(chosen);
-    if (session) SessionManager.getInstance().setSession(session);
+    if (session) resumeSession(session);
     return session;
   }
   const cwd = path.resolve(options.cwd ?? process.cwd());
@@ -725,7 +742,7 @@ export function loadSession(options: LoadSessionOptions = {}): Session | null {
     };
 
     const resume = (session: Session, otherFolder: boolean): Session => {
-      SessionManager.getInstance().setSession(session);
+      resumeSession(session);
       if (passedOver.length > 0) {
         userNotice(resumedEarlierNotice(passedOver, session));
       } else if (otherFolder) {
@@ -760,6 +777,15 @@ export function loadSession(options: LoadSessionOptions = {}): Session | null {
     logger.error("Error loading session:", error);
     return null;
   }
+}
+
+/**
+ * The session `--resume` continues becomes the current one. IDGAF it ran at
+ * is not restored, and one line says so (ID 5).
+ */
+function resumeSession(session: Session): void {
+  noteResumedSession(session);
+  SessionManager.getInstance().setSession(session);
 }
 
 /** Said when this folder has no session and another folder's was resumed. */

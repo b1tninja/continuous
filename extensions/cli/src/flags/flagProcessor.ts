@@ -5,11 +5,16 @@
 import { setAutoReviewEnabled } from "../permissions/coreRules.js";
 import {
   checkPolicyFile,
+  HEADLESS_LEGACY_ENV,
   headlessLegacyAllow,
   headlessPolicyNotice,
   isPolicyFileSpec,
   resolvePolicyFile,
 } from "../permissions/headlessPolicy.js";
+import {
+  auditEnvLoosening,
+  rememberIdgafFlag,
+} from "../permissions/idgafNotices.js";
 import {
   auditFileEditsAtLoad,
   auditLevelChange,
@@ -131,6 +136,9 @@ export function processCommandFlags(options: {
     );
   }
 
+  // The flag that turned IDGAF on, for the session's one IDGAF line
+  rememberIdgafFlag(idgafFlagSource(options, mode));
+
   // Remembered for loop workers, which are a separate process.
   setCommandPermissionFlags({
     allow: options.allow,
@@ -152,6 +160,18 @@ export function processCommandFlags(options: {
   };
 }
 
+/** `--auto` or `--policy <spec>` when the levels they set have an area at IDGAF. */
+function idgafFlagSource(
+  options: { auto?: boolean; policy?: string },
+  mode: PermissionMode | undefined,
+): string | undefined {
+  const levels = effectiveLevels(mode ?? "normal");
+  if (!Object.values(levels).includes("idgaf")) return undefined;
+  if (options.auto) return "--auto";
+  if (options.policy === undefined) return undefined;
+  return `--policy ${options.policy}`;
+}
+
 /**
  * The one stderr line a headless run (`-p`, `serve`) starts with: the levels
  * it runs at and where they came from (CO2). stderr, so a JSON run's stdout
@@ -165,10 +185,18 @@ export function announceHeadlessPolicy(
   let source: string | undefined;
   if (options.auto) source = "--auto";
   else if (options.policy !== undefined) source = `--policy ${options.policy}`;
+  const legacy = headlessLegacyAllow() && !options.auto;
   const notice = headlessPolicyNotice({
     levels: effectiveLevels(mode ?? "normal"),
     ...(source ? { source } : {}),
-    legacy: headlessLegacyAllow() && !options.auto,
+    legacy,
   });
   write(`${notice}\n`);
+  // B21: a loosening from the environment is audited apart from IDGAF
+  if (legacy) {
+    auditEnvLoosening(
+      HEADLESS_LEGACY_ENV,
+      process.env[HEADLESS_LEGACY_ENV] ?? "",
+    );
+  }
 }

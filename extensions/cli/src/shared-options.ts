@@ -1,6 +1,21 @@
 import { Command } from "commander";
 
+import { addRunLimitOptions } from "./budget/runLimits.js";
+import { addReasoningFlags } from "./flags/reasoningFlags.js";
 import { applyDebugPromptLogFlag } from "./util/debugPromptLog.js";
+
+/**
+ * The root command's options: the common ones, run limits, reasoning, and
+ * `--no-session-persistence` (V11, `-p` only; flags/flagValidator.ts).
+ */
+export function addRootOptions(program: Command): Command {
+  return addReasoningFlags(
+    addRunLimitOptions(addCommonOptions(program)),
+  ).option(
+    "--no-session-persistence",
+    "Headless (-p): keep this run's session in memory only; nothing is written to the sessions folder, so it cannot be resumed",
+  );
+}
 
 // Function to add common options to any command
 export function addCommonOptions(command: Command): Command {

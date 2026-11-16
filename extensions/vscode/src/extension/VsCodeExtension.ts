@@ -64,7 +64,10 @@ import { registerVsCodeAi } from "../ai/registerVsCodeAi";
 import { registerTerminalShellSetting } from "../terminalShellSetting";
 import { registerModelInfoSetting } from "../modelInfoSetting";
 import { registerConfigLanguageSupport } from "../lang-server/configLanguageSupport";
-import { promptForWorkspaceConfigTrust } from "../util/workspaceConfigTrust";
+import {
+  gateAgentFilesOnWorkspaceTrust,
+  promptForWorkspaceConfigTrust,
+} from "../util/workspaceConfigTrust";
 
 export class VsCodeExtension {
   // Currently some of these are public so they can be used in testing (test/test-suites)
@@ -284,6 +287,10 @@ export class VsCodeExtension {
       this,
     );
 
+    // Before Core loads config: no AGENTS.md in Restricted Mode (X20)
+    gateAgentFilesOnWorkspaceTrust(context, () => {
+      void this.configHandler.reloadConfig("Workspace trusted");
+    });
     this.core = new Core(inProcessMessenger, this.ide);
     this.configHandler = this.core.configHandler;
     resolveConfigHandler?.(this.configHandler);

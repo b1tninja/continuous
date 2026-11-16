@@ -7,6 +7,7 @@ import {
   pendingToolChangesText,
   resolveToolList,
   sameToolList,
+  thinkingCutAfterCompaction,
   thinkingCutAfterToolChange,
   toolChangeDropsThinking,
   toolChangeTiming,
@@ -202,6 +203,25 @@ describe("preserved thinking (PR #893)", () => {
         historyLength: 12,
       }),
     ).toBeUndefined();
+  });
+
+  it("after a compaction, cuts the reasoning the compaction kept on models with the prefix check", () => {
+    const at = (modelId: string, summaryIndex: number, length?: number) =>
+      thinkingCutAfterCompaction({
+        modelId,
+        summaryIndex,
+        historyLengthAtCompaction: length,
+      });
+    // Compacted at item 69 of 84: items 70 to 83 were kept
+    expect(at("claude-opus-5-5", 69, 84)).toBe(84);
+    expect(at("us.anthropic.claude-sonnet-5-5-v1:0", 69, 84)).toBe(84);
+    // Compacted at the last item: nothing was kept
+    expect(at("claude-fable-5-2", 83, 84)).toBe(84);
+    // Not recorded (a session compacted before C104): nothing more is cut
+    expect(at("claude-opus-5-5", 69)).toBe(70);
+    expect(at("claude-opus-5-5", -1, 84)).toBeUndefined();
+    expect(at("claude-sonnet-4-6", 69, 84)).toBeUndefined();
+    expect(at("qwen3.8-flash", 69, 84)).toBeUndefined();
   });
 
   it("compares lists by their bytes", () => {

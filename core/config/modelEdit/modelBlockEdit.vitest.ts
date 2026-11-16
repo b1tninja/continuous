@@ -154,6 +154,7 @@ describe("editModelBlockText", () => {
       "cacheBehavior.cacheSystemMessage": true,
       "cacheBehavior.cacheConversation": false,
       "cacheBehavior.ttl": "1h",
+      "cacheBehavior.subagentTtl": "inherit",
       "env.accessKeyId": "${{ secrets.AWS_ID }}",
       "env.secretAccessKey": "${{ secrets.AWS_SECRET }}",
       "env.sessionToken": "${{ secrets.AWS_TOKEN }}",

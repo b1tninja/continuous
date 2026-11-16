@@ -3,6 +3,7 @@ import {
   HandThumbUpIcon,
 } from "@heroicons/react/24/outline";
 import { ChatHistoryItem } from "core";
+import { feedbackPromptLogs } from "core/util/promptLogs";
 import { useContext, useState } from "react";
 import { IdeMessengerContext } from "../context/IdeMessenger";
 import { useAppSelector } from "../redux/hooks";
@@ -19,22 +20,22 @@ export function FeedbackButtons({ item }: FeedbackButtonsProps) {
 
   const sendFeedback = (feedback: boolean) => {
     setFeedback(feedback);
-    if (item.promptLogs?.length) {
-      for (const promptLog of item.promptLogs) {
-        const { modelTitle, modelProvider, ...logData } = promptLog;
-        ideMessenger.post("devdata/log", {
-          name: "chatFeedback",
-          data: {
-            ...logData,
-            completionOptions: {}, // TODO delete completionOptions from @continuedev/config-yaml
-            modelProvider: modelProvider || "unknown",
-            modelName: modelTitle,
-            modelTitle: modelTitle,
-            feedback,
-            sessionId,
-          },
-        });
-      }
+    // PERF10: only the newest request's prompt goes in full; the others
+    // send their size and hash (core/util/promptLogs.ts)
+    for (const promptLog of feedbackPromptLogs(item.promptLogs)) {
+      const { modelTitle, modelProvider, ...logData } = promptLog;
+      ideMessenger.post("devdata/log", {
+        name: "chatFeedback",
+        data: {
+          ...logData,
+          completionOptions: {}, // TODO delete completionOptions from @continuedev/config-yaml
+          modelProvider: modelProvider || "unknown",
+          modelName: modelTitle,
+          modelTitle: modelTitle,
+          feedback,
+          sessionId,
+        },
+      });
     }
   };
 

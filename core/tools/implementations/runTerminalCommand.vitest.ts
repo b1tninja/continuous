@@ -363,6 +363,28 @@ describe("runTerminalCommandImpl", () => {
     expect(result[0].status).toBe("Command executed");
   });
 
+  it("in a remote window, does not judge the command by this machine's shell", async () => {
+    // && is an error to Windows PowerShell 5.1 (the lint stops it locally on
+    // Windows) and fine to the bash that reads it on the remote host
+    const chained = "cd app && npm test";
+    const first = await runTerminalCommandImpl(
+      { command: chained, waitForCompletion: true },
+      createMockExtras({ remoteName: "ssh-remote" }),
+    );
+    expect(mockRunCommand).toHaveBeenCalledWith(chained);
+    expect(first[0].status).toBe("Command executed");
+
+    // a program that is not on this machine may well be on the other one
+    const second = await runTerminalCommandImpl(
+      { command: "nonexistentcommandxyz --version", waitForCompletion: true },
+      createMockExtras({ remoteName: "dev-container" }),
+    );
+    expect(mockRunCommand).toHaveBeenCalledWith(
+      "nonexistentcommandxyz --version",
+    );
+    expect(second[0].description).not.toBe("Command not run");
+  });
+
   it("does not run a command whose program does not exist", async () => {
     const result = await runTerminalCommandImpl(
       { command: "nonexistentcommandxyz", waitForCompletion: true },

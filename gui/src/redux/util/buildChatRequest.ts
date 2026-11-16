@@ -20,6 +20,7 @@ import {
 import {
   functionFingerprint,
   sameToolList,
+  thinkingCutAfterCompaction,
   thinkingCutAfterToolChange,
 } from "core/tools/toolListHold";
 import {
@@ -31,7 +32,7 @@ import { applyToolSearch } from "./applyToolSearch";
 import { selectModelUse } from "../selectors/selectModelUse";
 import { selectSelectedChatModel } from "../slices/configSlice";
 import type { RootState } from "../store";
-import { constructMessages } from "./constructMessages";
+import { constructMessages, summaryIndexOf } from "./constructMessages";
 import { getBaseSystemMessage } from "./getBaseSystemMessage";
 
 /** The plan block of the running item's run, kept between its requests. */
@@ -270,14 +271,33 @@ export function buildChatRequest(
   const tail = use
     ? tailFor(state.config.config.modeModels, use, model.model)
     : undefined;
-  // Each sent item's index in the history, for the applied rules below
+  // After a compaction that kept later turns, their reasoning was minted with
+  // the summarised turns in front of it: on a model with the prefix check it
+  // is not sent again either (core/tools/toolListHold.ts)
+  const summaryAt = summaryIndexOf(history);
+  const compactionCut = thinkingCutAfterCompaction({
+    modelId: model.model,
+    summaryIndex: summaryAt,
+    historyLengthAtCompaction:
+      summaryAt >= 0
+        ? history[summaryAt].conversationSummaryHistoryLength
+        : undefined,
+  });
+  const reasoningCut =
+    thinkingCut === undefined
+      ? compactionCut
+      : Math.max(thinkingCut, compactionCut ?? 0);
+  // Each sent item's index in the history, for the applied rules below. The
+  // item that carries the summary always stays: without it the whole
+  // history would be sent.
   const sentIndex = withoutMessageIds
     .map((_, i) => i + contextStart)
     .filter(
       (at) =>
-        thinkingCut === undefined ||
+        reasoningCut === undefined ||
         history[at].message.role !== "thinking" ||
-        at >= thinkingCut,
+        at >= reasoningCut ||
+        at === summaryAt,
     );
   const sentItems =
     sentIndex.length === withoutMessageIds.length

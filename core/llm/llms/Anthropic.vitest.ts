@@ -685,6 +685,49 @@ describe("Anthropic", () => {
       expect(body.system[0].cache_control).toEqual({ type: "ephemeral" });
     });
 
+    test("CONTINUOUS_FORCE_CACHE_5M=1 puts every breakpoint on 5 minutes", async () => {
+      vi.stubEnv("CONTINUOUS_FORCE_CACHE_5M", "1");
+      try {
+        const { body } = await sentBody(
+          { promptCaching: true, promptCacheTtl: "1h" },
+          { cacheBehavior: { ttl: "1h" } },
+        );
+        const controls = [
+          body.tools[1].cache_control,
+          body.system[0].cache_control,
+          body.messages[2].content[0].cache_control,
+          body.messages[4].content[0].cache_control,
+        ];
+        for (const c of controls) expect(c).toEqual({ type: "ephemeral" });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    test("CONTINUOUS_FORCE_CACHE_5M other than 1 changes nothing", async () => {
+      vi.stubEnv("CONTINUOUS_FORCE_CACHE_5M", "true");
+      try {
+        const { body } = await sentBody({
+          promptCaching: true,
+          promptCacheTtl: "1h",
+        });
+        expect(body.system[0].cache_control).toEqual({
+          type: "ephemeral",
+          ttl: "1h",
+        });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    test("Messages stays on anthropic-version 2023-06-01 (K23: only the list call moves)", async () => {
+      // 2026-10-21 removes temperature, top_p and top_k on Messages; the
+      // Messages path keeps the older version until the sampling guard covers
+      // every route (plans/decisions-2026-11-15.md, K23).
+      const { headers } = await sentBody({ promptCaching: true });
+      expect(headers["anthropic-version"]).toBe("2023-06-01");
+    });
+
     test("cacheBehavior.ttl does not turn caching on", async () => {
       const { body } = await sentBody({}, { cacheBehavior: { ttl: "1h" } });
       expect(marked(body).system).toBe(false);

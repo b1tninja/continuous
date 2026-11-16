@@ -26,7 +26,7 @@ The hooks really run, so a command hook executes (an `http` hook sends the sampl
 
 ## A project hook cannot approve a call
 
-A hook from a project settings file can block a call or ask you to confirm it, but an `allow` answer from it is ignored (a notice is logged). Only hooks in your own settings can turn a call the CLI would ask about into an allowed one. Deny rules, always-on rules and protected paths apply after any hook either way. If you relied on a project hook to skip questions, move that hook to your own settings.
+A hook from a project settings file can block a call or ask you to confirm it, but an `allow` answer from it is ignored (a notice is logged). Only hooks in your own settings can turn a call the CLI would ask about into an allowed one. Deny rules, locked rules and protected paths apply after any hook either way. If you relied on a project hook to skip questions, move that hook to your own settings.
 
 ## Only your own hooks
 

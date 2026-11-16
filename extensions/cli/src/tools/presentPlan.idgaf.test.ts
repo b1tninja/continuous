@@ -39,6 +39,10 @@ vi.mock("../services/QuizService.js", () => ({
   quizService: { askQuestion: vi.fn(async () => "Build") },
 }));
 vi.mock("../init.js", () => ({ safeStderr: () => undefined }));
+vi.mock("../loop/loopSession.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../loop/loopSession.js")>()),
+  requestLoopTurnEnd: vi.fn(),
+}));
 vi.mock("../audit/cliAudit.js", () => ({
   cliAuditTrail: () => ({
     decision: (d: Record<string, unknown>) => store.decisions.push(d),
@@ -46,6 +50,7 @@ vi.mock("../audit/cliAudit.js", () => ({
   cliAuditSession: () => "test-session",
 }));
 
+import { requestLoopTurnEnd } from "../loop/loopSession.js";
 import {
   resetPolicyLevels,
   setPolicyLevels,
@@ -82,6 +87,7 @@ beforeEach(() => {
     decisions: [],
   });
   vi.mocked(quizService.askQuestion).mockClear();
+  vi.mocked(requestLoopTurnEnd).mockClear();
 });
 
 afterEach(() => {
@@ -140,5 +146,42 @@ describe("PresentPlan decisions below IDGAF are unchanged", () => {
       .mocked(quizService.askQuestion)
       .mock.calls.map(([q]) => q.question);
     expect(asked.filter((q) => q.startsWith("Decision "))).toHaveLength(2);
+  });
+});
+
+describe('"Build this plan?" at Questions IDGAF (ID 3)', () => {
+  beforeEach(() => {
+    setPolicyLevels({ ...DEFAULT_POLICY_LEVELS, questions: "idgaf" });
+  });
+
+  it("the terminal UI ends the turn with the plan saved and asks nothing", async () => {
+    const result = await presentPlanTool.run(args);
+    expect(quizService.askQuestion).not.toHaveBeenCalled();
+    expect(requestLoopTurnEnd).toHaveBeenCalledTimes(1);
+    expect(planFile()).toContain("Add a helper");
+    expect(result).toContain("Plan saved to .continuous/plans/add-retry.md");
+    expect(result).toContain("End your turn now");
+    expect(result).toContain("do not implement anything");
+    // Nothing was built: Plan mode stays and the plan is not approved
+    expect(store.mode).toBe("plan");
+    expect(result).not.toContain("approved");
+  });
+
+  it("a plan with no decisions ends the turn too", async () => {
+    const { decisions: _none, ...plain } = args;
+    await presentPlanTool.run(plain);
+    expect(quizService.askQuestion).not.toHaveBeenCalled();
+    expect(requestLoopTurnEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("below IDGAF the terminal UI still asks", async () => {
+    setPolicyLevels({ ...DEFAULT_POLICY_LEVELS, questions: "permissive" });
+    const { decisions: _none, ...plain } = args;
+    await presentPlanTool.run(plain);
+    const asked = vi
+      .mocked(quizService.askQuestion)
+      .mock.calls.map(([q]) => q.question);
+    expect(asked.some((q) => q.startsWith("Build this plan?"))).toBe(true);
+    expect(requestLoopTurnEnd).not.toHaveBeenCalled();
   });
 });

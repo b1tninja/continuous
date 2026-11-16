@@ -1,4 +1,8 @@
 import type { RequestOptions } from "../index.js";
+import {
+  ANTHROPIC_FALLBACK_VERSION,
+  ANTHROPIC_LIST_VERSION,
+} from "../util/anthropicApiVersion.js";
 import { isNonPublicHostname } from "../util/networkAddress.js";
 import { networkFetch, networkFetchWith } from "../util/networkFetch.js";
 
@@ -183,20 +187,30 @@ async function fetchAnthropicModels(
   const root = withTrailingSlash(apiBase || "https://api.anthropic.com/v1/");
   const rows: any[] = [];
   let afterId: string | undefined;
+  // The newer API version returns the lifecycle fields and changes nothing
+  // else on this endpoint (K23); a gateway that refuses it with a 400 is asked
+  // again with the older one, which the rest of the pages then use.
+  let version = ANTHROPIC_LIST_VERSION;
   for (let page = 0; page < ANTHROPIC_MAX_PAGES; page++) {
     const url = new URL("models", root);
     url.searchParams.set("limit", "100");
     if (afterId) url.searchParams.set("after_id", afterId);
-    const response = await networkFetch(
-      url,
-      {
-        headers: {
-          "x-api-key": apiKey ?? "",
-          "anthropic-version": "2023-06-01",
+    const send = () =>
+      networkFetch(
+        url,
+        {
+          headers: {
+            "x-api-key": apiKey ?? "",
+            "anthropic-version": version,
+          },
         },
-      },
-      requestOptions,
-    );
+        requestOptions,
+      );
+    let response = await send();
+    if (response.status === 400 && version !== ANTHROPIC_FALLBACK_VERSION) {
+      version = ANTHROPIC_FALLBACK_VERSION;
+      response = await send();
+    }
     if (!response.ok) {
       throw new Error(`Failed to fetch Anthropic models: ${response.status}`);
     }

@@ -1,5 +1,7 @@
 import type { ChatHistoryItem, PromptLog } from "../index.js";
 
+import { sha256Hex } from "./secretScan/sha256.js";
+
 /**
  * The full prompt of each model request was kept on the history item that
  * answered it (`promptLogs`), and every prompt holds the conversation up to
@@ -20,6 +22,47 @@ export const DROPPED_PROMPT_MARKER = "[prompt not kept: older request]";
 export function withoutPrompt(log: PromptLog): PromptLog {
   if (log.prompt === DROPPED_PROMPT_MARKER) return log;
   return { ...log, prompt: DROPPED_PROMPT_MARKER };
+}
+
+/**
+ * `withoutPrompt`, keeping the prompt's UTF-8 size and SHA-256 on the log
+ * (PERF10), so feedback on an older request can still say which prompt it
+ * was without sending it. Used where a newer request replaces the one that
+ * kept its prompt in memory; the save path uses `withoutPrompt`, which
+ * hashes nothing.
+ */
+export function withoutPromptKeepingHash(log: PromptLog): PromptLog {
+  if (log.prompt === DROPPED_PROMPT_MARKER) return log;
+  return {
+    ...log,
+    prompt: DROPPED_PROMPT_MARKER,
+    promptBytes: new TextEncoder().encode(log.prompt).length,
+    promptSha256: sha256Hex(log.prompt),
+  };
+}
+
+/**
+ * What the thumbs up/down buttons send for a history item (PERF10): only
+ * the newest request's prompt in full. That is the item's last log, and
+ * only while it still holds its prompt in memory (the session's newest
+ * request). Every other log sends, in the `prompt` field, a line with the
+ * prompt's size and SHA-256 when they were kept, or the marker when not.
+ * Model and completion stay as they are.
+ */
+export function feedbackPromptLogs(logs: PromptLog[] | undefined): PromptLog[] {
+  if (!logs?.length) return [];
+  const last = logs.length - 1;
+  return logs.map((log, i) => {
+    const { promptBytes, promptSha256, ...rest } = log;
+    if (i === last && log.prompt !== DROPPED_PROMPT_MARKER) return rest;
+    return { ...rest, prompt: promptNotSent(promptBytes, promptSha256) };
+  });
+}
+
+function promptNotSent(bytes?: number, sha256?: string): string {
+  return typeof bytes === "number" && sha256
+    ? `[prompt not sent: older request, ${bytes} bytes, sha256 ${sha256}]`
+    : DROPPED_PROMPT_MARKER;
 }
 
 function hasFullPrompt(logs: PromptLog[] | undefined): boolean {

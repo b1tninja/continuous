@@ -180,10 +180,10 @@ export interface RuleSourcesInput extends PolicyInput {
 }
 
 const DECISION_ORDER =
-  "A call is weighed by decision, not by position: always-on rules, then Never rules, then protected paths, then Ask rules, then Always rules, then the area's level. Where a rule sits in a list does not matter.";
+  "A call is weighed by decision, not by position: locked rules, then Never rules, then protected paths, then Ask rules, then Always rules, then the area's level. Where a rule sits in a list does not matter.";
 
 export const FLOOR_LOCK_REASON =
-  "An always-on rule (floor:) in your permissions.yaml. It binds at every level below IDGAF (IDGAF runs the call and records the rule), so it is changed only by editing that file.";
+  "A locked rule (floor:) in your permissions.yaml. It binds at every level below IDGAF (IDGAF runs the call and records the rule), so it is changed only by editing that file.";
 
 export const FOLDER_ALLOW_REASON =
   "It came with the workspace. A repository can add deny and ask rules but not allow rules; move it to your own config.yaml to use it.";

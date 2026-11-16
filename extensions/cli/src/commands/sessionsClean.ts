@@ -150,7 +150,7 @@ export async function sessionsCleanCommand(
   return result!.failed.length ? 1 : 0;
 }
 
-/** Adds `continuous sessions clean`, `trash` and `restore` to the program. */
+/** Adds `continuous sessions clean`, `prune`, `trash` and `restore` to the program. */
 export function registerSessionsCommand(program: Command): void {
   const sessions = program
     .command("sessions")
@@ -176,6 +176,22 @@ export function registerSessionsCommand(program: Command): void {
     )
     .action(async (options) => {
       await gracefulExit(await sessionsCleanCommand(options));
+    });
+  sessions
+    .command("prune")
+    .description(
+      "Move sessions last used before --older-than to the trash, where each can be restored for 7 days. Lists them first, then asks (or --yes); sessions open in a window or agent are left alone. Nothing is pruned automatically",
+    )
+    .requiredOption(
+      "--older-than <age>",
+      "Last used longer ago than this: 90d, 2w, 12h or a number of days",
+    )
+    .option("--yes", "Move them without asking")
+    .option("--dry-run", "Only list them")
+    .option("--json", "Machine-readable output (moves only with --yes)")
+    .action(async (options) => {
+      const { sessionsPruneCommand } = await import("./sessionsPrune.js");
+      await gracefulExit(await sessionsPruneCommand(options));
     });
   sessions
     .command("trash")

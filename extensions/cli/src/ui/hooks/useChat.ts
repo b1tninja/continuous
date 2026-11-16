@@ -1,6 +1,6 @@
 /* eslint-disable max-lines */
 /* eslint-disable max-statements   */
-import type { ChatHistoryItem, Session } from "core/index.js";
+import type { ChatHistoryItem, PromptProgress, Session } from "core/index.js";
 import { useApp } from "ink";
 import { useEffect, useRef, useState } from "react";
 
@@ -173,6 +173,10 @@ export function useChat({
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   // The reply is held while recovery looks for a tool call written as text
   const [isReadingReply, setIsReadingReply] = useState(false);
+  // How far a local server has read a long prompt; undefined when not reading
+  const [promptProgress, setPromptProgress] = useState<
+    PromptProgress | undefined
+  >(undefined);
   // The reasoning of the reply now streaming, shown live; null when none
   const [liveReasoning, setLiveReasoning] = useState<string | null>(null);
   const [responseStartTime, setResponseStartTime] = useState<number | null>(
@@ -408,6 +412,7 @@ export function useChat({
         model: turnModel,
         onShowStatusMessage,
         onRecoveryHold: setIsReadingReply,
+        onPromptProgress: setPromptProgress,
         onReasoning: (text: string) =>
           setLiveReasoning((prev) => (prev ?? "") + text),
         onReasoningDone: () => setLiveReasoning(null),
@@ -467,6 +472,7 @@ export function useChat({
       setAbortController(null);
       setIsWaitingForResponse(false);
       setIsReadingReply(false);
+      setPromptProgress(undefined);
       setLiveReasoning(null);
       setResponseStartTime(null);
       setInputMode(true);
@@ -1100,6 +1106,7 @@ export function useChat({
     setChatHistory: setChatHistory,
     isWaitingForResponse,
     isReadingReply,
+    promptProgress,
     liveReasoning,
     responseStartTime,
     isCompacting,
