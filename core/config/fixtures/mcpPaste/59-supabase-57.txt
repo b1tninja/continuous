@@ -1,0 +1,27 @@
+```ts
+import { createToolSchemas } from '@supabase/mcp-server-supabase';
+import { createMCPClient } from '@ai-sdk/mcp';
+import { streamText } from 'ai';
+
+const mcpClient = await createMCPClient({
+  transport: {
+    type: 'http',
+    url: 'https://mcp.supabase.com/mcp',
+  },
+});
+
+const tools = await mcpClient.tools({
+  schemas: createToolSchemas(),
+});
+
+const result = streamText({ model, tools, prompt: '...' });
+
+for (const step of await result.steps) {
+  for (const toolResult of step.staticToolResults) {
+    if (toolResult.toolName === 'get_project_url') {
+      toolResult.input;  // { project_id: string }
+      toolResult.output; // { url: string }
+    }
+  }
+}
+```

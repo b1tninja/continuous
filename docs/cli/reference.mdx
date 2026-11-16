@@ -25,6 +25,7 @@ These belong to `continuous` itself, not to a subcommand.
 | `--thinking <mode>`      | How the terminal UI shows the model's reasoning: `fold` (the default), `expanded` or `hide`. See [`/thinking`](/cli/slash-commands) |
 | `--resume [sessionId]`   | Continue a session. With an id, that session. Without one, a picker with the newest session of this folder selected; with `-p`, the newest session of this folder, or of any folder with a notice. A value that is not shaped like a session id is read as the prompt. Cannot be combined with `--fork` |
 | `--fork <sessionId>`     | Start a new session from a copy of an existing one: its history, mode, model, task plan and prompt cache record. The plan file, Loop state, checkpoints and usage are not copied |
+| `--no-session-persistence` | Keep this run's session in memory only: nothing is written to `sessions/`, so it cannot be resumed. A session resumed with `--resume` is read and left as it was. Only with `-p`. See [Sessions that are not saved](/reference/storage-and-reset#sessions-that-are-not-saved) |
 | `--trust-project-hooks`  | Run this project's hooks for this run without asking and without recording trust. See [Hooks](/ide-extensions/agent/hooks-trust)     |
 | `--trust-project-config` | Use this project's own configuration files for this run without asking. See [Workspace trust](/customize/workspace-trust)            |
 | `--beta-subagent-tool`   | Offer the beta Subagent tool to the model                                                                                            |
@@ -169,6 +170,27 @@ List every permission rule with its source and state, try a call against them, a
 | `--dry-run`              | `add`, `remove`, `adopt` | Show the change and write nothing                          |
 | `--probe <text>`         | `add`, `adopt`       | A sample call, to show what the rule changes                   |
 
+### `mcp <action>`
+
+Add, list, test and remove MCP servers. See [Add a server from a README snippet](/customize/deep-dives/mcp#add-a-server-from-a-readme-snippet).
+
+| Action                     | What it does                                                                                                                                         |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `add <paste-or-file>`      | Parse a README snippet, a file holding one, or `-` for stdin; show what would run and what is risky; ask before a test connection; then save it     |
+| `add-json <name> <json>`   | The same for one server object, saved under `<name>`                                                                                                 |
+| `list`                     | The servers in your `config.yaml` and this project's `.continuous/mcpServers/*.yaml`, with secret names but no values                               |
+| `test <name>`              | Ask, then test a saved server; exit `1` when it fails                                                                                                |
+| `remove <name>`            | Remove a saved server; its secrets are kept                                                                                                          |
+
+| Flag              | Actions                   | Meaning                                                                         |
+| ----------------- | ------------------------- | ------------------------------------------------------------------------------- |
+| `--dry-run`       | `add`, `add-json`         | Show the review and the entry; start nothing, connect to nothing, write nothing |
+| `--name <name>`   | `add`                     | Name the server, or pick one when the snippet has several                       |
+| `--skip-test`     | `add`, `add-json`         | Save without the test connection                                                |
+| `--yes-run`       | `add`, `add-json`, `test` | Test without asking; refused for a package that is not pinned                   |
+| `--scope <scope>` | `add`, `add-json`, `test`, `remove` | `user` (your own `config.yaml`, the default for `add`) or `project` (`.continuous/mcpServers/<name>.yaml`) |
+| `--json`          | `list`                    | Print the list as JSON                                                          |
+
 ### `audit [action] [session]`
 
 Read the audit trail of tool call decisions. Actions: `list`, `show <session>`, `inbox`, `suggest`, `shadow`, `prune`. See [Audit trail](/ide-extensions/agent/audit-trail).
@@ -250,13 +272,13 @@ It exits 0 with no findings, 3 with findings and 2 on a usage error.
 
 ### `clean`
 
-Delete this product's own sessions, `dev_data` and logs older than an age. It is a dry run unless `--yes` is given, and it never runs by itself. `input_history.json` is not touched.
+Move this product's own sessions older than an age to the trash, and delete its `dev_data` and logs older than an age. It is a dry run unless `--yes` is given, and it never runs by itself. Sessions are not deleted: each goes to the trash (`sessions-trash/`), where it can be restored with `continuous sessions restore <id>` for 7 days and is then removed for good. A session open in another window or used by a running agent is left alone and reported. `input_history.json` is not touched.
 
 | Flag                 | Meaning                                                                                         |
 | -------------------- | ----------------------------------------------------------------------------------------------- |
 | `--older-than <age>` | One age for every store: `30d`, `12h`, `2w`. Default: sessions 30 days, logs 14, `dev_data` 90  |
 | `--dry-run`          | List only. This is the default                                                                  |
-| `--yes`              | Delete                                                                                          |
+| `--yes`              | Move the sessions to the trash and delete the logs and `dev_data`                               |
 | `--json`             | Machine-readable output                                                                         |
 
 ### `sessions clean`
@@ -273,6 +295,23 @@ Remove the full prompts earlier releases kept in saved sessions, stored outputs 
 | `--dev-data-days <age>`             | Dev data lines older than this go. Default `90d`                             |
 | `--logs-days <age>`                 | Log files older than this go. Default `14d`                                  |
 | `--delete-backups-older-than <age>` | With `--yes`, also delete backup folders older than this. Default: keep them |
+
+### `sessions prune`
+
+Move every session last used before an age to the trash, where each can be restored for 7 days with `continuous sessions restore <id>`. It lists them first (id, title, last used, size), then asks; without a terminal it moves nothing unless `--yes` is given. Nothing is deleted, and nothing is pruned by itself. Sessions open in a window or agent are left alone. See [Prune old sessions](/reference/storage-and-reset#prune-old-sessions).
+
+| Flag                 | Meaning                                                                 |
+| -------------------- | ----------------------------------------------------------------------- |
+| `--older-than <age>` | Required. Last used longer ago than this: `90d`, `2w`, `12h`, or a number of days |
+| `--yes`              | Move them without asking                                                |
+| `--dry-run`          | List only, even with `--yes`                                            |
+| `--json`             | Machine-readable output; moves only with `--yes`                        |
+
+It exits 0, 1 when a session could not be moved, and 2 for an age it cannot read.
+
+### `sessions trash` and `sessions restore <id>`
+
+`sessions trash` lists the sessions deleted in the last 7 days (`--json` for machine-readable output; `--empty --yes` deletes them for good). `sessions restore <id>` puts one back in the session list.
 
 ### `reviewer eval`
 
@@ -336,7 +375,7 @@ Hide the deprecation or retirement notice shown at start-up for an Anthropic mod
 | ---- | ----------------------------------------------------------------------------------------------------------------------------- |
 | 0    | Success                                                                                                                       |
 | 1    | Error: a failed run, an invalid combination of flags, an unknown command, or a check that did not pass (`doctor`, `test-connection`) |
-| 2    | Usage error in a subcommand (`audit`, `clean`, `plan build`, `secrets`, `test-connection`), or `permissions` asking for `--yes` |
+| 2    | Usage error in a subcommand (`audit`, `clean`, `mcp`, `plan build`, `secrets`, `test-connection`), `mcp add` finding several servers without `--name`, `mcp test` or `mcp remove` matching servers in both scopes, or `permissions` asking for `--yes` |
 | 3    | `secrets scan` found something                                                                                                |
 | 20   | A run stopped at `--max-budget-usd`                                                                                           |
 | 21   | A run stopped at `--max-turns`                                                                                                |

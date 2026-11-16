@@ -120,7 +120,7 @@ describe("keyChanges: an earlier message changed", () => {
     );
     expect(keyChanges(before, changed)).toEqual([
       "the tools changed",
-      "the system prompt changed (a rule or a summary)",
+      "the system prompt changed (the base prompt or a rule)",
       "an earlier message was edited or removed (message 1 of 8)",
     ]);
   });

@@ -437,6 +437,13 @@ export interface Session {
    * the fork kept (absent when it kept all of them). See core/util/forkSession.ts.
    */
   forkedFrom?: { sessionId: string; index?: number };
+  /**
+   * Optional, written by `cn`: the policy areas that were at IDGAF while this
+   * session ran. IDGAF is per session and never restored: `--resume` starts at
+   * the configured levels and says so in one line (ID 5). The IDE keeps
+   * IDGAF across a reload of the same editor session instead (#828).
+   */
+  idgafAreas?: string[];
 }
 
 /** Where one plan item is in Loop mode. The task list shows it too. */
@@ -1388,6 +1395,13 @@ export interface PromptLog {
   prompt: string;
   completion: string;
   /**
+   * Set when the prompt was dropped in memory for a newer request
+   * (core/util/promptLogs.ts): its UTF-8 size and SHA-256, which feedback
+   * sends in place of the text.
+   */
+  promptBytes?: number;
+  promptSha256?: string;
+  /**
    * A local Strata server's own record of the request (`/metrics`), read
    * when the stream's usage gave no cached count: counts only.
    */
@@ -1546,6 +1560,13 @@ export interface ChatHistoryItem {
   appliedRules?: RuleMetadata[];
   conversationSummary?: string;
   /**
+   * The session's history length when `conversationSummary` was made. Items
+   * from this index on were added after the compaction. On a model with
+   * preserved thinking's prefix check, reasoning minted before it is not sent
+   * again: it was produced with the summarised turns in front of it.
+   */
+  conversationSummaryHistoryLength?: number;
+  /**
    * Set on the last item kept from a turn that the person stopped or that
    * failed, or that a reload cut off. The chat offers Resume for it.
    */
@@ -1570,6 +1591,11 @@ export interface ChatHistoryItem {
 export interface LLMFullCompletionOptions extends BaseCompletionOptions {
   log?: boolean;
   model?: string;
+  /**
+   * Per request, never from config: sent as `strata_prefix` to a local
+   * OpenAI-compatible server (the compaction pre-warm, C106).
+   */
+  strataPrefix?: StrataPrefix;
 }
 
 export type ToastType = "info" | "error" | "warning";
@@ -1666,6 +1692,36 @@ export interface ILLMLogger {
   createInteractionLog(): ILLMInteractionLog;
 }
 
+/** The part of a model's `contextManagement` settings the IDE uses. */
+export interface ModelContextManagement {
+  /**
+   * Planned compaction: prepare the summary in the background past the
+   * prepare threshold. Unset: on for a local server, off otherwise.
+   */
+  plannedCompaction?: boolean;
+  /**
+   * Pre-warm the compacted prompt once its summary is ready (C106):
+   * experimental, "off" by default until the Strata live check; "local" on
+   * Strata and llama.cpp servers. "always"
+   * would add cloud providers, which is not built yet (C109), so it acts as
+   * "local" for now.
+   */
+  prewarm?: PrewarmSetting;
+}
+
+/** `contextManagement.prewarm` (decision D6). */
+export type PrewarmSetting = "off" | "local" | "always";
+
+/**
+ * Strata's `strata_prefix` request field: the checkpoint at the end of the
+ * first `messages` messages (or `tokens` tokens, or `chars` characters of
+ * message `message`) is pinned. Only one pin per engine.
+ */
+export type StrataPrefix =
+  | { messages: number }
+  | { tokens: number }
+  | { message: number; chars: number };
+
 export interface LLMOptions {
   model: string;
 
@@ -1745,6 +1801,9 @@ export interface LLMOptions {
 
   /** Tool overrides for this model */
   toolOverrides?: ToolOverride[];
+
+  /** The model's `contextManagement` settings the IDE reads. */
+  contextManagement?: ModelContextManagement;
 }
 
 type RequireAtLeastOne<T, Keys extends keyof T = keyof T> = Pick<
@@ -2137,6 +2196,13 @@ export interface CacheBehavior {
    * caching on. A choice in the chat toolbar overrides it.
    */
   ttl?: "auto" | "5m" | "1h";
+  /**
+   * Lifetime of a subagent run's cache entries. Default "5m". "1h", or
+   * "auto" (5 minutes, then 1 hour from the run's fifth request), is the
+   * opt-in; "inherit" follows the chat toolbar and `ttl`. Does not turn
+   * caching on. CONTINUOUS_FORCE_CACHE_5M=1 overrides it.
+   */
+  subagentTtl?: "5m" | "1h" | "auto" | "inherit";
 }
 
 export interface ClientCertificateOptions {
@@ -2378,6 +2444,9 @@ export interface ModelDescription {
 
   /** Tool overrides for this model */
   toolOverrides?: ToolOverride[];
+
+  /** The model's `contextManagement` settings the IDE reads. */
+  contextManagement?: ModelContextManagement;
 }
 
 export interface JSONEmbedOptions {

@@ -19,6 +19,10 @@ export function registerExportCommand(program: Command): void {
       "--reasoning",
       "Include the model's reasoning (left out by default)",
     )
+    .option(
+      "--raw",
+      "Mask nothing (secrets are masked by default); prints a warning",
+    )
     .action(async (session: string, options) => {
       const { exportCommand } = await import("../export/exportCommand.js");
       await gracefulExit(
@@ -27,6 +31,7 @@ export function registerExportCommand(program: Command): void {
           out: options.out,
           force: options.force,
           includeReasoning: options.reasoning,
+          raw: options.raw,
         }),
       );
     });

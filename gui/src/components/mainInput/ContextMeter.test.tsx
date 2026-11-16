@@ -15,6 +15,7 @@ import { setupStore } from "../../redux/store";
 import { renderWithProviders } from "../../util/test/render";
 import { ContextMeter, HOVER_OPEN_MS } from "./ContextMeter";
 import { ToolbarWidthContext, type WidthTier } from "./InputToolbar/widthTier";
+import strataMetrics from "core/llm/__fixtures__/strata/metrics-2026-11-15-live.trimmed.json";
 
 const sonnet = {
   title: "Sonnet",
@@ -93,6 +94,8 @@ interface Options {
   estimate?: number;
   pruned?: boolean;
   tier?: WidthTier;
+  /** What core answers for the server's /metrics (local Strata). */
+  metrics?: unknown;
 }
 
 async function setup({
@@ -101,8 +104,12 @@ async function setup({
   estimate,
   pruned,
   tier = "wide",
+  metrics,
 }: Options = {}) {
   const ideMessenger = new MockIdeMessenger();
+  if (metrics !== undefined) {
+    ideMessenger.responses["llm/strataMetrics"] = metrics;
+  }
   const store = setupStore({ ideMessenger });
   const view = await renderWithProviders(
     <ToolbarWidthContext.Provider value={tier}>
@@ -346,6 +353,36 @@ describe("ContextMeter details", () => {
     const note = await screen.findByTestId("compaction-cache-note");
     expect(note.textContent).toContain("120k tokens");
     expect(note.textContent).toContain("the model server's cache");
+  });
+
+  it("show the Compact now estimate in dollars on a cloud model", async () => {
+    const { user } = await setup({ reported: 120_000 });
+    await user.click(screen.getByTestId("context-meter"));
+    const line = await screen.findByTestId("context-compact-estimate");
+    expect(line.textContent).toMatch(
+      /^Compact now \(estimate\): about \$\d+\.\d\d for the summary/,
+    );
+    expect(line.textContent).toContain("Not compacting:");
+  });
+
+  it("show the Compact now estimate in seconds from Strata's /metrics", async () => {
+    const { user } = await setup({
+      model: strata,
+      reported: 120_000,
+      metrics: strataMetrics,
+    });
+    await user.click(screen.getByTestId("context-meter"));
+    const line = await screen.findByTestId("context-compact-estimate");
+    expect(line.textContent).toMatch(
+      /^Compact now \(estimate\): about \d+ s in the background, then about \d+ s once/,
+    );
+  });
+
+  it("show no estimate on a local server that gives no speeds", async () => {
+    const { user } = await setup({ model: strata, reported: 120_000 });
+    await user.click(screen.getByTestId("context-meter"));
+    await screen.findByTestId("context-panel");
+    expect(screen.queryByTestId("context-compact-estimate")).toBeNull();
   });
 
   it("say when the oldest messages are left out", async () => {

@@ -13,15 +13,15 @@ export interface RefusalVerdict {
 const HELD_BY: Record<string, string> = {
   "protected-path":
     "a protected path (a place such as your credentials or the files that hold these settings)",
-  floor: "an always-on rule",
+  floor: "a locked rule",
   "safety-floor": "the safety floor",
 };
 
 /**
  * Why a new Always rule is refused: it would try to loosen something no rule
- * of yours can loosen (an always-on rule, a protected path or a built-in rule
+ * of yours can loosen (a locked rule, a protected path or a built-in rule
  * that asks), so it could never take effect. Pure. Returns a sentence in the
- * page's words (Never, Ask, Always, Built-in rule, Always-on rule), or
+ * page's words (Never, Ask, Always, Built-in rule, Locked rule), or
  * undefined when the rule may be saved.
  *
  * Only Always rules loosen anything, and only the rules of the person's own
@@ -39,7 +39,7 @@ export function refusalFor(input: {
     if (p.decision === "allow") continue;
     const kind =
       p.owner === "a floor rule"
-        ? "an Always-on rule"
+        ? "a locked rule"
         : p.owner === "a built-in rule"
           ? "a built-in rule"
           : undefined;
@@ -56,7 +56,7 @@ export function refusalFor(input: {
   }
   if (after.ruleSource === "builtin" || after.ruleSource === "floor") {
     const kind =
-      after.ruleSource === "floor" ? "an Always-on rule" : "a built-in rule";
+      after.ruleSource === "floor" ? "a locked rule" : "a built-in rule";
     return `${DECISION_WORDS[after.decision === "deny" ? "deny" : "ask"]} from ${kind} still applies to the calls this rule matches, and Always cannot loosen ${kind}. Nothing was changed.`;
   }
   return undefined;

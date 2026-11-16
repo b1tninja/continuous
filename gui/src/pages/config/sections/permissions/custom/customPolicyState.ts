@@ -40,7 +40,7 @@ export const LIST_NAMES: Record<ListKey, string> = {
   deny: "Never",
   ask: "Ask",
   allow: "Always",
-  floor: "Always-on Never",
+  floor: "Locked rules",
 };
 
 export const LIST_HINTS: Record<ListKey, string> = {

@@ -1,5 +1,9 @@
 import { CompletionOptions } from "@continuedev/config-yaml";
-import type { ChatHistoryItem, ToolStatus } from "core/index.js";
+import type {
+  ChatHistoryItem,
+  PromptProgress,
+  ToolStatus,
+} from "core/index.js";
 import type { ChatCompletionCreateParamsStreaming } from "openai/resources.mjs";
 
 import { ToolCallPreview } from "../tools/types.js";
@@ -56,6 +60,13 @@ export interface StreamCallbacks {
    * for each; never called when recovery is off.
    */
   onRecoveryHold?: (holding: boolean) => void;
+  /**
+   * How far a local server (llama.cpp, Strata) has read a long prompt, at
+   * most once a second, and `undefined` once the reading is over (the reply
+   * has started or the request ended). Never called when the server sends no
+   * progress.
+   */
+  onPromptProgress?: (progress: PromptProgress | undefined) => void;
   /**
    * Called after a round of tool calls has finished and before the next model
    * request. A returned item (a user message the person asked to steer with)

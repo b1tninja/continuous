@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { ANTHROPIC_LIST_VERSION } from "../util/anthropicApiVersion";
 import {
   anthropicModelToFetched,
   fetchModels,
@@ -131,6 +132,51 @@ describe("fetchModels: separate input/output limits", () => {
     vi.stubGlobal("fetch", fn);
     await fetchModels("anthropic", "key");
     expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it("Anthropic: lists with the newer anthropic-version (K23)", async () => {
+    respond({ data: [{ id: "claude-sonnet-4-6" }] });
+    await fetchModels("anthropic", "key");
+    const [, init] = (fetch as any).mock.calls[0];
+    expect(init.headers["anthropic-version"]).toBe("2026-10-21");
+    expect(init.headers["anthropic-version"]).toBe(ANTHROPIC_LIST_VERSION);
+  });
+
+  it("Anthropic: falls back to 2023-06-01 on a 400 and keeps it for later pages", async () => {
+    const seen: string[] = [];
+    const pages = [
+      { data: [{ id: "claude-a" }], has_more: true, last_id: "claude-a" },
+      { data: [{ id: "claude-b" }], has_more: false, last_id: "claude-b" },
+    ];
+    const fn = vi.fn(async (_url: unknown, init: any) => {
+      const version = init.headers["anthropic-version"];
+      seen.push(version);
+      if (version === "2026-10-21") {
+        return new Response(
+          JSON.stringify({ error: { type: "invalid_request_error" } }),
+          { status: 400 },
+        );
+      }
+      return new Response(JSON.stringify(pages.shift()), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fn);
+    const models = await fetchModels("anthropic", "key");
+    expect(models.map((m) => m.modelId)).toEqual(["claude-a", "claude-b"]);
+    expect(seen).toEqual(["2026-10-21", "2023-06-01", "2023-06-01"]);
+  });
+
+  it("Anthropic: a 400 on both versions is still an error", async () => {
+    const fn = vi.fn(async () => new Response("{}", { status: 400 }));
+    vi.stubGlobal("fetch", fn);
+    await expect(fetchModels("anthropic", "key")).rejects.toThrow("400");
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it("Anthropic: a 401 is not retried with the older version", async () => {
+    const fn = vi.fn(async () => new Response("{}", { status: 401 }));
+    vi.stubGlobal("fetch", fn);
+    await expect(fetchModels("anthropic", "key")).rejects.toThrow("401");
+    expect(fn).toHaveBeenCalledTimes(1);
   });
 
   it("Gemini: input budget equals inputTokenLimit", async () => {

@@ -1,4 +1,9 @@
-import type { ChatHistoryItem, ToolCallState, ToolStatus } from "core/index.js";
+import type {
+  ChatHistoryItem,
+  PromptProgress,
+  ToolCallState,
+  ToolStatus,
+} from "core/index.js";
 
 import { ALL_BUILT_IN_TOOLS } from "src/tools/allBuiltIns.js";
 import { logger } from "src/util/logger.js";
@@ -19,6 +24,8 @@ interface CreateStreamCallbacksOptions {
   onShowStatusMessage?: (message: string) => void;
   /** The TUI's spinner text while a reply is held for tool call recovery */
   onRecoveryHold?: (holding: boolean) => void;
+  /** The spinner row's prompt-reading line; undefined once the reading is over */
+  onPromptProgress?: (progress: PromptProgress | undefined) => void;
   /** The reply's reasoning as it streams, for the live thinking view */
   onReasoning?: (text: string) => void;
   /** The reply's reasoning has ended (it is kept on the reply's item) */
@@ -38,6 +45,7 @@ export function createStreamCallbacks(
     model,
     onShowStatusMessage,
     onRecoveryHold,
+    onPromptProgress,
     onReasoning,
     onReasoningDone,
   } = options;
@@ -55,6 +63,10 @@ export function createStreamCallbacks(
 
     onRecoveryHold: (holding: boolean) => {
       onRecoveryHold?.(holding);
+    },
+
+    onPromptProgress: (progress: PromptProgress | undefined) => {
+      onPromptProgress?.(progress);
     },
 
     // A notice about the request (a reply cut off at the output limit, say)

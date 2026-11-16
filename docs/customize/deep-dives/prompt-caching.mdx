@@ -56,6 +56,40 @@ models:
 `ttl` accepts `5m`, `1h` or `auto` (the Auto row above). It only chooses the lifetime and does not turn caching on; `promptCaching: true` (or the toolbar) does that. A choice in the toolbar other than "Config default" overrides it for that session. If the model cannot take a 1-hour lifetime (see Bedrock below), `1h` is sent as the 5-minute default. In JSON configuration the same field is `cacheBehavior.ttl`.
 The `cn` command line reaches Claude through shared adapters and reads the same `cacheBehavior.ttl` and `promptCaching`, on both Anthropic and Bedrock. `1h` puts a 1-hour lifetime on every cache point (on Bedrock only for the models listed under Bedrock below; others get 5 minutes). `auto` is applied by the CLI itself, which has no toolbar: it counts the session's requests that carry cache points, and moves to 1 hour at the fifth, or after a pause of more than 5 and up to 55 minutes, the same two rules as above. It has no chat mode, so every CLI session counts as an Agent session. On Anthropic the CLI's cache points are on unless the adapter's `cachingStrategy` is `none`, and in an agent loop they now go on the last tool results, which is where the new content is. On Bedrock they are now on when the config says nothing about caching for Claude models, with the Auto lifetime, and for the Nova models listed below, with Nova's 5-minute default; off for any other model. `promptCaching: false` turns them off. In Loop mode the CLI also pins a cache point at each item's first message, so a retry or a subagent that starts from the item's context reads the same cached prefix instead of writing it again; the pin takes one of the two conversation cache points.
 
+### Subagents
+
+A subagent run uses the 5-minute lifetime, whatever the chat's lifetime is: its requests come seconds apart, so a 1-hour entry is rarely read after 5 minutes. Set `cacheBehavior.subagentTtl` on the model the subagent runs on to change it:
+
+```yaml title="config.yaml"
+models:
+  - name: Claude Sonnet
+    provider: anthropic
+    model: claude-sonnet-4-6
+    apiKey: ${{ secrets.ANTHROPIC_API_KEY }}
+    cacheBehavior:
+      ttl: auto
+      subagentTtl: 1h # 5m | 1h | auto | inherit
+```
+
+| Value          | Lifetime of the run's requests                                                                                     |
+| -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `5m` (default) | 5 minutes                                                                                                          |
+| `1h`           | 1 hour                                                                                                             |
+| `auto`         | The Auto rules above, applied to the run's own requests: 5 minutes, then 1 hour from its fifth request or after a pause of more than 5 and up to 55 minutes |
+| `inherit`      | What the chat would use: the toolbar choice, then `cacheBehavior.ttl`                                              |
+
+`subagentTtl` only chooses the lifetime. A run caches when the chat would cache on that model, and Off in the toolbar stays off. It applies to the subagent tool and to Loop workers in the chat window, and to `cn` subagents (models with the `subagent` role), where `inherit` means the model's own `cacheBehavior.ttl`.
+
+### Precedence
+
+From strongest to weakest:
+
+1. `CONTINUOUS_FORCE_CACHE_5M=1` in the environment of the editor or of `cn`. A debug override: every request asks for 5 minutes, whatever the settings below say. Only the value `1` turns it on. The prompt cache button does not know about it, so its tooltip can still show 1 hour.
+2. For a subagent run, `cacheBehavior.subagentTtl` (default `5m`).
+3. The toolbar choice, other than "Config default".
+4. `cacheBehavior.ttl`.
+5. Auto, where caching is on by default (above), or the provider's 5-minute default.
+
 
 
 ## What gets cached
@@ -96,6 +130,8 @@ Nova 2 Lite's $0.33 is its geographic cross-region and in-region price; AWS list
 On Bedrock, Anthropic says regional and multi-region endpoints cost 10 percent more than global ones, for Claude Sonnet 4.5, Haiku 4.5, Opus 4.5 and every later model. Continuous applies that to model IDs that start with `us.`, `eu.`, `apac.`, `jp.`, `au.` or `ca.`, and prices `global.` IDs and earlier models at list. Only `us.` was checked against real billing data. Set the full ID (for example `us.anthropic.claude-sonnet-4-6`) in your config for the estimate to include the premium. A bare ID with `crossRegionInference` set is prefixed only when the request is sent, so its estimate stays at list price.
 
 Compacting a conversation (the Compact button) sends the same system prompt, tools and cache settings as the conversation, so while the cache is warm the summary request reads it instead of paying full price for the history. When the cache has expired, or caching is off, or only part of the conversation is being compacted, it sends the saved history on its own as before, because writing a new cache entry just before replacing the conversation would cost more. The prompt asks the model to answer in text; if the reply has none, the plain request is sent.
+
+After compacting, the summary is sent as the first message after the system message, not inside it. The tools and the system prompt stay the same bytes, so they stay cached across the compaction (an Anthropic or Bedrock breakpoint on the system prompt, or a local server's system-prompt checkpoint) and only the summary and the turns after it are read again. On Claude models that check earlier reasoning against the conversation, the reasoning of turns kept after the summary is not sent again, because it was produced with the summarised turns in front of it.
 
 A cached session costs more than an uncached one on its first request and less on every request after that, as long as the entry has not expired. Switching the model, changing reasoning settings, or anything that changes the system prompt (such as a rule that starts to match) misses the cache, and the next request writes the prefix again. A one-prompt session never pays back the write.
 

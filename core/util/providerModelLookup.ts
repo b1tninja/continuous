@@ -14,6 +14,11 @@
  * form reads the types and the close-match helper.
  */
 
+import {
+  ANTHROPIC_FALLBACK_VERSION,
+  ANTHROPIC_LIST_VERSION,
+} from "./anthropicApiVersion.js";
+
 export type ModelInfoProvider = "anthropic" | "openai";
 
 /** What the provider reported for one model; absent fields were not sent. */
@@ -83,8 +88,8 @@ export interface ModelLookupInput {
 }
 
 export const MODEL_LOOKUP_TIMEOUT_MS = 8_000;
-export const ANTHROPIC_MODELS_VERSION = "2026-10-21";
-const ANTHROPIC_OLD_VERSION = "2023-06-01";
+export const ANTHROPIC_MODELS_VERSION = ANTHROPIC_LIST_VERSION;
+const ANTHROPIC_OLD_VERSION = ANTHROPIC_FALLBACK_VERSION;
 
 const DEFAULT_BASE: Record<ModelInfoProvider, string> = {
   anthropic: "https://api.anthropic.com/v1",

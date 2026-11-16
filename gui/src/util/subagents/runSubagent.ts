@@ -38,6 +38,11 @@ import { SystemMessageToolCodeblocksFramework } from "core/tools/systemMessageTo
 import { ContinueError, ContinueErrorReason } from "core/util/errors";
 import { renderChatMessage } from "core/util/messageContent";
 import { selectCacheSetting } from "../../redux/selectors/selectCacheSetting";
+import {
+  nextSubagentAutoTtl,
+  subagentFirstCacheTtl,
+  subagentTtlPolicy,
+} from "./subagentCacheTtl";
 import { selectActiveTools } from "../../redux/selectors/selectActiveTools";
 import { selectApprovalSettings } from "../../redux/selectors/selectAutoApproval";
 import { allowOutsideWorkspaceOf } from "../outsideEdits";
@@ -66,6 +71,7 @@ import type {
 import {
   INITIAL_PROMPT_CACHE_STATE,
   modelSupportsPromptCacheControl,
+  type PromptCacheSessionState,
   promptCacheStatus,
   resolvePromptCache,
 } from "../promptCache";
@@ -277,6 +283,11 @@ export interface SubagentDriveInput {
   completionOptions: LLMFullCompletionOptions;
   /** Prompt caching is on: the first request waits its turn at the prefix gate */
   cachingOn: boolean;
+  /**
+   * `cacheBehavior.subagentTtl: auto`: each request's lifetime follows the
+   * Auto policy on this run's own requests (set only with caching on)
+   */
+  autoCacheTtl?: boolean;
   maxTurns: number;
   /** The run's live state: the parent's card, or a Loop worker's inbox row */
   onUpdate: (patch: Partial<SubagentRunState>) => void;
@@ -376,9 +387,11 @@ export async function driveSubagent(
     framework,
     completionOptions,
     cachingOn,
+    autoCacheTtl,
     maxTurns,
     onUpdate,
   } = input;
+  let autoCacheState: PromptCacheSessionState | undefined;
   const signal = controller.signal;
   let local = input.local;
   const reduce = (action: Parameters<typeof sessionSlice.reducer>[1]) => {
@@ -446,8 +459,14 @@ export async function driveSubagent(
     try {
       // Stopped while waiting for the gate: send nothing
       if (signal.aborted) return result("cancelled", reasonOf(signal));
+      let options = completionOptions;
+      if (autoCacheTtl) {
+        const next = nextSubagentAutoTtl(model, autoCacheState);
+        autoCacheState = next.nextState;
+        options = { ...completionOptions, promptCacheTtl: next.ttl };
+      }
       let gen = ideMessenger.llmStreamChat(
-        { completionOptions, title: model.title, messages },
+        { completionOptions: options, title: model.title, messages },
         signal,
       );
       if (framework) {
@@ -696,9 +715,10 @@ export async function driveSubagent(
 
 /**
  * How a run's requests go to this model: native tools or the system message
- * framework, and prompt caching as the parent has it for this model. A fresh
- * cache state, so "auto" starts at 5 minutes: a run's requests come seconds
- * apart, and nothing here learns from them.
+ * framework, and prompt caching on or off as the parent has it for this
+ * model. The lifetime is `cacheBehavior.subagentTtl` (default 5 minutes, see
+ * subagentCacheTtl.ts); with "inherit" it is the parent's, from a fresh cache
+ * state, so the parent's "auto" starts at 5 minutes.
  */
 export function prepareSubagentRequests(
   state: ReturnType<ClientToolExtras["getState"]>,
@@ -707,7 +727,11 @@ export function prepareSubagentRequests(
   baseSystem: string,
 ): Pick<
   SubagentDriveInput,
-  "systemMessage" | "framework" | "completionOptions" | "cachingOn"
+  | "systemMessage"
+  | "framework"
+  | "completionOptions"
+  | "cachingOn"
+  | "autoCacheTtl"
 > {
   const useNativeTools = state.config.config.experimental
     ?.onlyUseSystemMessageTools
@@ -733,11 +757,23 @@ export function prepareSubagentRequests(
   const cachingOn =
     modelSupportsPromptCacheControl(model) &&
     promptCacheStatus(model, cacheSetting, INITIAL_PROMPT_CACHE_STATE, 0).on;
+  // The run's own lifetime, only when caching is on: it never turns caching
+  // on, and an "off" request carries no lifetime
+  const policy = subagentTtlPolicy(model);
+  const ttl = cachingOn ? subagentFirstCacheTtl(policy) : undefined;
   const completionOptions: LLMFullCompletionOptions = {
     ...(useNativeTools && tools.length > 0 ? { tools } : {}),
     ...cacheOptions,
+    ...(ttl ? { promptCacheTtl: ttl } : {}),
   };
-  return { systemMessage, framework, completionOptions, cachingOn };
+  const autoCacheTtl = cachingOn && policy === "auto";
+  return {
+    systemMessage,
+    framework,
+    completionOptions,
+    cachingOn,
+    ...(autoCacheTtl ? { autoCacheTtl } : {}),
+  };
 }
 
 /**

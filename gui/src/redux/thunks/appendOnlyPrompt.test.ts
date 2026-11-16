@@ -27,6 +27,7 @@ import {
 import { toChatBody } from "core/llm/openaiTypeConverters";
 import { getBaseToolDefinitions, serializeTool } from "core/tools";
 import { BuiltInToolNames } from "core/tools/builtIn";
+import { renderChatMessage } from "core/util/messageContent";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sendToolboxText } from "../../components/mainInput/Toolbox/toolboxActions";
 import {
@@ -172,7 +173,11 @@ interface Sent {
 type Reply = ChatMessage[][] | Error;
 
 function setup(
-  opts: { history?: ChatHistoryItem[]; rules?: RuleWithSource[] } = {},
+  opts: {
+    history?: ChatHistoryItem[];
+    rules?: RuleWithSource[];
+    model?: ModelDescription;
+  } = {},
 ) {
   const state = getEmptyRootState();
   state.session.id = "s1";
@@ -185,7 +190,7 @@ function setup(
     rules: opts.rules ?? [],
     selectedModelByRole: {
       ...state.config.config.selectedModelByRole,
-      chat: STRATA,
+      chat: opts.model ?? STRATA,
     },
   };
   state.ui.toolSettings = Object.fromEntries(
@@ -547,11 +552,19 @@ describe("every request path extends the previous request's prompt", () => {
 
     expect(s.sent).toHaveLength(4);
     const first = wire(s.sent[0]);
-    expect(JSON.stringify(first.messages[0].content)).toContain(
+    // The summary is the first message after the system message (C104)
+    expect(JSON.stringify(first.messages[0].content)).not.toContain(
       "Previous conversation summary",
     );
+    expect(first.messages[1].content).toBe(
+      "Previous conversation summary:\n\nThe lexer was fixed in twelve turns.",
+    );
     // Only the new message is sent after the summary
-    expect(first.messages.map((m: any) => m.role)).toEqual(["system", "user"]);
+    expect(first.messages.map((m: any) => m.role)).toEqual([
+      "system",
+      "user",
+      "user",
+    ]);
     expect(broken(s.sent)).toEqual([]);
   });
 
@@ -621,5 +634,202 @@ describe("every request path extends the previous request's prompt", () => {
     const [failed, retry] = s.sent;
     expect(wire(retry).messages).toEqual(wire(failed).messages);
     expect(broken(s.sent)).toEqual([]);
+  });
+});
+
+/** Each turn of longHistory is seven items; its answer is at 7t + 6. */
+const endOfTurn = (t: number) => 7 * t + 6;
+
+/** `history` as loadSession brings it back after "Compact" ran at `at`. */
+function compacted(
+  history: ChatHistoryItem[],
+  at = endOfTurn(9),
+  opts: { recordLength?: boolean } = {},
+): ChatHistoryItem[] {
+  const out = [...history];
+  out[at] = {
+    ...out[at],
+    conversationSummary: "Turns 0 to 9 fixed the lexer.",
+    ...(opts.recordLength !== false && {
+      conversationSummaryHistoryLength: history.length,
+    }),
+  };
+  return out;
+}
+
+const LEXER_RULE: RuleWithSource = {
+  name: "lexer-style",
+  rule: "Name every token kind in upper case.",
+  source: "rules-block" as any,
+  globs: "**/lexer.ts",
+};
+const TEST_RULE: RuleWithSource = {
+  name: "test-style",
+  rule: "Give every test a name that says what it checks.",
+  source: "rules-block" as any,
+  globs: "**/test.ts",
+};
+/** Always; the first message's file; a summarised turn's file; a kept turn's file. */
+const COMPACTION_RULES = [TEST_RULE, RULES[1], LEXER_RULE, RULES[0]];
+
+/**
+ * Twelve turns where the first message attaches lexer.ts (its rule goes in
+ * the system message), turn 4 attaches parser.ts and turn 10 test.ts (their
+ * rules go with those messages).
+ */
+function ruledHistory(): ChatHistoryItem[] {
+  const history = longHistory(12);
+  const t4 = 7 * 4;
+  const t10 = 7 * 10;
+  history[t4] = {
+    ...history[t4],
+    contextItems: [fileItem("parser.ts", output(400, 1000))],
+  };
+  history[t10] = {
+    ...history[t10],
+    contextItems: [fileItem("test.ts", output(401, 500))],
+  };
+  return history;
+}
+
+const OPUS: ModelDescription = {
+  title: "Claude Opus 5.5",
+  model: "claude-opus-5-5",
+  provider: "anthropic",
+  underlyingProviderName: "anthropic",
+  contextLength: 1_000_000,
+  capabilities: { tools: true },
+};
+
+const has = (m: any, text: string) => JSON.stringify(m.content).includes(text);
+
+describe("a compaction keeps the head: the summary goes after the system message (C104)", () => {
+  async function beforeAndAfter(
+    rules = COMPACTION_RULES,
+    history = ruledHistory(),
+  ) {
+    const before = setup({ history, rules });
+    await before.step("before", () => send(before, "Next."));
+    const after = setup({ history: compacted(history), rules });
+    await after.step("after", () => send(after, "Next."));
+    return { pre: wire(before.sent[0]), post: wire(after.sent[0]) };
+  }
+
+  it("the tools and the system message are the same bytes before and after a compaction", async () => {
+    const { pre, post } = await beforeAndAfter();
+
+    // The golden: the system message and the tools, byte for byte
+    expect(post.messages[0].role).toBe("system");
+    expect(JSON.stringify(post.messages[0])).toBe(
+      JSON.stringify(pre.messages[0]),
+    );
+    expect(JSON.stringify(post.tools)).toBe(JSON.stringify(pre.tools));
+    // and as the server renders them: the two prompts share everything up
+    // to the end of the system turn, tools included, so that cache survives
+    const preText = renderQwenPrompt(pre as any);
+    const postText = renderQwenPrompt(post as any);
+    const systemEnd = preText.indexOf("<|im_end|>");
+    expect(systemEnd).toBeGreaterThan(0);
+    expect(firstDifference(preText, postText)).toBeGreaterThan(systemEnd);
+
+    // The rules that always apply and the first message's are in it
+    expect(has(post.messages[0], "British English")).toBe(true);
+    expect(has(post.messages[0], "upper case")).toBe(true);
+    expect(has(post.messages[0], "keep every function pure")).toBe(false);
+    expect(has(post.messages[0], "Previous conversation summary")).toBe(false);
+  });
+
+  it("a rule a summarised message matched goes with the summary; a kept message keeps its own", async () => {
+    const { pre, post } = await beforeAndAfter();
+
+    const summary = post.messages[1];
+    expect(summary.role).toBe("user");
+    expect(summary.content).toBe(
+      'Previous conversation summary:\n\nTurns 0 to 9 fixed the lexer.\n\n<rule name="parser-rules">\nIn the parser, keep every function pure and document its grammar rule.\n</rule>',
+    );
+    // The kept turns are sent as they were before the compaction, turn 10's
+    // message with its test.ts rule included
+    const kept = post.messages.slice(2);
+    expect(kept).toEqual(pre.messages.slice(-kept.length));
+    const withTestRule = kept.filter((m: any) => has(m, "what it checks"));
+    expect(withTestRule.map((m: any) => m.role)).toEqual(["user"]);
+    // Every rule is sent exactly once
+    for (const text of [
+      "British English",
+      "token kind in upper case",
+      "keep every function pure",
+      "says what it checks",
+    ]) {
+      expect(post.messages.filter((m: any) => has(m, text))).toHaveLength(1);
+    }
+  });
+
+  it("the rules keep their fixed order after a compaction", async () => {
+    const history = ruledHistory();
+    const { post } = await beforeAndAfter(COMPACTION_RULES, history);
+    const { post: reordered } = await beforeAndAfter(
+      [...COMPACTION_RULES].reverse(),
+      history,
+    );
+    expect(reordered.messages).toEqual(post.messages);
+  });
+
+  it("after a compaction that kept turns, every request extends the one before", async () => {
+    const s = setup({
+      history: compacted(ruledHistory()),
+      rules: COMPACTION_RULES,
+    });
+    await s.step("after-compaction", () => send(s, "Now the parser."));
+    s.replies.push(toolCallReply(READ, { filepath: "src/parser.ts" }));
+    s.replies.push([[{ role: "assistant", content: "Read it." }]]);
+    await s.step("tool", () => send(s, "Read the parser."));
+    await s.step("next", () => send(s, "And fix it."));
+    expect(s.sent).toHaveLength(4);
+    expect(broken(s.sent)).toEqual([]);
+  });
+
+  it("on a model with preserved thinking, reasoning from before the compaction is not sent again", async () => {
+    // Turns 10 and 11 were kept, and their reasoning was minted with turns
+    // 0 to 9 in front of it: sent back after the summary it fails the
+    // prefix check (core/tools/toolListHold.ts thinkingCutAfterCompaction)
+    const s = setup({ history: compacted(longHistory(12)), model: OPUS });
+    s.replies.push(toolCallReply(READ, { filepath: "src/parser.ts" }));
+    s.replies.push([[{ role: "assistant", content: "Read it." }]]);
+    await s.step("after-compaction", () => send(s, "Read the parser."));
+    await s.step("next", () => send(s, "And fix it."));
+
+    const roles = (x: Sent) => x.messages.map((m) => m.role);
+    expect(s.sent).toHaveLength(3);
+    expect(roles(s.sent[0])).not.toContain("thinking");
+    // The kept turns' tool calls and results are still sent
+    expect(roles(s.sent[0]).filter((r) => r === "tool")).toHaveLength(4);
+    // Reasoning minted after the compaction is sent again, as usual
+    expect(roles(s.sent[1])).toContain("thinking");
+    expect(roles(s.sent[2])).toContain("thinking");
+    for (const sent of s.sent) {
+      expect(renderChatMessage(sent.messages[1])).toContain(
+        "Previous conversation summary:",
+      );
+    }
+    expect(broken(s.sent)).toEqual([]);
+  });
+
+  it("a model without the prefix check keeps the kept turns' reasoning", async () => {
+    const s = setup({ history: compacted(longHistory(12)) });
+    await s.step("after-compaction", () => send(s, "Next."));
+    expect(s.sent[0].messages.map((m) => m.role)).toContain("thinking");
+  });
+
+  it("a summary on a reasoning item is still sent on a preserved-thinking model", async () => {
+    // endOfTurn(9) - 1 is turn 9's last reasoning item
+    const s = setup({
+      history: compacted(longHistory(12), endOfTurn(9) - 1),
+      model: OPUS,
+    });
+    await s.step("after-compaction", () => send(s, "Next."));
+    expect(renderChatMessage(s.sent[0].messages[1])).toContain(
+      "Previous conversation summary:",
+    );
+    expect(s.sent[0].messages.filter((m) => has(m, "Turn 3:"))).toHaveLength(0);
   });
 });

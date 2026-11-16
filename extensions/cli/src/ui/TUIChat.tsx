@@ -22,10 +22,7 @@ import { getTotalSessionCost } from "../session.js";
 import { bashToolEvents } from "../util/cli.js";
 import { logger } from "../util/logger.js";
 
-import {
-  ActionStatus,
-  READING_REPLY_MESSAGE,
-} from "./components/ActionStatus.js";
+import { ActionStatus, spinnerMessage } from "./components/ActionStatus.js";
 import { BottomStatusBar } from "./components/BottomStatusBar.js";
 import { ResourceDebugBar } from "./components/ResourceDebugBar.js";
 import { ScreenContent } from "./components/ScreenContent.js";
@@ -209,11 +206,15 @@ const TUIChat: React.FC<TUIChatProps> = ({
     }, 3000);
   }, []);
 
+  // `/export --json --raw` (V13): the picker writes the session unscrubbed
+  const exportRawRef = useRef(false);
+
   const {
     chatHistory,
     setChatHistory,
     isWaitingForResponse,
     isReadingReply,
+    promptProgress,
     liveReasoning,
     responseStartTime,
     isCompacting,
@@ -251,7 +252,10 @@ const TUIChat: React.FC<TUIChatProps> = ({
     onShowSessionSelector: () => navigateTo("session"),
     onShowJobsSelector: () => navigateTo("jobs"),
     onShowLoopInbox: () => navigateTo("loop"),
-    onShowExportSelector: () => navigateTo("export"),
+    onShowExportSelector: (options) => {
+      exportRawRef.current = !!options?.raw;
+      navigateTo("export");
+    },
     onReload: handleReload,
     onClear: handleClear,
     onRefreshStatic: () => setStaticRefreshTrigger((prev) => prev + 1),
@@ -315,6 +319,8 @@ const TUIChat: React.FC<TUIChatProps> = ({
     async (sessionId: string) => {
       try {
         const { loadSessionById } = await import("../session.js");
+        const { RAW_EXPORT_WARNING, maskedCountLine, sessionExportPayload } =
+          await import("../export/exportCommand.js");
         const fs = await import("fs");
         const path = await import("path");
 
@@ -334,11 +340,12 @@ const TUIChat: React.FC<TUIChatProps> = ({
           return;
         }
 
-        const exportPayload = {
-          version: 1,
-          exportedAt: new Date().toISOString(),
+        // Scrubbed with the at-rest secret rules unless --raw (V13)
+        const raw = exportRawRef.current;
+        const { payload: exportPayload, masked } = sessionExportPayload(
           session,
-        };
+          { raw },
+        );
 
         const defaultPath = path.join(
           process.cwd(),
@@ -352,7 +359,7 @@ const TUIChat: React.FC<TUIChatProps> = ({
           {
             message: {
               role: "system",
-              content: `Session exported to ${defaultPath}`,
+              content: `Session exported to ${defaultPath}. ${raw ? RAW_EXPORT_WARNING : maskedCountLine(masked)}`,
             },
             contextItems: [],
           },
@@ -452,7 +459,7 @@ const TUIChat: React.FC<TUIChatProps> = ({
         <ActionStatus
           visible={isWaitingForResponse && !!responseStartTime}
           startTime={responseStartTime || 0}
-          message={isReadingReply ? READING_REPLY_MESSAGE : ""}
+          message={spinnerMessage(isReadingReply, promptProgress)}
           showSpinner={true}
           additionalHint={
             isBashToolRunning ? "ctrl+b to background" : undefined
