@@ -495,6 +495,7 @@ export class Core {
       this.registerModelListHandlers();
       this.registerHistoryTrashHandlers();
       this.registerCompactionHandlers();
+      this.registerMcpWizardHandlers();
     } catch (error) {
       Logger.error(error);
       throw error; // Re-throw to prevent partially initialized core
@@ -1064,6 +1065,33 @@ export class Core {
         }),
         ...(dirs[0] ? { cwd: uriToPath(dirs[0]) } : {}),
       });
+    });
+  }
+
+  /**
+   * The MCP add dialog (MCPW4a). The probe needs `consent: true` in its
+   * request, and no answer carries a secret value
+   */
+  private registerMcpWizardHandlers() {
+    const on = this.messenger.on.bind(this.messenger);
+
+    registerMcpWizardHandlers(on as never, {
+      configPath: () => getConfigYamlPath(),
+      continueDir: () => getContinueGlobalPath(),
+      projectDir: async () => {
+        const dirs = await this.ide.getWorkspaceDirs();
+        return dirs[0] ? localPathOrUriToPath(dirs[0]) : undefined;
+      },
+      ide: this.ide,
+      probeIde: this.ide,
+      secretStorage: async () =>
+        this.globalContext.get("preferredKeyStorage") !== "env" &&
+        (await isSecureStorageAvailable(this.ide))
+          ? "secure"
+          : "env",
+      reload: async (reason) => {
+        await this.configHandler.reloadConfig(reason);
+      },
     });
   }
 
@@ -1847,27 +1875,6 @@ export class Core {
         "Selected model update (config/updateSelectedModel message)",
       );
       return newSelectedModels;
-    });
-
-    // The MCP add dialog (MCPW4a). The probe needs `consent: true` in its
-    // request, and no answer carries a secret value
-    registerMcpWizardHandlers(on as never, {
-      configPath: () => getConfigYamlPath(),
-      continueDir: () => getContinueGlobalPath(),
-      projectDir: async () => {
-        const dirs = await this.ide.getWorkspaceDirs();
-        return dirs[0] ? localPathOrUriToPath(dirs[0]) : undefined;
-      },
-      ide: this.ide,
-      probeIde: this.ide,
-      secretStorage: async () =>
-        this.globalContext.get("preferredKeyStorage") !== "env" &&
-        (await isSecureStorageAvailable(this.ide))
-          ? "secure"
-          : "env",
-      reload: async (reason) => {
-        await this.configHandler.reloadConfig(reason);
-      },
     });
 
     on("mcp/reloadServer", async (msg) => {
