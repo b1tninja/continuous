@@ -244,3 +244,49 @@ export class TaintRegistry {
 }
 
 export const taintRegistry = new TaintRegistry();
+
+/**
+ * B92: a secret was read in this session. Kept apart from the taint labels
+ * because it holds whatever `taintedSessionRule` says: the secret-read plus
+ * network pair asks at every level and is refused at IDGAF with the rule off.
+ * `/untaint` does not clear it; a new session starts without it. What is kept
+ * is what read the secret (the tool and the path or the word it named), never
+ * the content.
+ */
+export interface SecretRead {
+  /** What read it, for the reason line: `read_file ~/.npmrc`, `a command that names .env` */
+  source: string;
+  /** The turn it was read, when the host counts turns */
+  turn?: number;
+}
+
+const MAX_SECRET_SOURCE_CHARS = 120;
+
+export class SecretReadRegistry {
+  private readonly sessions = new Map<string, SecretRead>();
+
+  /** The first read is kept; returns true when this session had none. */
+  mark(session: string, read: SecretRead): boolean {
+    if (this.sessions.has(session)) return false;
+    this.sessions.set(session, {
+      source: read.source.slice(0, MAX_SECRET_SOURCE_CHARS),
+      ...(read.turn === undefined ? {} : { turn: read.turn }),
+    });
+    return true;
+  }
+
+  get(session: string): SecretRead | undefined {
+    return this.sessions.get(session);
+  }
+
+  /** Only a new session ends it. */
+  clear(session: string): void {
+    this.sessions.delete(session);
+  }
+
+  reset(): void {
+    this.sessions.clear();
+  }
+}
+
+export const secretReads = new SecretReadRegistry();

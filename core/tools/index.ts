@@ -1,5 +1,5 @@
 import { ConfigDependentToolParams, Tool } from "..";
-import { isWebSearchConfigured } from "../context/providers/webSearchBackend";
+import { isWebSearchConfigured } from "./webSearch/registry";
 import { isRecommendedAgentModel } from "../llm/toolSupport";
 import { historyAgeingEnabled } from "../util/contextAgeing";
 import * as toolDefinitions from "./definitions";
@@ -34,8 +34,9 @@ export const getConfigDependentToolDefinitions = async (
   tools.push(await toolDefinitions.readSkillTool(params));
   tools.push(await toolDefinitions.subagentTool(params));
 
-  // Only with the user's own search endpoint (CONTINUOUS_WEB_SEARCH_URL);
-  // there is no default backend, so by default the tool does not exist.
+  // Only once the person has picked a search provider in web.search of their
+  // own config.yaml; there is no default provider, so by default the tool
+  // does not exist (core/tools/webSearch/registry.ts).
   if (isWebSearchConfigured()) {
     tools.push(toolDefinitions.searchWebTool);
   }

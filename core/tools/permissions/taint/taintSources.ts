@@ -1,6 +1,7 @@
 import * as nodePath from "node:path";
 import { BuiltInToolNames } from "../../builtIn";
 import { commandCandidateSet } from "../candidates";
+import { effectsOfCommand } from "../commandSpecs";
 import { programName } from "../destinations";
 import { isSecretPath } from "../protectedPaths";
 import { jqEnvironmentLabel, secretWordLabel } from "../secretCommands";
@@ -131,43 +132,203 @@ const unquote = (w: string) => w.replace(/^['"]+|['"]+$/g, "");
 const slashes = (p: string) => p.replace(/\\/g, "/");
 
 /**
- * Whether a command prints a credential (the words the `credential-read` sink
- * names: an environment dump, a secret-looking variable) or names a secret
- * file (`cat .env`, `type ~/.aws/credentials`). It errs toward yes: a command
- * that only mentions a secret file is labelled too.
+ * Programs that put a file's content on their output (or decode, search or
+ * page it): naming a secret file as their operand reads it. PowerShell
+ * aliases are folded by `programName` (`cat`, `gc` and `type` are
+ * `get-content` there), so both spellings are listed.
  */
-function commandReadsSecret(command: string, shell?: ShellKind): boolean {
-  for (const c of commandCandidateSet(command, shell).list) {
-    const words = c.trim().split(/\s+/).filter(Boolean);
-    if (words.length === 0) continue;
-    const printed = words.some((w, i) =>
-      secretWordLabel(w, i === 0, words.length > 1, words[i - 1]),
-    );
-    if (printed || jqEnvironmentLabel(words)) return true;
-    if (words.slice(1).some((w) => isSecretPath(slashes(unquote(w))))) {
-      return true;
-    }
-  }
-  return false;
+const CONTENT_READERS = new Set([
+  "cat",
+  "tac",
+  "nl",
+  "type",
+  "get-content",
+  "head",
+  "tail",
+  "less",
+  "more",
+  "bat",
+  "grep",
+  "egrep",
+  "fgrep",
+  "rg",
+  "ag",
+  "findstr",
+  "select-string",
+  "awk",
+  "gawk",
+  "sed",
+  "cut",
+  "sort",
+  "uniq",
+  "diff",
+  "base64",
+  "xxd",
+  "od",
+  "hexdump",
+  "strings",
+  "jq",
+  "yq",
+  "openssl",
+  "gpg",
+  "source",
+  ".",
+  "certutil",
+  "import-csv",
+]);
+
+/** Programs that take a key to log in with (`-i key`): the key is used, not sent. */
+const IDENTITY_FLAG_PROGRAMS = new Set(["ssh", "scp", "sftp"]);
+
+/** Programs that reach the network whatever commandSpecs.ts knows of them. */
+const NETWORK_PROGRAMS = new Set([
+  "curl",
+  "wget",
+  "http",
+  "https",
+  "xh",
+  "nc",
+  "ncat",
+  "netcat",
+  "socat",
+  "telnet",
+  "ssh",
+  "scp",
+  "sftp",
+  "rsync",
+  "ftp",
+  "invoke-webrequest",
+  "invoke-restmethod",
+]);
+
+const flagsOff = (w: string) => !w.startsWith("-");
+
+/** The path a network argument carries: `@.env`, `file=@.env`, `--data-binary=@.env`, `.env`. */
+function sentPath(word: string): string {
+  const at = word.lastIndexOf("@");
+  if (at >= 0 && at < word.length - 1) return word.slice(at + 1);
+  const eq = word.indexOf("=");
+  return eq > 0 && eq < word.length - 1 ? word.slice(eq + 1) : word;
 }
 
 /**
- * Whether this call brought a secret into the conversation: a file tool's
- * read of a protected secret path (`isSecretPath`), or a command that prints
- * a credential or names a secret file. A confidentiality label: it says
- * private data entered, not that the content is untrusted.
+ * A URL or a remote path (`host:path`, `user@host:path`): somewhere else's
+ * file, not one on this machine being sent. A drive letter (`C:/x`) is local.
  */
-function readsSecret(call: SourceCall): boolean {
+function isRemote(word: string): boolean {
+  if (word.includes("://")) return true;
+  return /^[^/\\]+:/.test(word) && !/^[a-zA-Z]:[\\/]/.test(word);
+}
+
+/** What read a secret, and the path when a file was read. */
+interface SecretSource {
+  text: string;
+  path?: string;
+}
+
+/** One command (a candidate's words): does it read a secret file's content? */
+function wordsReadSecret(words: string[]): SecretSource | undefined {
+  const clean = (w: string) => slashes(unquote(w));
+  const program = programName(words[0]);
+  const rest = words.slice(1);
+  // Input redirected from the file: `wc -l < .env`, `curl -d @- x <.env`
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    if (/^\d?<(?![<(&])/.test(w)) {
+      const target = clean(w.replace(/^\d?</, "") || (words[i + 1] ?? ""));
+      if (target && isSecretPath(target)) {
+        return { text: `a command that reads ${target}`, path: target };
+      }
+    }
+  }
+  if (CONTENT_READERS.has(program)) {
+    const read = rest.filter(flagsOff).map(clean).find(isSecretPath);
+    if (read) return { text: `a command that reads ${read}`, path: read };
+  }
+  if (
+    NETWORK_PROGRAMS.has(program) ||
+    effectsOfCommand(words.join(" ")).has("network")
+  ) {
+    for (let i = 0; i < rest.length; i++) {
+      if (IDENTITY_FLAG_PROGRAMS.has(program) && rest[i - 1] === "-i") continue;
+      const sent = clean(sentPath(rest[i]));
+      if (sent && !isRemote(sent) && isSecretPath(sent)) {
+        return { text: `a command that sends ${sent}`, path: sent };
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Whether a command prints a credential (the words the `credential-read`
+ * sink names: an environment dump, a secret-looking variable) or reads a
+ * secret file's content: a program that prints, searches or decodes it, an
+ * input redirect from it, or a network command that sends it (`curl -d
+ * @.env`, `scp .env host:`). A command that only names the file (`echo .env`,
+ * `ls .env`, `test -f .env`, `git add .env`) reads nothing and marks nothing.
+ * Read from the command candidates (candidates.ts), so a pipeline, a list,
+ * `bash -c` and PowerShell aliases are seen as the shell sees them.
+ */
+function commandSecretSource(
+  command: string,
+  shell?: ShellKind,
+): SecretSource | undefined {
+  for (const c of commandCandidateSet(command, shell).list) {
+    const words = c.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) continue;
+    const printed =
+      words
+        .map((w, i) =>
+          secretWordLabel(w, i === 0, words.length > 1, words[i - 1]),
+        )
+        .find(Boolean) ?? jqEnvironmentLabel(words);
+    if (printed) return { text: `a command that prints ${printed}` };
+    const read = wordsReadSecret(words);
+    if (read) return read;
+  }
+  return undefined;
+}
+
+function secretSourceParts(call: SourceCall): SecretSource | undefined {
   const { toolName, parsedArgs } = call;
   if (CONTENT_READS.has(toolName)) {
-    const raw = str(parsedArgs[FILE_READS[toolName]]);
-    return !!raw && isSecretPath(slashes(raw.trim()));
+    const raw = str(parsedArgs[FILE_READS[toolName]])?.trim();
+    return raw && isSecretPath(slashes(raw))
+      ? { text: `${toolName} ${raw}`, path: raw }
+      : undefined;
   }
   if (toolName === BuiltInToolNames.RunTerminalCommand) {
     const command = str(parsedArgs.command);
-    return !!command && commandReadsSecret(command, call.shell);
+    return command ? commandSecretSource(command, call.shell) : undefined;
   }
-  return false;
+  return undefined;
+}
+
+/**
+ * What brought a secret into the conversation, if this call did: a file
+ * tool's read of a protected secret path (`isSecretPath`), or a command that
+ * prints a credential or reads a secret file's content. The tool and the
+ * path or the word, never the content. A confidentiality label: it says
+ * private data entered, not that the content is untrusted.
+ */
+export function secretSourceOfCall(call: SourceCall): string | undefined {
+  return secretSourceParts(call)?.text;
+}
+
+/**
+ * The same, for the audit trail: the path cut to the file's name
+ * (`read_file .npmrc`, `a command that reads credentials`).
+ */
+export function secretSourceForAudit(call: SourceCall): string | undefined {
+  const parts = secretSourceParts(call);
+  if (!parts?.path) return parts?.text;
+  const name = slashes(parts.path).split("/").filter(Boolean).pop() ?? "";
+  return parts.text.replace(parts.path, name);
+}
+
+function readsSecret(call: SourceCall): boolean {
+  return secretSourceOfCall(call) !== undefined;
 }
 
 /** The labels of the content this call brought into the conversation, if any. */

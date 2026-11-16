@@ -322,6 +322,21 @@ export type ChatHistoryItemWithMessageId = ChatHistoryItem & {
   message: ChatMessage & { id: string };
 };
 
+/** What Undo after an edit of an earlier message needs (NI7). */
+export interface EditUndo {
+  /** The history before the edit, every item as it was */
+  before: ChatHistoryItemWithMessageId[];
+  /** The index of the edited message */
+  index: number;
+  /** How many messages the edit replaced: the edited one and every later one */
+  replaced: number;
+  /** The session the replaced turns were saved to, in History */
+  copySessionId: string;
+  copyTitle: string;
+  /** Whether the copy reached the disk; "pending" until the save answers */
+  saved: "pending" | "saved" | "failed";
+}
+
 type SessionState = {
   /**
    * The session left last, in any window: the webview's storage is shared by
@@ -397,6 +412,13 @@ type SessionState = {
    * is sent and with the session. Not saved.
    */
   contextRemovalUndo?: ContextRemovalUndo;
+  /**
+   * The last edit of an earlier message (NI7): the conversation as it was
+   * before the edit replaced its tail, kept for Undo, and the saved copy of
+   * it in History. Cleared by the next message, a dismiss and the session.
+   * Not saved: the copy is.
+   */
+  editUndo?: EditUndo;
   /**
    * The tool list the last request offered, before model overrides and tool
    * search, and the context it was offered in (core/tools/toolListHold.ts).
@@ -1247,6 +1269,7 @@ export const sessionSlice = createSlice({
       state.isPruned = false;
       state.contextPercentage = undefined;
       state.contextRemovalUndo = undefined;
+      state.editUndo = undefined;
       state.answeredRoute = undefined;
       // A new session, a loaded one or a compacted one (which is reloaded)
       // builds its prompt from scratch: tool changes that waited apply now
@@ -1355,6 +1378,19 @@ export const sessionSlice = createSlice({
       { payload }: PayloadAction<string | undefined>,
     ) => {
       state.sessionLoadNotice = payload;
+    },
+    setEditUndo: (state, { payload }: PayloadAction<EditUndo | undefined>) => {
+      state.editUndo = payload;
+    },
+    /** Undo of an edit: the conversation before it comes back as it was. */
+    restoreHistoryBeforeEdit: (
+      state,
+      { payload }: PayloadAction<ChatHistoryItemWithMessageId[]>,
+    ) => {
+      state.history = payload;
+      state.editUndo = undefined;
+      state.codeBlockApplyStates.curIndex = 0;
+      state.inlineErrorMessage = undefined;
     },
     setIsSessionMetadataLoading: (
       state,
@@ -1944,6 +1980,8 @@ export const {
   updateSessionTitle,
   setLoadingSessionId,
   setSessionLoadNotice,
+  setEditUndo,
+  restoreHistoryBeforeEdit,
   addHighlightedCode,
   addPromptCompletionPair,
   setActive,

@@ -35,6 +35,7 @@ This is not VS Code's `settings.json`. The extension's settings are listed in [V
 | `hooks`                          | object  | none                                                      | user and trusted project files     |
 | `disableAllHooks`                | boolean | `false`                                                   | user and trusted project files     |
 | `managedHooksOnly`               | boolean | `false`                                                   | user files only                    |
+| `hooks.readClaudeSettings`       | boolean | `false`                                                   | this file only                     |
 
 "This file only" means a project cannot set the key: a repository you open cannot raise your limits or switch attribution on.
 
@@ -48,13 +49,13 @@ Nothing is added to a commit message or a pull request description unless you sw
 
 ### Hooks
 
-`hooks`, `disableAllHooks` and `managedHooksOnly` configure [hooks](/ide-extensions/agent/hooks-trust), in the same format as Claude Code's settings files.
+`hooks`, `disableAllHooks` and `managedHooksOnly` configure [hooks](/ide-extensions/agent/hooks-trust), in the same format as Claude Code's settings files. `hooks.readClaudeSettings` is a switch inside `hooks`, not an event: `true` in this file runs the hooks in `~/.claude/settings.json` too.
 
-Hooks are read from these files, and those from every file run:
+Hooks are read from these files, and those from every file that loads run:
 
 | File                                   | Whose        | Loaded                                         |
 | -------------------------------------- | ------------ | ---------------------------------------------- |
-| `~/.claude/settings.json`              | yours        | always                                         |
+| `~/.claude/settings.json`              | yours        | with `hooks.readClaudeSettings: true` here     |
 | `~/.continuous/settings.json`          | yours        | always                                         |
 | `.claude/settings.json`                | the project  | once you trust the project's hooks             |
 | `.continue/settings.json`              | the project  | once you trust the project's hooks             |

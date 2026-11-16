@@ -15,6 +15,7 @@ import {
 } from "../../util/fetchFavicon";
 import { getFetchLog, resetFetchLogForTests } from "../../util/fetchRecord";
 import { setHostResolver } from "../../util/networkAddress";
+import { resetWebConfigForTests } from "../../util/webConfig";
 
 /**
  * WB23: `@url`, the favicon lookup, `@web` and `@google` get the fetch tool's
@@ -100,10 +101,15 @@ function expectNoGlobalHeaders() {
 }
 
 beforeAll(() => setHostResolver(async () => ["93.184.215.14"]));
-afterAll(() => setHostResolver(undefined));
+afterAll(() => {
+  setHostResolver(undefined);
+  resetWebConfigForTests();
+});
 beforeEach(() => {
   calls.length = 0;
   resetFetchLogForTests();
+  // Never the developer's own config.yaml: the search provider comes from the environment here
+  resetWebConfigForTests("/nonexistent/continuous-test/config.yaml");
 });
 
 describe("@url", () => {
@@ -182,7 +188,10 @@ describe("@url", () => {
     const err = await new URLContextProvider({})
       .getContextItems("https://site.example/broken", extras())
       .catch((e: Error) => e);
-    expect((err as Error).message).toBe("HTTP 500 Error");
+    // The outcome's first sentence (WB41): our reason phrase, not the server's
+    expect((err as Error).message).toBe(
+      "Not read: site.example answered 500 Internal Server Error.",
+    );
     expect((err as Error).message).not.toContain("stack trace");
   });
 
@@ -220,9 +229,11 @@ describe("@web (the search backend)", () => {
       );
       expect(items[0].name).toBe("T");
       expectNoGlobalHeaders();
+      // UA-3: the product token without the info URL
       expect(calls[0].init.headers).toEqual({
         Accept: "application/json",
         Authorization: "Bearer search-key",
+        "User-Agent": expect.stringMatching(/^Continuous-User\/\d+\.\d+$/),
       });
       expect(getFetchLog().list()[0].purpose).toBe("search");
     } finally {
@@ -244,7 +255,10 @@ describe("@web (the search backend)", () => {
         await import("./WebContextProvider");
       await new WebContextProvider({}).getContextItems("", extras("q"));
       expect(calls[1].url).toBe("https://other.example/s");
-      expect(calls[1].init.headers).toEqual({ Accept: "application/json" });
+      expect(calls[1].init.headers).toEqual({
+        Accept: "application/json",
+        "User-Agent": expect.stringMatching(/^Continuous-User\/\d+\.\d+$/),
+      });
     } finally {
       vi.unstubAllEnvs();
     }

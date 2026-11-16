@@ -307,6 +307,9 @@ export default async function doLoadConfig(options: {
     });
     if (server.status === "connected") {
       const connection = mcpManager.getConnection(server.id);
+      const fromWorkspace = workspaceDirs.some((dir) =>
+        server.sourceFile?.startsWith(dir),
+      );
       const serverTools: Tool[] = server.tools.map((tool) => {
         const readOnly = mcpToolIsReadOnly(tool, server, trustContext);
         return {
@@ -330,11 +333,11 @@ export default async function doLoadConfig(options: {
           group: server.name,
           originalFunctionName: tool.name,
           mcpMeta: tool._meta,
-          ...(workspaceDirs.some((dir) =>
-            server.sourceFile?.startsWith(dir),
-          ) && {
-            mcpFromWorkspace: true,
-          }),
+          ...(fromWorkspace
+            ? { mcpFromWorkspace: true }
+            : trustContext.trustedServers?.includes(server.name)
+              ? { mcpServerTrusted: true }
+              : {}),
           ...(connection?.changedTools.get(tool.name) && {
             mcpDefinitionChange: connection.changedTools.get(tool.name),
           }),

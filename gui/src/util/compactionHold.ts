@@ -1,14 +1,11 @@
 import type { JSONContent } from "@tiptap/core";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import {
-  COMPACTION_THRESHOLDS,
-  type CompactionPlan,
-} from "core/util/compactionPlan";
+import type { CompactionPlan } from "core/util/compactionPlan";
 import { selectSelectedChatModel } from "../redux/slices/configSlice";
 import type { RootState } from "../redux/store";
 import {
   currentCompactionPlan,
-  isLocalModel,
+  forceAtTokens,
   preparedAppliesAtTurn,
   usablePreparedCompaction,
 } from "../redux/thunks/prepareCompaction";
@@ -16,7 +13,8 @@ import {
 /**
  * The forced-path hold (plans/research/cache-friendly-context-trimming.md
  * section 6.5, row C108). A message that would take the prompt past the force
- * threshold (decision D3: 85% of the window on a local server, 90% on cloud)
+ * threshold (decision D3: 85% of the window on a local server, of the window
+ * less core's 5% calibration headroom, see forceAtTokens; 90% on cloud)
  * makes C101's block drop cut the oldest turns, and everything after the head
  * is read again: about 390k tokens, 85 s on the owner's Strata. Unless the
  * next turn applies a prepared summary on its own (pre-warmed, or cloud),
@@ -30,7 +28,9 @@ import {
  *    plan's later turns are not held again.
  *
  * Only with planned compaction on (D6), and only for the person's own
- * messages from the chat input, never for a loop or a resumed turn.
+ * messages from the chat input, never for a loop or a resumed turn: those,
+ * and the agent's requests between tool rounds, compact with nobody asked
+ * (thunks/compactAtToolRound.ts, C117).
  */
 export interface CompactionHoldDecision {
   plan: CompactionPlan;
@@ -68,17 +68,14 @@ export function compactionHoldFor(
   if (state.session.compactionHoldContinued === plan.id) return undefined;
   // A ready summary is applied at this turn instead (applyPreparedCompactionForTurn)
   if (preparedAppliesAtTurn(state)) return undefined;
-  const shares = isLocalModel(model)
-    ? COMPACTION_THRESHOLDS.local
-    : COMPACTION_THRESHOLDS.cloud;
-  const forceAtTokens = Math.floor(plan.window * shares.force);
+  const forceAt = forceAtTokens(plan, model);
   const totalTokens = plan.tokens.total + Math.max(0, newTokens);
-  if (totalTokens < forceAtTokens) return undefined;
+  if (totalTokens < forceAt) return undefined;
   return {
     plan,
     rereadTokens: plan.tokens.span + plan.tokens.tail + Math.max(0, newTokens),
     totalTokens,
-    forceAtTokens,
+    forceAtTokens: forceAt,
     prepared: !!usablePreparedCompaction(
       state,
       state.session.history.length - 1,

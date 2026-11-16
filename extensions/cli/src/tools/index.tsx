@@ -363,6 +363,7 @@ export async function executeToolCall(
       parallelToolCallCount: options.parallelToolCallCount,
       abortSignal: options.abortSignal,
       onToolPermissionRequest: options.onToolPermissionRequest,
+      ...(options.sessionId ? { sessionId: options.sessionId } : {}),
     };
 
     // IMPORTANT: if preprocessed args are present, uses preprocessed args instead of original args

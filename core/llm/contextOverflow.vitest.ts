@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { blocksToDrop, contextLimits } from "./contextThresholds";
 import {
+  CALIBRATION_BAND,
   CALIBRATION_SMOOTHING,
   CORRECTION_HEADROOM,
   MAX_CALIBRATION,
@@ -235,11 +237,56 @@ describe("the usage calibration (local servers)", () => {
     // And later usage cannot take that back below the refusal's correction
     learnTokenCalibration(QWEN, 0.7 * 100_000, 100_000);
     expect(contextCorrectionFor(QWEN)).toBe(1);
-    // A higher ratio from usage still applies on top of it
+    // A higher ratio from usage still applies on top of it, to within the
+    // band the budget is held in
     for (let i = 0; i < 40; i++) learnTokenCalibration(QWEN, 110_000, 100_000);
-    expect(contextCorrectionFor(QWEN)).toBeCloseTo(
-      1.1 * CORRECTION_HEADROOM,
-      2,
-    );
+    const applied = contextCorrectionFor(QWEN) / CORRECTION_HEADROOM;
+    expect(applied).toBeGreaterThan(1.1 * (1 - CALIBRATION_BAND));
+    expect(applied).toBeLessThanOrEqual(1.1);
+  });
+});
+
+describe("the budget holds still while the ratio wanders (C117)", () => {
+  const real = STRATA.requests[0].prompt_tokens as number;
+  const estimated = STRATA._client.estimated_prompt_tokens as number;
+  const window = STRATA.engine.context as number;
+
+  /**
+   * A long tool loop: every request's ratio a little off the last (code and
+   * prose count differently), as on the owner's Strata session where the
+   * cut moved by one message every few requests.
+   */
+  const samples = Array.from({ length: 60 }, (_, i) => {
+    const wobble = 1 + 0.012 * Math.sin(i * 1.7);
+    return Math.round(real * wobble);
+  });
+
+  it("keeps the pruning budget, so the block-drop cut, the same", () => {
+    learnTokenCalibration(QWEN, real, estimated);
+    const budget = correctedContextLength(window, QWEN)!;
+    const cut = (w: number) => {
+      const limits = contextLimits(w, 40_000, "local");
+      return blocksToDrop(560_000, limits) * limits.block;
+    };
+    const first = cut(budget);
+    const ratios = new Set<number>();
+    for (const sample of samples) {
+      learnTokenCalibration(QWEN, sample, estimated);
+      ratios.add(tokenCalibrationFor(QWEN)!);
+      expect(correctedContextLength(window, QWEN)).toBe(budget);
+      expect(cut(correctedContextLength(window, QWEN)!)).toBe(first);
+    }
+    // The smoothed ratio itself did move
+    expect(ratios.size).toBeGreaterThan(10);
+  });
+
+  it("follows the ratio once it leaves the band", () => {
+    learnTokenCalibration(QWEN, real, estimated);
+    const before = contextCorrectionFor(QWEN);
+    // The real count turns out 10% higher, request after request
+    for (let i = 0; i < 20; i++) {
+      learnTokenCalibration(QWEN, Math.round(real * 1.1), estimated);
+    }
+    expect(contextCorrectionFor(QWEN)).toBeGreaterThan(before * 1.07);
   });
 });

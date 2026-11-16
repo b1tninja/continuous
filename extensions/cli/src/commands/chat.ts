@@ -10,7 +10,7 @@ import {
   processCommandFlags,
 } from "../flags/flagProcessor.js";
 import * as headless from "../headless/streamJsonHeadless.js";
-import { runStopHooks } from "../hooks/lifecycleHooks.js";
+import { runTurnWithStopHooks } from "../hooks/lifecycleHooks.js";
 import {
   describePromptBlocked,
   runUserPromptSubmitHooks,
@@ -49,7 +49,7 @@ import {
 } from "../util/tokenizer.js";
 
 import { ExtendedCommandOptions } from "./BaseCommandOptions.js";
-import { processJsonOutput, stripThinkTags } from "./chatOutput.js";
+import { formatHeadlessAnswer } from "./chatOutput.js";
 import { handleTitleGeneration } from "./chatTitle.js";
 import { printRetirementNotice } from "./retirementNotice.js";
 
@@ -179,20 +179,7 @@ function processAndOutputResponse(
   // stream-json keeps the answer for its `result` line and prints nothing
   if (headless.noteHeadlessAnswer(finalResponse, silent, format)) return;
   if (isHeadless && finalResponse && finalResponse.trim()) {
-    let processedResponse = finalResponse;
-
-    // Strip think tags if --silent flag is enabled
-    if (silent) {
-      processedResponse = stripThinkTags(processedResponse);
-    }
-
-    // Process output based on format
-    const outputResponse =
-      format === "json"
-        ? processJsonOutput(processedResponse)
-        : processedResponse;
-
-    safeStdout(outputResponse + "\n");
+    safeStdout(formatHeadlessAnswer(finalResponse, silent, format) + "\n");
   }
 }
 
@@ -350,22 +337,34 @@ async function processMessage(
   }
 
   try {
-    // Get AI response with potential tool usage
-    const finalResponse = await getStreamingResponse(
-      compactionIndex,
-      model,
-      llmApi,
-    );
-
-    // Generate session title after first assistant response
-    if (firstAssistantResponse && finalResponse && finalResponse.trim()) {
-      await handleTitleGeneration(finalResponse, llmApi, model);
-    }
+    // Get AI response with potential tool usage. A Stop hook that blocks
+    // sends it back to work, up to three times (D4); only the last answer is
+    // printed in headless mode.
+    let firstTurn = true;
+    const finalResponse =
+      (await runTurnWithStopHooks({
+        runTurn: async () => {
+          const response = await getStreamingResponse(
+            compactionIndex,
+            model,
+            llmApi,
+          );
+          // Generate session title after first assistant response
+          if (firstTurn && firstAssistantResponse && response?.trim()) {
+            await handleTitleGeneration(response, llmApi, model);
+          }
+          firstTurn = false;
+          return response;
+        },
+        addUserMessage: (text) => services.chatHistory.addUserMessage(text),
+        notice: (text) => {
+          if (isHeadless) safeStderr(`${text}\n`);
+          else console.info(chalk.yellow(text));
+        },
+      })) ?? "";
 
     // Process and output response in headless mode
     processAndOutputResponse(finalResponse, isHeadless, silent, format);
-
-    await runStopHooks(finalResponse);
 
     // Save session after each successful response
     updateSessionHistory(services.chatHistory.getHistory());

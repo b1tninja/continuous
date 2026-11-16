@@ -9,7 +9,7 @@ import { vi } from "vitest";
 import { CLI_WEB_SESSION } from "../../permissions/webSession.js";
 import { ToolPermissionSelector } from "../components/ToolPermissionSelector.js";
 
-/** WB45: the ask for a Fetch offers the domain for this session, always, or No. */
+/** WB45: the ask for a Fetch offers the domain for this session, always, or No (skip, or stop). */
 describe("TUIChat - the Fetch ask", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -31,13 +31,14 @@ describe("TUIChat - the Fetch ask", () => {
       />,
     );
 
-  it("offers the three choices, naming the host", async () => {
+  it("offers the four choices, naming the host", async () => {
     const { lastFrame } = renderFetch(vi.fn());
     await vi.advanceTimersByTimeAsync(50);
     const frame = lastFrame() ?? "";
     expect(frame).toContain("Allow docs.example.com for this session");
     expect(frame).toContain("Always allow docs.example.com");
-    expect(frame).toMatch(/\bNo\b/);
+    expect(frame).toContain("No, skip this call");
+    expect(frame).toContain("No, and tell Continue what to do differently");
     expect(frame).not.toContain("Continue + always allow");
   });
 
@@ -70,11 +71,25 @@ describe("TUIChat - the Fetch ask", () => {
     );
   });
 
-  it("no: refuses", async () => {
+  it("esc: skips this call only, and grants nothing", async () => {
+    const handleResponse = vi.fn();
+    const { stdin } = renderFetch(handleResponse);
+    await vi.advanceTimersByTimeAsync(50);
+    stdin.write("\u001b");
+    await vi.advanceTimersByTimeAsync(50);
+    expect(handleResponse).toHaveBeenCalledWith("fetch-1", false, false, false);
+    expect(webGrantsFor(CLI_WEB_SESSION).list().granted).toEqual([]);
+  });
+
+  it("no: asks first, then refuses and stops the response", async () => {
     const handleResponse = vi.fn();
     const { stdin } = renderFetch(handleResponse);
     await vi.advanceTimersByTimeAsync(50);
     stdin.write("n");
+    await vi.advanceTimersByTimeAsync(50);
+    expect(handleResponse).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    stdin.write("\r");
     await vi.advanceTimersByTimeAsync(50);
     expect(handleResponse).toHaveBeenCalledWith("fetch-1", false, false, true);
     expect(webGrantsFor(CLI_WEB_SESSION).list().granted).toEqual([]);

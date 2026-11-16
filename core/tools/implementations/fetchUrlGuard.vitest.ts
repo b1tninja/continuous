@@ -31,9 +31,10 @@ describe("fetch_url redirect guard", () => {
         ? redirect("http://169.254.169.254/latest")
         : page(),
     );
-    await expect(run("http://public.test/", fetch)).rejects.toThrow(
-      /non-public/,
-    );
+    // A typed result, not a thrown error (WB41)
+    const [item] = await run("http://public.test/", fetch);
+    expect(item.status).toBe("refused");
+    expect(item.content).toMatch(/non-public.*Do not retry it unchanged\.$/s);
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
@@ -42,9 +43,9 @@ describe("fetch_url redirect guard", () => {
     const fetch = vi.fn(async (u: URL) =>
       u.hostname === "public.test" ? redirect("http://inside.test/") : page(),
     );
-    await expect(run("http://public.test/", fetch)).rejects.toThrow(
-      /non-public/,
-    );
+    const [item] = await run("http://public.test/", fetch);
+    expect(item.status).toBe("refused");
+    expect(item.content).toMatch(/non-public/);
   });
 
   it("connects with the addresses it checked", async () => {

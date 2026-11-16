@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { matcherAccepts } from "./hookConfig.js";
 import {
   getMatchingGroupsForInput,
   qualifiedMcpToolName,
@@ -74,18 +75,57 @@ describe("matching a tool event", () => {
   });
 });
 
-describe("matcher anchoring today (documented, not changed)", () => {
-  // Claude Code treats a plain name as exact; here every string is an
-  // unanchored regular expression. Pinned so a change is a decision.
-  const config: HooksConfig = { PreToolUse: [group("Edit")] };
+describe("matcher anchoring follows Claude Code (D6)", () => {
+  // code.claude.com/docs/en/hooks, "Matcher patterns": only letters, digits,
+  // `_`, `-`, spaces, `,` and `|` is an exact name or a list of them; any
+  // other character makes an unanchored JavaScript regular expression.
+  const tools = [
+    "Edit",
+    "MultiEdit",
+    "NotebookEdit",
+    "NotebookRead",
+    "Write",
+    "Bash",
+    "mcp__github__search",
+  ];
+  const accepts = (matcher: string, tool: string) =>
+    matcherAccepts(matcher, tool, "PreToolUse");
 
-  it("Edit also matches MultiEdit", () => {
-    expect(matched(config, input("MultiEdit"))).toEqual(["Edit"]);
+  it.each<[string, string[]]>([
+    ["Edit", ["Edit"]],
+    ["Edit|Write", ["Edit", "Write"]],
+    ["Edit, Write", ["Edit", "Write"]],
+    ["Edit | Write", ["Edit", "Write"]],
+    ["mcp__.*", ["mcp__github__search"]],
+    ["Notebook.*", ["NotebookEdit", "NotebookRead"]],
+    ["^Notebook", ["NotebookEdit", "NotebookRead"]],
+    ["Edit.*", ["Edit", "MultiEdit", "NotebookEdit"]],
+    ["^Edit$", ["Edit"]],
+    ["mcp__github", []],
+    ["edit", []],
+    ["*", tools],
+    ["", tools],
+  ])("%j matches %j", (matcher, expected) => {
+    expect(tools.filter((tool) => accepts(matcher, tool))).toEqual(expected);
   });
 
-  it("^Edit$ is exact", () => {
-    const exact: HooksConfig = { PreToolUse: [group("^Edit$")] };
-    expect(matched(exact, input("MultiEdit"))).toEqual([]);
-    expect(matched(exact, input("Edit"))).toEqual(["^Edit$"]);
+  it("Edit no longer matches MultiEdit or NotebookEdit", () => {
+    const config: HooksConfig = { PreToolUse: [group("Edit")] };
+    expect(matched(config, input("MultiEdit"))).toEqual([]);
+    expect(matched(config, input("NotebookEdit"))).toEqual([]);
+    expect(matched(config, input("Edit"))).toEqual(["Edit"]);
+  });
+
+  it("an exact mcp__ name matches the qualified name of an MCP tool", () => {
+    const config: HooksConfig = {
+      PreToolUse: [group("mcp__github__search|mcp__github__list")],
+    };
+    expect(matched(config, input("search", "github"))).toEqual([
+      "mcp__github__search|mcp__github__list",
+    ]);
+  });
+
+  it("a matcher that does not compile still runs its hook", () => {
+    expect(accepts("Edit(", "Bash")).toBe(true);
   });
 });

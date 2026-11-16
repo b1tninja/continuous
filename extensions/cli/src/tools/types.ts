@@ -57,6 +57,12 @@ export interface ToolRunContext {
    * loop's "ask" calls in front of the person.
    */
   onToolPermissionRequest?: ToolPermissionPrompt;
+  /**
+   * The session the call belongs to (a subagent's run has its own), so a
+   * tool can find that session's pages in the web content store
+   * (core/util/web/contentStore.ts): core's `ToolExtras.sessionId`.
+   */
+  sessionId?: string;
 }
 
 export type ToolPermissionPrompt = (

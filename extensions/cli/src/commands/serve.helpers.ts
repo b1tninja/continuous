@@ -6,7 +6,7 @@ import type { ChatHistoryItem, Session, ToolStatus } from "core/index.js";
 import { createHistoryItem } from "core/util/messageConversion.js";
 import type { Express, NextFunction, Request, Response } from "express";
 
-import { runStopHooks } from "../hooks/lifecycleHooks.js";
+import { runTurnWithStopHooks } from "../hooks/lifecycleHooks.js";
 import {
   describePromptBlocked,
   runUserPromptSubmitHooks,
@@ -456,14 +456,28 @@ export async function streamChatResponseWithInterruption(
   };
 
   try {
-    const response = await streamChatResponse(
-      state.session.history,
-      state.model,
-      llmApi,
-      abortController,
-      callbacks,
-    );
-    await runStopHooks(response || undefined);
+    // A Stop hook that blocks sends the agent back to work, up to three
+    // times for this message (D4)
+    const response = await runTurnWithStopHooks({
+      runTurn: async () =>
+        (await streamChatResponse(
+          state.session.history,
+          state.model,
+          llmApi,
+          abortController,
+          callbacks,
+        )) || undefined,
+      addUserMessage: (text) => services.chatHistory.addUserMessage(text),
+      notice: (text) => {
+        logger.info(chalk.yellow(text));
+        try {
+          services.chatHistory.addSystemMessage(text);
+        } catch (err) {
+          logger.error("Failed to add the Stop hook notice", err);
+        }
+      },
+      cancelled: () => abortController.signal.aborted,
+    });
     return response || "";
   } finally {
     clearInterval(interruptionChecker);

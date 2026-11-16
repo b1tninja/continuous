@@ -2,15 +2,19 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as YAML from "yaml";
 import {
+  isSecretReference,
   sanitizeWebConfig,
   WEB_CEILINGS,
   WEB_DEFAULTS,
   WEB_ROBOTS_STRICTNESS,
+  WEB_SEARCH_PROVIDER_IDS,
+  WEB_SEARCH_SAFE_SEARCH,
   type WebConfig,
   type WebHostOverride,
   type WebReputationOnHit,
   type WebReputationProvider,
   type WebRobotsMode,
+  type WebSearchConfig,
   type WebUserAgent,
 } from "@continuedev/config-yaml";
 import { isKnownUserAgentPreset } from "../web/userAgent";
@@ -72,7 +76,13 @@ export interface ResolvedWebConfig {
     providers: readonly WebReputationProvider[];
   };
   crawler: { contact: string; concurrencyPerHost: number; minDelayMs: number };
-  search: { provider?: string; url?: string; apiKey?: string };
+  /**
+   * `web.search` as written in the person's config (or mapped from the old
+   * variables), with what another config tightened: `provider: off`, lower
+   * limits, a stricter `safeSearch`. Which provider that selects, if any, is
+   * decided by core/tools/webSearch/registry.ts (SR-1, SR-2, SR-6).
+   */
+  search: WebSearchConfig;
   /** Where each setting that is not the default came from, by dot path under `web.`. */
   sources: Readonly<Record<string, WebSettingSource>>;
 }
@@ -159,7 +169,12 @@ function fillTemplates(personal: unknown, rendered: unknown): unknown {
   return personal;
 }
 
-/** The `web:` keys only the person's own config.yaml may set. */
+/**
+ * The `web:` keys only the person's own config.yaml may set. Under `search`,
+ * every key is personal except `provider: off` and the limits (SR-1): a
+ * workspace that could name a provider, a URL or a key could send the
+ * person's queries to a host the repository chose.
+ */
 const PERSONAL_ONLY = [
   "policy",
   "userAgent",
@@ -167,8 +182,24 @@ const PERSONAL_ONLY = [
   "hosts",
   "reputation.providers",
   "crawler.contact",
-  "search",
+  "search.url",
+  "search.apiKey",
+  "search.fallback",
+  "search.fallbackUrl",
+  "search.fallbackApiKey",
+  "search.country",
+  "search.native",
+  "search.custom",
+  "search.mcp",
 ] as const;
+
+/** What the `web.search` limits are when nobody sets them, for comparing a tighter value. */
+export const WEB_SEARCH_DEFAULTS = {
+  maxResults: 5,
+  maxPerTurn: 5,
+  /** No limit. */
+  monthlyLimit: 0,
+} as const;
 
 function at(obj: WebConfig | undefined, dotPath: string): unknown {
   let cur: unknown = obj;
@@ -376,12 +407,11 @@ export function resolveWebConfig(
         WEB_DEFAULTS.crawler.minDelayMs,
       ),
     },
-    // The search backend still reads the variables itself (WB1): not announced yet.
-    search: {
-      ...(personalSearch(user, env, sources) ?? {}),
-    },
+    search: personalSearch(user, env, sources, deprecate),
     sources,
   };
+
+  searchNotices(userParsed.value?.search, notices, deprecations);
 
   // 2. The loaded config may only tighten.
   if (other) tighten(config, user, other, notices);
@@ -424,16 +454,75 @@ function personalSearch(
   user: WebConfig | undefined,
   env: Readonly<Record<string, string | undefined>>,
   sources: Record<string, WebSettingSource>,
-): ResolvedWebConfig["search"] | undefined {
-  if (user?.search) {
-    sources.search = "user-config";
-    return { ...user.search };
-  }
+  deprecate: (key: string, replacement: string, both: boolean) => void,
+): WebSearchConfig {
+  const own = user?.search ?? {};
+  const out: WebSearchConfig = { ...own };
+  if (user?.search) sources.search = "user-config";
+  // The old variables (SP-9) are read only while the person's own file names
+  // no endpoint and no provider, and each is announced: the search backend
+  // reads `web.search` now, so the replacement works.
   const url = env.CONTINUOUS_WEB_SEARCH_URL?.trim();
   const apiKey = env.CONTINUOUS_WEB_SEARCH_KEY?.trim();
-  if (!url && !apiKey) return undefined;
-  sources.search = "env";
-  return { ...(url ? { url } : {}), ...(apiKey ? { apiKey } : {}) };
+  const ownEndpoint = own.url !== undefined || own.provider !== undefined;
+  if (url)
+    deprecate("CONTINUOUS_WEB_SEARCH_URL", "web.search.url", ownEndpoint);
+  if (apiKey) {
+    deprecate(
+      "CONTINUOUS_WEB_SEARCH_KEY",
+      "web.search.apiKey",
+      ownEndpoint || own.apiKey !== undefined,
+    );
+  }
+  if (!ownEndpoint && (url || apiKey)) {
+    if (url) out.url = url;
+    if (apiKey && own.apiKey === undefined) out.apiKey = apiKey;
+    sources.search = user?.search ? "user-config" : "env";
+  }
+  return out;
+}
+
+const KNOWN_SEARCH_PROVIDERS: readonly string[] = WEB_SEARCH_PROVIDER_IDS;
+
+/**
+ * Reading notes on the person's own `web.search`, taken before templates are
+ * filled in: a key typed into the file (SP-8; refused from a later minor
+ * release) and a provider id nobody knows (SR-6, read as off).
+ */
+function searchNotices(
+  search: WebSearchConfig | undefined,
+  notices: string[],
+  deprecations: WebDeprecation[],
+): void {
+  if (!search) return;
+  for (const key of ["apiKey", "fallbackApiKey"] as const) {
+    const value = search[key];
+    if (typeof value !== "string" || !value.trim() || isSecretReference(value))
+      continue;
+    const name = secretNameFor(
+      key === "apiKey" ? search.provider : search.fallback,
+    );
+    deprecations.push({
+      key: `web.search.${key}`,
+      replacement: `\${{ secrets.${name} }}`,
+      message: `web.search.${key} in your config.yaml is a key typed into the file. It is used for now, but a later release will refuse it: keep the key in secret storage and write ${key}: \${{ secrets.${name} }} instead.`,
+    });
+  }
+  for (const key of ["provider", "fallback"] as const) {
+    const value = search[key];
+    if (value === undefined || KNOWN_SEARCH_PROVIDERS.includes(value)) continue;
+    notices.push(
+      `web.search.${key}: ${JSON.stringify(value)} is not a known search provider, so web search is off. Known: ${KNOWN_SEARCH_PROVIDERS.join(", ")}.`,
+    );
+  }
+}
+
+/** The secret name the setup writes (SP-7): `BRAVE_SEARCH_KEY` for `brave`, `WEB_SEARCH_KEY` without a provider. */
+export function secretNameFor(provider: string | undefined): string {
+  const id = (provider ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  return id && id !== "OFF" && id !== "NATIVE"
+    ? `${id}_SEARCH_KEY`
+    : "WEB_SEARCH_KEY";
 }
 
 function tighten(
@@ -527,6 +616,8 @@ function tighten(
     (n) => (config.crawler.minDelayMs = -n),
   );
 
+  tightenSearch(config, other.search, notices);
+
   const onHit = other.reputation?.onHit;
   if (onHit && onHit !== config.reputation.onHit) {
     if (onHit === "refuse") {
@@ -534,6 +625,70 @@ function tighten(
       fromOther("reputation.onHit");
     } else {
       notices.push(ignoredNotice("reputation.onHit", onHit, LOOSEN_WHY));
+    }
+  }
+}
+
+/** Only `provider: off`, lower limits and a stricter `safeSearch` (SR-1). */
+function tightenSearch(
+  config: Writable<ResolvedWebConfig>,
+  other: WebSearchConfig | undefined,
+  notices: string[],
+): void {
+  if (!other) return;
+  const sources = config.sources as Record<string, WebSettingSource>;
+  const search = config.search;
+  const set = <K extends keyof WebSearchConfig>(
+    key: K,
+    value: WebSearchConfig[K],
+  ) => {
+    search[key] = value;
+    sources[`search.${key}`] = "assistant-config";
+  };
+
+  if (other.provider !== undefined && other.provider !== search.provider) {
+    if (other.provider === "off") set("provider", "off");
+    else {
+      notices.push(
+        ignoredNotice(
+          "search.provider",
+          other.provider,
+          "only your own config.yaml may choose where your searches go; another configuration may only set it to off.",
+        ),
+      );
+    }
+  }
+
+  const lower = (key: "maxResults" | "maxPerTurn") => {
+    const value = other[key];
+    if (value === undefined || value === search[key]) return;
+    const current = search[key] ?? WEB_SEARCH_DEFAULTS[key];
+    if (value < current) set(key, value);
+    else if (value > current) {
+      notices.push(ignoredNotice(`search.${key}`, value, LOOSEN_WHY));
+    }
+  };
+  lower("maxResults");
+  lower("maxPerTurn");
+
+  const monthly = other.monthlyLimit;
+  if (monthly !== undefined && monthly !== search.monthlyLimit) {
+    const current = search.monthlyLimit ?? WEB_SEARCH_DEFAULTS.monthlyLimit;
+    if (monthly > 0 && (current === 0 || monthly < current)) {
+      set("monthlyLimit", monthly);
+    } else if (monthly !== current) {
+      notices.push(ignoredNotice("search.monthlyLimit", monthly, LOOSEN_WHY));
+    }
+  }
+
+  // Unset is the provider's own default, which counts as the loosest here
+  const rank = (v: string | undefined) =>
+    v === undefined ? 0 : WEB_SEARCH_SAFE_SEARCH.indexOf(v as never);
+  const safe = other.safeSearch;
+  if (safe && safe !== search.safeSearch) {
+    if (rank(safe) > rank(search.safeSearch)) set("safeSearch", safe);
+    else if (search.safeSearch !== undefined) {
+      notices.push(ignoredNotice("search.safeSearch", safe, LOOSEN_WHY));
     }
   }
 }

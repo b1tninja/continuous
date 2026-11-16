@@ -348,6 +348,8 @@ export const streamNormalInput = createAsyncThunk<
                   readTokens: miss.readTokens,
                   expectedTokens: miss.expectedTokens,
                   causes: missCauses,
+                  // After a tool result: the agent's own next request
+                  ...(depth > 0 && { inToolRound: true }),
                 }),
               );
             } else {

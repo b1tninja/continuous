@@ -11,7 +11,7 @@ import { configYamlSchema } from "@continuedev/config-yaml";
 import { POLICY_FILE_KEYS } from "core/tools/permissions/settingsFile.js";
 import * as YAML from "yaml";
 
-import { HOOK_EVENT_NAMES } from "../hooks/types.js";
+import { HOOK_EVENT_NAMES, READ_CLAUDE_SETTINGS_KEY } from "../hooks/types.js";
 import { parseToolPattern } from "../permissions/permissionsYamlLoader.js";
 
 export interface FileProblem {
@@ -398,6 +398,13 @@ export function checkHookSettings(file: string): FileCheck {
   } else if (isMapping(hooks)) {
     for (const [event, groups] of Object.entries(hooks)) {
       const at = `hooks.${event}`;
+      // A setting, not an event: whether ~/.claude hooks run (D-023)
+      if (event === READ_CLAUDE_SETTINGS_KEY) {
+        if (typeof groups !== "boolean") {
+          errors.push({ message: "must be true or false", key: at });
+        }
+        continue;
+      }
       if (!(HOOK_EVENT_NAMES as readonly string[]).includes(event)) {
         warnings.push({
           message: "is not an event this version fires, so its hooks never run",

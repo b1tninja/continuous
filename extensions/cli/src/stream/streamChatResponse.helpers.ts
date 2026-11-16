@@ -1065,6 +1065,8 @@ export async function executeStreamedToolCalls(
   isHeadless?: boolean,
   /** The turn's signal, handed to each tool run so it can stop on cancel. */
   abortSignal?: AbortSignal,
+  /** The web content store's session for these calls (ToolRunContext). */
+  sessionId?: string,
 ): Promise<{
   hasRejection: boolean;
   chatHistoryEntries: ToolResultWithStatus[];
@@ -1226,6 +1228,7 @@ export async function executeStreamedToolCalls(
               parallelToolCallCount,
               abortSignal,
               onToolPermissionRequest: callbacks?.onToolPermissionRequest,
+              ...(sessionId ? { sessionId } : {}),
             });
             // Output that reads like instructions to the agent gets the same
             // notice the IDE puts in front of it (plans/prompt-injection.md P5).

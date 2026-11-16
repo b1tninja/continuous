@@ -62,6 +62,36 @@ export const OWN_HOME_DIRS: readonly string[] = [".continuous", ".continue"];
 export const MACOS_HOME_SECRETS: readonly string[] = ["Library/Keychains"];
 
 /**
+ * Linux and WSL2: the desktop credential stores in the home directory (GNOME
+ * Keyring and libsecret, KWallet, `pass`). S9-X3: denied with the sandbox on.
+ */
+export const LINUX_HOME_SECRETS: readonly string[] = [
+  ".local/share/keyrings",
+  ".local/share/kwalletd",
+  ".password-store",
+];
+
+/**
+ * A project's policy folders: rules, permissions, hooks and keys the product
+ * loads. S9-X3: a sandboxed command neither reads nor writes them (writes are
+ * also locked by `protect-config` and the locked paths). Their `plans/`
+ * folder is allowed back for reads.
+ */
+export const PROJECT_POLICY_DIRS: readonly string[] = [
+  ".continuous",
+  ".continue",
+];
+
+/**
+ * S9-X3's short allow list: home files a sandboxed command may read although
+ * the protected lists name them (`.npmrc` is a credential file there). They
+ * stay write-protected. Reading `~/.npmrc` through a tool, or with a command
+ * that reads it, still marks the session as having read a secret, so the
+ * secret-read plus network pair (B92) applies to what follows.
+ */
+export const HOME_READ_ALLOWED: readonly string[] = [".gitconfig", ".npmrc"];
+
+/**
  * Roots denied under `workspace-only`, with the workspace and the temp dir
  * allowed back. `/mnt` is also denied under `open` on WSL2.
  */
@@ -205,6 +235,14 @@ export function notEnforcedItems(
       "none; this is why the claim waits for our probes",
     ),
   ];
+  out.push(
+    ITEM(
+      "allowed-home-reads",
+      "`~/.gitconfig` and `~/.npmrc` are readable",
+      "The decided allow list (S9-X3): git and npm read them on every run. `~/.npmrc` can hold a registry token, so a command in the jail can read that token.",
+      "a read of `~/.npmrc` by a tool, or by a command that reads or sends it (`cat`, `curl -d @`), marks the session as having read a secret, and a network call after it asks at every level and is refused at IDGAF (B92); a read npm makes on its own is not seen",
+    ),
+  );
   if (readPolicy === "open") {
     out.push(
       ITEM(

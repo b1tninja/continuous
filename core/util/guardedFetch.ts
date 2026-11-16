@@ -1,4 +1,7 @@
+import { WEB_CEILINGS, WEB_DEFAULTS } from "@continuedev/config-yaml";
+
 import type { FetchFunction } from "..";
+import { mergeHeaders, webRequestHeaders } from "../web/webHeaders";
 
 import { readBytesCapped, withDeadline } from "./boundedBody";
 import {
@@ -15,6 +18,7 @@ import {
   secretKindsInUrl,
 } from "./fetchUrlSafety";
 import { nonPublicReason, normalizeHost, pinnedLookup } from "./networkAddress";
+import { getWebConfig } from "./webConfig";
 
 /**
  * The one guard every web path goes through (plans/research/
@@ -38,6 +42,10 @@ import { nonPublicReason, normalizeHost, pinnedLookup } from "./networkAddress";
  * - `Authorization`, `Cookie`, `Proxy-Authorization` and any header the
  *   caller names are dropped when a hop changes origin (RFC 9110 section
  *   15.4, step 3).
+ * - `guardedWebRequest` adds the web header policy (core/web/webHeaders.ts)
+ *   at every hop: the User-Agent, `Accept`, and the `web.hosts` entry of
+ *   that hop's host, so a per-host header or User-Agent never follows a
+ *   redirect to another host.
  *
  * Behind an HTTP proxy the pinned lookup is not used (the proxy resolves the
  * name), but every hop is still resolved and classified here, and a name with
@@ -47,15 +55,60 @@ import { nonPublicReason, normalizeHost, pinnedLookup } from "./networkAddress";
  */
 
 /**
- * The hop limit. RFC 9110 section 15.4 sets no number; five is what an earlier
- * HTTP specification recommended and what the note keeps.
+ * The default hop limit. RFC 9110 section 15.4 sets no number; five is what an
+ * earlier HTTP specification recommended and what the note keeps. The limit in
+ * force is `web.limits.maxRedirects` (core/util/webConfig.ts: the person's
+ * config may raise it to `MAX_REDIRECTS_CEILING`, any other config may only
+ * lower it).
  */
-// TODO(WB27): read `web.limits.maxRedirects` (tighten-only, ceiling 10) once
-// the `web:` config section exists.
-export const MAX_REDIRECTS = 5;
+export const MAX_REDIRECTS = WEB_DEFAULTS.limits.maxRedirects;
+
+/** No setting and no caller follows more redirects than this. */
+export const MAX_REDIRECTS_CEILING = WEB_CEILINGS.maxRedirects;
+
+/**
+ * The redirects did not end: the hop limit was reached, or a hop led back to
+ * a URL already visited. `cookieHops` counts the redirects that set a cookie,
+ * which this fetch never sends back (a sign-in or consent wall, outcome
+ * `needs-cookies`). The message is the refusal the guard always gave.
+ */
+export class RedirectLimitError extends FetchRefusedError {
+  constructor(
+    message: string,
+    readonly kind: "limit" | "loop",
+    /** Redirect responses followed or refused, the last included. */
+    readonly hops: number,
+    readonly cookieHops: number,
+    /** The host that sent the last redirect. */
+    readonly host: string,
+  ) {
+    super(message);
+    this.name = "RedirectLimitError";
+  }
+}
 
 /** Request headers that never cross to another origin on a redirect. */
 const CREDENTIAL_HEADERS = ["authorization", "cookie", "proxy-authorization"];
+
+/** The URL whose request threw, for the host an outcome names. */
+const failedRequestUrls = new WeakMap<object, URL>();
+
+/** The URL of the request that threw this error (the start, or a redirect's target). */
+export function requestUrlOfError(error: unknown): URL | undefined {
+  return error && typeof error === "object"
+    ? failedRequestUrls.get(error)
+    : undefined;
+}
+
+/** The record of a request that threw, for the provenance line of its outcome. */
+const failedRecords = new WeakMap<object, FetchRecord>();
+
+/** The fetch record `guardedWebRequest` made for the error it threw, if any. */
+export function recordOfError(error: unknown): FetchRecord | undefined {
+  return error && typeof error === "object"
+    ? failedRecords.get(error)
+    : undefined;
+}
 
 type Classify = (
   hostname: string,
@@ -79,8 +132,18 @@ export interface GuardedFetchOptions {
    * non-public (it may be an internal host only a proxy can see).
    */
   classify?: Classify;
-  /** Redirects to follow before giving up. Default and ceiling: `MAX_REDIRECTS`. */
+  /**
+   * Redirects to follow before giving up. It can only lower
+   * `web.limits.maxRedirects` (default `MAX_REDIRECTS`, never above
+   * `MAX_REDIRECTS_CEILING`).
+   */
   maxRedirects?: number;
+  /**
+   * Headers for the request to one hop, under the caller's own (the web
+   * header policy, `webRequestHeaders`). Called for the start URL and again
+   * for every redirect target.
+   */
+  headersFor?: (url: URL) => Record<string, string>;
   /** Extra request headers to drop when a redirect changes origin (an API key header). */
   originHeaders?: string[];
   /**
@@ -174,7 +237,11 @@ function nextInit(init: Init, status: number): Init {
 }
 
 /** Throws when a redirect target must not be requested. */
-function checkLocation(next: URL, visited: Set<string>): void {
+function checkLocation(
+  next: URL,
+  visited: Set<string>,
+  from: { host: string; hops: number; cookieHops: number },
+): void {
   if (next.protocol !== "http:" && next.protocol !== "https:") {
     throw new FetchRefusedError(
       `Refused to follow a redirect to ${next.protocol} URL`,
@@ -192,8 +259,12 @@ function checkLocation(next: URL, visited: Set<string>): void {
     );
   }
   if (visited.has(next.href)) {
-    throw new FetchRefusedError(
+    throw new RedirectLimitError(
       `Refused: a redirect loop (${next.host} sent the request back to a URL already visited)`,
+      "loop",
+      from.hops,
+      from.cookieHops,
+      from.host,
     );
   }
 }
@@ -205,6 +276,22 @@ function refuseMetadata(url: URL, addresses: string[], from?: URL): void {
   throw new FetchRefusedError(
     cloudMetadataRefusal(
       from ? `the redirect from ${from.host} to ${why}` : why,
+    ),
+  );
+}
+
+/**
+ * The redirects a request may follow: `web.limits.maxRedirects`, lowered by
+ * the caller's own limit, never above the ceiling.
+ */
+export function redirectLimit(callerLimit?: number): number {
+  const configured = getWebConfig().limits.maxRedirects;
+  return Math.max(
+    0,
+    Math.min(
+      MAX_REDIRECTS_CEILING,
+      configured,
+      callerLimit ?? MAX_REDIRECTS_CEILING,
     ),
   );
 }
@@ -223,10 +310,7 @@ export async function fetchWithGuardedRedirects(
   init: Record<string, unknown> = {},
 ): Promise<any> {
   const classify = options.classify ?? classifyFetchTarget;
-  const limit = Math.min(
-    MAX_REDIRECTS,
-    Math.max(0, options.maxRedirects ?? MAX_REDIRECTS),
-  );
+  const limit = redirectLimit(options.maxRedirects);
   let current = start;
   let checked = await classify(current.hostname);
   refuseMetadata(current, checked.addresses);
@@ -239,14 +323,35 @@ export async function fetchWithGuardedRedirects(
   }
   let request: Init = { ...init, headers: plainHeaders(init.headers) };
   const visited = new Set<string>([start.href]);
+  // Redirects that set a cookie: this fetch keeps none (TODO(WB39): the
+  // per-fetch host-only jar, IS-1, changes what counts here)
+  let cookieHops = 0;
   for (let hop = 0; ; hop++) {
-    const resp = await fetchFn(current, {
-      ...request,
-      redirect: "manual",
-      // Pinned even when empty: a direct connection then fails instead of
-      // resolving again. A proxy agent ignores it and resolves itself.
-      lookup: pinnedLookup(checked.addresses),
-    } as never);
+    let resp: any;
+    try {
+      resp = await fetchFn(current, {
+        ...request,
+        ...(options.headersFor
+          ? {
+              headers: mergeHeaders(
+                options.headersFor(current),
+                request.headers as Record<string, string>,
+              ),
+            }
+          : {}),
+        redirect: "manual",
+        // Pinned even when empty: a direct connection then fails instead of
+        // resolving again. A proxy agent ignores it and resolves itself.
+        lookup: pinnedLookup(checked.addresses),
+      } as never);
+    } catch (e) {
+      // Which hop's host failed (a DNS or TLS failure after a redirect names
+      // the redirect's host, not the start)
+      if (e && typeof e === "object" && !failedRequestUrls.has(e)) {
+        failedRequestUrls.set(e, current);
+      }
+      throw e;
+    }
     const status: number = resp.status;
     options.onHop?.(current, status);
     const location: string | null | undefined = resp.headers?.get?.("location");
@@ -254,15 +359,24 @@ export async function fetchWithGuardedRedirects(
       options.onFinalUrl?.(current);
       return resp;
     }
+    if (resp.headers?.get?.("set-cookie")) cookieHops++;
     discard(resp);
     if (hop >= limit) {
-      throw new FetchRefusedError(
+      throw new RedirectLimitError(
         `Too many redirects fetching ${start} (more than ${limit})`,
+        "limit",
+        hop + 1,
+        cookieHops,
+        current.host,
       );
     }
 
     const next = new URL(location, current);
-    checkLocation(next, visited);
+    checkLocation(next, visited, {
+      host: current.host,
+      hops: hop + 1,
+      cookieHops,
+    });
     visited.add(next.href);
 
     checked = await classify(next.hostname);
@@ -309,7 +423,10 @@ export interface WebRequestOptions {
   init?: { method?: string; headers?: Record<string, string>; body?: string };
   maxBytes: number;
   deadlineMs: number;
-  guard?: Omit<GuardedFetchOptions, "onFinalUrl" | "onHop" | "onStart">;
+  guard?: Omit<
+    GuardedFetchOptions,
+    "onFinalUrl" | "onHop" | "onStart" | "headersFor"
+  >;
   /**
    * Called with a successful response before its body is read; throw to
    * refuse it (a content type the caller does not read).
@@ -367,6 +484,11 @@ export async function guardedWebRequest(
         options.fetchFn,
         {
           ...options.guard,
+          headersFor: (u) => {
+            const headers = webRequestHeaders(options.purpose, u);
+            recorder.userAgent = headers["User-Agent"];
+            return headers;
+          },
           onStart: (s) => {
             recorder.rule = builtinRule(options.origin, s.nonPublic);
           },
@@ -414,7 +536,8 @@ export async function guardedWebRequest(
     });
     return { ...out, record };
   } catch (e) {
-    recorder.fail(e);
+    const record = recorder.fail(e);
+    if (e && typeof e === "object") failedRecords.set(e, record);
     throw e;
   }
 }

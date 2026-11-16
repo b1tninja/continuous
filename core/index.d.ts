@@ -2381,6 +2381,12 @@ export interface ToolExtras {
    * runaway, from the Tools policy level ("stop" or "keep-running").
    */
   runawayAction?: "stop" | "keep-running";
+  /**
+   * The session the call belongs to (a subagent's run has its own), so a
+   * tool can find that session's pages in the web content store
+   * (core/util/web/contentStore.ts). Unset when the caller has no session.
+   */
+  sessionId?: string;
 }
 
 export interface McpToolMeta {
@@ -2410,6 +2416,12 @@ export interface Tool {
   originalFunctionName?: string;
   /** An MCP tool from a server the open folder brought, not the person's own config */
   mcpFromWorkspace?: boolean;
+  /**
+   * An MCP tool from a server the person marked `trusted` under `mcpServers`
+   * in their own permissions.yaml (never one the open folder brought). Its
+   * calls are not a network call for the secret-read plus network pair (B92).
+   */
+  mcpServerTrusted?: boolean;
   systemMessageDescription?: {
     prefix: string;
     exampleArgs?: Array<[string, string | number]>;

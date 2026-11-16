@@ -83,9 +83,11 @@ describe("CLI Fetch uses the hardened fetch", () => {
             status: 302,
             headers: { location: "http://169.254.169.254/latest/meta-data/" },
           });
-    await expect(
-      fetchTool.run({ url: "http://93.184.216.34/page" }),
-    ).rejects.toThrow(/non-public address \(169\.254\.169\.254/);
+    // A typed result the model reads, not a thrown error (WB41)
+    const out = await fetchTool.run({ url: "http://93.184.216.34/page" });
+    expect(out).toMatch(
+      /non-public address \(169\.254\.169\.254.*Do not retry it unchanged\.$/s,
+    );
     expect(calls.map((c) => c.url)).toEqual(["http://93.184.216.34/page"]);
   });
 });

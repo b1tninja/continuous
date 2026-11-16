@@ -120,14 +120,103 @@ export const webCrawlerSchema = z.object({
   minDelayMs: z.number().int().min(0).optional(),
 });
 
+/**
+ * The search provider ids (plans/research/web-search-providers.md, section 6).
+ * `off` turns search off; `native` is the selected model's own search. Which
+ * of the others a build can call is core's business (core/tools/webSearch):
+ * a known id without an adapter yet is treated as off. `provider` itself stays
+ * a plain string in the schema, so an unknown id is read as off with a notice
+ * (SR-6) instead of being dropped, which would turn a `url` into SearXNG.
+ */
+export const WEB_SEARCH_PROVIDER_IDS = [
+  "off",
+  "native",
+  "searxng",
+  "brave",
+  "mojeek",
+  "kagi",
+  "tavily",
+  "exa",
+  "custom",
+  "mcp",
+] as const;
+export type WebSearchProviderId = (typeof WEB_SEARCH_PROVIDER_IDS)[number];
+
+/** `safeSearch` levels from loosest to strictest. */
+export const WEB_SEARCH_SAFE_SEARCH = ["off", "moderate", "strict"] as const;
+export const webSearchSafeSearchSchema = z.enum(WEB_SEARCH_SAFE_SEARCH);
+export type WebSearchSafeSearch = z.infer<typeof webSearchSafeSearchSchema>;
+
+/** Most results a single search may return. */
+export const WEB_SEARCH_MAX_RESULTS_CEILING = 10;
+
 export const webSearchSchema = z.object({
-  /** The backend kind, for example `searxng`. */
+  /**
+   * `off | native | searxng | brave | mojeek | kagi | tavily | exa | custom | mcp`.
+   * Unset with a `url`: `searxng`. Unset with no `url`: off. Personal config
+   * only, except `off`, which any config may set.
+   */
   provider: z.string().optional(),
-  /** The backend's endpoint. Replaces CONTINUOUS_WEB_SEARCH_URL. */
+  /** The endpoint for `searxng` and `custom`; for the others, an optional base URL override. Replaces CONTINUOUS_WEB_SEARCH_URL. */
   url: z.string().optional(),
-  /** Sent as a bearer token to the backend. Replaces CONTINUOUS_WEB_SEARCH_KEY. */
+  /**
+   * Sent to the provider as its key (a bearer token for `searxng` and
+   * `custom`). Write it as `${{ secrets.NAME }}`; a key typed in is read for
+   * now with a warning. Replaces CONTINUOUS_WEB_SEARCH_KEY.
+   */
   apiKey: z.string().optional(),
+  /** With `provider: native`: the provider for a model that has no search of its own. Default none. */
+  fallback: z.string().optional(),
+  /** The fallback's `url`, when it needs one. */
+  fallbackUrl: z.string().optional(),
+  /** The fallback's `apiKey`, when it needs one; a `${{ secrets.NAME }}` reference. */
+  fallbackApiKey: z.string().optional(),
+  /** Results per search, 1 to 10. Any config may lower it. */
+  maxResults: z
+    .number()
+    .int()
+    .min(1)
+    .max(WEB_SEARCH_MAX_RESULTS_CEILING)
+    .optional(),
+  /** Searches per agent turn. Any config may lower it. */
+  maxPerTurn: wholeNumber.optional(),
+  /** Searches per month, counted locally; 0 is no limit. Any config may lower it. */
+  monthlyLimit: z.number().int().min(0).optional(),
+  /** ISO 3166-1 alpha-2 country code, sent only when set and only to providers that take one. */
+  country: z
+    .string()
+    .regex(/^([A-Za-z]{2})?$/)
+    .optional(),
+  /** Where the provider has it. Any config may make it stricter. */
+  safeSearch: webSearchSafeSearchSchema.optional(),
+  native: z
+    .object({
+      /** Anthropic: `true` uses code-execution filtering, which is not ZDR-eligible. */
+      dynamicFiltering: z.boolean().optional(),
+      /** Gemini: `standard` (Grounding with Google Search) or `enterprise` (Web Grounding for Enterprise, Vertex only). */
+      google: z.enum(["standard", "enterprise"]).optional(),
+      /** OpenRouter's search engine; `native` keeps the query with the model's provider. */
+      openrouterEngine: z
+        .enum(["native", "exa", "parallel", "perplexity", "firecrawl"])
+        .optional(),
+    })
+    .optional(),
+  custom: z
+    .object({
+      /** `GET` (`?q=…&format=json`, the SearXNG shape) or `POST` (a `{"q": …}` body). */
+      method: z.enum(["GET", "POST"]).optional(),
+    })
+    .optional(),
+  mcp: z
+    .object({
+      /** A configured MCP server's name. */
+      server: z.string().min(1).optional(),
+      /** The tool of that server to call. */
+      tool: z.string().min(1).optional(),
+    })
+    .optional(),
 });
+export type WebSearchConfig = z.infer<typeof webSearchSchema>;
 
 export const webConfigSchema = z.object({
   /** `false` turns off every web fetch the agent makes (default `true`). Any config may turn it off; only your own may turn it back on. */
@@ -280,8 +369,58 @@ export function mergeWebConfig(
       ),
       minDelayMs: max(a.crawler?.minDelayMs, b.crawler?.minDelayMs),
     }),
-    search: a.search ?? b.search,
+    search: mergeWebSearch(a.search, b.search),
   } as WebConfig);
+}
+
+/** `0` is no monthly limit, so it is the loosest value, not the lowest. */
+function lowerMonthlyLimit(a?: number, b?: number): number | undefined {
+  if (a === undefined || b === undefined) return a ?? b;
+  if (a === 0) return b;
+  if (b === 0) return a;
+  return Math.min(a, b);
+}
+
+function stricterSafeSearch(
+  a?: WebSearchSafeSearch,
+  b?: WebSearchSafeSearch,
+): WebSearchSafeSearch | undefined {
+  if (!a || !b) return a ?? b;
+  return WEB_SEARCH_SAFE_SEARCH.indexOf(a) >= WEB_SEARCH_SAFE_SEARCH.indexOf(b)
+    ? a
+    : b;
+}
+
+/**
+ * `web.search` of two blocks: `provider: off` on either side wins, the
+ * limits take the lower side and `safeSearch` the stricter; the rest (which
+ * provider, its URL and key) keeps the first side's value.
+ */
+export function mergeWebSearch(
+  a: WebSearchConfig | undefined,
+  b: WebSearchConfig | undefined,
+): WebSearchConfig | undefined {
+  if (!a || !b) return a ?? b;
+  return compact({
+    ...b,
+    ...a,
+    provider:
+      a.provider === "off" || b.provider === "off"
+        ? "off"
+        : (a.provider ?? b.provider),
+    maxResults: min(a.maxResults, b.maxResults),
+    maxPerTurn: min(a.maxPerTurn, b.maxPerTurn),
+    monthlyLimit: lowerMonthlyLimit(a.monthlyLimit, b.monthlyLimit),
+    safeSearch: stricterSafeSearch(a.safeSearch, b.safeSearch),
+  } as WebSearchConfig);
+}
+
+/**
+ * True when a key is written as a reference (`${{ secrets.NAME }}` or
+ * `${{ env.NAME }}`) rather than typed in (SP-8, SR-3).
+ */
+export function isSecretReference(value: string): boolean {
+  return /^\s*\$\{\{\s*(secrets|env)\.[A-Za-z0-9_.-]+\s*\}\}\s*$/.test(value);
 }
 
 export interface SanitizedWebConfig {

@@ -7,6 +7,10 @@ import { selectSelectedChatModel } from "../slices/configSlice";
 import { setCompactionHold } from "../slices/sessionSlice";
 import { ThunkApiType } from "../store";
 import { addUserInputToHistory } from "./addUserInputToHistory";
+import {
+  compactAtToolRound,
+  toolRoundCompactionNeed,
+} from "./compactAtToolRound";
 import { applyPreparedCompactionForTurn } from "./prepareCompaction";
 import { checkpointSession } from "./session";
 import { streamNormalInput } from "./streamNormalInput";
@@ -53,6 +57,11 @@ export const streamResponseThunk = createAsyncThunk<
     // A summary prepared for this conversation is saved before the message
     // is added, so this turn is the switch-over (C105, C106, D3)
     if (atEnd) applyPreparedCompactionForTurn(dispatch, getState);
+    // The person's message starts a new turn: the last one's turn-scoped
+    // pages (no-store, credentialed, non-public) leave the web content store
+    extra.ideMessenger.post("web/endTurn", {
+      sessionId: getState().session.id,
+    });
 
     await dispatch(
       streamThunkWrapper(async () => {
@@ -75,6 +84,22 @@ export const streamResponseThunk = createAsyncThunk<
         // On disk before the answer starts: a window that dies mid-turn
         // reopens with the message and Resume (STOR6)
         void checkpointSession(getState, extra.ideMessenger);
+        // A turn nobody is held for (a loop's, a resumed one) compacts
+        // instead of dropping the oldest block, as a tool round does (C117)
+        const need =
+          atEnd && !holdBeforeForcedReread
+            ? toolRoundCompactionNeed(getState())
+            : undefined;
+        if (need) {
+          const compacted = await compactAtToolRound({
+            need,
+            dispatch,
+            getState,
+            extra,
+            signal: getState().session.streamAborter.signal,
+          });
+          if (compacted === "aborted") return;
+        }
 
         unwrapResult(
           await dispatch(

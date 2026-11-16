@@ -11,6 +11,7 @@ import {
   TURN_NUDGE_LIMIT,
   TURN_NUDGE_TOTAL,
 } from "core/util/turnEnd.js";
+import { webContentStore } from "core/util/web/contentStore.js";
 import type { ChatCompletionTool } from "openai/resources.mjs";
 
 import { runStoppedAfter, runStoppedBefore } from "../budget/runLimits.js";
@@ -26,6 +27,7 @@ import {
   loopRunGoing,
 } from "../loop/loopSession.js";
 import { services } from "../services/index.js";
+import { getCurrentSession } from "../session.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
 import { applyChatCompletionToolOverrides } from "../tools/applyToolOverrides.js";
 import { ToolCall } from "../tools/index.js";
@@ -693,6 +695,52 @@ export interface StreamChatResponseOptions {
    * next request, so the budget can stop the wave during the item.
    */
   onRequest?: () => void;
+  /**
+   * The web content store's session for this run's tool calls: a subagent's
+   * run passes its own (`subagentStoreId`). Default: the current session's.
+   */
+  webSessionId?: string;
+}
+
+/** The current session's id, or none before one exists (some tests). */
+function currentWebSessionId(): string | undefined {
+  try {
+    return getCurrentSession().sessionId;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * One turn. When it ends, however it ends, its turn-scoped pages (no-store,
+ * credentialed, non-public) leave the web content store
+ * (core/util/web/contentStore.ts); a compaction runs inside a turn and does
+ * not end it.
+ */
+// eslint-disable-next-line max-params
+export async function streamChatResponse(
+  chatHistory: ChatHistoryItem[],
+  model: ModelConfig,
+  llmApi: BaseLlmApi,
+  abortController: AbortController,
+  callbacks?: StreamCallbacks,
+  isCompacting = false,
+  options: StreamChatResponseOptions = {},
+) {
+  const webSessionId = options.webSessionId ?? currentWebSessionId();
+  try {
+    return await runTurn(
+      chatHistory,
+      model,
+      llmApi,
+      abortController,
+      callbacks,
+      isCompacting,
+      { ...options, ...(webSessionId ? { webSessionId } : {}) },
+    );
+  } finally {
+    if (!isCompacting && webSessionId) webContentStore.endTurn(webSessionId);
+  }
 }
 
 /**
@@ -717,7 +765,7 @@ async function turnTextsForRequest(
 
 // Main function that handles the conversation loop
 // eslint-disable-next-line max-params, max-statements, complexity
-export async function streamChatResponse(
+async function runTurn(
   chatHistory: ChatHistoryItem[],
   model: ModelConfig,
   llmApi: BaseLlmApi,
@@ -726,7 +774,7 @@ export async function streamChatResponse(
   isCompacting = false,
   options: StreamChatResponseOptions = {},
 ) {
-  const { persistSession = true, use: fixedUse } = options;
+  const { persistSession = true, use: fixedUse, webSessionId } = options;
   logger.debug("streamChatResponse called", {
     model,
     historyLength: chatHistory.length,
@@ -884,6 +932,7 @@ export async function streamChatResponse(
       usage,
       reasoning,
       abortSignal: abortController.signal,
+      ...(webSessionId ? { sessionId: webSessionId } : {}),
     });
 
     if (shouldReturn) {

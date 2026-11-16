@@ -34,7 +34,17 @@ describe("headless start check for broken policy files", () => {
     resetBrokenConfigNotices();
     delete process.env.CONTINUOUS_GLOBAL_DIR;
     delete process.env.CONTINUE_GLOBAL_DIR;
+    // ~/.claude/settings.json is read (and so can be broken) only with the
+    // opt-in (D-023)
+    optInToClaude(true);
   });
+  const optInToClaude = (value: boolean) => {
+    fs.mkdirSync(path.join(home, ".continuous"), { recursive: true });
+    fs.writeFileSync(
+      path.join(home, ".continuous", "settings.json"),
+      JSON.stringify({ hooks: { readClaudeSettings: value } }),
+    );
+  };
   afterEach(() => {
     fs.rmSync(root, { recursive: true, force: true });
     vi.restoreAllMocks();
@@ -61,6 +71,12 @@ describe("headless start check for broken policy files", () => {
     expect(refusal).toContain(file);
     expect(refusal).toMatch(/not valid JSON at line 2, column 1/);
     expect(refusal).toContain("--ignore-broken-config");
+  });
+
+  it("does not refuse on a broken ~/.claude file that is not read", () => {
+    optInToClaude(false);
+    fs.writeFileSync(path.join(home, ".claude", "settings.json"), "{");
+    expect(checkConfigFiles(cwd, false, where())).toBeUndefined();
   });
 
   it("refuses on a broken project hook settings file", () => {

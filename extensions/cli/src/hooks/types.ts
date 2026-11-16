@@ -119,6 +119,9 @@ export interface HookMatcherGroup {
 /** Top-level hooks configuration object (the `hooks` key in settings.json) */
 export type HooksConfig = Partial<Record<HookEventName, HookMatcherGroup[]>>;
 
+/** The key inside `hooks` that switches `~/.claude` hooks on. Not an event. */
+export const READ_CLAUDE_SETTINGS_KEY = "readClaudeSettings";
+
 /** Full settings file shape (only the hooks portion) */
 export interface HookSettingsFile {
   hooks?: HooksConfig;
@@ -132,6 +135,13 @@ export interface HookSettingsFile {
    * own files only: a project file cannot set it.
    */
   managedHooksOnly?: boolean;
+  /**
+   * `hooks.readClaudeSettings` in the user's Continuous settings file: `true`
+   * runs the hooks in `~/.claude/settings.json` too. It is written inside
+   * `hooks` but is not an event, so the loader lifts it out to here. Off by
+   * default (D-023): another tool's file does not run code here unasked.
+   */
+  readClaudeSettings?: unknown;
 }
 
 // ---------------------------------------------------------------------------

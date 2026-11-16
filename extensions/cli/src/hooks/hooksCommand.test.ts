@@ -158,7 +158,41 @@ describe("cn hooks list: your own hooks", () => {
     expect(out).toContain("This project defines no hooks");
   });
 
+  const optIn = () => {
+    fs.mkdirSync(path.join(home, ".continue"), { recursive: true });
+    fs.writeFileSync(
+      path.join(home, ".continue", "settings.json"),
+      JSON.stringify({ hooks: { readClaudeSettings: true } }),
+    );
+  };
+
+  it("says ~/.claude hooks are skipped, and names the setting, until opted in", async () => {
+    writeUser(
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            { matcher: "Bash", hooks: [{ type: "command", command: "guard" }] },
+          ],
+        },
+      }),
+    );
+    await hooksCommand("list", {}, project);
+    expect(out).toContain(
+      "not read: hooks from Claude Code's settings are opt-in",
+    );
+    expect(out).toContain('"readClaudeSettings": true');
+    expect(out).toContain(path.join(home, ".continue", "settings.json"));
+    expect(out).toContain("skipped [PreToolUse] command: guard");
+
+    out = "";
+    optIn();
+    await hooksCommand("list", {}, project);
+    expect(out).not.toContain("not read");
+    expect(out).toContain("    [PreToolUse] command: guard");
+  });
+
   it("says a user file that cannot be read, without quoting it", async () => {
+    optIn();
     writeUser('{ "token": "sk-canary", }');
     expect(await hooksCommand("list", {}, project)).toBe(0);
     expect(out).toContain("could not be read");

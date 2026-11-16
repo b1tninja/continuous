@@ -29,6 +29,7 @@ import {
   sessionMatchesWorkspace,
   type WorkspaceMatchOptions,
 } from "core/util/sessionWorkspace.js";
+import { webContentStore } from "core/util/web/contentStore.js";
 import { v4 as uuidv4 } from "uuid";
 
 import { DEFAULT_SESSION_TITLE } from "./constants/session.js";
@@ -106,6 +107,17 @@ export function getSessionFilePath(): string {
   return path.join(sessionDir, `${sessionId}.json`);
 }
 
+/**
+ * A session leaving this process (a new one, a fork, a resume of another, a
+ * clear) takes its fetched pages with it (core/util/web/contentStore.ts). A
+ * fork has a new id, so it starts with none.
+ */
+function closeWebPages(previous: Session | null, next?: Session): void {
+  if (previous && previous.sessionId !== next?.sessionId) {
+    webContentStore.deleteSession(previous.sessionId);
+  }
+}
+
 // Singleton for current session management
 class SessionManager {
   private static instance: SessionManager;
@@ -149,6 +161,7 @@ class SessionManager {
   }
 
   setSession(session: Session): void {
+    closeWebPages(this.currentSession, session);
     // A loop saved mid-run comes back stopped, so a resumed session never
     // starts work by itself (core/util/loopMode.ts restoreLoop).
     if (session.loop !== undefined) {
@@ -210,6 +223,7 @@ class SessionManager {
   }
 
   clear(): void {
+    closeWebPages(this.currentSession);
     this.currentSession = null;
     notifyTaskPlanListeners(undefined);
     notifyLoopListeners(undefined);
@@ -1002,6 +1016,7 @@ export async function trashSessionById(
   if (manager.hasSession() && manager.getSessionId() === sessionId) {
     return { status: "current", sessionId };
   }
+  webContentStore.deleteSession(sessionId);
   return historyManager.trash(sessionId, options);
 }
 
@@ -1116,6 +1131,38 @@ export function forkIntoNewSession(parent: Session): Session {
   manager.setSession(fork);
   saveSession();
   return fork;
+}
+
+/** The suffix of the copy an edit of an earlier message leaves (NI7). */
+export const BEFORE_EDIT_SUFFIX = " (before edit)";
+
+/**
+ * Before an edit of an earlier message rewinds the conversation (NI7): the
+ * conversation as it is, `history`, is saved as a session of its own,
+ * "<title> (before edit)", a fork of the current one, which goes on with the
+ * edit. /resume lists the copy, and it is trashed like any other session.
+ * Undefined when there is nothing to keep or it could not be written.
+ */
+export function keepCopyBeforeEdit(
+  history: ChatHistoryItem[],
+): Session | undefined {
+  try {
+    const current = SessionManager.getInstance().getCurrentSession();
+    const parent: Session = { ...current, history };
+    if (!hasSessionContent(parent)) return undefined;
+    const copy = forkSession(parent, { sessionId: uuidv4() });
+    const title =
+      current.title && current.title !== DEFAULT_SESSION_TITLE
+        ? current.title
+        : "Session";
+    copy.title = `${title}${BEFORE_EDIT_SUFFIX}`;
+    copy.workspaceDirectory = current.workspaceDirectory || process.cwd();
+    historyManager.save(getSessionPersistenceSnapshot(copy));
+    return copy;
+  } catch (error) {
+    logger.error("The conversation before the edit was not kept:", error);
+    return undefined;
+  }
 }
 
 type TaskPlanListener = (plan: TaskPlan | undefined) => void;

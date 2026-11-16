@@ -33,6 +33,18 @@ import { withProvenance, type FetchPurpose } from "../../util/fetchRecord";
 import { guardedWebRequest } from "../../util/guardedFetch";
 import { modelToolFetch } from "../../util/modelToolFetch";
 import { readUserFetchLimits } from "../../util/userFetchLimits";
+import {
+  NotTextRefusal,
+  statusOutcomeError,
+  toOutcomeError,
+  WebOutcomeError,
+} from "../../util/web/fetchOutcome";
+import { needsJavaScript } from "../../util/web/needsJs";
+import {
+  needsJsOutcome,
+  notTextOutcome,
+  type BrowserTail,
+} from "../../util/web/outcomes";
 
 class URLContextProvider extends BaseContextProvider {
   static description: ContextProviderDescription = {
@@ -81,8 +93,20 @@ export interface UrlFetchOptions {
   callId?: string;
   /** Which path is fetching. Default: `tool` with `guardRedirects`, else `url`. */
   purpose?: FetchPurpose;
+  /**
+   * The browser the `needs-js` text points to (section 7.2 of
+   * plans/research/web-fetch-large-pages-and-policy.md). Default: none.
+   */
+  browser?: BrowserTail;
 }
 
+/**
+ * Fetch a URL as context items: the page, with its provenance line. Any other
+ * outcome (a refusal, a status that is not 2xx, a network failure, a binary
+ * or JavaScript-only page) is thrown as a `WebOutcomeError` carrying the typed
+ * outcome and its exact text (`core/util/web/outcomes.ts`); its message is the
+ * outcome's first sentence, for `@url`.
+ */
 export async function getUrlContextItems(
   query: string,
   fetchFn: FetchFunction,
@@ -92,14 +116,18 @@ export async function getUrlContextItems(
   const byModel = !!options.guardRedirects;
   // web.enabled: false turns off @url and the fetch tool alike (WB45)
   assertWebEnabled("no web page is fetched");
-  // Before any network call, and for typed and model-chosen URLs alike
-  assertFetchableScheme(startUrl);
-  assertNoUserinfo(startUrl);
-  if (byModel) assertNoSecretInUrl(startUrl);
-
   const limits = readUserFetchLimits();
   const maxBytes = options.maxBytes ?? limits.maxBytes;
   const deadlineMs = options.deadlineMs ?? limits.deadlineMs;
+  const ctx = { url: startUrl, deadlineMs };
+  try {
+    // Before any network call, and for typed and model-chosen URLs alike
+    assertFetchableScheme(startUrl);
+    assertNoUserinfo(startUrl);
+    if (byModel) assertNoSecretInUrl(startUrl);
+  } catch (e) {
+    throw toOutcomeError(e, ctx);
+  }
 
   const icon = byModel
     ? undefined
@@ -114,12 +142,24 @@ export async function getUrlContextItems(
     callId: options.callId,
     accept: ({ headers }) => {
       const type = headers.get("content-type");
-      if (classifyContentType(type) === "binary") throw binaryRefusal(type);
+      if (classifyContentType(type) === "binary") {
+        throw new NotTextRefusal(mediaType(type));
+      }
     },
+  }).catch((e: unknown) => {
+    throw toOutcomeError(e, ctx);
   });
   if (!resp.ok) {
-    // The status only: an error page is not shown to the model
-    throw new Error(`HTTP ${resp.status} ${resp.statusText}`.trim());
+    // The status and two header values only: an error page is never read
+    throw statusOutcomeError(
+      {
+        status: resp.status,
+        statusText: resp.statusText,
+        headers: resp.headers,
+        url: resp.finalUrl,
+      },
+      resp.record,
+    );
   }
   // The page is labelled with where it was read, not where it was pointed:
   // a redirect can lead to another host
@@ -129,9 +169,33 @@ export async function getUrlContextItems(
 
   let kind: BodyKind = classifyContentType(contentType);
   if (kind === "unknown") kind = sniffBody(text);
-  if (kind === "binary") throw binaryRefusal(contentType);
+  if (kind === "binary") {
+    throw new WebOutcomeError(
+      notTextOutcome({
+        host: url.host,
+        mediaType: mediaType(contentType),
+        httpStatus: resp.status,
+      }),
+      resp.record,
+    );
+  }
 
   const { markdown, title } = convert(text, kind, url);
+  if (kind === "html") {
+    const verdict = needsJavaScript(text, contentType, markdown);
+    if (verdict.needsJs) {
+      throw new WebOutcomeError(
+        needsJsOutcome({
+          host: url.host,
+          textChars: verdict.textChars,
+          noscript: verdict.noscript,
+          browser: options.browser,
+          httpStatus: resp.status,
+        }),
+        resp.record,
+      );
+    }
+  }
 
   const items: ContextItem[] = [
     {
@@ -155,12 +219,6 @@ export async function getUrlContextItems(
     });
   }
   return items;
-}
-
-function binaryRefusal(contentType: string | null): Error {
-  return new Error(
-    `Refused: the response is ${mediaType(contentType) || "binary data"}, not text. Only HTML, plain text, markdown, JSON and XML are read`,
-  );
 }
 
 /** Text of an HTML page that Readability could not use, one line per block. */

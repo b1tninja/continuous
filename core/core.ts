@@ -155,7 +155,7 @@ import {
   getContinueGlobalPath,
   migrateV1DevDataFiles,
 } from "./util/paths";
-import { localPathToUri } from "./util/pathToUri";
+import { localPathOrUriToPath, localPathToUri } from "./util/pathToUri";
 import {
   isDismissed,
   recordLive,
@@ -231,6 +231,7 @@ import {
   isContinueConfigRelatedUri,
 } from "./config/loadLocalAssistants";
 import { CodebaseRulesCache } from "./config/markdown/loadCodebaseRules";
+import { registerMcpWizardHandlers } from "./config/mcpWizard/protocolHandlers";
 import { setupLocalConfig } from "./config/onboarding";
 import { openSecretLocation } from "./config/openSecretLocation";
 import {
@@ -291,6 +292,8 @@ import { ContinueError, ContinueErrorReason } from "./util/errors";
 import { shareSession } from "./util/historyUtils";
 import { Logger } from "./util/Logger.js";
 import { MessageAbortControllers } from "./util/messageAbortControllers";
+import { webContentStore } from "./util/web/contentStore";
+import { setWebAgentVersion } from "./web/webHeaders";
 
 export class Core {
   configHandler: ConfigHandler;
@@ -428,6 +431,10 @@ export class Core {
       const dataLogger = DataLogger.getInstance();
       dataLogger.core = this;
       dataLogger.ideInfoPromise = ideInfoPromise;
+      // The release the web User-Agent names (major.minor only)
+      void ideInfoPromise
+        .then((info) => setWebAgentVersion(info?.extensionVersion))
+        .catch(() => undefined);
       dataLogger.ideSettingsPromise = ideSettingsPromise;
 
       void ideSettingsPromise.then((ideSettings) => {
@@ -499,6 +506,7 @@ export class Core {
       this.registerModelListHandlers();
       this.registerHistoryTrashHandlers();
       this.registerCompactionHandlers();
+      this.registerMcpWizardHandlers();
     } catch (error) {
       Logger.error(error);
       throw error; // Re-throw to prevent partially initialized core
@@ -515,9 +523,11 @@ export class Core {
   /** The session trash and message-text search of the History page (NI10). */
   private registerHistoryTrashHandlers() {
     const on = this.messenger.on.bind(this.messenger);
-    on("history/trash", (msg) =>
-      historyManager.trash(msg.data.id, { force: msg.data.force }),
-    );
+    on("history/trash", (msg) => {
+      // The session's fetched pages go with it, whether or not it is restored
+      webContentStore.deleteSession(msg.data.id);
+      return historyManager.trash(msg.data.id, { force: msg.data.force });
+    });
     on("history/restore", (msg) => historyManager.restore(msg.data.id));
     on("history/listTrash", () => historyManager.listTrash());
     on("history/deleteFromTrash", (msg) => {
@@ -1071,6 +1081,33 @@ export class Core {
     });
   }
 
+  /**
+   * The MCP add dialog (MCPW4a). The probe needs `consent: true` in its
+   * request, and no answer carries a secret value
+   */
+  private registerMcpWizardHandlers() {
+    const on = this.messenger.on.bind(this.messenger);
+
+    registerMcpWizardHandlers(on as never, {
+      configPath: () => getConfigYamlPath(),
+      continueDir: () => getContinueGlobalPath(),
+      projectDir: async () => {
+        const dirs = await this.ide.getWorkspaceDirs();
+        return dirs[0] ? localPathOrUriToPath(dirs[0]) : undefined;
+      },
+      ide: this.ide,
+      probeIde: this.ide,
+      secretStorage: async () =>
+        this.globalContext.get("preferredKeyStorage") !== "env" &&
+        (await isSecureStorageAvailable(this.ide))
+          ? "secure"
+          : "env",
+      reload: async (reason) => {
+        await this.configHandler.reloadConfig(reason);
+      },
+    });
+  }
+
   /** "Compact" and planned compaction's background summary. */
   private registerCompactionHandlers() {
     const on = this.messenger.on.bind(this.messenger);
@@ -1226,6 +1263,12 @@ export class Core {
     });
 
     on("web/fetchLog", async ({ data }) => getFetchLog().list(data?.session));
+    on("web/endTurn", ({ data }) => {
+      webContentStore.endTurn(data.sessionId);
+    });
+    on("web/closeSession", ({ data }) => {
+      webContentStore.deleteSession(data.sessionId);
+    });
   }
 
   /**
@@ -1437,6 +1480,7 @@ export class Core {
     });
 
     on("history/delete", (msg) => {
+      webContentStore.deleteSession(msg.data.id);
       historyManager.delete(msg.data.id);
       // A deleted session's web grants and blocks go with it (WB45)
       forgetWebGrants(msg.data.id);
@@ -1469,6 +1513,7 @@ export class Core {
     });
 
     on("history/clear", (msg) => {
+      webContentStore.clearAll();
       historyManager.clearAll();
     });
 
@@ -2529,13 +2574,20 @@ export class Core {
     on(
       "tools/call",
       async ({
-        data: { toolCall, workspaceDirs, allowOutsideWorkspace, runawayAction },
+        data: {
+          toolCall,
+          workspaceDirs,
+          allowOutsideWorkspace,
+          runawayAction,
+          sessionId,
+        },
       }) =>
         this.handleToolCall(
           toolCall,
           workspaceDirs,
           allowOutsideWorkspace,
           runawayAction,
+          sessionId,
         ),
     );
 
@@ -2623,7 +2675,8 @@ export class Core {
           ...(dirs[0] ? { cwd: uriToPath(dirs[0]) } : {}),
           ...deputyWorkspace(dirs),
           shell: shell.kind,
-          // The tainted-session rule's fact; nothing when the rule is off
+          // The tainted-session rule's fact (nothing when the rule is off)
+          // and B92's secret read (whatever the rule says)
           ...taintInput(sessionId, callId),
         });
         // Core keeps the Questions level it was last told, for what is asked
@@ -2737,6 +2790,7 @@ export class Core {
     workspaceDirs?: string[],
     allowOutsideWorkspace?: boolean,
     runawayAction?: "stop" | "keep-running",
+    sessionId?: string,
   ) {
     const { config } = await this.configHandler.loadConfig();
     if (!config) {
@@ -2792,6 +2846,9 @@ export class Core {
         onPartialOutput,
         codeBaseIndexer: this.codeBaseIndexer,
         ...(runawayAction ? { runawayAction } : {}),
+        // Only the caller's: a subagent's call is decided under its parent's
+        // session but has a store of its own
+        ...(sessionId ? { sessionId } : {}),
       });
     } catch (e) {
       trail.outcome({

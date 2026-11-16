@@ -8,6 +8,11 @@ import { ToolCallTitle } from "src/tools/ToolCallTitle.js";
 import { generatePolicyRule } from "../../permissions/policyWriter.js";
 import { grantWebHostForSession } from "../../permissions/webSession.js";
 import { ToolCallPreview } from "../../tools/types.js";
+import {
+  CONFIRM_TEXT,
+  confirmKeyAction,
+  useInterruptConfirm,
+} from "../hooks/useInterruptConfirm.js";
 import { defaultBoxStyles } from "../styles.js";
 
 import { ToolArgsDetail } from "./ToolArgsDetail.js";
@@ -68,8 +73,14 @@ const getWebOptions = (host: string): PermissionOption[] => [
     createPolicy: true,
   },
   {
+    id: "deny",
+    name: "No, skip this call (the agent goes on without it)",
+    color: "yellow",
+    approved: false,
+  },
+  {
     id: "deny_stop",
-    name: "No",
+    name: "No, and tell Continue what to do differently (stops the response)",
     color: "yellow",
     approved: false,
     stopStream: true,
@@ -87,8 +98,14 @@ const getPermissionOptions = (rule: string): PermissionOption[] => {
       createPolicy: true,
     },
     {
+      id: "deny",
+      name: "No, skip this call (the agent goes on without it)",
+      color: "yellow",
+      approved: false,
+    },
+    {
       id: "deny_stop",
-      name: "No, and tell Continue what to do differently",
+      name: "No, and tell Continue what to do differently (stops the response)",
       color: "yellow",
       approved: false,
       stopStream: true,
@@ -130,9 +147,34 @@ export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
   const showDynamicWarning =
     hasDynamicEvaluation && !initialHasShownDangerousCommand;
 
+  // Ending the turn asks first (useInterruptConfirm); denying one call does not
+  const confirm = useInterruptConfirm(true);
+  const respond = (option: PermissionOption) => {
+    if (option.stopStream) {
+      confirm.open("stop");
+      return;
+    }
+    choose(option, true);
+  };
+  const denyOption =
+    permissionOptions.find((o) => o.id === "deny") ?? permissionOptions[2];
+
   useInput((input, key) => {
+    if (confirm.current()) {
+      const action = confirmKeyAction(
+        confirm.openedAt.current,
+        Date.now(),
+        key,
+      );
+      if (action === "ignore") return;
+      confirm.close();
+      if (action === "confirm") onResponse(requestId, false, false, true);
+      // Esc, or any other key, goes back to the question about the call
+      return;
+    }
+
     if (key.return) {
-      choose(permissionOptions[selectedIndex], true);
+      respond(permissionOptions[selectedIndex]);
       return;
     }
 
@@ -148,9 +190,10 @@ export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
       return;
     }
 
-    // Escape or Ctrl+C to reject with stop stream
+    // Esc or Ctrl+C denies this call only: the model gets the denied result
+    // and the turn goes on. No single key ends the turn.
     if (key.escape || (key.ctrl && input === "c")) {
-      choose(permissionOptions[2]);
+      choose(denyOption);
       return;
     }
 
@@ -166,7 +209,8 @@ export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
     if (input === "y" || input === "Y") {
       choose(permissionOptions[0]);
     } else if (input === "n" || input === "N") {
-      choose(permissionOptions[2]);
+      // "No, and tell Continue what to do differently": asks before it stops
+      confirm.open("stop");
     }
   });
 
@@ -188,7 +232,11 @@ export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
       <ToolArgsDetail toolArgs={toolArgs} />
 
       <Box marginTop={1} flexDirection="column">
-        <Text color="dim">Would you like to continue?</Text>
+        {confirm.pending ? (
+          <Text color="yellow">{CONFIRM_TEXT[confirm.pending]}</Text>
+        ) : (
+          <Text color="dim">Would you like to continue?</Text>
+        )}
         {showDynamicWarning && (
           <Box marginTop={1}>
             <Text color="yellow" dimColor>
@@ -202,7 +250,8 @@ export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
           let shortcut = "";
           if (option.id === "approve") shortcut = "(tab)";
           else if (option.id === "approve_policy") shortcut = "(a)";
-          else if (option.id === "deny_stop") shortcut = "(esc)";
+          else if (option.id === "deny") shortcut = "(esc)";
+          else if (option.id === "deny_stop") shortcut = "(n)";
 
           return (
             <Box key={option.id} marginTop={index === 0 ? 1 : 0}>

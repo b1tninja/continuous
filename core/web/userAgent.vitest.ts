@@ -70,6 +70,18 @@ describe("userAgentFor", () => {
     ).toBe(`Continuous-Crawler/2.15 (+${WEB_AGENT_INFO_URL})`);
   });
 
+  it("sends the search provider the product token without the info URL (UA-3)", () => {
+    expect(
+      userAgentFor(undefined, { purpose: "search", version: "2.28.1" }),
+    ).toBe("Continuous-User/2.28");
+    expect(
+      userAgentFor(
+        { preset: "generic-agent" },
+        { purpose: "search", version: "2.28.1" },
+      ),
+    ).toBe(GENERIC_AGENT_USER_AGENT);
+  });
+
   it("never leaks more than major.minor of the version", () => {
     expect(majorMinor("2.15.3-beta.4+abc")).toBe("2.15");
     expect(majorMinor(undefined)).toBe("0.0");

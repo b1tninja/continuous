@@ -123,60 +123,83 @@ export const fetchTool: Tool = {
       args,
     };
   },
-  run: async (args: { url: string }): Promise<string> => {
-    const { url } = args;
+  run: async (args: { url: string }): Promise<string> =>
+    (await fetchWithOutcome(args)).output,
+};
 
-    try {
-      // Suppress console errors from JSDOM CSS parsing
-      const originalConsoleError = console.error;
-      console.error = () => {};
+/** What `Fetch` returns, and the outcome code the IDE puts on its item's `status`. */
+export interface FetchResult {
+  output: string;
+  /**
+   * `ok`, or the typed outcome (`not-found`, `rate-limited`, ...) of
+   * core/util/web/outcomes.ts. The CLI's `Tool.run` returns text only, so the
+   * text carries everything the model needs; the code is for callers and
+   * tests that match it without parsing text.
+   */
+  status: string;
+}
 
-      // Use the core fetchUrlContent implementation. It reads the spotlight
-      // setting from `config.experimental.spotlightUntrusted`.
-      const config = loadedConfig();
-      const spotlight = spotlightSetting(config);
-      const contextItems = await fetchUrlContentImpl(
-        { url },
-        {
-          fetch: guardedToolFetch(config),
-          ...(spotlight === undefined
-            ? {}
-            : { config: { experimental: { spotlightUntrusted: spotlight } } }),
-        },
-      );
+/**
+ * The CLI `Fetch`: the core fetch_url_content implementation, so a typed
+ * outcome (a 404, a 429 with its Retry-After, a DNS failure) comes back as
+ * the same text the IDE gives, a normal result rather than a thrown error.
+ */
+export async function fetchWithOutcome(args: {
+  url: string;
+}): Promise<FetchResult> {
+  const { url } = args;
 
-      // Restore console.error
-      console.error = originalConsoleError;
+  // Suppress console errors from JSDOM CSS parsing
+  const originalConsoleError = console.error;
+  console.error = () => {};
+  try {
+    // Use the core fetchUrlContent implementation. It reads the spotlight
+    // setting from `config.experimental.spotlightUntrusted`.
+    const config = loadedConfig();
+    const spotlight = spotlightSetting(config);
+    const contextItems = await fetchUrlContentImpl(
+      { url },
+      {
+        fetch: guardedToolFetch(config),
+        ...(spotlight === undefined
+          ? {}
+          : { config: { experimental: { spotlightUntrusted: spotlight } } }),
+      },
+    );
 
-      if (contextItems.length === 0) {
-        throw new ContinueError(
-          ContinueErrorReason.Unspecified,
-          `Could not fetch content from ${url}`,
-        );
-      }
-
-      // Format the results for CLI display
-      const combinedContent = contextItems
-        .filter((item: ContextItem) => item.name !== "Truncation warning")
-        .map((item: ContextItem) => item.content)
-        .join("\n\n");
-
-      // Apply CLI-level truncation
-      const maxChars = getFetchMaxChars();
-      const { output: truncatedOutput } = truncateOutputFromEnd(
-        combinedContent,
-        maxChars,
-        "fetched content",
-      );
-
-      return truncatedOutput;
-    } catch (error) {
-      if (error instanceof ContinueError) {
-        throw error;
-      }
-      throw new Error(
-        `Error: ${error instanceof Error ? error.message : String(error)}`,
+    if (contextItems.length === 0) {
+      throw new ContinueError(
+        ContinueErrorReason.Unspecified,
+        `Could not fetch content from ${url}`,
       );
     }
-  },
-};
+
+    // Format the results for CLI display
+    const combinedContent = contextItems
+      .filter((item: ContextItem) => item.name !== "Truncation warning")
+      .map((item: ContextItem) => item.content)
+      .join("\n\n");
+    const status =
+      contextItems.find((item: ContextItem) => item.status)?.status ?? "ok";
+
+    // Apply CLI-level truncation
+    const maxChars = getFetchMaxChars();
+    const { output: truncatedOutput } = truncateOutputFromEnd(
+      combinedContent,
+      maxChars,
+      "fetched content",
+    );
+
+    return { output: truncatedOutput, status };
+  } catch (error) {
+    if (error instanceof ContinueError) {
+      throw error;
+    }
+    throw new Error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  } finally {
+    // Restore console.error, on a failure too
+    console.error = originalConsoleError;
+  }
+}
