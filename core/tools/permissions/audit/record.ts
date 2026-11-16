@@ -23,7 +23,14 @@ export type AuditBy = "rules" | "reviewer" | "person" | "system";
 export interface AuditEnvelope {
   v: typeof AUDIT_VERSION;
   ev:
-    "decision" | "outcome" | "turn" | "policy" | "shadow" | "setting" | "taint";
+    | "decision"
+    | "outcome"
+    | "turn"
+    | "policy"
+    | "shadow"
+    | "setting"
+    | "taint"
+    | "fetch";
   /** UTC, ISO 8601 */
   ts: string;
   session: string;
@@ -327,6 +334,34 @@ export interface TaintEvent extends AuditEnvelope {
   maskedKinds?: string[];
 }
 
+/**
+ * One web request (plans/research/web-fetch-deep-dive.md, section 5.5): which
+ * path made it, where it went, what decided it and what came back. URLs have
+ * their query values masked; the body is never stored, only its hash. A
+ * separate `ev`, so a reader written before it existed skips it.
+ */
+export interface FetchEvent extends AuditEnvelope {
+  ev: "fetch";
+  /** tool, url, favicon, search, crawler, panel */
+  purpose: string;
+  /** model, person, page, config */
+  origin: string;
+  url: string;
+  finalUrl: string;
+  redirects: number;
+  outcome: string;
+  rule: string;
+  robots: string;
+  status?: number;
+  bytes: number;
+  truncated?: true;
+  sha256?: string;
+  durMs: number;
+  callId?: string;
+  error?: string;
+  maskedKinds?: string[];
+}
+
 export type AuditRecord =
   | DecisionEvent
   | OutcomeEvent
@@ -334,7 +369,8 @@ export type AuditRecord =
   | PolicyEvent
   | ShadowEvent
   | SettingEvent
-  | TaintEvent;
+  | TaintEvent
+  | FetchEvent;
 
 /** A record as the builders produce it: the writer adds `v`, `ts` and `seq`. */
 export type AuditDraft = DistributiveOmit<AuditRecord, "v" | "seq" | "ts"> & {
@@ -597,6 +633,84 @@ export function taintDraft(input: TaintInput): AuditDraft {
     label: clipMasked(label.text, MAX_TAINT_FIELD_CHARS),
     source: source ? clipMasked(source.text, MAX_TAINT_FIELD_CHARS) : undefined,
     reason: input.reason.slice(0, MAX_TAINT_FIELD_CHARS),
+    maskedKinds: kinds.length ? kinds : undefined,
+  }) as AuditDraft;
+}
+
+export interface FetchAuditInput {
+  session?: string;
+  purpose: string;
+  origin: string;
+  startUrl: string;
+  finalUrl: string;
+  redirects: number;
+  outcome: string;
+  rule: string;
+  robots: string;
+  status?: number;
+  bytes: number;
+  truncated: boolean;
+  sha256?: string;
+  durationMs: number;
+  callId?: string;
+  error?: string;
+}
+
+/** The session name fetches with no known session are written under. */
+export const FETCH_SESSION = "web-fetches";
+
+const MAX_URL_CHARS = 500;
+
+/**
+ * A URL as the audit keeps it: every query value replaced by `*` (the names
+ * stay, so a reader sees the shape), the fragment dropped, then masked like
+ * any other text so a credential in the path is caught too.
+ */
+export function maskUrlForAudit(raw: string): {
+  text: string;
+  kinds: string[];
+} {
+  let text = raw;
+  try {
+    const url = new URL(raw);
+    const names = [...url.searchParams.keys()];
+    url.hash = "";
+    url.search = names.length
+      ? `?${names.map((n) => `${encodeURIComponent(n)}=*`).join("&")}`
+      : "";
+    text = url.toString();
+  } catch {
+    // not a URL: masked as text below
+  }
+  const masked = maskText(text);
+  return { text: clipMasked(masked.text, MAX_URL_CHARS), kinds: masked.kinds };
+}
+
+export function fetchDraft(input: FetchAuditInput): AuditDraft {
+  const url = maskUrlForAudit(input.startUrl);
+  const finalUrl = maskUrlForAudit(input.finalUrl);
+  const error = input.error === undefined ? undefined : maskText(input.error);
+  const kinds = [
+    ...new Set([...url.kinds, ...finalUrl.kinds, ...(error?.kinds ?? [])]),
+  ];
+  return clean({
+    session: input.session ?? FETCH_SESSION,
+    ev: "fetch" as const,
+    purpose: input.purpose,
+    origin: input.origin,
+    url: url.text,
+    finalUrl: finalUrl.text,
+    redirects: input.redirects,
+    outcome: input.outcome,
+    rule: clipMasked(maskText(input.rule).text, MAX_REASON_CHARS),
+    robots: input.robots,
+    status: input.status,
+    bytes: input.bytes,
+    truncated: input.truncated ? (true as const) : undefined,
+    sha256: input.sha256,
+    durMs: input.durationMs,
+    callId: input.callId,
+    error: error ? clipMasked(error.text, MAX_REASON_CHARS) : undefined,
     maskedKinds: kinds.length ? kinds : undefined,
   }) as AuditDraft;
 }

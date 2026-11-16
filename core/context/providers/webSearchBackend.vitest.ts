@@ -1,11 +1,15 @@
-import { expect, test, vi } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
+import { setHostResolver } from "../../util/networkAddress";
 import { contextProviderClassFromName } from ".";
 import {
   fetchSearchResults,
   getWebSearchBackend,
   isWebSearchConfigured,
 } from "./webSearchBackend";
+
+beforeAll(() => setHostResolver(async () => ["93.184.215.14"]));
+afterAll(() => setHostResolver(undefined));
 
 test("no backend unless the URL is set to http(s)", () => {
   expect(getWebSearchBackend({})).toBeUndefined();
@@ -31,12 +35,15 @@ test("@web is hidden by default", () => {
 test("queries only the configured endpoint, key as bearer, no identifying headers", async () => {
   const fetchFn = vi.fn(async () => ({
     ok: true,
-    json: async () => ({
-      results: [
-        { title: "A", url: "https://a.example/", content: "aa" },
-        { title: "B", url: "https://b.example/", content: "bb" },
-      ],
-    }),
+    status: 200,
+    headers: new Map([["content-type", "application/json"]]),
+    text: async () =>
+      JSON.stringify({
+        results: [
+          { title: "A", url: "https://a.example/", content: "aa" },
+          { title: "B", url: "https://b.example/", content: "bb" },
+        ],
+      }),
   }));
   const backend = getWebSearchBackend({
     CONTINUOUS_WEB_SEARCH_URL: "https://s.example.org/search",
@@ -62,9 +69,13 @@ test("throws when not configured and on HTTP errors", async () => {
   const bad = vi.fn(async () => ({
     ok: false,
     status: 500,
-    text: async () => "boom",
+    headers: new Map(),
+    text: async () => "boom: internal detail",
   }));
-  await expect(fetchSearchResults("q", 1, bad as any, backend)).rejects.toThrow(
-    /500/,
+  const err = await fetchSearchResults("q", 1, bad as any, backend).catch(
+    (e: Error) => e,
   );
+  expect((err as Error).message).toMatch(/HTTP 500/);
+  // the response body is never quoted
+  expect((err as Error).message).not.toContain("boom");
 });

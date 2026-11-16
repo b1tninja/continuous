@@ -1,43 +1,107 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 
+import {
+  IPV4_SPECIAL_PURPOSE,
+  IPV6_SPECIAL_PURPOSE,
+  type SpecialPurposeBlock,
+} from "./specialPurpose.generated";
+
 /**
- * Whether an IP address is not on the public internet: loopback, private
- * ranges, link-local (which includes the cloud metadata address
- * 169.254.169.254), carrier-grade NAT, unspecified, and the IPv6 equivalents,
- * including addresses that embed an IPv4 address (IPv4-mapped, NAT64, 6to4,
- * IPv4-compatible).
+ * Whether an IP address is not on the public internet. An address is
+ * non-public when the most specific block of the IANA Special-Purpose Address
+ * Registries (RFC 6890, as updated by RFC 8190) that contains it is not
+ * "Globally Reachable": loopback, private use, link-local (which includes the
+ * cloud metadata address 169.254.169.254), shared address space,
+ * documentation, benchmarking, the IETF protocol assignments, reserved, and
+ * the IPv6 equivalents. Multicast (224.0.0.0/4, ff00::/8, which have their own
+ * registries) and the deprecated site-local fec0::/10 are non-public too.
+ * Addresses that embed an IPv4 address (IPv4-mapped, IPv4-compatible, NAT64
+ * 64:ff9b::/96, 6to4) are judged by that IPv4 address.
  */
 export function isNonPublicAddress(address: string): boolean {
+  return nonPublicReason(address) !== undefined;
+}
+
+/**
+ * Why an address is non-public, as a short phrase for a refusal ("Link Local,
+ * RFC 3927"), or undefined when it is public.
+ */
+export function nonPublicReason(address: string): string | undefined {
   const ip = normalizeHost(address);
   const kind = isIP(ip);
-  if (kind === 4) return isNonPublicIPv4(ip);
+  if (kind === 4) return ipv4Reason(ipv4ToNum(ip));
   if (kind === 6) {
     const parsed = parseIPv6(ip);
     // An address Node accepts but we cannot parse is treated as non-public.
-    if (parsed === null) return true;
-    return isNonPublicIPv6(parsed);
+    if (parsed === null) return "unparsed IPv6 address";
+    return ipv6Reason(parsed);
   }
-  return false;
+  return undefined;
 }
 
-function isNonPublicIPv4(ip: string): boolean {
-  return isNonPublicIPv4Num(ipv4ToNum(ip));
+interface V4Block {
+  base: number;
+  bits: number;
+  block: SpecialPurposeBlock;
+}
+interface V6Block {
+  base: bigint;
+  bits: number;
+  block: SpecialPurposeBlock;
 }
 
-function isNonPublicIPv4Num(n: number): boolean {
-  const a = (n >>> 24) & 0xff;
-  const b = (n >>> 16) & 0xff;
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 100 && b >= 64 && b <= 127) || // carrier-grade NAT
-    (a === 169 && b === 254) || // link-local, cloud metadata
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    a >= 224 // multicast and reserved
-  );
+function mask4(bits: number): number {
+  return bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+}
+
+const V4_BLOCKS: V4Block[] = IPV4_SPECIAL_PURPOSE.map((block) => {
+  const [addr, len] = block.prefix.split("/");
+  const bits = Number(len);
+  return { base: (ipv4ToNum(addr) & mask4(bits)) >>> 0, bits, block };
+}).sort((a, b) => b.bits - a.bits);
+
+const V6_BLOCKS: V6Block[] = IPV6_SPECIAL_PURPOSE.map((block) => {
+  const [addr, len] = block.prefix.split("/");
+  const bits = Number(len);
+  const value = parseIPv6(addr);
+  if (value === null) throw new Error(`Bad registry prefix ${block.prefix}`);
+  return { base: value >> BigInt(128 - bits), bits, block };
+}).sort((a, b) => b.bits - a.bits);
+
+/** The most specific special-purpose block that holds the address, if any. */
+export function specialPurposeBlockOf(
+  address: string,
+): SpecialPurposeBlock | undefined {
+  const ip = normalizeHost(address);
+  const kind = isIP(ip);
+  if (kind === 4) return v4Block(ipv4ToNum(ip));
+  if (kind === 6) {
+    const parsed = parseIPv6(ip);
+    return parsed === null ? undefined : v6Block(parsed);
+  }
+  return undefined;
+}
+
+function v4Block(n: number): SpecialPurposeBlock | undefined {
+  // Sorted longest prefix first, so the first hit is the most specific
+  return V4_BLOCKS.find((b) => (n & mask4(b.bits)) >>> 0 === b.base)?.block;
+}
+
+function v6Block(value: bigint): SpecialPurposeBlock | undefined {
+  return V6_BLOCKS.find((b) => value >> BigInt(128 - b.bits) === b.base)?.block;
+}
+
+function blockReason(block: SpecialPurposeBlock | undefined) {
+  if (!block || block.globallyReachable === true) return undefined;
+  const rfc = block.rfc.replace(/^\[|\]$/g, "").split("]")[0];
+  return `${block.name}, ${rfc}`;
+}
+
+function ipv4Reason(n: number): string | undefined {
+  // 224.0.0.0/4 is in the IPv4 Multicast Address Space registry instead
+  if (n >>> 28 === 0xe) return "Multicast, RFC 5771";
+  return blockReason(v4Block(n));
 }
 
 function ipv4ToNum(ip: string): number {
@@ -85,28 +149,30 @@ function parseIPv6(ip: string): bigint | null {
   return value;
 }
 
-function isNonPublicIPv6(value: bigint): boolean {
-  if (value === 0n || value === 1n) return true; // :: and ::1
+function embeddedReason(kind: string, v4: number): string | undefined {
+  const reason = ipv4Reason(v4);
+  return reason ? `${kind} ${reason}` : undefined;
+}
+
+function ipv6Reason(value: bigint): string | undefined {
   const high96 = value >> 32n;
   const v4 = Number(value & 0xffffffffn);
+  // :: and ::1 are registry entries; the rest of ::/96 is IPv4-compatible
+  if (value > 1n && high96 === 0n) {
+    return embeddedReason("IPv4-compatible", v4);
+  }
   // IPv4-mapped (::ffff:0:0/96), including the hex form URL parsers produce.
-  if (high96 === 0xffffn) return isNonPublicIPv4Num(v4);
-  // IPv4-compatible (::/96).
-  if (high96 === 0n) return isNonPublicIPv4Num(v4);
-  // Well-known NAT64 prefix 64:ff9b::/96. Judged by the embedded IPv4 address.
-  if (high96 === 0x64ff9bn << 64n) return isNonPublicIPv4Num(v4);
-  // Local-use NAT64 prefix 64:ff9b:1::/48. Always a local translator.
-  if (value >> 80n === 0x64ff9b0001n) return true;
+  if (high96 === 0xffffn) return embeddedReason("IPv4-mapped", v4);
+  // Well-known NAT64 prefix 64:ff9b::/96, judged by the embedded IPv4 address.
+  if (high96 === 0x64ff9bn << 64n) return embeddedReason("NAT64", v4);
   // 6to4 (2002::/16) carries an IPv4 address in the next 32 bits.
   if (value >> 112n === 0x2002n) {
-    return isNonPublicIPv4Num(Number((value >> 80n) & 0xffffffffn));
+    return embeddedReason("6to4", Number((value >> 80n) & 0xffffffffn));
   }
   const top = Number(value >> 112n);
-  if ((top & 0xfe00) === 0xfc00) return true; // fc00::/7 unique local
-  if ((top & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
-  if ((top & 0xffc0) === 0xfec0) return true; // fec0::/10 deprecated site-local
-  if ((top & 0xff00) === 0xff00) return true; // ff00::/8 multicast
-  return false;
+  if ((top & 0xff00) === 0xff00) return "Multicast, RFC 4291";
+  if ((top & 0xffc0) === 0xfec0) return "Site-Local (deprecated), RFC 3879";
+  return blockReason(v6Block(value));
 }
 
 /** Names that never point at a public host. */
