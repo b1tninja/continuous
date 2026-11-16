@@ -39,6 +39,8 @@ describe("compactConversation", () => {
 
     const saved = historyManager.save.mock.calls[0][0] as Session;
     expect(saved.history[1].conversationSummary).toBe("a summary");
+    // Reasoning in turns kept after the summary was minted before it (C104)
+    expect(saved.history[1].conversationSummaryHistoryLength).toBe(2);
     // The conversation is now short, so the old size and time would mislead
     // the cold-cache notice when the session is next opened.
     expect(saved.promptCache).toBeUndefined();

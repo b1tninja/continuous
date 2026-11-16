@@ -22,11 +22,14 @@ import { NewSessionButton } from "../../components/mainInput/belowMainInput/NewS
 import ThinkingBlockPeek from "../../components/mainInput/belowMainInput/ThinkingBlockPeek";
 import ContinueInputBox from "../../components/mainInput/ContinueInputBox";
 import { CacheMissNotice } from "../../components/mainInput/CacheMissNotice";
+import { CompactionHoldNotice } from "../../components/mainInput/CompactionHoldNotice";
+import { CompactionPreparedNotice } from "../../components/mainInput/CompactionPreparedNotice";
 import { CachingOffNotice } from "../../components/mainInput/CachingOffNotice";
 import { ToolDialectNotice } from "../../components/mainInput/ToolDialectNotice";
 import { ColdCacheNotice } from "../../components/mainInput/ColdCacheNotice";
 import { SessionLoadNotice } from "../../components/mainInput/SessionLoadNotice";
 import { EditUndoLine } from "../../components/mainInput/EditUndoLine";
+import { InstructionFileNotice } from "../../components/mainInput/InstructionFileNotice";
 import { AgentsList } from "../../components/BackgroundMode/AgentsList";
 import { InterruptConfirm } from "../../components/InterruptConfirm";
 import { NeedsYouTray } from "../../components/loop/NeedsYouTray";
@@ -47,6 +50,7 @@ import StepContainer from "../../components/StepContainer";
 import { TabBar } from "../../components/TabBar/TabBar";
 import { IdeMessengerContext } from "../../context/IdeMessenger";
 import { useApplyModeModel } from "../../hooks/useApplyModeModel";
+import { usePlannedCompaction } from "../../redux/thunks/prepareCompaction";
 import { useWebviewListener } from "../../hooks/useWebviewListener";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import {
@@ -148,6 +152,8 @@ export function Chat() {
   useLoopDriver();
   const hasLoop = useAppSelector((state) => !!state.session.loop);
   useApplyModeModel();
+  // Planned compaction: the summary is prepared while the person is idle
+  usePlannedCompaction();
   const dispatch = useAppDispatch();
   const ideMessenger = useContext(IdeMessengerContext);
   const reduxStore = useStore<RootState>();
@@ -293,7 +299,15 @@ export function Chat() {
         } else if (stateSnapshot.session.editUndo) {
           dispatch(setEditUndo(undefined));
         }
-        void dispatch(streamResponseThunk({ editorState, modifiers, index }));
+        void dispatch(
+          streamResponseThunk({
+            editorState,
+            modifiers,
+            index,
+            // A new message from the input may wait before a forced re-read
+            holdBeforeForcedReread: index === undefined,
+          }),
+        );
 
         if (editorToClearOnSend) {
           editorToClearOnSend.commands.clearContent(false);
@@ -611,10 +625,13 @@ export function Chat() {
       </StepsDiv>
       <JumpToLatest paused={autoScrollPaused} scrollToLatest={scrollToLatest} />
       <div className={"relative shrink-0"}>
+        <CompactionHoldNotice />
+        <CompactionPreparedNotice />
         <CacheMissNotice />
         <ColdCacheNotice />
         <SessionLoadNotice />
         <EditUndoLine />
+        <InstructionFileNotice />
         <CachingOffNotice />
         <PendingToolChangesNotice />
         <LargeMessageNotice />

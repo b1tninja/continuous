@@ -152,6 +152,7 @@ import {
   hasUnsafeShellConstruct,
   parseCommand,
 } from "./command";
+import { scanCommand } from "./shellScan";
 
 export { hasUnsafeShellConstruct, splitCommandParts } from "./command";
 
@@ -234,6 +235,71 @@ function matchesEffectRule(pattern: string, candidates: string[]): boolean {
 }
 
 /**
+ * Text the splitter (`parseCommand`) reads one way and a shell another, so an
+ * allow rule must not cover it. Each hides a second command inside what the
+ * splitter takes for one quoted part:
+ * - a carriage return on its own, which PowerShell reads as a line end;
+ * - `$'...'`, where `\'` does not close the string in bash and zsh;
+ * - a comment followed by another line: `echo a #'` then `rm x #'` is two
+ *   commands, and the splitter reads the two quotes as one string.
+ */
+function splitterMisreads(command: string): boolean {
+  if (/\r(?!\n)/.test(command)) return true;
+  let quote: "'" | '"' | null = null;
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i];
+    if (quote) {
+      if (c === "\\" && quote === '"') i++;
+      else if (c === quote) quote = null;
+      continue;
+    }
+    if (c === "\\") {
+      i++;
+      continue;
+    }
+    if (c === "$" && command[i + 1] === "'") return true;
+    if (
+      c === "#" &&
+      (i === 0 || /[\s;&|()]/.test(command[i - 1])) &&
+      command.includes("\n", i)
+    ) {
+      return true;
+    }
+    if (c === "'" || c === '"') quote = c;
+  }
+  return false;
+}
+
+/**
+ * What an allow rule may rely on about a command, for every caller that lets
+ * a pattern cover one (the rules below, and the CLI's own `Bash(...)`
+ * policies). `ok: false` when the splitter and the shell would not read the
+ * same commands (splitterMisreads).
+ *
+ * PowerShell and cmd do not quote the way the splitter does: a backslash
+ * escapes nothing there, PowerShell runs what is inside `( )`, cmd has no
+ * single quotes. For those shells the shell's own scanner must understand the
+ * command too, and `commands` holds the commands it finds: each needs to be
+ * covered by an allow rule. Other shells are judged by the splitter alone.
+ */
+export function allowReading(
+  command: string,
+  shell: ShellKind | undefined,
+): { ok: false } | { ok: true; commands?: string[] } {
+  if (splitterMisreads(command)) return { ok: false };
+  if (shell !== "powershell" && shell !== "cmd") return { ok: true };
+  const scanned = scanCommand(command, shell);
+  if (!scanned.ok) return { ok: false };
+  return {
+    ok: true,
+    // A word with a space in it was quoted; the program name never is
+    commands: scanned.graph.commands.map(({ words }) =>
+      words.map((w, i) => (i > 0 && /\s/.test(w) ? `"${w}"` : w)).join(" "),
+    ),
+  };
+}
+
+/**
  * Terminal commands are split into parts (quotes respected). A deny rule on
  * any part, or on anything `commandCandidates` finds in the command, refuses
  * it: that is the command as the shell will read it, with quotes removed,
@@ -287,11 +353,15 @@ export function matchTerminalCommand(
   }
   const allowRules = toolRules.filter((r) => r.decision === "allow");
   if (allowRules.length === 0) return undefined;
+  const covers = (text: string) =>
+    allowRules.find(
+      (r) => r.pattern === undefined || commandGlobMatch(r.pattern, text),
+    );
+  const reading = allowReading(command, shell);
+  if (!reading.ok || !(reading.commands ?? []).every(covers)) return undefined;
   let first: ParsedRule | undefined;
   for (const part of parsed.parts) {
-    const hit = allowRules.find(
-      (r) => r.pattern === undefined || commandGlobMatch(r.pattern, part),
-    );
+    const hit = covers(part);
     if (!hit) return undefined;
     first ??= hit;
   }

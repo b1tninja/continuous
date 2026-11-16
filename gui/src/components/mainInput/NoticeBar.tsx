@@ -7,6 +7,8 @@ import type { ReactNode } from "react";
 export function NoticeBar(props: {
   testId: string;
   onDismiss: () => void;
+  /** The dismiss button's text; "Dismiss" unless the notice has a better word. */
+  dismissLabel?: string;
   children: ReactNode;
 }) {
   return (
@@ -19,11 +21,11 @@ export function NoticeBar(props: {
       <button
         type="button"
         data-testid={`${props.testId}-dismiss`}
-        aria-label="Dismiss"
+        aria-label={props.dismissLabel ?? "Dismiss"}
         onClick={props.onDismiss}
         className="ml-auto min-h-6 cursor-pointer border-none bg-transparent px-2 text-xs text-description hover:text-foreground"
       >
-        Dismiss
+        {props.dismissLabel ?? "Dismiss"}
       </button>
     </div>
   );

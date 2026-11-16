@@ -1,3 +1,4 @@
+import { contextClassFor } from "core/llm/contextThresholds";
 import { useMemo } from "react";
 import { useStore } from "react-redux";
 import { useAppSelector } from "../redux/hooks";
@@ -35,6 +36,7 @@ export function useContextBreakdown() {
       previousMarks: undo?.previous,
       contextLength: contextLength ?? model?.contextLength,
       maxTokens: model?.completionOptions?.maxTokens,
+      contextClass: contextClassFor(model?.apiBase),
       reportedTokens: last ? last.inputTokens + last.outputTokens : undefined,
     });
     return { segments, breakdown, history };

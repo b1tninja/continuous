@@ -149,6 +149,23 @@ const autoCompactFields = {
 
 export const contextManagementSchema = z.object({
   ...autoCompactFields,
+  /**
+   * Planned compaction in the IDE: past 70% of the window (75% on a cloud
+   * provider) the compaction boundary is fixed and the summary of everything
+   * before it is prepared while the person is idle, so "Compact now" is
+   * instant. Defaults to on for a local server, off otherwise; `false` turns
+   * it off everywhere.
+   */
+  plannedCompaction: z.boolean().optional(),
+  /**
+   * Once the background summary is ready, read the compacted prompt on the
+   * server while the person is idle, so applying the compaction does not
+   * re-read it. Experimental: "off" (default) until the Strata live check,
+   * "local" on Strata and llama.cpp.
+   * "always" is reserved for cloud providers too, which are not pre-warmed
+   * yet; it acts as "local".
+   */
+  prewarm: z.enum(["off", "local", "always"]).optional(),
   /** Budget applied when this model runs as a sub-agent */
   subagent: z
     .object({

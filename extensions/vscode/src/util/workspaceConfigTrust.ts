@@ -1,5 +1,11 @@
 import { ConfigHandler } from "core/config/ConfigHandler";
 import {
+  getInstructionFilesState,
+  loadAgentFilesThisSession,
+  setAgentFileGate,
+  type InstructionFilesState,
+} from "core/config/markdown/instructionFiles";
+import {
   pendingProjectTrust,
   trustProjectScopes,
   type PendingTrust,
@@ -65,4 +71,34 @@ export async function promptForWorkspaceConfigTrust(
   } finally {
     prompting = false;
   }
+}
+
+/**
+ * ROADMAP X20: in a workspace VS Code has not trusted (Restricted Mode),
+ * `AGENTS.md` and the other agent files are not read. Call before the first
+ * config load. When the person trusts the workspace, config reloads and the
+ * file is read.
+ */
+export function gateAgentFilesOnWorkspaceTrust(
+  context: vscode.ExtensionContext,
+  reload: () => void,
+): void {
+  setAgentFileGate(() => vscode.workspace.isTrusted === false);
+  context.subscriptions.push(vscode.workspace.onDidGrantWorkspaceTrust(reload));
+}
+
+/**
+ * The webview's `instructionFiles/state`. `load` is the one-click Load: the
+ * withheld agent files are read for this window's session only. Nothing is
+ * stored, so the next window asks again.
+ */
+export async function instructionFilesState(
+  load: boolean | undefined,
+  configHandler: { reloadConfig(reason: string): Promise<unknown> },
+): Promise<InstructionFilesState> {
+  if (load && getInstructionFilesState().withheld.length > 0) {
+    loadAgentFilesThisSession();
+    await configHandler.reloadConfig("Agent file loaded for this session");
+  }
+  return getInstructionFilesState();
 }

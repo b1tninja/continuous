@@ -1,0 +1,11 @@
+## New
+
+- **A line when a compaction is prepared.** When planned compaction has made its summary in the background, a quiet line above the input says so, with the turns it covers. On a local server it waits for you: "Compaction prepared (summary of turns 1–80 ready); Compact now applies it in about 12 s (not pre-warmed)." **Compact now** applies it and keeps the newest turns word for word; **Not now** hides it (Compact now can still use the summary). Nothing is re-read until you choose it. On a cloud provider with planned compaction turned on, the summary applies at your next message, which writes the cache anyway.
+- **A hold before a forced re-read.** When your message would take the conversation past the point where the oldest turns are dropped to fit (85% of the window on a local server, 90% on cloud), the message waits and the line offers **Compact now, then send** (with the estimate; instant when a summary is ready) or **Continue anyway**. Enter chooses Compact now; Continue anyway needs a click or Tab then Enter, and a held-down key chooses nothing.
+- **The cost of Compact now.** The context meter's details show an estimate next to **Compact now**: in dollars on a cloud model, and in seconds on a Strata server (from its `/metrics`).
+- **Pre-warm on Strata and llama.cpp (experimental, off by default).** With `contextManagement.prewarm: local`, once the summary is ready and you are still idle, the conversation as it will be after compacting is sent to the server once with a one-token reply, so your next message applies the summary with nothing to read again ("prepared and pre-warmed"). On Strata it pins the server's checkpoint at the end of the summary, and it is skipped, with the reason, when Strata reports less free memory than it could take. It has not been checked on a live Strata server yet: turn it on after the steps in the local servers page ("Planned compaction and the pre-warm"). The prepared line says once that it is off.
+
+## Behaviour changes
+
+- A planned compaction's verbatim tail is capped at 65,536 tokens (it was 64,000), the same table as the block drop.
+- The cache-miss reasons name compaction correctly: a summary no longer changes the system prompt, so "the system prompt changed" now says "the base prompt or a rule", and a shorter prompt is "a compaction, or the oldest messages left out to fit".
