@@ -17,6 +17,20 @@ import type {
   McpImportResult,
 } from "../config/importClineMcp";
 import type {
+  McpWizardAnalyzeResponse,
+  McpWizardListResponse,
+  McpWizardParseRequest,
+  McpWizardParseResponse,
+  McpWizardProbeRequest,
+  McpWizardProbeResponse,
+  McpWizardRemoveRequest,
+  McpWizardRemoveResponse,
+  McpWizardSaveRequest,
+  McpWizardSaveResponse,
+} from "../config/mcpWizard/protocolHandlers";
+import type { McpTemplateSummary } from "../config/mcpWizard/templates";
+import type { McpServerDraft } from "../config/mcpWizard/types";
+import type {
   ModelBlockInfo,
   ModelEditPreview,
   ModelEditSaveResult,
@@ -574,6 +588,29 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
     },
     void,
   ];
+  /*
+    The MCP add dialog (MCPW4a, core/config/mcpWizard/protocolHandlers.ts).
+    A secret value goes to core only inside a draft on mcp/probe and
+    mcp/save, and no answer ever carries one: a credential from a paste
+    comes back as a held marker, a saved one as its reference name.
+  */
+  /** The bundled templates (MCPW6), for the Start step's cards. */
+  "mcp/listTemplates": [undefined, McpTemplateSummary[]];
+  /** Read a README snippet, or open a template, as candidates to review. Runs nothing. */
+  "mcp/parsePaste": [McpWizardParseRequest, McpWizardParseResponse];
+  /** Launch safety (MCPW2) and the runtime line (MCPW10). Runs nothing. */
+  "mcp/analyzeLaunch": [{ draft: McpServerDraft }, McpWizardAnalyzeResponse];
+  /**
+   * Test connection. Starts the command or connects only when `consent` is
+   * exactly true, and never for a launch the analysis blocks.
+   */
+  "mcp/probe": [McpWizardProbeRequest, McpWizardProbeResponse];
+  /** Save to the person's own config.yaml (default) or "This project". */
+  "mcp/save": [McpWizardSaveRequest, McpWizardSaveResponse];
+  /** Saved servers in both scopes, names and references only. */
+  "mcp/list": [undefined, McpWizardListResponse];
+  /** Remove one saved server; its secrets are kept. */
+  "mcp/remove": [McpWizardRemoveRequest, McpWizardRemoveResponse];
   "context/getSymbolsForFiles": [{ uris: string[] }, FileSymbolMap];
   "context/loadSubmenuItems": [{ title: string }, ContextSubmenuItem[]];
   "autocomplete/complete": [AutocompleteInput, string[]];

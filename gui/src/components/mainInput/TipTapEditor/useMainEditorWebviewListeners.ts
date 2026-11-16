@@ -9,6 +9,7 @@ import { useAppSelector } from "../../../redux/hooks";
 import { clearCodeToEdit } from "../../../redux/slices/editState";
 import { setNewestToolbarPreviewForInput } from "../../../redux/slices/sessionSlice";
 import { AppDispatch } from "../../../redux/store";
+import { confirmSessionSwitch } from "../../../redux/thunks/interruptConfirm";
 import { loadSession, saveCurrentSession } from "../../../redux/thunks/session";
 import { CodeBlock, PromptBlock } from "./extensions";
 import {
@@ -82,8 +83,10 @@ export function useMainEditorWebviewListeners({
       }
 
       setTimeout(() => {
-        editor?.commands.blur();
-        editor?.commands.focus("end");
+        // The editor may be gone by then (a session switch, an unmount)
+        if (!editor || editor.isDestroyed) return;
+        editor.commands.blur();
+        editor.commands.focus("end");
       }, 20);
     },
     [historyLength, editor, dispatch],
@@ -93,7 +96,8 @@ export function useMainEditorWebviewListeners({
     "focusContinueInputWithoutClear",
     async () => {
       setTimeout(() => {
-        editor?.commands.focus("end");
+        if (!editor || editor.isDestroyed) return;
+        editor.commands.focus("end");
       }, 20);
     },
     [editor],
@@ -102,6 +106,10 @@ export function useMainEditorWebviewListeners({
   useWebviewListener(
     "focusContinueInputWithNewSession",
     async () => {
+      // Ctrl+L: running work is stopped only when the person says so (NI1)
+      if (!(await dispatch(confirmSessionSwitch("newSession")).unwrap())) {
+        return;
+      }
       await dispatch(
         saveCurrentSession({
           openNewSession: true,
@@ -110,7 +118,8 @@ export function useMainEditorWebviewListeners({
       );
 
       setTimeout(() => {
-        editor?.commands.focus("end");
+        if (!editor || editor.isDestroyed) return;
+        editor.commands.focus("end");
       }, 20);
     },
     [editor, dispatch],
@@ -167,6 +176,7 @@ export function useMainEditorWebviewListeners({
       }
 
       setTimeout(() => {
+        if (editor.isDestroyed) return;
         editor.commands.blur();
         editor.commands.focus("end");
       }, 20);
@@ -186,6 +196,9 @@ export function useMainEditorWebviewListeners({
     "focusContinueSessionId",
     async (data) => {
       if (!data.sessionId) return;
+      if (!(await dispatch(confirmSessionSwitch("openSession")).unwrap())) {
+        return;
+      }
 
       await dispatch(
         loadSession({

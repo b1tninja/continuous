@@ -1,4 +1,7 @@
+import { WEB_CEILINGS, WEB_DEFAULTS } from "@continuedev/config-yaml";
+
 import type { FetchFunction } from "..";
+import { mergeHeaders, webRequestHeaders } from "../web/webHeaders";
 
 import { readBytesCapped, withDeadline } from "./boundedBody";
 import {
@@ -10,6 +13,7 @@ import {
 } from "./fetchRecord";
 import { classifyFetchTarget, secretKindsInUrl } from "./fetchUrlSafety";
 import { nonPublicReason, normalizeHost, pinnedLookup } from "./networkAddress";
+import { getWebConfig } from "./webConfig";
 
 /**
  * The one guard every web path goes through (plans/research/
@@ -33,6 +37,10 @@ import { nonPublicReason, normalizeHost, pinnedLookup } from "./networkAddress";
  * - `Authorization`, `Cookie`, `Proxy-Authorization` and any header the
  *   caller names are dropped when a hop changes origin (RFC 9110 section
  *   15.4, step 3).
+ * - `guardedWebRequest` adds the web header policy (core/web/webHeaders.ts)
+ *   at every hop: the User-Agent, `Accept`, and the `web.hosts` entry of
+ *   that hop's host, so a per-host header or User-Agent never follows a
+ *   redirect to another host.
  *
  * Behind an HTTP proxy the pinned lookup is not used (the proxy resolves the
  * name), but every hop is still resolved and classified here, and a name with
@@ -42,12 +50,16 @@ import { nonPublicReason, normalizeHost, pinnedLookup } from "./networkAddress";
  */
 
 /**
- * The hop limit. RFC 9110 section 15.4 sets no number; five is what an earlier
- * HTTP specification recommended and what the note keeps.
+ * The default hop limit. RFC 9110 section 15.4 sets no number; five is what an
+ * earlier HTTP specification recommended and what the note keeps. The limit in
+ * force is `web.limits.maxRedirects` (core/util/webConfig.ts: the person's
+ * config may raise it to `MAX_REDIRECTS_CEILING`, any other config may only
+ * lower it).
  */
-// TODO(WB27): read `web.limits.maxRedirects` (tighten-only, ceiling 10) once
-// the `web:` config section exists.
-export const MAX_REDIRECTS = 5;
+export const MAX_REDIRECTS = WEB_DEFAULTS.limits.maxRedirects;
+
+/** No setting and no caller follows more redirects than this. */
+export const MAX_REDIRECTS_CEILING = WEB_CEILINGS.maxRedirects;
 
 /** Request headers that never cross to another origin on a redirect. */
 const CREDENTIAL_HEADERS = ["authorization", "cookie", "proxy-authorization"];
@@ -74,8 +86,18 @@ export interface GuardedFetchOptions {
    * non-public (it may be an internal host only a proxy can see).
    */
   classify?: Classify;
-  /** Redirects to follow before giving up. Default and ceiling: `MAX_REDIRECTS`. */
+  /**
+   * Redirects to follow before giving up. It can only lower
+   * `web.limits.maxRedirects` (default `MAX_REDIRECTS`, never above
+   * `MAX_REDIRECTS_CEILING`).
+   */
   maxRedirects?: number;
+  /**
+   * Headers for the request to one hop, under the caller's own (the web
+   * header policy, `webRequestHeaders`). Called for the start URL and again
+   * for every redirect target.
+   */
+  headersFor?: (url: URL) => Record<string, string>;
   /** Extra request headers to drop when a redirect changes origin (an API key header). */
   originHeaders?: string[];
   /**
@@ -194,6 +216,22 @@ function checkLocation(next: URL, visited: Set<string>): void {
 }
 
 /**
+ * The redirects a request may follow: `web.limits.maxRedirects`, lowered by
+ * the caller's own limit, never above the ceiling.
+ */
+export function redirectLimit(callerLimit?: number): number {
+  const configured = getWebConfig().limits.maxRedirects;
+  return Math.max(
+    0,
+    Math.min(
+      MAX_REDIRECTS_CEILING,
+      configured,
+      callerLimit ?? MAX_REDIRECTS_CEILING,
+    ),
+  );
+}
+
+/**
  * Follow redirects one at a time, resolving every hop once and pinning the
  * connection to those addresses, and refuse a hop that leads from a public
  * address to a non-public one (loopback, private network, the cloud metadata
@@ -207,10 +245,7 @@ export async function fetchWithGuardedRedirects(
   init: Record<string, unknown> = {},
 ): Promise<any> {
   const classify = options.classify ?? classifyFetchTarget;
-  const limit = Math.min(
-    MAX_REDIRECTS,
-    Math.max(0, options.maxRedirects ?? MAX_REDIRECTS),
-  );
+  const limit = redirectLimit(options.maxRedirects);
   let current = start;
   let checked = await classify(current.hostname);
   const startsNonPublic = checked.nonPublic;
@@ -225,6 +260,14 @@ export async function fetchWithGuardedRedirects(
   for (let hop = 0; ; hop++) {
     const resp = await fetchFn(current, {
       ...request,
+      ...(options.headersFor
+        ? {
+            headers: mergeHeaders(
+              options.headersFor(current),
+              request.headers as Record<string, string>,
+            ),
+          }
+        : {}),
       redirect: "manual",
       // Pinned even when empty: a direct connection then fails instead of
       // resolving again. A proxy agent ignores it and resolves itself.
@@ -289,7 +332,10 @@ export interface WebRequestOptions {
   init?: { method?: string; headers?: Record<string, string>; body?: string };
   maxBytes: number;
   deadlineMs: number;
-  guard?: Omit<GuardedFetchOptions, "onFinalUrl" | "onHop" | "onStart">;
+  guard?: Omit<
+    GuardedFetchOptions,
+    "onFinalUrl" | "onHop" | "onStart" | "headersFor"
+  >;
   /**
    * Called with a successful response before its body is read; throw to
    * refuse it (a content type the caller does not read).
@@ -347,6 +393,11 @@ export async function guardedWebRequest(
         options.fetchFn,
         {
           ...options.guard,
+          headersFor: (u) => {
+            const headers = webRequestHeaders(options.purpose, u);
+            recorder.userAgent = headers["User-Agent"];
+            return headers;
+          },
           onStart: (s) => {
             recorder.rule = builtinRule(options.origin, s.nonPublic);
           },

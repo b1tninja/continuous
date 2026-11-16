@@ -56,6 +56,8 @@ A machine setting cannot be changed by a workspace's settings, so a repository c
 | Accept Jump Suggestion                          | `tab`                | `tab`               | a jump suggestion is shown                               |
 | Reject Jump Suggestion                          | `escape`             | `escape`            | a jump suggestion is shown                               |
 
+`ctrl+l` starts a new chat from the focused chat input. While the agent works (a reply streams, a tool call waits for approval or runs, a loop runs) it asks first; `Enter` stops the work and switches, `Escape` keeps working. The chat panel itself handles two more keys, which are not VS Code keybindings and cannot be rebound: `Escape` in an empty chat input while a reply streams asks before it stops the reply (`Enter` stops), and `Enter` answers that question. See [Stop, Resume and recovering a turn](/ide-extensions/agent/stop-and-resume).
+
 Two more keybindings are defined and disabled: `up` and `down` for `continuous.quickEditHistoryUp` and `continuous.quickEditHistoryDown`. Their condition starts with `false`, and no command of that name exists, so they never fire.
 
 To change a key, use **Preferences: Open Keyboard Shortcuts** and search for `continuous`.
@@ -122,7 +124,7 @@ Four titles carry the category twice in this version, so the palette shows them 
 The commands from **Open Permissions** to **Test Connection of the Chat Model** do what the same control in the panel does, and have no default key:
 
 - **Open Permissions** and **Open the Audit Inbox** open the Permissions settings page, the second at its Inbox view. **Open Stats** opens the Stats page.
-- **Stop Response** is the Stop button: it cancels the reply and ends running terminal commands. **Resume Response** is the Resume button under a stopped, failed or interrupted turn.
+- **Stop Response** does what the Stop button does (it cancels the reply and ends running terminal commands), after asking **Stop the response?** in the chat panel, since a key bound to it would otherwise stop with one press. **Resume Response** is the Resume button under a stopped, failed or interrupted turn.
 - **Start Loop** resumes a stopped loop that has work left, as the loop's Resume does; otherwise it picks Loop in the mode picker, and the plan the next message presents starts the loop. **Stop Loop** is the loop's Stop: it stops after the running item, or ends a parallel wave's workers.
 - **Show Agents** opens the session's agents list above the input and moves focus to it.
 - **Test Connection of the Chat Model** opens the selected chat model's settings at Connection, where **Test connection** is.

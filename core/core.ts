@@ -151,7 +151,7 @@ import {
   getContinueGlobalPath,
   migrateV1DevDataFiles,
 } from "./util/paths";
-import { localPathToUri } from "./util/pathToUri";
+import { localPathOrUriToPath, localPathToUri } from "./util/pathToUri";
 import {
   isDismissed,
   recordLive,
@@ -227,6 +227,7 @@ import {
   isContinueConfigRelatedUri,
 } from "./config/loadLocalAssistants";
 import { CodebaseRulesCache } from "./config/markdown/loadCodebaseRules";
+import { registerMcpWizardHandlers } from "./config/mcpWizard/protocolHandlers";
 import { setupLocalConfig } from "./config/onboarding";
 import { openSecretLocation } from "./config/openSecretLocation";
 import {
@@ -288,6 +289,7 @@ import { shareSession } from "./util/historyUtils";
 import { Logger } from "./util/Logger.js";
 import { MessageAbortControllers } from "./util/messageAbortControllers";
 import { webContentStore } from "./util/web/contentStore";
+import { setWebAgentVersion } from "./web/webHeaders";
 
 export class Core {
   configHandler: ConfigHandler;
@@ -425,6 +427,10 @@ export class Core {
       const dataLogger = DataLogger.getInstance();
       dataLogger.core = this;
       dataLogger.ideInfoPromise = ideInfoPromise;
+      // The release the web User-Agent names (major.minor only)
+      void ideInfoPromise
+        .then((info) => setWebAgentVersion(info?.extensionVersion))
+        .catch(() => undefined);
       dataLogger.ideSettingsPromise = ideSettingsPromise;
 
       void ideSettingsPromise.then((ideSettings) => {
@@ -496,6 +502,7 @@ export class Core {
       this.registerModelListHandlers();
       this.registerHistoryTrashHandlers();
       this.registerCompactionHandlers();
+      this.registerMcpWizardHandlers();
     } catch (error) {
       Logger.error(error);
       throw error; // Re-throw to prevent partially initialized core
@@ -1067,6 +1074,33 @@ export class Core {
         }),
         ...(dirs[0] ? { cwd: uriToPath(dirs[0]) } : {}),
       });
+    });
+  }
+
+  /**
+   * The MCP add dialog (MCPW4a). The probe needs `consent: true` in its
+   * request, and no answer carries a secret value
+   */
+  private registerMcpWizardHandlers() {
+    const on = this.messenger.on.bind(this.messenger);
+
+    registerMcpWizardHandlers(on as never, {
+      configPath: () => getConfigYamlPath(),
+      continueDir: () => getContinueGlobalPath(),
+      projectDir: async () => {
+        const dirs = await this.ide.getWorkspaceDirs();
+        return dirs[0] ? localPathOrUriToPath(dirs[0]) : undefined;
+      },
+      ide: this.ide,
+      probeIde: this.ide,
+      secretStorage: async () =>
+        this.globalContext.get("preferredKeyStorage") !== "env" &&
+        (await isSecureStorageAvailable(this.ide))
+          ? "secure"
+          : "env",
+      reload: async (reason) => {
+        await this.configHandler.reloadConfig(reason);
+      },
     });
   }
 
@@ -2627,7 +2661,8 @@ export class Core {
           ...(dirs[0] ? { cwd: uriToPath(dirs[0]) } : {}),
           ...deputyWorkspace(dirs),
           shell: shell.kind,
-          // The tainted-session rule's fact; nothing when the rule is off
+          // The tainted-session rule's fact (nothing when the rule is off)
+          // and B92's secret read (whatever the rule says)
           ...taintInput(sessionId, callId),
         });
         // Core keeps the Questions level it was last told, for what is asked

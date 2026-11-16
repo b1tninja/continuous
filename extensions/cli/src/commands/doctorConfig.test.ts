@@ -134,6 +134,22 @@ describe("file checks", () => {
     expect(check.warnings.map((w) => w.key)).toEqual(["hooks.NotAnEvent"]);
   });
 
+  it("knows hooks.readClaudeSettings is a switch, not an event", () => {
+    const ok = write(
+      path.join(root, "settings.json"),
+      JSON.stringify({ hooks: { readClaudeSettings: true } }),
+    );
+    expect(checkHookSettings(ok).state).toBe("ok");
+    expect(checkHookSettings(ok).warnings).toEqual([]);
+    const bad = write(
+      path.join(root, "settings2.json"),
+      JSON.stringify({ hooks: { readClaudeSettings: "yes" } }),
+    );
+    expect(checkHookSettings(bad).errors.map((e) => e.key)).toEqual([
+      "hooks.readClaudeSettings",
+    ]);
+  });
+
   it("names the line of a YAML error and drops the quoted frame", () => {
     const file = write(
       path.join(root, "permissions.yaml"),

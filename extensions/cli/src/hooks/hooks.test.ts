@@ -68,13 +68,19 @@ describe("hookConfig", () => {
       );
     });
 
-    it("matches partial regex", () => {
+    it("matches a regex anywhere, and a plain name only exactly", () => {
       const config: HooksConfig = {
-        PreToolUse: [{ matcher: "File", hooks: baseGroup.hooks }],
+        PreToolUse: [{ matcher: ".*File", hooks: baseGroup.hooks }],
       };
       expect(
         getMatchingHookGroups(config, "PreToolUse", "ReadFile"),
       ).toHaveLength(1);
+      const plain: HooksConfig = {
+        PreToolUse: [{ matcher: "File", hooks: baseGroup.hooks }],
+      };
+      expect(
+        getMatchingHookGroups(plain, "PreToolUse", "ReadFile"),
+      ).toHaveLength(0);
       expect(getMatchingHookGroups(config, "PreToolUse", "Bash")).toHaveLength(
         0,
       );

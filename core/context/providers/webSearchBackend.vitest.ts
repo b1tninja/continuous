@@ -56,7 +56,12 @@ test("queries only the configured endpoint, key as bearer, no identifying header
   const [url, init] = fetchFn.mock.calls[0] as any;
   expect(url.origin).toBe("https://s.example.org");
   expect(url.searchParams.get("q")).toBe("hello");
-  expect(Object.keys(init.headers).sort()).toEqual(["Accept", "Authorization"]);
+  expect(Object.keys(init.headers).sort()).toEqual([
+    "Accept",
+    "Authorization",
+    "User-Agent",
+  ]);
+  expect(init.headers["User-Agent"]).toMatch(/^Continuous-User\/\d+\.\d+$/);
 });
 
 test("throws when not configured and on HTTP errors", async () => {

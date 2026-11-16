@@ -7,6 +7,7 @@ import {
   selectToolCallsByStatus,
 } from "../../../../redux/selectors/selectToolCalls";
 import { callToolById } from "../../../../redux/thunks/callToolById";
+import { askToStopResponse } from "../../../../redux/thunks/interruptConfirm";
 import { stopResponseThunk } from "../../../../redux/thunks/paletteCommands";
 import { BlockSettingsTopToolbar } from "./BlockSettingsTopToolbar";
 import { EditOutcomeToolbar } from "./EditOutcomeToolbar";
@@ -103,9 +104,10 @@ export function LumpToolbar() {
   const hasRunningTerminalCommand = runningTerminalCalls.length > 0;
 
   // The same Stop as the Command Palette's "Stop Response": running
-  // terminal commands are killed and the reply is cancelled
-  const handleStopAction = () => {
-    void dispatch(stopResponseThunk());
+  // terminal commands are killed and the reply is cancelled. From the
+  // keyboard it asks first (NI8); a pointer click stops at once.
+  const handleStopAction = (fromKeyboard: boolean) => {
+    void dispatch(fromKeyboard ? askToStopResponse() : stopResponseThunk());
   };
 
   useEffect(() => {

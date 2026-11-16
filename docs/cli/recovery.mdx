@@ -14,7 +14,7 @@ continuous doctor config
 
 - `config.yaml` in the global folder (`~/.continuous`, or `CONTINUOUS_GLOBAL_DIR`), or the file given with `--config` or as `continuous config check <file>`
 - `permissions.yaml`
-- every hook settings file: `~/.claude/settings.json`, the global `settings.json`, and the project's `.claude`, `.continue` and `.continuous` settings files that exist
+- every hook settings file: `~/.claude/settings.json` (checked even when its hooks are not read, which is unless `hooks.readClaudeSettings` is `true`), the global `settings.json`, and the project's `.claude`, `.continue` and `.continuous` settings files that exist
 - the `mcpServers` entries of `config.yaml`
 
 For each file it prints the path and `ok`, `absent` or `broken`. A broken file gets one line per problem with its line, column and key, never the text of the file:
