@@ -399,10 +399,26 @@ function hasSessionContent(session: Session): boolean {
   return nonSystemMessages.length > 0;
 }
 
+let persistSessions = true;
+
+/**
+ * `-p --no-session-persistence` (V11): the run keeps its session in memory
+ * only, so `saveSession` writes nothing to `sessions/` (no file, no list
+ * entry). A session it resumes is read and left as it was.
+ */
+export function setSessionPersistence(enabled: boolean): void {
+  persistSessions = enabled;
+}
+
+export function isSessionPersistenceEnabled(): boolean {
+  return persistSessions;
+}
+
 /**
  * Save the current session to file
  */
 export function saveSession(): void {
+  if (!persistSessions) return;
   let sessionId = "";
   try {
     const manager = SessionManager.getInstance();

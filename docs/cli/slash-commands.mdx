@@ -30,7 +30,7 @@ The status line shows the model the next request goes to and its reasoning effor
 | `/resume`        | Pick an earlier session and continue it                                                                                                 |
 | `/sessions`      | Show all sessions. It opens the same picker as `/resume`                                                                                |
 | `/fork`          | Fork this session into a new one and continue there. The fork keeps the history unchanged, the mode, the model, the task plan and the prompt cache record, so its next message can read the cache the original built. The original is unchanged; `/resume` opens it |
-| `/export`        | Pick a session and write it to a JSON file                                                                                              |
+| `/export`        | Write this session as a masked Markdown transcript (`/export [path] [--force] [--reasoning]`) and say how many values were masked. `--json` picks a session and writes the JSON file `/import` reads, with secrets replaced. `--raw` masks nothing, with a warning. See [Export a session](/cli/export) |
 | `/import <file>` | Read a session from a JSON file written by `/export`. If a session with that id already exists, the import gets a new id                |
 
 ## Model and configuration

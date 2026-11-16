@@ -146,7 +146,7 @@ export const SYSTEM_SLASH_COMMANDS: SystemCommand[] = [
   {
     name: "export",
     description:
-      "Export this session as a masked Markdown transcript: /export [path] [--force]; --json for the session file /import reads",
+      "Export this session as a masked Markdown transcript: /export [path] [--force]; --json for the session file /import reads; --raw masks nothing",
     category: "system",
   },
   {

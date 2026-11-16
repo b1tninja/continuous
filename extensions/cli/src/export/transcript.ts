@@ -14,7 +14,8 @@ import {
  * masker plus the environment-assignment pass), tool output is cut,
  * reasoning is left out unless asked for, attached context (file contents)
  * is left out, and the header is the title and a date only: no path, model,
- * session id or workspace.
+ * session id or workspace. `raw` (V13, `--raw`) turns the masking off and
+ * nothing else; the caller warns.
  */
 export type TranscriptFormat = "md" | "html";
 
@@ -26,12 +27,48 @@ export interface TranscriptOptions {
   toolOutputChars?: number;
   /** The date in the header (the session's creation date when known); today by default. */
   date?: Date;
+  /** No masking at all (`--raw`): the text as the session has it. */
+  raw?: boolean;
+}
+
+/** A rendered transcript and how many values the masker replaced in it. */
+export interface RenderedTranscript {
+  text: string;
+  masked: number;
 }
 
 export const TRANSCRIPT_TOOL_OUTPUT_CHARS = 2000;
 const TOOL_ARGS_CHARS = 1000;
 
-const mask = (text: string) => maskCommandForDisplay(text);
+const MARK = /«masked:/g;
+const marks = (text: string) => text.match(MARK)?.length ?? 0;
+
+/**
+ * The display masker for one render, counting the values it replaces: the
+ * marks in its output that were not in its input (text that was masked
+ * before, in the session itself, is not counted again).
+ */
+class Masker {
+  count = 0;
+  constructor(private readonly raw = false) {}
+
+  text(text: string): string {
+    if (this.raw || !text) return text;
+    const out = maskCommandForDisplay(text);
+    this.count += Math.max(0, marks(out) - marks(text));
+    return out;
+  }
+
+  args<T>(value: T): T {
+    if (this.raw) return value;
+    const out = maskArgsForDisplay(value);
+    this.count += Math.max(
+      0,
+      marks(JSON.stringify(out) ?? "") - marks(JSON.stringify(value) ?? ""),
+    );
+    return out;
+  }
+}
 
 function textOf(content: MessageContent | undefined): string {
   if (typeof content === "string") return content;
@@ -60,16 +97,16 @@ function dateOf(date?: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function toolCallsOf(item: ChatHistoryItem, outputChars: number): string[] {
+function toolCallsOf(
+  item: ChatHistoryItem,
+  outputChars: number,
+  m: Masker,
+): string[] {
   const parts: string[] = [];
   for (const state of item.toolCallStates ?? []) {
-    const name = mask(state.toolCall?.function?.name ?? "tool");
+    const name = m.text(state.toolCall?.function?.name ?? "tool");
     parts.push(`**Tool call: ${name}** (${state.status})`);
-    const args = JSON.stringify(
-      maskArgsForDisplay(state.parsedArgs ?? {}),
-      null,
-      2,
-    );
+    const args = JSON.stringify(m.args(state.parsedArgs ?? {}), null, 2);
     if (args && args !== "{}") {
       parts.push(fence(clipMasked(args, TOOL_ARGS_CHARS), "json"));
     }
@@ -78,7 +115,7 @@ function toolCallsOf(item: ChatHistoryItem, outputChars: number): string[] {
       .join("\n")
       .trim();
     if (output) {
-      const masked = mask(output);
+      const masked = m.text(output);
       const cut = masked.length > outputChars;
       parts.push(
         fence(clipMasked(masked, outputChars)) +
@@ -96,6 +133,15 @@ export function renderMarkdown(
   session: Session,
   options: TranscriptOptions = {},
 ): string {
+  return markdownOf(session, options, new Masker(options.raw));
+}
+
+function markdownOf(
+  session: Session,
+  options: TranscriptOptions,
+  m: Masker,
+): string {
+  const mask = (text: string) => m.text(text);
   const outputChars = options.toolOutputChars ?? TRANSCRIPT_TOOL_OUTPUT_CHARS;
   const title = mask(session.title?.trim() || "Untitled session").replace(
     /\s+/g,
@@ -118,7 +164,7 @@ export function renderMarkdown(
       out.push("", "### Reasoning", "", mask(item.reasoning.text));
     }
     if (text) out.push("", text);
-    for (const part of toolCallsOf(item, outputChars)) out.push("", part);
+    for (const part of toolCallsOf(item, outputChars, m)) out.push("", part);
   }
   return out.join("\n") + "\n";
 }
@@ -139,7 +185,10 @@ export function renderHtml(
   session: Session,
   options: TranscriptOptions = {},
 ): string {
-  const md = renderMarkdown(session, options);
+  return htmlOf(renderMarkdown(session, options));
+}
+
+function htmlOf(md: string): string {
   const title = escapeHtml(md.split("\n", 1)[0].replace(/^#\s*/, ""));
   return [
     "<!doctype html>",
@@ -163,9 +212,20 @@ export function renderTranscript(
   session: Session,
   options: TranscriptOptions = {},
 ): string {
-  return options.format === "html"
-    ? renderHtml(session, options)
-    : renderMarkdown(session, options);
+  return renderTranscriptCounted(session, options).text;
+}
+
+/** `renderTranscript` with the number of values masked (V13). */
+export function renderTranscriptCounted(
+  session: Session,
+  options: TranscriptOptions = {},
+): RenderedTranscript {
+  const m = new Masker(options.raw);
+  const md = markdownOf(session, options, m);
+  return {
+    text: options.format === "html" ? htmlOf(md) : md,
+    masked: m.count,
+  };
 }
 
 /** The format a file name asks for: `.html` and `.htm` give HTML, anything else Markdown. */

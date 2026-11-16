@@ -45,7 +45,7 @@ import { NEW_SESSION_TITLE } from "core/util/constants";
 import {
   DROPPED_PROMPT_MARKER,
   keepLatestPromptOnly,
-  withoutPrompt,
+  withoutPromptKeepingHash,
 } from "core/util/promptLogs";
 import { restoreLoop } from "core/util/loopMode";
 import {
@@ -537,11 +537,11 @@ export const sessionSlice = createSlice({
         if (
           item.promptLogs?.some((log) => log.prompt !== DROPPED_PROMPT_MARKER)
         ) {
-          item.promptLogs = item.promptLogs.map(withoutPrompt);
+          item.promptLogs = item.promptLogs.map(withoutPromptKeepingHash);
         }
       }
       const added = payload.map((log, i) =>
-        i === payload.length - 1 ? log : withoutPrompt(log),
+        i === payload.length - 1 ? log : withoutPromptKeepingHash(log),
       );
       lastMessage.promptLogs = lastMessage.promptLogs
         ? lastMessage.promptLogs.concat(added)
