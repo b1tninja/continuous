@@ -104,7 +104,20 @@ export function planMcpServerEntry(
     if (!draft.command?.trim())
       errors.push("A command-line server needs a command.");
     entry.command = draft.command;
-    if (draft.args?.length) entry.args = [...draft.args];
+    if (draft.args?.length) {
+      const secretArgs = new Set(draft.secretArgs ?? []);
+      entry.args = draft.args.map((a, i) => {
+        if (!secretArgs.has(i)) return a;
+        // Named after its flag (`--api-key`), else after its position
+        const prev = draft.args![i - 1] ?? "";
+        const key = /^--?[A-Za-z]/.test(prev)
+          ? prev.replace(/^-+/, "")
+          : `arg${i + 1}`;
+        return (
+          convert({ name: key, value: a, secret: true }, `args.${i}`) ?? ""
+        );
+      });
+    }
     if (draft.env?.length) {
       entry.env = Object.fromEntries(
         draft.env.map((v) => [v.name, convert(v, `env.${v.name}`) ?? ""]),
