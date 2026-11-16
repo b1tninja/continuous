@@ -105,6 +105,9 @@ import {
   readUserTrustedDomains,
   ruleSourcesOfLoadedConfig,
 } from "./tools/permissions/readRuleSources";
+import { getWebConfig } from "./util/webConfig";
+import { forgetWebGrants, webGrantsFor } from "./tools/permissions/webGrants";
+import { webCallContext } from "./tools/permissions/webPolicy";
 import {
   confirmInIde,
   registerRuleEditorHandlers,
@@ -1434,6 +1437,8 @@ export class Core {
 
     on("history/delete", (msg) => {
       historyManager.delete(msg.data.id);
+      // A deleted session's web grants and blocks go with it (WB45)
+      forgetWebGrants(msg.data.id);
     });
 
     on("history/load", (msg) => {
@@ -2603,6 +2608,13 @@ export class Core {
               }
             : {}),
           approval,
+          // The Web area's facts (WB45): web.enabled, this session's grants
+          // and blocks, and the URLs the person wrote (when history is sent)
+          web: webCallContext({
+            config: getWebConfig(),
+            grants: webGrantsFor(sessionId),
+            userMessages: history?.userMessages,
+          }),
           trustedDomains: readUserTrustedDomains(),
           envNames: readUserEnvNames(),
           largeChangeLines: readUserLargeChangeLines(),

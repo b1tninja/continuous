@@ -30,6 +30,7 @@ import { holdLoopCall, loopRepeatGuard } from "../loop/loopHolds.js";
 import { noteCliToolResult } from "../permissions/cliTaint.js";
 import {
   evaluateWithCoreRules,
+  cliWebContext,
   keepCoreVerdict,
   getReviewer,
   isAutoReviewEnabled,
@@ -262,6 +263,17 @@ function mcpPinChange(server: string, tool: string) {
   }
 }
 
+/** The Web area's facts; a session without a chat history (a test, a worker) still gets web.enabled and grants. */
+function webContextSafely() {
+  let history;
+  try {
+    history = services.chatHistory?.getHistory?.();
+  } catch {
+    history = undefined;
+  }
+  return cliWebContext(Array.isArray(history) ? history : undefined);
+}
+
 async function coreRulesVerdict(
   toolCall: PreprocessedToolCall,
   cliPermission: "allow" | "ask",
@@ -302,6 +314,8 @@ async function coreRulesVerdict(
           : null,
       isHeadless: !!isHeadless,
       history: autoReview ? services.chatHistory.getHistory() : undefined,
+      // WB45: web.enabled, the session's web grants, the URLs the person wrote
+      web: webContextSafely(),
       ...(mcpServer
         ? {
             mcp: {

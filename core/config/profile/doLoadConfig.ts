@@ -49,6 +49,8 @@ import { loadMarkdownRules } from "../markdown/loadMarkdownRules";
 import { migrateJsonSharedConfig } from "../migrateSharedConfig";
 import { rectifySelectedModelsFromGlobalContext } from "../selectedModels";
 import { loadContinueConfigFromYaml } from "../yaml/loadYaml";
+import { withholdWebTools } from "../../tools/permissions/webPolicy";
+import { getWebConfig } from "../../util/webConfig";
 
 async function loadRules(ide: IDE) {
   const rules: RuleWithSource[] = [];
@@ -415,6 +417,11 @@ export default async function doLoadConfig(options: {
       ide,
       toolSearch: newConfig.experimental?.toolSearch,
     })),
+  );
+  // web.enabled: false from any config turns every agent web tool off (WB45)
+  newConfig.tools = withholdWebTools(
+    newConfig.tools,
+    getWebConfig().enabled === false,
   );
 
   // Detect duplicate tool names

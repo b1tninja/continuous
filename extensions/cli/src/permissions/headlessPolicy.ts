@@ -10,6 +10,10 @@ import {
   POLICY_PRESETS,
   type PolicyLevels,
 } from "core/tools/permissions/policy.js";
+import {
+  effectiveWebLevel,
+  webHeadlessLine,
+} from "core/tools/permissions/webPolicy.js";
 
 /**
  * The headless policy (plans/ROADMAP.md, CO2; plans/decisions-2026-11-15.md,
@@ -89,6 +93,10 @@ export function headlessPolicyNotice(args: {
   /** "--auto" or "--policy <spec>" */
   source?: string;
   legacy?: boolean;
+  /** `web.enabled` as resolved; false shows Web Off, locked by config.yaml */
+  webEnabled?: boolean;
+  /** The CLI's own lists allow `Fetch` (the default), which Cautious counts as the tool's setting */
+  fetchAllowed?: boolean;
 }): string {
   if (args.legacy) {
     return `continuous: ${HEADLESS_LEGACY_ENV}=1 is set in the environment: Bash and unlisted tools are allowed in every headless run while it is set, not only this one, as before 2.18.0. This switch is removed in the next release; pass --auto or --policy instead.`;
@@ -99,7 +107,12 @@ export function headlessPolicyNotice(args: {
   const tail = args.source
     ? "a call that would still ask is refused."
     : "a call that would ask is refused; --auto or --policy allows more.";
-  return `continuous: headless run ${where}: ${describeLevels(args.levels)}; ${tail}`;
+  // WB45: the Web level, and what an ask becomes there (Cautious runs only allowed domains)
+  const web = webHeadlessLine(
+    effectiveWebLevel(args.levels, { enabled: args.webEnabled }),
+    { toolSettingRuns: !!args.fetchAllowed },
+  );
+  return `continuous: headless run ${where}: ${describeLevels(args.levels)}; ${web}; ${tail}`;
 }
 
 /**

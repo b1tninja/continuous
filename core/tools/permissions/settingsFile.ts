@@ -17,6 +17,7 @@ import {
   type QuestionDelivery,
 } from "./policy.js";
 import { validateRuleText } from "./ruleAnalysis.js";
+import { storedWebLevel } from "./webPolicy.js";
 
 /**
  * The one settings file the IDE and the CLI both read: permissions.yaml in the
@@ -122,6 +123,15 @@ export function parsePolicyFile(text: string | undefined): PolicyFileRead {
       notices.push(
         `levels.${area}: idgaf is for one session only, so ${DEFAULT_POLICY_LEVELS[area]} applies.`,
       );
+    }
+  }
+  // Web (WB45): absent follows Tool use; IDGAF or an unknown value does too
+  if (levelsIn.web !== undefined) {
+    const web = storedWebLevel(levelsIn.web);
+    if (web.level) levelsIn.web = web.level;
+    else {
+      delete levelsIn.web;
+      if (web.notice) notices.push(web.notice);
     }
   }
 
@@ -334,6 +344,16 @@ export function applyPolicyUpdate(
       const level = update.levels[area];
       if (parsePolicyLevel(level) === "idgaf") continue;
       doc.setIn(["levels", area], level);
+    }
+    // Web: written when given; given as undefined it follows Tool use again;
+    // left out, the file keeps what it has. IDGAF is never written.
+    if (Object.hasOwn(update.levels, "web")) {
+      const web = update.levels.web;
+      if (web === undefined) {
+        if (doc.hasIn(["levels", "web"])) doc.deleteIn(["levels", "web"]);
+      } else if (web !== "idgaf") {
+        doc.setIn(["levels", "web"], web);
+      }
     }
   }
   if (update.maxNewPlanItems !== undefined) {

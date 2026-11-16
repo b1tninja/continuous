@@ -12,6 +12,7 @@ import {
 } from "../../index.js";
 import { decodeBytes } from "../../util/boundedBody";
 import { fetchFavicon } from "../../util/fetchFavicon";
+import { assertWebEnabled } from "../../util/webConfig";
 import {
   classifyContentType,
   mediaType,
@@ -89,6 +90,8 @@ export async function getUrlContextItems(
 ): Promise<ContextItem[]> {
   const startUrl = new URL(query.trim());
   const byModel = !!options.guardRedirects;
+  // web.enabled: false turns off @url and the fetch tool alike (WB45)
+  assertWebEnabled("no web page is fetched");
   // Before any network call, and for typed and model-chosen URLs alike
   assertFetchableScheme(startUrl);
   assertNoUserinfo(startUrl);

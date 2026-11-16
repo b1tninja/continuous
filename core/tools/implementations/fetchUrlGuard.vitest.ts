@@ -131,19 +131,19 @@ describe("fetch_url policy", () => {
         permissions: { allow: ["fetchUrl"] },
         approval: { levels: POLICY_PRESETS.handsOff.levels },
       });
-    expect(decide("http://169.254.169.254/").policy).toBe(
-      "allowedWithPermission",
-    );
+    expect(decide("http://10.0.0.1/").policy).toBe("allowedWithPermission");
     expect(
       evaluateToolPolicyWithRules({
         tool: fetchUrlContentTool,
         toolName: "fetch_url_content",
         basePolicy: "allowedWithPermission",
-        parsedArgs: { url: "http://169.254.169.254/" },
+        parsedArgs: { url: "http://10.0.0.1/" },
         permissions: undefined,
         approval: { levels: POLICY_PRESETS.handsOff.levels },
       }).policy,
     ).toBe("allowedWithPermission");
+    // The cloud metadata address is not asked: it is refused at every level (WB45)
+    expect(decide("http://169.254.169.254/").policy).toBe("disabled");
     expect(decide("http://[::ffff:127.0.0.1]/").policy).toBe(
       "allowedWithPermission",
     );

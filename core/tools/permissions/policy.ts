@@ -30,7 +30,41 @@ export const POLICY_LEVELS: readonly PolicyLevel[] = [
   "idgaf",
 ];
 
-export type PolicyLevels = Record<PolicyArea, PolicyLevel>;
+/**
+ * The Web area's levels (plans/research/web-fetch-large-pages-and-policy.md,
+ * section 8.2): the five shared levels plus two that exist for Web only.
+ * `off` offers no agent web tool; `listed` runs allowed domains and refuses
+ * the rest without asking.
+ */
+export type WebLevel = PolicyLevel | "off" | "listed";
+
+/** Top to bottom by how few decisions reach you, as the dropdown lists them; Off is set apart. */
+export const WEB_LEVELS: readonly WebLevel[] = [
+  "manual",
+  "cautious",
+  "listed",
+  "automatic",
+  "permissive",
+  "idgaf",
+  "off",
+];
+
+/**
+ * The level of each area. `web` is the sixth area and is optional: absent, it
+ * follows Tool use (core/tools/permissions/webPolicy.ts, effectiveWebLevel),
+ * so no setting saved before it existed changes meaning.
+ */
+export type PolicyLevels = Record<PolicyArea, PolicyLevel> & {
+  web?: WebLevel;
+};
+
+/** A Web level from stored or typed text: any case, `yolo` read as `idgaf`. */
+export function parseWebLevel(value: unknown): WebLevel | undefined {
+  if (typeof value !== "string") return undefined;
+  const word = value.trim().toLowerCase();
+  if (word === "off" || word === "listed") return word;
+  return parsePolicyLevel(word);
+}
 
 /**
  * Spellings that are read as a level and never written. 2.14.x called the top
@@ -281,9 +315,29 @@ export const POLICY_PRESET_ORDER = Object.keys(
   POLICY_PRESETS,
 ) as PolicyPresetName[];
 
+/**
+ * The Web level each preset sets. Every preset's Web level is its Tool use
+ * level, so a preset applied as its five levels (Web absent, following Tool
+ * use) means the same; `parsePolicySpec` and the GUI may also write it. No
+ * preset sets Off or Listed.
+ */
+export const POLICY_PRESET_WEB: Record<PolicyPresetName, WebLevel> = {
+  careful: "cautious",
+  acceptEdits: "cautious",
+  handsOff: "permissive",
+  reviewer: "automatic",
+  idgaf: "idgaf",
+};
+
+/**
+ * The preset the levels are, or undefined (Custom). An absent `web` matches,
+ * since it follows Tool use; Off or Listed on Web makes it Custom.
+ */
 export function presetOf(levels: PolicyLevels): PolicyPresetName | undefined {
-  return POLICY_PRESET_ORDER.find((name) =>
-    POLICY_AREAS.every((a) => POLICY_PRESETS[name].levels[a] === levels[a]),
+  return POLICY_PRESET_ORDER.find(
+    (name) =>
+      POLICY_AREAS.every((a) => POLICY_PRESETS[name].levels[a] === levels[a]) &&
+      (levels.web === undefined || levels.web === POLICY_PRESET_WEB[name]),
   );
 }
 
@@ -374,6 +428,16 @@ export function normalizePolicy(raw: unknown): NormalizedPolicy {
     if (level) levels[area] = level;
     else problems.push(`${area}: "${String(value)}" is not a level`);
   }
+  // Web: absent follows Tool use; an unknown value is reported and follows too
+  if (given.web !== undefined) {
+    const web = parseWebLevel(given.web);
+    if (web) levels.web = web;
+    else {
+      problems.push(
+        `web: "${String(given.web)}" is not a level, so Web follows Tool use`,
+      );
+    }
+  }
   const delivery = input.questions?.delivery;
   if (delivery !== undefined && delivery !== "inbox" && delivery !== "wait") {
     problems.push(`questions.delivery: "${String(delivery)}" is not valid`);
@@ -411,6 +475,7 @@ export function withoutReviewer(policy: PolicySettings): PolicySettings {
   for (const area of POLICY_AREAS) {
     if (levels[area] === "automatic") levels[area] = "cautious";
   }
+  if (levels.web === "automatic") levels.web = "cautious";
   return { ...policy, levels };
 }
 

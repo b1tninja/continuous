@@ -1,15 +1,18 @@
 import { assignMcpToolNames } from "core/tools/mcpToolName.js";
+import { effectiveWebLevel } from "core/tools/permissions/webPolicy.js";
 import {
   stableToolOrder,
   stableToolOrderEnabled,
 } from "core/tools/stableToolOrder.js";
 // @ts-ignore
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
+import { getWebConfig } from "core/util/webConfig.js";
 import { ChatCompletionTool } from "openai/resources.mjs";
 
 import { isModelCapable } from "src/utils/modelCapability.js";
 
 import { loopItemRunning, loopRunGoing } from "../loop/loopSession.js";
+import { getPolicyLevels } from "../permissions/policyLevels.js";
 import {
   SERVICE_NAMES,
   serviceContainer,
@@ -70,6 +73,19 @@ const BASE_BUILTIN_TOOLS: Tool[] = [
 
 const BUILTIN_SEARCH_TOOLS: Tool[] = [searchCodeTool];
 
+/** The Web level in force is Off; a broken setting is not Off. */
+function webIsOff(): boolean {
+  try {
+    return (
+      effectiveWebLevel(getPolicyLevels(), {
+        enabled: getWebConfig().enabled,
+      }).level === "off"
+    );
+  } catch {
+    return false;
+  }
+}
+
 // Get all builtin tools including dynamic ones, with capability-based filtering
 export async function getAllAvailableTools(
   isHeadless: boolean,
@@ -107,6 +123,13 @@ export async function getAllAvailableTools(
     (headlessRun && services.toolPermissions.getCurrentMode() !== "plan")
   ) {
     tools.splice(tools.indexOf(askQuestionTool), 1);
+  }
+
+  // WB45: Web Off (levels.web: off, or web.enabled: false in any config)
+  // offers no web tool; a call that still arrives is refused by the engine
+  if (webIsOff()) {
+    const at = tools.indexOf(fetchTool);
+    if (at !== -1) tools.splice(at, 1);
   }
 
   const isRipgrepInstalled = await checkIfRipgrepIsInstalled();

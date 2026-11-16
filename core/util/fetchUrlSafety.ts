@@ -6,6 +6,10 @@ import {
 } from "./secretScan";
 import { classifyHost } from "./networkAddress";
 import { isPublicTld } from "./publicTlds";
+import {
+  hostInNetSet,
+  normalizeHost as canonicalHost,
+} from "../tools/permissions/destinations";
 
 /**
  * Checks on a URL before a fetch tool connects to it (plans/research/
@@ -131,4 +135,49 @@ export async function classifyFetchTarget(
     addresses,
     nonPublic: nonPublic || isUnresolvedInternalName(hostname, addresses),
   };
+}
+
+/** IPv4 carried in the low 32 bits of an IPv6 address (NAT64 64:ff9b::/96, IPv4-compatible ::/96). */
+function embeddedIPv4(host: string): string | undefined {
+  const m =
+    /^(?:64:ff9b:(?:0:0:0:0:|:)|::|0:0:0:0:0:0:)(?:(\d+\.\d+\.\d+\.\d+)|([0-9a-f]{1,4}):([0-9a-f]{1,4}))$/.exec(
+      host,
+    );
+  if (!m) return undefined;
+  if (m[1]) return m[1];
+  const hi = parseInt(m[2], 16);
+  const lo = parseInt(m[3], 16);
+  return [hi >> 8, hi & 255, lo >> 8, lo & 255].join(".");
+}
+
+function isMetadataHost(raw: string): boolean {
+  const host = canonicalHost(raw);
+  if (hostInNetSet(host, "metadata")) return true;
+  const v4 = embeddedIPv4(host);
+  return v4 !== undefined && hostInNetSet(v4, "metadata");
+}
+
+/**
+ * Why a fetch target is a cloud metadata service (`169.254.169.254`,
+ * `fd00:ec2::254`, `100.100.100.200`, `metadata.google.internal`,
+ * `metadata.goog`), by its name, an address it resolved to, or an IPv6 form
+ * that carries the address. Undefined when it is not one.
+ *
+ * Refused at every level, IDGAF included, at the start URL and at every
+ * redirect hop (plans/research/web-fetch-large-pages-and-policy.md, 8.6): no
+ * person reads documentation from the metadata service, and it is the one
+ * SSRF target that hands out credentials.
+ */
+export function cloudMetadataReason(
+  hostname: string,
+  addresses: readonly string[] = [],
+): string | undefined {
+  if (isMetadataHost(hostname)) return canonicalHost(hostname);
+  const hit = addresses.find(isMetadataHost);
+  return hit ? `${canonicalHost(hostname)} resolves to ${hit}` : undefined;
+}
+
+/** The refusal text for a cloud metadata target. Do not retry it: no setting allows it. */
+export function cloudMetadataRefusal(where: string): string {
+  return `Refused: ${where} is a cloud metadata service, which hands out credentials. It is never fetched, at any level. Do not retry it.`;
 }

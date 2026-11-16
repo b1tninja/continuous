@@ -7,6 +7,7 @@ import {
   type PolicyArea,
   type PolicyLevel,
   type PolicyLevels,
+  type WebLevel,
 } from "./policy";
 import type { ShellKind } from "../../util/shell";
 import type { ProtectedKind } from "./protected";
@@ -33,6 +34,33 @@ export interface ApprovalSettings {
   builtin?: Partial<Record<BuiltinRuleId, boolean>>;
   /** Deny rules that bind at every level below IDGAF (IDGAF runs past them and records it) */
   floor?: string[];
+}
+
+/**
+ * The web tools by the names a call carries (core/tools/permissions/webPolicy.ts
+ * has the same list; kept here so this module does not import that one).
+ */
+const WEB_TOOL_NAMES = new Set<string>([
+  "fetch_url_content",
+  "search_web",
+  "read_web_content",
+  "Fetch",
+  "SearchWeb",
+  "ReadWebContent",
+]);
+
+/** The area's name in a reason. */
+export function areaLabelOf(area: LevelOfCall["area"]): string {
+  switch (area) {
+    case "context":
+      return "Context use";
+    case "edits":
+      return "File edits";
+    case "web":
+      return "Web";
+    default:
+      return "Tool use";
+  }
 }
 
 /** Protected-path kinds whose built-in rule the person switched off. */
@@ -65,8 +93,10 @@ type ToolLike = Pick<
 >;
 
 export interface LevelOfCall {
-  area: "context" | "tools" | "edits";
-  level: PolicyLevel;
+  /** `web` only when `levels.web` is set; unset, a web call is Tool use's (it follows it) */
+  area: "context" | "tools" | "edits" | "web";
+  /** Off and Listed exist on Web only */
+  level: PolicyLevel | Exclude<WebLevel, PolicyLevel>;
   /** A command that only reads, as the parser vouched for it */
   readOnly?: string;
 }
@@ -91,6 +121,10 @@ export function levelOfCall(
   call?: CallContext,
 ): LevelOfCall | undefined {
   if (!approval) return undefined;
+  // The Web area, once the person set it (webPolicy.ts); unset, it follows Tool use
+  if (approval.levels.web && WEB_TOOL_NAMES.has(toolName)) {
+    return { area: "web", level: approval.levels.web };
+  }
   const area = areaOfTool(toolName, tool, call);
   if (!area) return undefined;
   const level = approval.levels[area as PolicyArea];
@@ -156,7 +190,7 @@ export function approvalLoosening(
   if (found.level === "idgaf") {
     return {
       source: "idgaf",
-      reason: `Allowed: ${found.area === "context" ? "Context use" : found.area === "edits" ? "File edits" : "Tool use"} is set to IDGAF${what}.`,
+      reason: `Allowed: ${areaLabelOf(found.area)} is set to IDGAF${what}.`,
       absolute: true,
     };
   }
@@ -175,7 +209,7 @@ export function approvalLoosening(
     }
     return {
       source: "permissive",
-      reason: `Allowed: ${found.area === "context" ? "Context use" : found.area === "edits" ? "File edits" : "Tool use"} is Permissive and no rule stops it${what}.`,
+      reason: `Allowed: ${areaLabelOf(found.area)} is Permissive and no rule stops it${what}.`,
     };
   }
   return undefined;
