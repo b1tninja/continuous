@@ -10,6 +10,11 @@ import {
   POLICY_PRESETS,
   type PolicyLevels,
 } from "core/tools/permissions/policy.js";
+import type { WebLevel } from "core/tools/permissions/policy.js";
+import {
+  effectiveWebLevel,
+  webHeadlessLine,
+} from "core/tools/permissions/webPolicy.js";
 
 /**
  * The headless policy (plans/ROADMAP.md, CO2; plans/decisions-2026-11-15.md,
@@ -65,9 +70,66 @@ export function noteHeadlessRefusal(
   );
 }
 
+/**
+ * WB45, one-release transition. Interactive `cn` already lets the Web level
+ * decide a Fetch that only the product's default list allowed. Headless runs
+ * keep that default (public hosts run, as before) for this release and say
+ * once per run that this changes.
+ *
+ * TODO(2.36): flip to true, so headless Fetch follows the Web level too
+ * (Cautious then runs only allowed domains), and drop the transition line.
+ */
+export const HEADLESS_FETCH_FOLLOWS_WEB_LEVEL = false;
+
+/** The one stderr line of the transition, given on the run's first such fetch. */
+export const HEADLESS_FETCH_TRANSITION_NOTE =
+  "Headless fetches follow your Web level from 2.36: keep this with --allow Fetch, --policy web=permissive, or allow the domains in permissions.yaml.";
+
+/** The Web levels at which a default `Fetch: allow` gives way to the Web level. */
+const FETCH_FOLLOWS_AT: ReadonlySet<WebLevel> = new Set([
+  "off",
+  "manual",
+  "cautious",
+  "listed",
+]);
+
+/**
+ * What happens to a Fetch that only the product's default list allowed:
+ * - "follow": the default is dropped and the Web level decides (it asks at
+ *   Cautious for a host nobody allowed, refused when headless);
+ * - "transition": headless before 2.36, the default stands and the
+ *   transition line is given once;
+ * - "keep": the level is looser than Cautious, so the default stands.
+ */
+export function webFetchDefault(args: {
+  level: WebLevel;
+  headless: boolean;
+  /** HEADLESS_FETCH_FOLLOWS_WEB_LEVEL; a parameter so both settings are tested */
+  headlessFollows?: boolean;
+}): "follow" | "transition" | "keep" {
+  if (!FETCH_FOLLOWS_AT.has(args.level)) return "keep";
+  if (!args.headless) return "follow";
+  return (args.headlessFollows ?? HEADLESS_FETCH_FOLLOWS_WEB_LEVEL)
+    ? "follow"
+    : "transition";
+}
+
+let fetchTransitionNoted = false;
+
+/** The transition line, once per process, on stderr. */
+export function noteHeadlessFetchTransition(
+  write: (line: string) => void = (l) => process.stderr.write(l),
+): void {
+  if (fetchTransitionNoted) return;
+  fetchTransitionNoted = true;
+  write(`continuous: ${HEADLESS_FETCH_TRANSITION_NOTE}
+`);
+}
+
 /** For tests: forget which tools were announced. */
 export function resetHeadlessRefusalNotes(): void {
   announcedTools.clear();
+  fetchTransitionNoted = false;
 }
 
 /** "Context Permissive, Tool use Cautious, ...", or the preset's name when the levels are one. */
@@ -89,6 +151,13 @@ export function headlessPolicyNotice(args: {
   /** "--auto" or "--policy <spec>" */
   source?: string;
   legacy?: boolean;
+  /** `web.enabled` as resolved; false shows Web Off, locked by config.yaml */
+  webEnabled?: boolean;
+  /**
+   * Headless Fetch is still in the transition (HEADLESS_FETCH_FOLLOWS_WEB_LEVEL
+   * is false and the default list allows it): public hosts run at Cautious
+   */
+  fetchTransition?: boolean;
 }): string {
   if (args.legacy) {
     return `continuous: ${HEADLESS_LEGACY_ENV}=1 is set in the environment: Bash and unlisted tools are allowed in every headless run while it is set, not only this one, as before 2.18.0. This switch is removed in the next release; pass --auto or --policy instead.`;
@@ -99,7 +168,12 @@ export function headlessPolicyNotice(args: {
   const tail = args.source
     ? "a call that would still ask is refused."
     : "a call that would ask is refused; --auto or --policy allows more.";
-  return `continuous: headless run ${where}: ${describeLevels(args.levels)}; ${tail}`;
+  // WB45: the Web level, and what an ask becomes there (Cautious runs only allowed domains)
+  const web = webHeadlessLine(
+    effectiveWebLevel(args.levels, { enabled: args.webEnabled }),
+    { transition: !!args.fetchTransition },
+  );
+  return `continuous: headless run ${where}: ${describeLevels(args.levels)}; ${web}; ${tail}`;
 }
 
 /**

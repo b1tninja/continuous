@@ -67,8 +67,8 @@ Every key is optional. A malformed value is ignored with a notice in the config 
 
 | Key                          | Default                  | Meaning                                                                                                                              | Status                                                           |
 | ---------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| `enabled`                    | `true`                   | `false` stops every web fetch the agent makes                                                                                        | accepted, not yet enforced                                       |
-| `policy`                     | none                     | reserved for the web policy levels, which are still being designed                                                                   | reserved, read by nothing                                        |
+| `enabled`                    | `true`                   | `false` stops every web fetch: the agent's web tools, `@url` and the docs crawler                                                    | **in force**                                                     |
+| `policy`                     | none                     | deprecated: a Web level here is read as `levels.web` in `permissions.yaml` (see [The Web level](#the-web-level))                      | read only when `levels.web` is not set                           |
 | `userAgent.preset`           | `continuous`             | `continuous` (the product token above), `generic-agent` (`Mozilla/5.0 (compatible)`, names no product), `custom`, or a browser preset | **in force** on every path but the GitHub crawler                |
 | `userAgent.custom`           | none                     | the string sent with `preset: custom`; `""` sends the header empty, so the HTTP client cannot add its own (the Chromium crawler then sends Chromium's) | **in force**                                                     |
 | `acceptLanguage`             | none                     | an `Accept-Language` value for pages (the fetch tools, `@url`, the crawlers). None is sent by default, because it discloses your locale | **in force** (not yet for the Chromium crawler)                  |
@@ -96,7 +96,43 @@ The browser presets are Chrome, Edge and Firefox on Windows, macOS and Linux (`c
 
 Choosing a browser preset makes the agent look like a browser to the site. That is your choice for your own requests; it is never the default, and a repository cannot make it.
 
-Domain allow and deny rules are not part of `web:`. They will be `host:` and `net:` rules in `permissions.yaml`, applied to every web path and at every redirect (WB21). Today those rules apply to terminal commands only. The proxy, CA bundle and client certificate stay in `requestOptions`, which every web path already uses.
+Domain allow and deny rules are not part of `web:`. They are `host:` and `net:` rules in `permissions.yaml`. Today a `host:` rule in the `allow:` list allows the agent's fetch to that host (see [The Web level](#the-web-level)); the full set, applied to every web path and at every redirect, comes with WB21. `host:` and `net:` deny and ask rules apply to terminal commands. The proxy, CA bundle and client certificate stay in `requestOptions`, which every web path already uses.
+
+## The Web level
+
+Web is a policy area of its own, beside Context use, Tool use, File edits, Plan edits and Questions. It decides the agent's fetch and search calls that your rules leave open. `@url`, the docs crawler and the Browser panel are yours to direct and follow `web.enabled` only.
+
+| Level          | A host you allowed | Any other host                                                                       | A private address, robots disallow, confusable host |
+| -------------- | ------------------ | ------------------------------------------------------------------------------------ | --------------------------------------------------- |
+| **Off**        | not offered        | not offered                                                                          | not offered                                         |
+| **Manual**     | asks               | asks                                                                                 | asks                                                |
+| **Cautious**   | runs               | asks, unless you allowed it for this session or wrote the exact URL in your message | asks                                                |
+| **Listed**     | runs               | refused, never asks                                                                  | refused                                             |
+| **Automatic**  | runs               | a reviewer model decides; unsure asks                                                | asks you                                            |
+| **Permissive** | runs               | runs unless a rule stops it                                                          | asks                                                |
+| **IDGAF**      | runs               | runs                                                                                 | runs, and is recorded                               |
+
+A host you allowed is one of:
+
+- a `host:` rule in the `allow:` list of your own `permissions.yaml`: `host:docs.example.com` is that host only, `host:*.example.com` its subdomains only. Matching is on whole labels, so `host:example.com` never covers `evil-example.com`;
+- a domain in your `trustedDomains` (`toolPermissions.auto.environment.trustedDomains` in your own `config.yaml`), with its subdomains;
+- an allow rule in `toolPermissions` that covers the URL;
+- your configured search backend, for `search_web`.
+
+There is no built-in list: no host runs without your rule, your grant or your search backend.
+
+Set the level with `levels.web` in `permissions.yaml`, or in `cn` with `--policy web=<level>`. Until you set it, Web follows Tool use. The presets set it too: Careful and Accept edits give Cautious, Hands off Permissive, Reviewer Automatic, IDGAF IDGAF. Off and Listed are yours to choose, and make the preset read Custom.
+
+When the terminal agent asks about a fetch, it offers **Allow `<host>` for this session**, **Always allow `<host>`** (which adds `host:<host>` to the `allow:` list of your `permissions.yaml`), **No, skip this call** (Esc) and **No, and tell Continue what to do differently**, which asks before it stops the response. `cn`'s own default list allows `Fetch`; at Web Cautious or stricter that default no longer decides, and the Web level does. To keep every host running, pass `--allow Fetch` or set `--policy web=permissive`.
+
+Headless runs (`-p`, `serve`) cannot ask. In this release a headless fetch to a public host still runs as before, and the run prints one line on standard error at its first such fetch: `Headless fetches follow your Web level from 2.36: keep this with --allow Fetch, --policy web=permissive, or allow the domains in permissions.yaml.` From 2.36 a headless run at Cautious runs only the hosts you allowed. The run's first line on standard error names the Web level.
+
+Two switches turn web access off:
+
+- `levels.web: off` removes the agent's web tools and leaves `@url` working.
+- `web.enabled: false` in any `config.yaml`, a project's included, turns off every web fetch. Only your own `config.yaml` can turn it back on.
+
+Some checks hold at every level, IDGAF included: only http and https, no user name or password in the URL, no credential in the URL, no cloud metadata address (`169.254.169.254`, `fd00:ec2::254`, `100.100.100.200`, `metadata.google.internal`, `metadata.goog`, in any spelling or as a name that resolves to one), no redirect from a public address into your network, and the byte cap and deadline. Your own `floor:` rules bind at IDGAF on web calls too.
 
 ## Who may set what
 
@@ -133,6 +169,7 @@ Built:
 - The `web:` section: schema, defaults, the tighten-only rule, the old keys as aliases, and `web.limits.maxBytes`, `web.limits.timeoutSeconds` and `web.limits.maxRedirects` in force.
 - The User-Agent policy and per-host headers (WB17): `Continuous-User` and `Continuous-Crawler` on every path but the GitHub crawler, `web.userAgent`, `web.acceptLanguage` and `web.hosts`.
 - The web search provider layer (WB53): `web.search` in force for `search_web` and `@web`, with the `searxng` and `custom` providers, the search User-Agent and the tighten-only rule for search.
+- The Web level (WB45): the seven levels, presets, session grants, `host:` allow rules, `web.enabled` in force, and the cloud metadata refusal.
 
 Planned, in the order they can land:
 

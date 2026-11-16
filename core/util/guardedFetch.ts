@@ -11,7 +11,12 @@ import {
   type FetchPurpose,
   type FetchRecord,
 } from "./fetchRecord";
-import { classifyFetchTarget, secretKindsInUrl } from "./fetchUrlSafety";
+import {
+  classifyFetchTarget,
+  cloudMetadataReason,
+  cloudMetadataRefusal,
+  secretKindsInUrl,
+} from "./fetchUrlSafety";
 import { nonPublicReason, normalizeHost, pinnedLookup } from "./networkAddress";
 import { getWebConfig } from "./webConfig";
 
@@ -264,6 +269,17 @@ function checkLocation(
   }
 }
 
+/** WB45: a cloud metadata target is refused at the start and at every hop, at every level. */
+function refuseMetadata(url: URL, addresses: string[], from?: URL): void {
+  const why = cloudMetadataReason(url.hostname, addresses);
+  if (!why) return;
+  throw new FetchRefusedError(
+    cloudMetadataRefusal(
+      from ? `the redirect from ${from.host} to ${why}` : why,
+    ),
+  );
+}
+
 /**
  * The redirects a request may follow: `web.limits.maxRedirects`, lowered by
  * the caller's own limit, never above the ceiling.
@@ -297,6 +313,7 @@ export async function fetchWithGuardedRedirects(
   const limit = redirectLimit(options.maxRedirects);
   let current = start;
   let checked = await classify(current.hostname);
+  refuseMetadata(current, checked.addresses);
   const startsNonPublic = checked.nonPublic;
   options.onStart?.(checked);
   if (startsNonPublic && options.refuseNonPublicStart) {
@@ -377,6 +394,9 @@ export async function fetchWithGuardedRedirects(
         `Refused to follow a redirect from ${start.host} to a non-public address (${next.host}${why ? `: ${why}` : ""})`,
       );
     }
+    // After the public-to-private check, which names the block it refuses:
+    // what is left is a metadata hop from a non-public start (WB45)
+    refuseMetadata(next, checked.addresses, start);
     if (next.origin !== current.origin) {
       request = {
         ...request,

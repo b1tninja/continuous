@@ -32,7 +32,9 @@ export function getDefaultToolPolicies(
     { tool: "Skills", permission: "allow" },
     { tool: "SearchTools", permission: "allow" },
     { tool: "Exit", permission: "allow" }, // Exit tool is generally safe (headless mode only)
-    { tool: "Fetch", permission: "allow" }, // Technically not read only but edge casey to post w query params
+    // The product's default, not the person's: at Web Cautious or stricter
+    // the Web level decides instead (WB45, webFetchDefault)
+    { tool: "Fetch", permission: "allow", productDefault: true },
     { tool: "List", permission: "allow" },
     { tool: "Read", permission: "allow" },
     { tool: "Search", permission: "allow" },
@@ -68,7 +70,7 @@ export const PLAN_MODE_POLICIES: ToolPermissionPolicy[] = [
   { tool: "TaskList", permission: "allow" },
   { tool: "Diff", permission: "allow" },
   { tool: "Exit", permission: "allow" },
-  { tool: "Fetch", permission: "allow" },
+  { tool: "Fetch", permission: "allow", productDefault: true },
   { tool: "List", permission: "allow" },
   { tool: "Read", permission: "allow" },
   { tool: "Search", permission: "allow" },

@@ -18,6 +18,7 @@ import {
   POLICY_LEVELS,
   type PolicyLevels,
 } from "core/tools/permissions/policy.js";
+import { capWebAtDefault } from "core/tools/permissions/webPolicy.js";
 
 import { safeStderr } from "./init.js";
 
@@ -39,6 +40,8 @@ export function capAtDefaults(levels: PolicyLevels): PolicyLevels {
     const limit = POLICY_LEVELS.indexOf(DEFAULT_POLICY_LEVELS[area]);
     if (given > limit) capped[area] = DEFAULT_POLICY_LEVELS[area];
   }
+  // Web: no looser than Cautious; unset, it follows the capped Tool use
+  if (levels.web !== undefined) capped.web = capWebAtDefault(levels.web);
   return capped;
 }
 

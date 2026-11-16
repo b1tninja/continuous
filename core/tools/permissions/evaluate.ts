@@ -3,6 +3,7 @@ import type { Tool } from "../..";
 import type { ResolvedPath } from "../../util/pathResolver";
 import {
   approvalLoosening,
+  areaLabelOf,
   ApprovalSettings,
   isManualCall,
   levelOfCall,
@@ -42,6 +43,7 @@ import {
 } from "./selfProtect";
 import type { ProtectedHit, ProtectedKind } from "./protected";
 import type { RuleSource, ToolPermissions } from "./rules";
+import { applyWebArea, type WebEvaluateInput } from "./webPolicy";
 
 /**
  * Brace expansion or `$IFS`: the safety floor never sees the command that will
@@ -149,7 +151,7 @@ export interface IdgafOverride {
   rule?: string;
 }
 
-export interface EvaluateInput extends TaintedSessionInput {
+export interface EvaluateInput extends TaintedSessionInput, WebEvaluateInput {
   tool:
     | (Pick<
         Tool,
@@ -270,6 +272,14 @@ function idgafRunsEverything(
   input: EvaluateInput,
   result: ToolPolicyResult,
 ): ToolPolicyResult {
+  // WB45: the Web area decides last, so its hard checks and Off bind at IDGAF
+  return applyWebArea(input, idgafRunsPast(input, result));
+}
+
+function idgafRunsPast(
+  input: EvaluateInput,
+  result: ToolPolicyResult,
+): ToolPolicyResult {
   if (result.policy === "allowedWithoutPermission") return result;
   if (input.basePolicy === "disabled") return result;
   const found = levelOfCall(input.approval, input.toolName, input.tool, {
@@ -284,7 +294,7 @@ function idgafRunsEverything(
     policy: "allowedWithoutPermission",
     source: "idgaf",
     reason: withWouldHave(
-      `Allowed: ${AREA_LABEL[found.area as keyof typeof AREA_LABEL]} is set to IDGAF. ${IDGAF_OVERRIDE_NOTE}`,
+      `Allowed: ${areaLabelOf(found.area)} is set to IDGAF. ${IDGAF_OVERRIDE_NOTE}`,
       result,
     ),
     idgafOverride: overrideOf({ ...result, protection, rule }),

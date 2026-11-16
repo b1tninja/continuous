@@ -2,9 +2,13 @@
  * Shared flag processing utilities to eliminate duplication between TUI and headless modes
  */
 
+import { getWebConfig } from "core/util/webConfig.js";
+
 import { setAutoReviewEnabled } from "../permissions/coreRules.js";
+import { getDefaultToolPolicies } from "../permissions/defaultPolicies.js";
 import {
   checkPolicyFile,
+  HEADLESS_FETCH_FOLLOWS_WEB_LEVEL,
   HEADLESS_LEGACY_ENV,
   headlessLegacyAllow,
   headlessPolicyNotice,
@@ -15,6 +19,7 @@ import {
   auditEnvLoosening,
   rememberIdgafFlag,
 } from "../permissions/idgafNotices.js";
+import { checkToolPermission } from "../permissions/permissionChecker.js";
 import {
   auditFileEditsAtLoad,
   auditLevelChange,
@@ -172,6 +177,20 @@ function idgafFlagSource(
   return `--policy ${options.policy}`;
 }
 
+/** The CLI's headless default lists allow `Fetch`; never throws. */
+function defaultListsAllowFetch(): boolean {
+  try {
+    return (
+      checkToolPermission(
+        { name: "Fetch", arguments: {} },
+        { policies: getDefaultToolPolicies(true) },
+      ).permission === "allow"
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The one stderr line a headless run (`-p`, `serve`) starts with: the levels
  * it runs at and where they came from (CO2). stderr, so a JSON run's stdout
@@ -190,6 +209,9 @@ export function announceHeadlessPolicy(
     levels: effectiveLevels(mode ?? "normal"),
     ...(source ? { source } : {}),
     legacy,
+    webEnabled: getWebConfig().enabled,
+    fetchTransition:
+      !HEADLESS_FETCH_FOLLOWS_WEB_LEVEL && defaultListsAllowFetch(),
   });
   write(`${notice}\n`);
   // B21: a loosening from the environment is audited apart from IDGAF

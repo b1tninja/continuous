@@ -832,3 +832,20 @@ export function resetWebConfigForTests(userConfigFile?: string): void {
   fileCache.clear();
   announced.clear();
 }
+
+/**
+ * WB45: `web.enabled: false` from any config turns off every web fetch the
+ * product makes for the agent or the person: the agent's web tools, `@url`,
+ * the docs crawler and the search backend (and the Browser panel later).
+ * Throws the refusal, naming the setting, when it is off.
+ */
+export function assertWebEnabled(
+  what: string,
+  config: Pick<ResolvedWebConfig, "enabled"> = getWebConfig(),
+): void {
+  if (config.enabled === false) {
+    throw new Error(
+      `Refused: web access is off in config.yaml (web.enabled: false), so ${what}. Do not retry it.`,
+    );
+  }
+}

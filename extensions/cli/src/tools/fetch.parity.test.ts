@@ -164,11 +164,12 @@ const CORPUS: [string, Decision][] = [
   ["http://localhost:8080/", "ask"],
   ["http://127.0.0.1/", "ask"],
   ["http://10.0.0.5/", "ask"],
-  ["http://169.254.169.254/latest/meta-data/", "ask"],
+  // The cloud metadata address and userinfo are refused at every level (WB45)
+  ["http://169.254.169.254/latest/meta-data/", "deny"],
   ["http://[::1]/", "ask"],
   ["https://intranet.example.com/", "ask"],
   // Credentials in the URL
-  ["https://user:pw@example.com/", "ask"],
+  ["https://user:pw@example.com/", "deny"],
 ];
 
 describe("IDE and CLI reach the same verdict on a URL corpus", () => {

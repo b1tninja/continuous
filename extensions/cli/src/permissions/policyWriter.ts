@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 
+import { hostAllowRuleFor } from "core/tools/permissions/webHostRules.js";
 import { writeFileAtomicSync } from "core/util/atomicWrite.js";
 import YAML from "yaml";
 
@@ -24,6 +25,13 @@ export function generatePolicyRule(toolName: string, toolArgs: any): string {
   if (normalizedName === "Bash" && toolArgs?.command) {
     const command = toolArgs.command.trim();
     if (command) return `Bash(${command})`;
+  }
+
+  // A Fetch: the exact host, as a `host:` allow rule the Web area reads
+  // (WB45). "Always" never allows every URL.
+  if (normalizedName === "Fetch") {
+    const rule = hostAllowRuleFor(toolArgs?.url);
+    if (rule) return rule;
   }
 
   // For all other tools, return the display name
