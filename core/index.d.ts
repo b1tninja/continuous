@@ -1226,9 +1226,16 @@ export interface Usage {
   promptTokens: number;
   /**
    * How fast the server read the part of the prompt it did not have cached,
-   * in tokens per second (llama.cpp's and Strata's `timings.prompt_per_second`).
+   * in tokens per second (llama.cpp's and Strata's `timings.prompt_per_second`;
+   * on Ollama recomputed without the cached tokens).
    */
   promptTokensPerSecond?: number;
+  /**
+   * The server's own clock for the request, when it sends one: llama.cpp's
+   * and Strata's `timings`, Ollama's durations. Bedrock's single latency
+   * number is `response.latencyMs`.
+   */
+  serverTimings?: ServerTimings;
   /**
    * What the provider said about the response itself, apart from token counts.
    * Each field is set only when the provider sends it.
@@ -1267,6 +1274,38 @@ export interface Usage {
     rejectedPredictionTokens?: number;
     audioTokens?: number;
   };
+}
+
+/**
+ * A server's own timing of one request, in llama.cpp's `timings` names
+ * (camelCased). Each field is set only when the server sends it.
+ */
+export interface ServerTimings {
+  /**
+   * Prompt tokens the server read, not taken from its cache (llama.cpp
+   * `prompt_n`; on Ollama `prompt_eval_count` minus the cached count).
+   */
+  promptN?: number;
+  /** Prompt tokens taken from its cache (`cache_n`, Ollama `prompt_eval_cached_count`). */
+  cacheN?: number;
+  /** Time spent reading the prompt (`prompt_ms`, Ollama `prompt_eval_duration`). */
+  promptMs?: number;
+  /** `promptN` per second of `promptMs`: the read speed over uncached tokens. */
+  promptPerSecond?: number;
+  /** Tokens written (`predicted_n`, Ollama `eval_count`). */
+  predictedN?: number;
+  /** Time spent writing them (`predicted_ms`, Ollama `eval_duration`). */
+  predictedMs?: number;
+  /** The server's decode speed (`predicted_per_second`, Ollama `eval_count / eval_duration`). */
+  predictedPerSecond?: number;
+  /** Speculative draft tokens offered (`draft_n`; llama.cpp and Strata only). */
+  draftN?: number;
+  /** Of those, accepted (`draft_n_accepted`). */
+  draftNAccepted?: number;
+  /** Time spent loading the model (Ollama `load_duration`). */
+  loadMs?: number;
+  /** The whole request on the server's clock (Ollama `total_duration`). */
+  totalMs?: number;
 }
 
 /**

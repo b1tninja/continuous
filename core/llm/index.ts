@@ -64,6 +64,7 @@ import {
 } from "./localServers.js";
 import { providerModelFactsFor } from "./providerModelInfoStore.js";
 import { resolveModelLimits, type LimitInputs } from "./providerModelLimits.js";
+import { withServerTimings } from "./serverTimings.js";
 import { retryStreamOnDroppedConnection } from "./utils/streamRetry.js";
 
 import { applyToolOverrides } from "../tools/applyToolOverrides.js";
@@ -1313,6 +1314,7 @@ export abstract class BaseLLM implements ILLM {
       { ...this.withRecoverySwitch(body), stream: true },
       signal,
     );
+    let timings: unknown;
     for await (const chunk of stream) {
       if (!this.lastRequestId && typeof (chunk as any).id === "string") {
         this.lastRequestId = (chunk as any).id;
@@ -1322,37 +1324,12 @@ export abstract class BaseLLM implements ILLM {
         yield { role: "assistant", content: "", promptProgress };
         continue;
       }
-      const readSpeed = Number((chunk as any).timings?.prompt_per_second);
-      // llama.cpp's own count of prompt tokens taken from its cache, for a
-      // server that does not put it in the usage (cached_tokens)
-      const cacheN = (chunk as any).timings?.cache_n;
+      // llama.cpp, Strata and Ollama's OpenAI endpoint time the request; the
+      // timings arrive with the usage, or on an earlier chunk
+      if ((chunk as any).timings) timings = (chunk as any).timings;
       for (const chatChunk of messagesFromChatCompletionChunk(chunk as any)) {
-        // llama.cpp and Strata time the prompt reading: the GUI uses it to say
-        // how long a re-read would take
-        if (
-          chatChunk.role === "assistant" &&
-          chatChunk.usage &&
-          readSpeed > 0
-        ) {
-          chatChunk.usage = {
-            ...chatChunk.usage,
-            promptTokensPerSecond: readSpeed,
-          };
-        }
-        if (
-          chatChunk.role === "assistant" &&
-          chatChunk.usage &&
-          chatChunk.usage.promptTokensDetails?.cachedTokens === undefined &&
-          typeof cacheN === "number" &&
-          cacheN > 0
-        ) {
-          chatChunk.usage = {
-            ...chatChunk.usage,
-            promptTokensDetails: {
-              ...chatChunk.usage.promptTokensDetails,
-              cachedTokens: cacheN,
-            },
-          };
+        if (chatChunk.role === "assistant" && chatChunk.usage && timings) {
+          chatChunk.usage = withServerTimings(chatChunk.usage, timings);
         }
         yield chatChunk;
       }
@@ -1372,7 +1349,11 @@ export abstract class BaseLLM implements ILLM {
     );
     this.lastRequestId = response.id ?? this.lastRequestId;
     const messages = fromChatResponse(response as any);
+    const timings = (response as any).timings;
     for (const msg of messages) {
+      if (msg.role === "assistant" && msg.usage && timings) {
+        msg.usage = withServerTimings(msg.usage, timings);
+      }
       yield msg;
     }
   }
