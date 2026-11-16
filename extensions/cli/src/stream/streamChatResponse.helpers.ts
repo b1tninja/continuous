@@ -282,7 +282,7 @@ function webContextSafely(hostAllow: string[]) {
 /**
  * WB45: a Fetch only the product's default list allowed follows the Web
  * level at Cautious or stricter, so it asks; headless keeps the default
- * until 2.36 and says so once (webFetchDefault). Every other result is
+ * until 2.38 and says so once (webFetchDefault). Every other result is
  * returned as it is.
  */
 function webFetchPermission(
