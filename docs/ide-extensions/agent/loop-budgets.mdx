@@ -73,4 +73,10 @@ The limit policy runs in the IDE. In the terminal agent, a to-do over its token,
 
 ## Usage
 
+The loop's time budget counts the time it works, not the time it waits for you. While every open item waits on an answer or a re-plan waits on its plan card, the clock does not run: a loop that waits 40 minutes against a 60 minute budget still has all 60 minutes of work. The time meter, the time left and the worker time limit use the same figure. When the time budget stops the loop, the stop reason says both, for example "ran 52 minutes of work (100 minutes including waiting for you)". Resuming a stopped loop starts its budgets again.
+
+When a token or time budget stops a loop, the saved loop carries the budget as data beside the text: `stopBudget` with `kind` (`tokens` or `time`), `used` and `max` (tokens, or milliseconds of work).
+
+A worker of a parallel wave in the terminal agent is stopped after at most 30 minutes, or sooner when its to-do's own time limit or the loop's time left is smaller.
+
 Once a budget is set, the loop controls show meters for rounds, tokens and time (amber from 80%, red at the limit), and each to-do shows its runs, tokens, cost and time, for example `2 runs · 180K tokens · $0.74 · 14 min`. A **Cost** line under the meters shows what the loop has cost so far; hovering it says it is an estimate at list price. It reads `cost unknown` when any model used in the loop has no price.

@@ -42,6 +42,7 @@ vi.mock("./util/logger.js", () => ({
     error: vi.fn(),
   },
 }));
+vi.mock("./util/userNotice.js", () => ({ userNotice: vi.fn() }));
 const mockHistoryManager: any = vi.hoisted(() => ({
   save: vi.fn((session: any) => {
     // Mimic writing the session payload to disk so expectations on fs still work
@@ -56,10 +57,29 @@ const mockHistoryManager: any = vi.hoisted(() => ({
     workspaceDirectory: "/test/workspace",
     history: [],
   })),
+  loadWithStatus: vi.fn((id: string) => ({
+    session: mockHistoryManager.load(id),
+  })),
   list: vi.fn(() => []),
 }));
 vi.mock("core/util/history.js", () => ({
   default: mockHistoryManager,
+  damagedSessionNotice: () => "damaged",
+  isQuarantinedSessionFile: (name: string) => name.includes(".corrupt-"),
+  isSessionFileName: (name: string) =>
+    /\.jsonl?$/.test(name) &&
+    name !== "sessions.json" &&
+    !name.includes(".tmp") &&
+    !name.includes(".corrupt-"),
+  // fs is mocked in this file; the real reader and its set-aside step are
+  // covered with real files in session.resume.test.ts
+  readSessionFile: (file: string) => {
+    try {
+      return { session: JSON.parse(fs.readFileSync(file, "utf8") as string) };
+    } catch {
+      return { damaged: { keptAt: `${file}.kept`, reason: "not valid JSON" } };
+    }
+  },
 }));
 
 const mockFs = vi.mocked(fs);

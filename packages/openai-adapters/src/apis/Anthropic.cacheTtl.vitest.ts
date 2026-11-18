@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AnthropicApi } from "./Anthropic.js";
 import { applyAnthropicCacheTtl } from "./cacheTtl.js";
 
@@ -51,6 +51,26 @@ describe("AnthropicApi sends the cache lifetime", () => {
   it("sends no ttl for 5m", () => {
     const found = controls(body(make({ cacheBehavior: { ttl: "5m" } })));
     for (const c of found) expect("ttl" in c).toBe(false);
+  });
+
+  describe("with CONTINUOUS_FORCE_CACHE_5M=1", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("sends no ttl even when cacheBehavior.ttl is 1h", () => {
+      vi.stubEnv("CONTINUOUS_FORCE_CACHE_5M", "1");
+      const found = controls(body(make({ cacheBehavior: { ttl: "1h" } })));
+      expect(found.length).toBe(4);
+      for (const c of found) expect(c).toEqual({ type: "ephemeral" });
+    });
+
+    it("keeps auto on 5 minutes past the fifth request", () => {
+      vi.stubEnv("CONTINUOUS_FORCE_CACHE_5M", "1");
+      const api = make({ cacheBehavior: { ttl: "auto" } });
+      const ttls = Array.from({ length: 6 }, () => controls(body(api))[0].ttl);
+      expect(ttls).toEqual(Array(6).fill(undefined));
+    });
   });
 
   it("sends nothing when the caching strategy is none", () => {

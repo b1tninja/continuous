@@ -69,7 +69,7 @@ export function stopLoopItemOverBudget(now = new Date()): boolean {
   }
   const stop = loopBudgetStop(loop, { now, sessionTokens: sessionTokens() });
   if (!stop) return false;
-  commitLoop(stopLoop(loop, stop.reason, stop.detail));
+  commitLoop(stopLoop(loop, stop.reason, stop.detail, stop.budget));
   return true;
 }
 

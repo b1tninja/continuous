@@ -1,8 +1,17 @@
 import * as dotenv from "dotenv";
 import { vi } from "vitest";
+import {
+  liveKey,
+  liveProviderSkipReason,
+  liveProviderTestsEnabled,
+} from "./liveProviderGuard.js";
 import { getLlmApi, testChat } from "./util.js";
 
-dotenv.config();
+// Live tests call paid provider APIs: they need RUN_LIVE_PROVIDER_TESTS=1 as
+// well as a key. Read .env only once opted in, so it cannot restore removed keys.
+if (liveProviderTestsEnabled()) {
+  dotenv.config();
+}
 
 /**
  * Vercel AI SDK Integration Tests
@@ -52,12 +61,12 @@ function testAiSdkProvider(config: AiSdkTestConfig) {
 }
 
 // OpenAI AI SDK Tests
-if (process.env.OPENAI_API_KEY) {
+if (liveKey("OPENAI_API_KEY")) {
   describe("OpenAI with AI SDK", () => {
     testAiSdkProvider({
       aiSdkProviderId: "openai",
       model: "gpt-4o-mini",
-      apiKey: process.env.OPENAI_API_KEY!,
+      apiKey: liveKey("OPENAI_API_KEY")!,
       skipTools: false,
       expectUsage: true,
     });
@@ -65,22 +74,22 @@ if (process.env.OPENAI_API_KEY) {
     testAiSdkProvider({
       aiSdkProviderId: "openai",
       model: "gpt-4o",
-      apiKey: process.env.OPENAI_API_KEY!,
+      apiKey: liveKey("OPENAI_API_KEY")!,
       skipTools: false,
       expectUsage: true,
     });
   });
 } else {
-  test.skip("OpenAI tests skipped - no API key", () => {});
+  test.skip(`OpenAI tests skipped - ${liveProviderSkipReason(["OPENAI_API_KEY"])}`, () => {});
 }
 
 // Anthropic AI SDK Tests
-if (process.env.ANTHROPIC_API_KEY) {
+if (liveKey("ANTHROPIC_API_KEY")) {
   describe("Anthropic with AI SDK", () => {
     testAiSdkProvider({
       aiSdkProviderId: "anthropic",
       model: "claude-haiku-4-5",
-      apiKey: process.env.ANTHROPIC_API_KEY!,
+      apiKey: liveKey("ANTHROPIC_API_KEY")!,
       skipTools: false,
       expectUsage: true,
     });
@@ -88,20 +97,20 @@ if (process.env.ANTHROPIC_API_KEY) {
     testAiSdkProvider({
       aiSdkProviderId: "anthropic",
       model: "claude-sonnet-4-5",
-      apiKey: process.env.ANTHROPIC_API_KEY!,
+      apiKey: liveKey("ANTHROPIC_API_KEY")!,
       skipTools: false,
       expectUsage: true,
     });
   });
 } else {
-  test.skip("Anthropic tests skipped - no API key", () => {});
+  test.skip(`Anthropic tests skipped - ${liveProviderSkipReason(["ANTHROPIC_API_KEY"])}`, () => {});
 }
 
 // Comparison Tests: Verify outputs match between old and new implementations
 describe("Contract Compatibility Tests", () => {
   describe("OpenAI: Original vs AI SDK", () => {
-    if (!process.env.OPENAI_API_KEY) {
-      test.skip("OpenAI comparison tests skipped - no API key", () => {});
+    if (!liveKey("OPENAI_API_KEY")) {
+      test.skip(`OpenAI comparison tests skipped - ${liveProviderSkipReason(["OPENAI_API_KEY"])}`, () => {});
       return;
     }
 
@@ -112,7 +121,7 @@ describe("Contract Compatibility Tests", () => {
     test("streaming output format matches", async () => {
       const originalApi = getLlmApi({
         provider: "openai",
-        apiKey: process.env.OPENAI_API_KEY!,
+        apiKey: liveKey("OPENAI_API_KEY")!,
       });
 
       const originalChunks: any[] = [];
@@ -130,7 +139,7 @@ describe("Contract Compatibility Tests", () => {
       const aiSdkApi = getLlmApi({
         provider: "ai-sdk",
         model: aiSdkModel,
-        apiKey: process.env.OPENAI_API_KEY!,
+        apiKey: liveKey("OPENAI_API_KEY")!,
       });
 
       const aiSdkChunks: any[] = [];
@@ -198,7 +207,7 @@ describe("Contract Compatibility Tests", () => {
     test("non-streaming output format matches", async () => {
       const originalApi = getLlmApi({
         provider: "openai",
-        apiKey: process.env.OPENAI_API_KEY!,
+        apiKey: liveKey("OPENAI_API_KEY")!,
       });
 
       const originalResponse = await originalApi.chatCompletionNonStream(
@@ -213,7 +222,7 @@ describe("Contract Compatibility Tests", () => {
       const aiSdkApi = getLlmApi({
         provider: "ai-sdk",
         model: aiSdkModel,
-        apiKey: process.env.OPENAI_API_KEY!,
+        apiKey: liveKey("OPENAI_API_KEY")!,
       });
 
       const aiSdkResponse = await aiSdkApi.chatCompletionNonStream(
@@ -264,8 +273,8 @@ describe("Contract Compatibility Tests", () => {
   });
 
   describe("Anthropic: Original vs AI SDK", () => {
-    if (!process.env.ANTHROPIC_API_KEY) {
-      test.skip("Anthropic comparison tests skipped - no API key", () => {});
+    if (!liveKey("ANTHROPIC_API_KEY")) {
+      test.skip(`Anthropic comparison tests skipped - ${liveProviderSkipReason(["ANTHROPIC_API_KEY"])}`, () => {});
       return;
     }
 
@@ -276,7 +285,7 @@ describe("Contract Compatibility Tests", () => {
     test("streaming output format matches", async () => {
       const originalApi = getLlmApi({
         provider: "anthropic",
-        apiKey: process.env.ANTHROPIC_API_KEY!,
+        apiKey: liveKey("ANTHROPIC_API_KEY")!,
       });
 
       const originalChunks: any[] = [];
@@ -294,7 +303,7 @@ describe("Contract Compatibility Tests", () => {
       const aiSdkApi = getLlmApi({
         provider: "ai-sdk",
         model: aiSdkModel,
-        apiKey: process.env.ANTHROPIC_API_KEY!,
+        apiKey: liveKey("ANTHROPIC_API_KEY")!,
       });
 
       const aiSdkChunks: any[] = [];
@@ -362,7 +371,7 @@ describe("Contract Compatibility Tests", () => {
     test("non-streaming output format matches", async () => {
       const originalApi = getLlmApi({
         provider: "anthropic",
-        apiKey: process.env.ANTHROPIC_API_KEY!,
+        apiKey: liveKey("ANTHROPIC_API_KEY")!,
       });
 
       const originalResponse = await originalApi.chatCompletionNonStream(
@@ -377,7 +386,7 @@ describe("Contract Compatibility Tests", () => {
       const aiSdkApi = getLlmApi({
         provider: "ai-sdk",
         model: aiSdkModel,
-        apiKey: process.env.ANTHROPIC_API_KEY!,
+        apiKey: liveKey("ANTHROPIC_API_KEY")!,
       });
 
       const aiSdkResponse = await aiSdkApi.chatCompletionNonStream(

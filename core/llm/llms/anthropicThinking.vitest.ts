@@ -3,6 +3,8 @@ import {
   budgetTokensToEffort,
   getAnthropicThinkingParams,
   supportsAdaptiveThinking,
+  thinkingDisplayDefaultsToOmitted,
+  thinksByDefault,
 } from "./anthropicThinking.js";
 
 describe("supportsAdaptiveThinking", () => {
@@ -70,5 +72,70 @@ describe("getAnthropicThinkingParams", () => {
     ).toEqual({
       thinking: { type: "enabled", budget_tokens: 2048 },
     });
+  });
+});
+
+describe("thinking display", () => {
+  test.each([
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-opus-5-5",
+    "claude-sonnet-5",
+    "claude-sonnet-5-5",
+    "claude-haiku-5-5",
+    "claude-fable-5-2",
+    "claude-mythos-5-2",
+    "us.anthropic.claude-opus-5-5",
+  ])("%s hides its thinking unless asked", (model) => {
+    expect(thinkingDisplayDefaultsToOmitted(model)).toBe(true);
+  });
+
+  test.each([
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5",
+    "claude-sonnet-4-20250514",
+    "claude-3-7-sonnet-latest",
+  ])("%s shows its thinking by default", (model) => {
+    expect(thinkingDisplayDefaultsToOmitted(model)).toBe(false);
+  });
+
+  test("only Claude 5 and later, Fable and Mythos think without being asked", () => {
+    expect(thinksByDefault("claude-opus-5-5")).toBe(true);
+    expect(thinksByDefault("claude-sonnet-5")).toBe(true);
+    expect(thinksByDefault("claude-fable-5-1")).toBe(true);
+    expect(thinksByDefault("claude-opus-4-8")).toBe(false);
+    expect(thinksByDefault("claude-sonnet-4-6")).toBe(false);
+  });
+
+  test("asks for summarized thinking with reasoning on, where it would arrive empty", () => {
+    expect(
+      getAnthropicThinkingParams({
+        model: "claude-opus-5-5",
+        reasoning: true,
+        reasoningBudgetTokens: 16384,
+      } as any),
+    ).toEqual({
+      thinking: { type: "adaptive", display: "summarized" },
+      output_config: { effort: "high" },
+    });
+  });
+
+  test("asks a model that thinks anyway for summarized thinking with reasoning off, with no effort", () => {
+    for (const reasoning of [false, undefined]) {
+      expect(
+        getAnthropicThinkingParams({
+          model: "claude-sonnet-5-5",
+          reasoning,
+        } as any),
+      ).toEqual({ thinking: { type: "adaptive", display: "summarized" } });
+    }
+  });
+
+  test("sends nothing with reasoning off to a model that then does not think", () => {
+    expect(
+      getAnthropicThinkingParams({ model: "claude-opus-4-8" } as any),
+    ).toEqual({});
   });
 });

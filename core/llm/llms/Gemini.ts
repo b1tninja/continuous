@@ -24,6 +24,8 @@ import {
   convertContinueToolToGeminiFunction,
   mergeConsecutiveGeminiMessages,
 } from "./gemini-types";
+import { ChatCompletionCreateParams } from "openai/resources/index";
+import { withReasoningEffort } from "../reasoningEffort.js";
 
 interface GeminiToolCallDelta extends ToolCallDelta {
   extra_content?: {
@@ -51,6 +53,19 @@ class Gemini extends BaseLLM {
     "streamChat",
     "streamFim",
   ];
+
+  /**
+   * The reasoning toggle and budget as the adapter's switch, which becomes
+   * Gemini's thinking level or budget (geminiThinkingControl in
+   * packages/openai-adapters/src/apis/Gemini.ts). Off is safe on every
+   * model: one that cannot stop thinking gets its lowest setting.
+   */
+  protected modifyChatBody(
+    body: ChatCompletionCreateParams,
+    options?: CompletionOptions,
+  ): ChatCompletionCreateParams {
+    return withReasoningEffort(body, options ?? {});
+  }
 
   // Function to convert completion options to Gemini format
   public convertArgs(options: CompletionOptions): GeminiGenerationConfig {

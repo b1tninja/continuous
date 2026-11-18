@@ -12,7 +12,8 @@ import {
   type PolicyArea,
 } from "core/tools/permissions/policy";
 import type { ToolCallTestResult } from "core/tools/permissions/testToolCall";
-import { useContext, useState } from "react";
+import { useContext, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import Alert from "../../../../components/gui/Alert";
 import { Button } from "../../../../components/ui";
 import { IdeMessengerContext } from "../../../../context/IdeMessenger";
@@ -21,10 +22,15 @@ import { updateConfig } from "../../../../redux/slices/configSlice";
 import { modifyAnyConfigWithSharedConfig } from "core/config/sharedConfig";
 import { ConfigHeader } from "../../components/ConfigHeader";
 import { AuditOverviewPanel, type ReviewRequest } from "./AuditOverviewPanel";
+import { CustomPolicy, isBaseName } from "./custom/CustomPolicy";
 import { EditableRules, type EditorEnv } from "./EditableRules";
 import { AuditInbox } from "./audit/AuditInbox";
 import { AuditList } from "./audit/AuditList";
-import { ViewSwitch, type PermissionsView } from "./audit/ViewSwitch";
+import {
+  isPermissionsView,
+  ViewSwitch,
+  type PermissionsView,
+} from "./audit/ViewSwitch";
 import { FirstRunOverview } from "./FirstRunOverview";
 import { LocksSection } from "./Locks";
 import { PermissionsError, PermissionsSkeleton } from "./PermissionsStates";
@@ -195,7 +201,40 @@ export function PermissionsSection() {
     levels,
   );
   const [active, setActive] = useState<PolicyArea>("tools");
-  const [view, setView] = useState<PermissionsView>("rules");
+  // ?custom=<preset|current>&area=<area>: the Custom… entry of a policy control
+  const [params, setParams] = useSearchParams();
+  const customBase = params.get("custom");
+  const customArea = params.get("area");
+  const closeCustom = (message?: string) => {
+    const next = new URLSearchParams(params);
+    next.delete("custom");
+    next.delete("area");
+    setParams(next, { replace: true });
+    if (message) {
+      setStatus({ text: message });
+      reload();
+    }
+  };
+  // ?view=inbox|recent: a view opened from outside (the Command Palette's
+  // Open Audit Inbox). The parameter is taken out of the URL once applied, so
+  // the next run of the command changes the URL again and lands on that view
+  // even after the person switched views by hand.
+  const viewParam = params.get("view");
+  const [view, setView] = useState<PermissionsView>(
+    isPermissionsView(viewParam) ? viewParam : "rules",
+  );
+  useEffect(() => {
+    if (!isPermissionsView(viewParam)) return;
+    setView(viewParam);
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("view");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [viewParam, setParams]);
   const [review, setReview] = useState<
     (ReviewRequest & { nonce: number }) | undefined
   >();
@@ -271,6 +310,37 @@ export function PermissionsSection() {
         className="mb-2"
       />
       {showIntro && <FirstRunOverview onDismiss={dismissIntro} />}
+      {report && isBaseName(customBase) ? (
+        <CustomPolicy
+          key={`${customBase}:${customArea ?? ""}`}
+          base={customBase}
+          area={
+            POLICY_AREAS.includes(customArea as PolicyArea)
+              ? (customArea as PolicyArea)
+              : undefined
+          }
+          report={report}
+          env={env}
+          audit={audit.overview}
+          onClose={closeCustom}
+        />
+      ) : (
+        report && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="mb-2 min-h-6"
+            data-testid="open-custom-policy"
+            onClick={() => {
+              const next = new URLSearchParams(params);
+              next.set("custom", "current");
+              setParams(next);
+            }}
+          >
+            Custom policy…
+          </Button>
+        )
+      )}
       <ViewSwitch view={view} onChange={setView} />
       <div hidden={view !== "rules"}>
         {loading && <PermissionsSkeleton slow={slow} onRetry={reload} />}

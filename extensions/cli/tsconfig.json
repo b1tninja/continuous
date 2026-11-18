@@ -35,6 +35,8 @@
     "scripts/sandboxRun.ts",
     "scripts/secretScan.ts",
     "vitest.setup.ts",
-    "vitest.global-dir-setup.ts"
+    "vitest.global-dir-setup.ts",
+    "vitest.live-provider-guard.ts",
+    "vitest.live-provider-guard.global.ts"
   ]
 }

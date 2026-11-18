@@ -140,13 +140,7 @@ export const providers: Partial<Record<string, ProviderInfo>> = {
       models.cometapiO4Mini,
       models.cometapiO3Pro,
       // Anthropic Claude family
-      models.cometapiClaude45Sonnet,
       models.cometapiClaude45Haiku,
-      models.cometapiClaudeOpus41,
-      models.cometapiClaudeOpus41Thinking,
-      models.cometapiClaudeSonnet4,
-      models.cometapiClaudeSonnet4Thinking,
-      models.cometapiClaude37SonnetLatest,
       // Google Gemini family
       models.cometapiGemini25Pro,
       models.cometapiGemini25Flash,
@@ -252,11 +246,7 @@ export const providers: Partial<Record<string, ProviderInfo>> = {
       models.claude55Haiku,
       models.claude46Opus,
       models.claude46Sonnet,
-      models.claude4_5Opus,
-      models.claude45Sonnet,
       models.claude45Haiku,
-      models.claude41Opus,
-      models.claude4Sonnet,
     ],
     apiKeyUrl: "https://console.anthropic.com/account/keys",
   },
@@ -282,8 +272,10 @@ export const providers: Partial<Record<string, ProviderInfo>> = {
     ],
     packages: [
       {
-        title: "Loading models...",
-        description: "Fetching available models from OpenRouter",
+        // No OpenRouter model ids are bundled: the repo has no verified ones,
+        // and the list is downloaded from openrouter.ai on request.
+        title: "Model list not downloaded",
+        description: "Refresh from openrouter.ai, or type a model id",
         params: { model: "placeholder" },
         isOpenSource: false,
       },

@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { announce } from "../../components/a11y/announcer";
 import { ChatHistoryItemWithMessageId } from "../../redux/slices/sessionSlice";
+import { prefersReducedMotion } from "../../util/reducedMotion";
 
 /**
  * Only reset scroll state when a new user message is added to the chat.
@@ -12,12 +14,38 @@ function getNumUserMsgs(history: ChatHistoryItemWithMessageId[]) {
 /** Pixels from the bottom that still count as being at the bottom. */
 export const AT_BOTTOM_TOLERANCE = 8;
 
+/** Said once per pause, not per token. */
+export const NEW_CONTENT_ANNOUNCEMENT = "New messages below";
+
 export const useAutoScroll = (
   ref: React.RefObject<HTMLDivElement | null>,
   history: ChatHistoryItemWithMessageId[],
 ) => {
   const [userHasScrolled, setUserHasScrolled] = useState(false);
   const numUserMsgs = useMemo(() => getNumUserMsgs(history), [history.length]);
+  // The height when auto-scroll paused, and whether the person was told yet
+  const pausedHeight = useRef(0);
+  const announced = useRef(false);
+
+  useEffect(() => {
+    if (!userHasScrolled) return;
+    pausedHeight.current = ref.current?.scrollHeight ?? 0;
+    announced.current = false;
+  }, [userHasScrolled, ref]);
+
+  const scrollToLatest = useCallback(() => {
+    const elem = ref.current;
+    if (!elem) return;
+    if (typeof elem.scrollTo === "function") {
+      elem.scrollTo({
+        top: elem.scrollHeight,
+        behavior: prefersReducedMotion() ? "auto" : "smooth",
+      });
+    } else {
+      elem.scrollTop = elem.scrollHeight;
+    }
+    setUserHasScrolled(false);
+  }, [ref]);
 
   useEffect(() => {
     setUserHasScrolled(false);
@@ -51,7 +79,14 @@ export const useAutoScroll = (
 
     const resizeObserver = new ResizeObserver(() => {
       const elem = ref.current;
-      if (!elem || userHasScrolled) return;
+      if (!elem) return;
+      if (userHasScrolled) {
+        if (!announced.current && elem.scrollHeight > pausedHeight.current) {
+          announced.current = true;
+          announce(NEW_CONTENT_ANNOUNCEMENT);
+        }
+        return;
+      }
       elem.scrollTop = elem.scrollHeight;
     });
 
@@ -70,4 +105,6 @@ export const useAutoScroll = (
       ref.current?.removeEventListener("scroll", handleScroll);
     };
   }, [ref, history.length, userHasScrolled]);
+
+  return { paused: userHasScrolled, scrollToLatest };
 };

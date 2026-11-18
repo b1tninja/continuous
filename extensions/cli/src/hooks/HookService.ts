@@ -7,8 +7,10 @@
 
 import { BaseService } from "../services/BaseService.js";
 import { logger } from "../util/logger.js";
+import { noticeBrokenConfig } from "../util/readPolicyFile.js";
 
 import { loadHooksConfig } from "./hookConfig.js";
+import { noticeSkippedClaudeHooks } from "./hookListing.js";
 import { runHooks } from "./hookRunner.js";
 import { BLOCKING_EVENTS } from "./types.js";
 import type { HookEventResult, HookInput, HooksConfig } from "./types.js";
@@ -49,6 +51,10 @@ export class HookService extends BaseService<HookServiceState> {
 
     const loaded = loadHooksConfig(this.cwd);
 
+    // A settings file that does not parse is a guard that is not running.
+    // Headless runs refused to start before getting here, unless told not to.
+    loaded.broken?.forEach((file) => noticeBrokenConfig(file));
+
     if (loaded.untrustedProject) {
       // stderr, so piped output is not polluted. The model never sees this.
       const count = loaded.untrustedProject.handlers.length;
@@ -58,6 +64,10 @@ export class HookService extends BaseService<HookServiceState> {
         `This project defines ${count} hook${count === 1 ? "" : "s"} that ${are} not running because ${has} not been trusted. Run \`continuous hooks\` to review ${it}.\n`,
       );
     }
+
+    // Hooks in ~/.claude no longer run unasked (D-023); say so once, and only
+    // to someone who has some.
+    noticeSkippedClaudeHooks(loaded.skippedClaudeHooks, this.cwd);
 
     const eventCount = Object.keys(loaded.hooks).length;
     const handlerCount = Object.values(loaded.hooks).reduce(
@@ -119,6 +129,7 @@ export class HookService extends BaseService<HookServiceState> {
    */
   async reloadConfig(): Promise<void> {
     const loaded = loadHooksConfig(this.cwd);
+    loaded.broken?.forEach((file) => noticeBrokenConfig(file));
     this.setState({
       config: loaded.hooks,
       disabled: loaded.disabled,

@@ -125,6 +125,42 @@ describe("getBedrockErrorHint", () => {
     expect(hint).not.toContain("make sure the model is enabled");
   });
 
+  it("points at the quota, not model access, for 'not available for this account'", () => {
+    // A Claude 5.5 model with an applied quota of 0 tokens per minute,
+    // 2026-11-08: agreement AVAILABLE, AUTHORIZED, and still refused
+    const e = Object.assign(
+      new Error("This model is not available for this account."),
+      { name: "AccessDeniedException" },
+    );
+    const hint = getBedrockErrorHint(e, { region: "us-east-1" })!;
+    expect(hint).toContain("Service Quotas");
+    expect(hint).toContain("us-east-1");
+    expect(hint).not.toContain("Make sure the model is enabled");
+  });
+
+  it("says to wait while a new region verifies the account", () => {
+    const e = Object.assign(
+      new Error(
+        "Your account is currently being verified. Verification normally takes less than 2 hours.",
+      ),
+      { name: "AccessDeniedException" },
+    );
+    const hint = getBedrockErrorHint(e, { region: "eu-central-1" })!;
+    expect(hint).toContain("verifying");
+    expect(hint).toContain("eu-central-1");
+    expect(hint).not.toContain("Service Quotas");
+  });
+
+  it("explains throttling and mentions a zero quota", () => {
+    const e = Object.assign(
+      new Error("Too many tokens, please wait before trying again."),
+      { name: "ThrottlingException" },
+    );
+    const hint = getBedrockErrorHint(e, { region: "us-west-2" })!;
+    expect(hint).toContain("throttling");
+    expect(hint).toContain("Service Quotas");
+  });
+
   it("returns undefined for unrelated errors", () => {
     expect(getBedrockErrorHint(new Error("boom"), {})).toBeUndefined();
   });
@@ -141,6 +177,89 @@ describe("getBedrockErrorHint", () => {
     expect(hint).toContain("Test connection");
     expect(hint).not.toContain("crossRegionInference");
     expect(hint).not.toContain("access");
+  });
+});
+
+describe("buildModelCatalog model facts", () => {
+  const catalog = buildModelCatalog(
+    [
+      {
+        modelId: "anthropic.claude-sonnet-4-5-20250929-v1:0",
+        modelName: "Claude Sonnet 4.5",
+        providerName: "Anthropic",
+        inputModalities: ["TEXT", "IMAGE"],
+        outputModalities: ["TEXT"],
+        responseStreamingSupported: true,
+        inferenceTypesSupported: ["INFERENCE_PROFILE"],
+        modelLifecycle: {
+          status: "LEGACY",
+          legacyTime: new Date("2026-09-30T00:00:00Z"),
+          publicExtendedAccessTime: new Date("2026-12-01T00:00:00Z"),
+          endOfLifeTime: new Date("2027-03-01T00:00:00Z"),
+        },
+      },
+      {
+        modelId: "amazon.nova-micro-v1:0",
+        modelName: "Nova Micro",
+        providerName: "Amazon",
+        inputModalities: ["TEXT"],
+        outputModalities: ["TEXT"],
+        responseStreamingSupported: true,
+        inferenceTypesSupported: ["ON_DEMAND"],
+        modelLifecycle: { status: "ACTIVE" },
+      },
+    ],
+    [
+      {
+        inferenceProfileId: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        type: "SYSTEM_DEFINED",
+        status: "ACTIVE",
+        models: [
+          {
+            modelArn:
+              "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+          },
+        ],
+      },
+    ],
+  );
+  const byId = new Map(catalog.map((m) => [m.id, m]));
+
+  it("carries image input and lifecycle dates onto a profile", () => {
+    const sonnet = byId.get("us.anthropic.claude-sonnet-4-5-20250929-v1:0")!;
+    expect(sonnet.supportsImages).toBe(true);
+    expect(sonnet.legacy).toBe(true);
+    expect(sonnet.lifecycle).toEqual({
+      legacyAt: "2026-09-30T00:00:00.000Z",
+      extendedAccessAt: "2026-12-01T00:00:00.000Z",
+      endOfLifeAt: "2027-03-01T00:00:00.000Z",
+    });
+  });
+
+  it("marks a text-only model and leaves out dates Bedrock did not send", () => {
+    const micro = byId.get("amazon.nova-micro-v1:0")!;
+    expect(micro.supportsImages).toBe(false);
+    expect(micro.lifecycle).toBeUndefined();
+  });
+
+  it("accepts lifecycle times as strings and ignores ones that do not parse", () => {
+    const [only] = buildModelCatalog(
+      [
+        {
+          modelId: "x.model",
+          outputModalities: ["TEXT"],
+          inferenceTypesSupported: ["ON_DEMAND"],
+          modelLifecycle: {
+            status: "LEGACY",
+            legacyTime: "2026-01-02T03:04:05Z",
+            endOfLifeTime: "not a date",
+          },
+        },
+      ],
+      [],
+    );
+    expect(only.lifecycle).toEqual({ legacyAt: "2026-01-02T03:04:05.000Z" });
+    expect(only.supportsImages).toBeUndefined();
   });
 });
 

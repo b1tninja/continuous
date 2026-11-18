@@ -56,6 +56,40 @@ models:
 `ttl` accepts `5m`, `1h` or `auto` (the Auto row above). It only chooses the lifetime and does not turn caching on; `promptCaching: true` (or the toolbar) does that. A choice in the toolbar other than "Config default" overrides it for that session. If the model cannot take a 1-hour lifetime (see Bedrock below), `1h` is sent as the 5-minute default. In JSON configuration the same field is `cacheBehavior.ttl`.
 The `cn` command line reaches Claude through shared adapters and reads the same `cacheBehavior.ttl` and `promptCaching`, on both Anthropic and Bedrock. `1h` puts a 1-hour lifetime on every cache point (on Bedrock only for the models listed under Bedrock below; others get 5 minutes). `auto` is applied by the CLI itself, which has no toolbar: it counts the session's requests that carry cache points, and moves to 1 hour at the fifth, or after a pause of more than 5 and up to 55 minutes, the same two rules as above. It has no chat mode, so every CLI session counts as an Agent session. On Anthropic the CLI's cache points are on unless the adapter's `cachingStrategy` is `none`, and in an agent loop they now go on the last tool results, which is where the new content is. On Bedrock they are now on when the config says nothing about caching for Claude models, with the Auto lifetime, and for the Nova models listed below, with Nova's 5-minute default; off for any other model. `promptCaching: false` turns them off. In Loop mode the CLI also pins a cache point at each item's first message, so a retry or a subagent that starts from the item's context reads the same cached prefix instead of writing it again; the pin takes one of the two conversation cache points.
 
+### Subagents
+
+A subagent run uses the 5-minute lifetime, whatever the chat's lifetime is: its requests come seconds apart, so a 1-hour entry is rarely read after 5 minutes. Set `cacheBehavior.subagentTtl` on the model the subagent runs on to change it:
+
+```yaml title="config.yaml"
+models:
+  - name: Claude Sonnet
+    provider: anthropic
+    model: claude-sonnet-4-6
+    apiKey: ${{ secrets.ANTHROPIC_API_KEY }}
+    cacheBehavior:
+      ttl: auto
+      subagentTtl: 1h # 5m | 1h | auto | inherit
+```
+
+| Value          | Lifetime of the run's requests                                                                                     |
+| -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `5m` (default) | 5 minutes                                                                                                          |
+| `1h`           | 1 hour                                                                                                             |
+| `auto`         | The Auto rules above, applied to the run's own requests: 5 minutes, then 1 hour from its fifth request or after a pause of more than 5 and up to 55 minutes |
+| `inherit`      | What the chat would use: the toolbar choice, then `cacheBehavior.ttl`                                              |
+
+`subagentTtl` only chooses the lifetime. A run caches when the chat would cache on that model, and Off in the toolbar stays off. It applies to the subagent tool and to Loop workers in the chat window, and to `cn` subagents (models with the `subagent` role), where `inherit` means the model's own `cacheBehavior.ttl`.
+
+### Precedence
+
+From strongest to weakest:
+
+1. `CONTINUOUS_FORCE_CACHE_5M=1` in the environment of the editor or of `cn`. A debug override: every request asks for 5 minutes, whatever the settings below say. Only the value `1` turns it on. The prompt cache button does not know about it, so its tooltip can still show 1 hour.
+2. For a subagent run, `cacheBehavior.subagentTtl` (default `5m`).
+3. The toolbar choice, other than "Config default".
+4. `cacheBehavior.ttl`.
+5. Auto, where caching is on by default (above), or the provider's 5-minute default.
+
 
 
 ## What gets cached
@@ -97,11 +131,19 @@ On Bedrock, Anthropic says regional and multi-region endpoints cost 10 percent m
 
 Compacting a conversation (the Compact button) sends the same system prompt, tools and cache settings as the conversation, so while the cache is warm the summary request reads it instead of paying full price for the history. When the cache has expired, or caching is off, or only part of the conversation is being compacted, it sends the saved history on its own as before, because writing a new cache entry just before replacing the conversation would cost more. The prompt asks the model to answer in text; if the reply has none, the plain request is sent.
 
+After compacting, the summary is sent as the first message after the system message, not inside it. The tools and the system prompt stay the same bytes, so they stay cached across the compaction (an Anthropic or Bedrock breakpoint on the system prompt, or a local server's system-prompt checkpoint) and only the summary and the turns after it are read again. On Claude models that check earlier reasoning against the conversation, the reasoning of turns kept after the summary is not sent again, because it was produced with the summarised turns in front of it.
+
 A cached session costs more than an uncached one on its first request and less on every request after that, as long as the entry has not expired. Switching the model, changing reasoning settings, or anything that changes the system prompt (such as a rule that starts to match) misses the cache, and the next request writes the prefix again. A one-prompt session never pays back the write.
 
 While the cache is warm and you open the model picker, Continuous shows how many tokens switching model would re-read and an estimated extra cost. It does not warn about changes to reasoning or mode.
 
 The usage panel shows cost estimates for Claude models on Anthropic, Bedrock, Vertex AI and OpenRouter, and for the four Nova models on Bedrock, split into 5-minute writes, 1-hour writes and reads when the provider reports the split. Its cache hit rate is cache-read tokens divided by the input tokens the API reports.
+
+## Forking a session
+
+**Fork from here** (in the actions under a response) and **Fork session** (in the "..." menu of a session tab, when session tabs are on) copy the conversation into a new session and open it, leaving the original unchanged. The fork keeps the history up to that point exactly as it was, the mode, the model, the task list and the cache record; it does not take the plan file, Loop state, file checkpoints, queued messages or the original's cost. Permission levels belong to the window, so a fork opened in it keeps them, including an IDGAF setting.
+
+Because the fork sends the same tools, system prompt and messages to the same model, its first message can read the cache entry the original wrote, if that entry is still alive. Hover over or focus the action to see one line before you fork: "Fork re-reads 210k tokens ≈ $1.05; within the cache window (4 min left) ≈ $0.09". The first figure is what the fork's first message pays for the copied conversation if nothing is cached, the second what it pays while the entry lasts. For a point earlier than the last message the line says it is an estimate: how long the cache keeps an earlier point after the conversation has moved on has not been measured yet. To change the model or mode, fork first and switch in the fork, where the switch says what it costs.
 
 ## Toolbar button
 
@@ -120,6 +162,23 @@ With `--verbose`, the CLI prints a "Prompt cache:" line when a session ends: req
 The tool list comes before the system message and the conversation, so a reordered list makes the cache read everything again. Tools from MCP servers are sorted by name after the built-in tools, because servers connect in no fixed order and a reconnected server's tools would otherwise move to the end. The IDE does this always; in the CLI, set `CONTINUE_STABLE_TOOL_ORDER=0` (or `false`) to keep connection order. In the IDE system message, always-apply rules come before file-scoped rules. Only the order changes; no text is removed.
 
 To see exactly what was sent, set `CONTINUE_DUMP_REQUESTS` to a directory: the `cn` command line then writes every outgoing chat request body (the OpenAI-format request handed to the provider adapter, with credential-like fields redacted) to a timestamped JSON file there. Diffing the files of two sessions shows which part of the prefix differed when the cache missed.
+
+## Changing tools during a session
+
+The tool list is the first part of every request, before the system prompt and the conversation, so any change to it makes the next request write the whole conversation to the cache again instead of reading it: turning a tool, a tool group or an MCP server on or off, a server that connects late, or a server that comes back with different tools or descriptions. On a 100,000-token conversation with a Claude Opus 5.5-class model, that turns a cache read of a few cents into a rewrite of about half a dollar.
+
+While the cache is warm and that re-read is significant (the same bar as the notices: a quarter of a dollar, 100,000 tokens for a model with no price, or 30,000 tokens on your own server), a change to the tool list waits:
+
+- The Tools settings page says what applying a change now would cost: "Prompt cache is warm: changing the tool list re-reads about 366k tokens at full price (about $1.26 more) on the next request." The tooltips on the tool, group and MCP server controls say the same.
+- Once a change is waiting, the same place offers **Apply now** (the next request sends the new list and pays the re-read), **Apply when the cache goes cold** (the default) and **Start a new session with it**. A line above the input, "1 tool change waiting for the cache to cool · Apply now", stays until the change applies.
+- A tool turned off while the cache is warm stays in the request's tool list until the change applies ("withheld, not removed"). If the model calls it, the call is refused with a result that says why ("search_web is turned off for this session; the change applies when the prompt cache goes cold") and the refusal is written to the audit trail like other refusals. A tool turned on, or offered by a server that connected late, is not offered until the change applies.
+- The change applies by itself on the first request after the cache has expired, after compaction, and in a new session. A mode or model switch rebuilds the prompt anyway, so waiting changes apply with it.
+
+To always apply tool changes at once, choose **Apply tool changes at once** in the prompt cache menu (the toolbar button); choose **Let tool changes wait for a cold cache** to go back. With caching off, a cold cache or a small conversation, a change applies at once as it always did.
+
+On models with preserved thinking's prefix check (Claude Fable 5.2 and Mythos 5.2 always, and Fable 5.1, Mythos 5.1, Opus 5.5, Sonnet 5.5 and Haiku 5.5 depending on the account), changing the tool list invalidates the reasoning the model produced before the change, and sending it back is refused. So whenever a tool change applies on those models, now or when the cache goes cold, Continuous stops sending the earlier reasoning: the conversation stays on screen and in the request, the reasoning before the change does not. The notices say so ("on this model it rebuilds the cache and drops earlier reasoning").
+
+The `cn` command line works the same way, with a smaller interface. While the cache is warm (5 minutes after the last request, or 1 hour with `cacheBehavior.ttl: 1h`) and the re-read is significant, a change from `/mcp`, a late server or a permission change waits, and the transcript gets one line saying what is waiting, what applying it costs and how to apply it. `/tools` lists what is waiting and `/tools apply` applies it at the next request. Waiting changes apply on the first request after the cache has expired, at `/compact` (or automatic compaction), at `/clear` and in a resumed session. A call to a withheld tool is refused with the same text and recorded in the audit trail. Set `CONTINUE_TOOL_CHANGES=now` to apply changes at once; with tool search on (`CONTINUE_TOOL_SEARCH=auto`) changes always apply at once, because the model adds tools to the list itself.
 
 ## Tips
 

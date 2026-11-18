@@ -1,0 +1,37 @@
+---
+title: "Exit codes"
+description: "What the exit code of a headless run (continuous -p) means, and the --output-schema check."
+---
+
+A headless run (`continuous -p`) ends with one of these codes. With `--format stream-json` the last line, `result`, carries the same code in `exitCode` (see [Headless output](/cli/headless-output)); with `--format json` a failure is one JSON object on stderr.
+
+| Code | Name          | Meaning                                                                                                                                                                                                                                                                                    |
+| ---- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0    | success       | The run finished.                                                                                                                                                                                                                                                                          |
+| 1    | error         | Anything not in another row: an invalid flag or flag value, an internal error, an unhandled error during the run.                                                                                                                                                                          |
+| 2    | config        | The configuration cannot give the run a usable model (no model, a config that does not load, a hub assistant), `--max-budget-usd` on a model with no price, an unusable `--output-schema` file, or a broken hooks or permissions file. `continuous serve` uses 2 when it refuses to start. |
+| 3    | secrets-found | `continuous secrets` found a secret (not used by `-p`).                                                                                                                                                                                                                                    |
+| 4    | provider      | The model call failed: the network or the host could not be reached, the provider answered with an HTTP error (a bad key, a rate limit, an overloaded model), or the context was too long.                                                                                                 |
+| 5    | refused       | A `UserPromptSubmit` hook blocked the prompt, or the turn ended at the refusal cap because tool calls kept being refused. A run in which a call was refused but the model went on and finished exits 0; `numRefusals` in the stream counts those.                                          |
+| 6    | output-schema | The final answer did not match `--output-schema`.                                                                                                                                                                                                                                          |
+| 20   | budget        | `--max-budget-usd` stopped the run.                                                                                                                                                                                                                                                        |
+| 21   | turns         | `--max-turns` stopped the run.                                                                                                                                                                                                                                                             |
+| 22   | duration      | `--max-duration` stopped the run.                                                                                                                                                                                                                                                          |
+| 130  | interrupted   | Ctrl+C (SIGINT).                                                                                                                                                                                                                                                                           |
+
+The run limits are described on [Run limits](/cli/run-limits). Codes 1, 2, 3, 20, 21, 22 and 130 had these meanings before this table; 4, 5 and 6 are new, and a model or configuration failure that used to exit 1 now exits 4 or 2.
+
+The codes are this project's own. Peers differ: Claude Code documents only zero and non-zero ([https://code.claude.com/docs/en/headless](https://code.claude.com/docs/en/headless)); Gemini CLI uses 41 (authentication), 42 (input), 52 (config), 53 (turn limit) and 130 (cancelled) in its source ([https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/utils/errors.ts](https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/utils/errors.ts)). The BSD `sysexits` codes (64 to 78) were not used: FreeBSD marks them deprecated ([https://man.freebsd.org/cgi/man.cgi?query=sysexits&sektion=3](https://man.freebsd.org/cgi/man.cgi?query=sysexits&sektion=3)). 130 follows the shell's 128 + signal number for SIGINT ([https://www.gnu.org/software/bash/manual/html_node/Exit-Status.html](https://www.gnu.org/software/bash/manual/html_node/Exit-Status.html)).
+
+## `--output-schema`
+
+```bash
+continuous -p --output-schema review.schema.json "Review the diff. Answer only with JSON: {\"verdict\": \"approve\" | \"changes\", \"notes\": [string]}"
+```
+
+The final answer is parsed as JSON (the whole answer, or a single fenced `json` block that is the whole answer) and checked against the JSON Schema in the file. When it does not match, the run exits 6 and says why on stderr, or in an `error` line of kind `output_schema` with `--format stream-json`. The answer is still printed.
+
+- The schema is read before the first model request. A file that cannot be read, is not JSON, or uses a JSON Schema feature the checker does not support exits 2 before anything is sent.
+- The schema is **not** sent to the model. Say in the prompt what shape you want.
+- There is no repair turn: a mismatch is reported, not retried.
+- A run limit takes precedence: a stopped run exits 20 to 22 and its answer is not checked.

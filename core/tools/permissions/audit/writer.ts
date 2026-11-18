@@ -191,6 +191,8 @@ export class AuditWriter {
     const important =
       record.ev === "outcome" ||
       record.ev === "policy" ||
+      record.ev === "setting" ||
+      (record.ev === "taint" && record.op === "clear") ||
       (record.ev === "decision" && record.policy === "deny");
     const fd = fs.openSync(file, "a", 0o600);
     try {

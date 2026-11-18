@@ -1,15 +1,20 @@
 import * as fs from "fs";
+import * as path from "path";
 
 import { v4 as uuidv4 } from "uuid";
 
 import { Session } from "..";
 import { NEW_SESSION_TITLE } from "./constants";
-import historyManager from "./history";
+import historyManager, {
+  damagedSessionNotice,
+  HistoryManager,
+} from "./history";
 import {
   getSessionFilePath,
   getSessionsFolderPath,
   getSessionsListPath,
 } from "./paths";
+import { serializeSession } from "./sessionFile";
 
 const sessionId = uuidv4();
 const testSession: Session = {
@@ -382,5 +387,175 @@ describe("Session saves are atomic", () => {
     expect(
       historyManager.list({}).some((s) => s.sessionId === "after-lock"),
     ).toBe(true);
+  });
+});
+
+describe("a damaged session file is set aside, not replaced", () => {
+  const folder = () => getSessionsFolderPath();
+  const keptFiles = (id: string) =>
+    fs.readdirSync(folder()).filter((n) => n.startsWith(`${id}.corrupt-`));
+
+  test.each([
+    ["truncated JSON", '{"sessionId":"x","history":[{"message":{"role":"us'],
+    ["an empty file", ""],
+    ["a list", "[1,2,3]"],
+  ])("%s", (_name, bytes) => {
+    const id = `damaged-${Math.random().toString(36).slice(2)}`;
+    const file = getSessionFilePath(id);
+    fs.writeFileSync(file, bytes);
+
+    const result = historyManager.loadWithStatus(id);
+
+    // An empty session under the same id, as before
+    expect(result.session).toEqual({
+      history: [],
+      title: NEW_SESSION_TITLE,
+      workspaceDirectory: "",
+      sessionId: id,
+    });
+    // and the bytes are kept beside it
+    const kept = keptFiles(id);
+    expect(kept).toHaveLength(1);
+    expect(kept[0]).toMatch(/\.corrupt-\d+(-\d+)?\.json$/);
+    expect(fs.existsSync(file)).toBe(false);
+    expect(fs.readFileSync(path.join(folder(), kept[0]), "utf8")).toBe(bytes);
+    expect(result.damaged?.keptAt).toBe(path.join(folder(), kept[0]));
+
+    // The next save under that id replaces nothing
+    historyManager.save({ ...result.session, title: "After" });
+    expect(fs.readFileSync(path.join(folder(), kept[0]), "utf8")).toBe(bytes);
+    expect(historyManager.load(id).title).toBe("After");
+    expect(keptFiles(id)).toHaveLength(1);
+  });
+
+  test("the notice names the kept file and never quotes the session", () => {
+    const id = "damaged-notice";
+    fs.writeFileSync(getSessionFilePath(id), '{"title":"my secret plan",');
+    const result = historyManager.loadWithStatus(id);
+    const notice = damagedSessionNotice(result.damaged!);
+    expect(notice).toContain(result.damaged!.keptAt);
+    expect(notice).toContain("damaged and was not loaded");
+    expect(notice).not.toContain("secret");
+  });
+
+  test("it is reported once: the second load finds no file", () => {
+    const id = "damaged-once";
+    fs.writeFileSync(getSessionFilePath(id), "{");
+    expect(historyManager.loadWithStatus(id).damaged).toBeDefined();
+    expect(historyManager.loadWithStatus(id).damaged).toBeUndefined();
+  });
+
+  test("load() warns once and still answers a session", () => {
+    const id = "damaged-load";
+    fs.writeFileSync(getSessionFilePath(id), "{");
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(historyManager.load(id).history).toEqual([]);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0][0])).toContain(".corrupt-");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test("a file that cannot be read is left alone and not opened", () => {
+    const id = "unreadable";
+    // A folder where the file should be: reading fails, and it is not JSON
+    fs.mkdirSync(getSessionFilePath(id));
+    try {
+      expect(() => historyManager.load(id)).toThrow(/could not be read/);
+      expect(fs.existsSync(getSessionFilePath(id))).toBe(true);
+      expect(keptFiles(id)).toHaveLength(0);
+    } finally {
+      fs.rmdirSync(getSessionFilePath(id));
+    }
+  });
+
+  test("a set-aside file is not listed as a session when the list is rebuilt", () => {
+    const id = "damaged-rebuild";
+    fs.writeFileSync(getSessionFilePath(id), "{");
+    const kept = historyManager.loadWithStatus(id).damaged!.keptAt;
+    // A set-aside file that happens to parse must still not come back
+    fs.writeFileSync(
+      kept,
+      JSON.stringify({ sessionId: "ghost", title: "Ghost", history: [] }),
+    );
+    fs.writeFileSync(getSessionsListPath(), "{not json");
+    historyManager.save({
+      sessionId: "rebuild-trigger",
+      title: "Trigger",
+      workspaceDirectory: "",
+      history: [],
+    });
+    const ids = historyManager.list({}).map((s) => s.sessionId);
+    expect(ids).toContain("rebuild-trigger");
+    expect(ids).not.toContain("ghost");
+  });
+});
+
+describe("session file size (STOR8)", () => {
+  const sized = (id: string, text: string): Session => ({
+    sessionId: id,
+    title: "Sized",
+    workspaceDirectory: "",
+    history: [{ message: { role: "user", content: text }, contextItems: [] }],
+  });
+
+  test("save reports the bytes it wrote and records them in the list", () => {
+    const session = sized("size-recorded", "é".repeat(500));
+    const { fileBytes } = historyManager.save(session);
+    expect(fileBytes).toBe(
+      fs.statSync(getSessionFilePath(session.sessionId)).size,
+    );
+    // Multi-byte text counts in bytes, not characters
+    expect(fileBytes).toBe(Buffer.byteLength(serializeSession(session)));
+    const listed = historyManager
+      .list({})
+      .find((s) => s.sessionId === session.sessionId);
+    expect(listed?.fileBytes).toBe(fileBytes);
+  });
+
+  test("a listed session saved before sizes were recorded gets its size from the file", () => {
+    const session = sized("size-from-file", "x".repeat(300));
+    historyManager.save(session);
+    const [filled] = historyManager.withFileSizes([
+      {
+        sessionId: session.sessionId,
+        title: "Sized",
+        dateCreated: "0",
+        workspaceDirectory: "",
+      },
+    ]);
+    expect(filled.fileBytes).toBe(
+      fs.statSync(getSessionFilePath(session.sessionId)).size,
+    );
+    const [missing] = historyManager.withFileSizes([
+      {
+        sessionId: "no-such-file",
+        title: "",
+        dateCreated: "0",
+        workspaceDirectory: "",
+      },
+    ]);
+    expect(missing.fileBytes).toBeUndefined();
+  });
+
+  test("a save past the budget logs a warning once per session", () => {
+    const manager = new HistoryManager(2_000);
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      manager.save(sized("under-budget", "small"));
+      expect(warn).not.toHaveBeenCalled();
+
+      manager.save(sized("over-budget", "y".repeat(3_000)));
+      manager.save(sized("over-budget", "y".repeat(4_000)));
+      const lines = warn.mock.calls.map((c) => String(c[0]));
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatch(
+        /over-budget file is \d+ KB, past the 2 KB session budget/,
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

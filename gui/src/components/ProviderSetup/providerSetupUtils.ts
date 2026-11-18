@@ -5,6 +5,7 @@ import type {
   ProviderSetupModel,
   SaveProviderModelsRequest,
 } from "core/config/providerSetup";
+import { catalogPriceNote } from "core/llm/utils/catalogPricing";
 import { buildModelFromForm, FormValues } from "../../forms/addModelFormUtils";
 import type { ModelLists } from "../../forms/modelListUtils";
 import type { ModelPackage } from "../../pages/AddNewModel/configs/models";
@@ -31,6 +32,8 @@ export interface ChecklistRow {
   needsAnthropicUseCase?: boolean;
   /** Bedrock: why the account cannot use the model yet (needs access, pending, legacy). */
   accessNote?: string;
+  /** OpenRouter: the downloaded list's price for the model, with its date. */
+  priceNote?: string;
 }
 
 export interface ChecklistGroups {
@@ -50,6 +53,9 @@ function rowOf(pkg: ModelPackage, configured: Set<string>): ChecklistRow {
     deprecated: pkg.deprecated,
     needsAnthropicUseCase: pkg.needsAnthropicUseCase,
     accessNote: pkg.accessNote,
+    ...(pkg.providerOptions?.includes("openrouter")
+      ? { priceNote: catalogPriceNote(pkg.params.model) }
+      : {}),
   };
 }
 

@@ -29,7 +29,12 @@ export interface PreToolHookOutcome {
 export async function runPreToolUseHooks(
   call: PreprocessedToolCall,
 ): Promise<PreToolHookOutcome> {
-  const result = await firePreToolUse(call.name, call.arguments, call.id);
+  const result = await firePreToolUse(
+    call.name,
+    call.arguments,
+    call.id,
+    call.tool?.mcpServer,
+  );
 
   if (result.blocked) {
     return { call, blockedReason: result.blockReason ?? "Blocked by hook" };
@@ -77,6 +82,7 @@ export async function runPostToolUseHooks(
       call.arguments,
       toolResult,
       call.id,
+      call.tool?.mcpServer,
     );
     const notes: string[] = [];
     if (result.blocked && result.blockReason) {
@@ -97,7 +103,9 @@ export async function runPostToolUseFailureHooks(
   error: string,
 ): Promise<void> {
   try {
-    await firePostToolUseFailure(call.name, call.arguments, call.id, error);
+    await firePostToolUseFailure(call.name, call.arguments, call.id, error, {
+      server: call.tool?.mcpServer,
+    });
   } catch (hookError) {
     logger.warn(`PostToolUseFailure hooks failed for ${call.name}`, hookError);
   }

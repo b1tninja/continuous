@@ -52,8 +52,18 @@ export const cancelStream = createAsyncThunk<
     );
   }
 
-  // Clear any dangling incomplete tool calls, thinking messages, etc.
-  dispatch(clearDanglingMessages());
+  // Clear any dangling incomplete tool calls, thinking messages, etc. A retry
+  // or a run ended on purpose carries on, so only Stop and a failure mark the
+  // turn for Resume.
+  dispatch(
+    clearDanglingMessages(
+      options?.loop === "keep"
+        ? undefined
+        : options?.loop === "error"
+          ? "failed"
+          : "stopped",
+    ),
+  );
 });
 
 /**

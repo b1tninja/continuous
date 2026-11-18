@@ -55,6 +55,8 @@ function resolveParagraph(p: JSONContent): [string, GetContextRequest[]] {
 export function processEditorContent(editorState: JSONContent) {
   const contextRequests: GetContextRequest[] = [];
   const selectedCode: RangeInFile[] = [];
+  /** Code selections, sent as the message's attachments. */
+  const attachedCode: ContextItemWithId[] = [];
   let slashCommandName: string | undefined;
 
   const parts: MessagePart[] = [];
@@ -96,7 +98,16 @@ export function processEditorContent(editorState: JSONContent) {
           rif.filepath,
           window.workspacePaths ?? [],
         );
-        const codeText = `\n\`\`\`${extension} ${relativePathOrBasename} (${rif.range.start.line + 1}-${rif.range.end.line + 1})\n${contextItem.content}\n\`\`\`\n`;
+        const lines = `${rif.range.start.line + 1}-${rif.range.end.line + 1}`;
+        // The selection is attached like a file, so it is tracked, sent once
+        // and removable (plans/context-references.md 3.3); the text keeps a
+        // pointer where the chip was, so "explain this" still points at it
+        attachedCode.push({
+          ...contextItem,
+          description: `${relativePathOrBasename} (lines ${lines})`,
+          content: `\`\`\`${extension} ${relativePathOrBasename} (${lines})\n${contextItem.content}\n\`\`\``,
+        });
+        const codeText = `(see ${relativePathOrBasename} lines ${lines}, attached)`;
 
         if (parts[parts.length - 1]?.type === "text") {
           (parts[parts.length - 1] as TextMessagePart).text += "\n" + codeText;
@@ -116,5 +127,11 @@ export function processEditorContent(editorState: JSONContent) {
     }
   }
 
-  return { parts, contextRequests, selectedCode, slashCommandName };
+  return {
+    parts,
+    contextRequests,
+    selectedCode,
+    slashCommandName,
+    attachedCode,
+  };
 }

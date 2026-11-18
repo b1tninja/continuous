@@ -239,11 +239,11 @@ const READ_CMDLETS: Record<string, string[]> = {
     "CaseSensitive",
   ],
   "set-location": ["Path", "LiteralPath", "PassThru", "StackName"],
+  // No ComputerName: it asks another machine, and Windows signs in to it
   "get-process": [
     "Name",
     "Id",
     "InputObject",
-    "ComputerName",
     "Module",
     "FileVersionInfo",
     "IncludeUserName",

@@ -25,6 +25,8 @@ export interface TotalUsage {
   totalCancelledInteractions: number;
   totalCost: number;
   costBreakdowns: CostBreakdown[];
+  /** Set when some of the cost is an estimate from a downloaded price list: its date (ISO). */
+  priceListDate?: string;
 }
 
 /**
@@ -45,6 +47,7 @@ export default function useTotalUsage(llmLog: LLMLog): TotalUsage {
     let totalCancelledInteractions = 0;
     let totalCost = 0;
     const costBreakdowns: CostBreakdown[] = [];
+    let priceListDate: string | undefined;
 
     // Iterate through all interactions
     for (const interaction of llmLog.interactions.values()) {
@@ -83,6 +86,10 @@ export default function useTotalUsage(llmLog: LLMLog): TotalUsage {
             if (costBreakdown) {
               totalCost += costBreakdown.cost;
               costBreakdowns.push(costBreakdown);
+              const at = costBreakdown.estimate?.fetchedAt;
+              if (at && (!priceListDate || at < priceListDate)) {
+                priceListDate = at;
+              }
             }
           }
         }
@@ -116,6 +123,7 @@ export default function useTotalUsage(llmLog: LLMLog): TotalUsage {
       totalCancelledInteractions,
       totalCost,
       costBreakdowns,
+      ...(priceListDate ? { priceListDate } : {}),
     };
   }, [llmLog]);
 }

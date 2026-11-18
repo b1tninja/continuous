@@ -38,6 +38,7 @@ export function RunTerminalCommand(props: RunTerminalCommandToolCallProps) {
       statusMessage={statusMessage}
       toolCallState={props.toolCallState}
       toolCallId={props.toolCallId}
+      commandOutput={outputItem?.commandOutput}
     />
   );
 }

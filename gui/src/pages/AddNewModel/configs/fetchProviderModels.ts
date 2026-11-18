@@ -4,6 +4,8 @@ import { isLikelyChatModelId } from "../../../forms/modelListUtils";
 import { ModelPackage } from "./models";
 import { models } from "./models";
 import { ollamaStaticModels, providers } from "./providers";
+import type { CatalogModel } from "core/llm/openRouterCatalog";
+import { setOpenRouterCatalog } from "core/llm/utils/catalogPricing";
 
 interface FetchedModel {
   name: string;
@@ -130,42 +132,158 @@ export async function fetchProviderModels(
   return fetchedToPackages(models, provider);
 }
 
-export async function initializeDynamicModels(ideMessenger: IIdeMessenger) {
-  const ollamaAutodetect = {
-    ...models.AUTODETECT,
-    params: { ...models.AUTODETECT.params, title: "Ollama" },
-  };
+/** Providers whose model catalogue is a public page on a third-party host. */
+export const CATALOGUE_HOSTS: Record<string, string> = {
+  ollama: "ollama.com",
+  openrouter: "openrouter.ai",
+};
 
-  if (providers.ollama) {
-    providers.ollama.popularPackages = [
-      ollamaAutodetect,
+/**
+ * Providers whose catalogue prompt was answered (Download or Not now) in this
+ * app session. Held in memory only; nothing is persisted.
+ */
+/** The date (ISO) of the OpenRouter list in use, when one is. */
+let openRouterListDate: string | undefined;
+export const openRouterListFetchedAt = () => openRouterListDate;
+const answered = new Set<string>();
+export const catalogueAnswered = (id: string) => answered.has(id);
+export const markCatalogueAnswered = (id: string) => void answered.add(id);
+const bundled = {
+  ollama: providers.ollama?.packages,
+  openrouter: providers.openrouter?.packages,
+};
+/** Forget the answers and the downloaded lists (the bundled lists return). */
+export const resetCatalogueAnswers = () => {
+  answered.clear();
+  openRouterListDate = undefined;
+  setOpenRouterCatalog(undefined);
+  if (providers.ollama && bundled.ollama) {
+    providers.ollama.packages = bundled.ollama;
+  }
+  if (providers.openrouter && bundled.openrouter) {
+    providers.openrouter.packages = bundled.openrouter;
+  }
+};
+
+function catalogToFetched(models: CatalogModel[]): FetchedModel[] {
+  return models.map((m) => ({
+    name: m.name,
+    modelId: m.id,
+    icon: "openrouter.png",
+    contextLength: m.contextLength,
+    maxTokens: m.maxCompletionTokens,
+    supportsTools: m.supportsTools,
+  }));
+}
+
+function applyOpenRouterList(models: CatalogModel[], fetchedAt: string) {
+  // The same list prices the usage readouts in this window
+  setOpenRouterCatalog({
+    schemaVersion: 1,
+    source: "https://openrouter.ai/api/v1/models",
+    fetchedAt,
+    models,
+  });
+  if (!providers.openrouter) return;
+  providers.openrouter.packages =
+    catalogToFetched(models).map(toOpenRouterPackage);
+  openRouterListDate = fetchedAt;
+}
+
+/**
+ * Use the dated copy of the OpenRouter list kept on this computer, if there is
+ * one. A local read in core: nothing is requested from the network.
+ */
+export async function loadCachedOpenRouterList(
+  ideMessenger: IIdeMessenger,
+): Promise<string | undefined> {
+  try {
+    const res = await ideMessenger.request("modelCatalog/cached", undefined);
+    if (res.status !== "success" || !res.content) return undefined;
+    applyOpenRouterList(res.content.models, res.content.fetchedAt);
+    return res.content.fetchedAt;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * "Model information updates" for OpenRouter: `automatic` (core refreshes
+ * the list in the background, nothing is asked), `ask` (only when asked;
+ * setup offers it), `never` (only when asked; setup stays quiet), `off`
+ * (never contacts openrouter.ai).
+ */
+export type CatalogPolicy = "automatic" | "ask" | "never" | "off";
+
+/** The user's setting. When core cannot say, setup asks, as before. */
+export async function loadCatalogPolicy(
+  ideMessenger: IIdeMessenger,
+): Promise<CatalogPolicy> {
+  try {
+    const res = await ideMessenger.request("modelCatalog/status", undefined);
+    return res.status === "success" ? res.content.policy : "ask";
+  } catch {
+    return "ask";
+  }
+}
+
+export async function saveCatalogPolicy(
+  ideMessenger: IIdeMessenger,
+  policy: CatalogPolicy,
+): Promise<void> {
+  try {
+    await ideMessenger.request("modelCatalog/setPolicy", { policy });
+  } catch {
+    // The choice then lasts for this session only.
+  }
+}
+
+/**
+ * Fetch one provider's catalogue (Ollama or OpenRouter) and fold it into the
+ * provider's list. This contacts a third-party host, so it runs when the
+ * user presses Pull now / Download / Refresh, or (OpenRouter only, with model
+ * information updates `automatic`) when OpenRouter's setup opens and no list
+ * has been downloaded yet. Ollama's list is never fetched without a press.
+ * Until then the bundled (or last downloaded) list stays. Returns undefined
+ * on success, else a short reason (and changes nothing), e.g. when offline.
+ */
+export async function refreshProviderCatalogue(
+  ideMessenger: IIdeMessenger,
+  providerId: string,
+): Promise<{ ok: true } | { ok: false; error?: string }> {
+  if (!CATALOGUE_HOSTS[providerId]) return { ok: false };
+  if (providerId === "openrouter") {
+    // Core keeps the dated copy (names, sizes, prices) as it downloads
+    try {
+      const res = await ideMessenger.request("modelCatalog/pull", undefined);
+      if (res.status !== "success") return { ok: false };
+      if (!res.content.ok) return { ok: false, error: res.content.error };
+      applyOpenRouterList(res.content.models, res.content.fetchedAt);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : undefined };
+    }
+  }
+  let fetched: FetchedModel[];
+  try {
+    fetched = await fetchModels(ideMessenger, providerId);
+  } catch {
+    return { ok: false };
+  }
+  if (fetched.length === 0) return { ok: false };
+  if (providerId === "ollama" && providers.ollama) {
+    const popular = [
+      {
+        ...models.AUTODETECT,
+        params: { ...models.AUTODETECT.params, title: "Ollama" },
+      },
       ...ollamaStaticModels,
     ];
-
-    try {
-      const fetched = await fetchModels(ideMessenger, "ollama");
-      const fetchedPkgs = fetched.map(toOllamaPackage);
-      const popularTitles = new Set(
-        providers.ollama.popularPackages.map((p) => p.title),
-      );
-      const additional = fetchedPkgs.filter((p) => !popularTitles.has(p.title));
-      providers.ollama.packages = [
-        ...providers.ollama.popularPackages,
-        ...additional,
-      ];
-    } catch (error) {
-      console.error("Failed to initialize Ollama models:", error);
-      providers.ollama.packages = [...providers.ollama.popularPackages];
-    }
+    const popularTitles = new Set(popular.map((p) => p.title));
+    const additional = fetched
+      .map(toOllamaPackage)
+      .filter((p) => !popularTitles.has(p.title));
+    providers.ollama.packages = [...popular, ...additional];
   }
-
-  try {
-    const fetched = await fetchModels(ideMessenger, "openrouter");
-    const packages = fetched.map(toOpenRouterPackage);
-    if (packages.length > 0 && providers.openrouter) {
-      providers.openrouter.packages = packages;
-    }
-  } catch (error) {
-    console.error("Failed to initialize OpenRouter models:", error);
-  }
+  return { ok: true };
 }

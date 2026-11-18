@@ -21,6 +21,7 @@ import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 
+import { writeFileAtomicSync } from "core/util/atomicWrite.js";
 import { GLOBAL_DIR_NAME } from "core/util/paths.js";
 
 import { env } from "../env.js";
@@ -235,10 +236,12 @@ function trustFile(cwd: string, homeDir?: string): string | undefined {
 
 function writeTrust(file: string, record: TrustRecord): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  // Write beside the target and rename, so a crash cannot leave half a file.
-  const temp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(temp, JSON.stringify(record, null, 2), { mode: 0o600 });
-  fs.renameSync(temp, file);
+  // Written beside the target and renamed, so a crash cannot leave half a
+  // file. No in-place fallback: a trust record is never left half written.
+  writeFileAtomicSync(file, JSON.stringify(record, null, 2), {
+    mode: 0o600,
+    fallbackInPlace: false,
+  });
 }
 
 /** True when this project was trusted with exactly these hooks. */
@@ -262,7 +265,7 @@ export function trustProject(
   const file = trustFile(cwd, homeDir);
   if (!file) {
     throw new Error(
-      "The Continue directory is inside this project, so trust cannot be saved. Unset CONTINUE_GLOBAL_DIR or point it outside the project.",
+      "The Continuous directory is inside this project, so trust cannot be saved. Unset CONTINUOUS_GLOBAL_DIR (or the older CONTINUE_GLOBAL_DIR) or point it outside the project.",
     );
   }
   const record = readTrust(file);

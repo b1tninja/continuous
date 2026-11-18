@@ -1,4 +1,6 @@
 import type { ToolPolicy } from "@continuedev/terminal-security";
+import { allowReading } from "core/tools/permissions/rules.js";
+import { resolveShell, type ShellKind } from "core/util/shell.js";
 
 import { ALL_BUILT_IN_TOOLS } from "src/tools/allBuiltIns.js";
 
@@ -126,12 +128,25 @@ function allowCommandPattern(
   return undefined;
 }
 
-/** True when every simple command matches the prefix. A hidden command does not. */
-function allowCoversCommand(pattern: string, command: string): boolean {
+/**
+ * True when every simple command matches the prefix. A hidden command does
+ * not, and neither does text the shell that runs it reads as other commands
+ * than the segments here (core's `allowReading`): PowerShell and cmd do not
+ * quote the way a POSIX shell does.
+ */
+export function allowCoversCommand(
+  pattern: string,
+  command: string,
+  shell: ShellKind = resolveShell().kind,
+): boolean {
   const segments = allowCommandSegments(command);
   if (!segments) return false;
+  const reading = allowReading(command, shell);
+  if (!reading.ok) return false;
   const regex = wildcardRegex(pattern);
-  return segments.every((segment) => regex.test(segment));
+  return [...segments, ...(reading.commands ?? [])].every((segment) =>
+    regex.test(segment),
+  );
 }
 
 /**

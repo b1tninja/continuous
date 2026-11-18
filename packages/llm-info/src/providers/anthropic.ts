@@ -65,6 +65,8 @@ export const Anthropic: ModelProvider = {
     },
     {
       model: "claude-sonnet-4-5-20250929",
+      // Stays "deprecated" past 2026-11-30: the notice reads "retired" from the
+      // date in core/util/modelRetirements.generated.json (rowStateOn).
       lifecycle: "deprecated",
       displayName: "Claude Sonnet 4.5",
       contextLength: 200000,

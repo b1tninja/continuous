@@ -1,6 +1,11 @@
 import * as fs from "fs";
 import * as path from "path";
 
+import {
+  guardInstructionFile,
+  type InstructionFileNotice,
+} from "core/config/markdown/instructionFiles.js";
+
 import { env } from "./env.js";
 
 /**
@@ -56,4 +61,32 @@ export function instructionFilesFingerprint(
     }
   }
   return stamps.sort().join("\n");
+}
+
+const warned = new Set<string>();
+
+/** Print each notice once per process: the message is rebuilt on every file change. */
+export function warnOnce(notice: InstructionFileNotice): void {
+  const key = JSON.stringify([notice.file, notice.message]);
+  if (warned.has(key)) return;
+  warned.add(key);
+  console.warn(`Warning: ${notice.message}`);
+}
+
+/**
+ * Read an agent or rule file as it goes into the system message: hidden
+ * characters removed, a secret warned about, cut at 32 KiB (the same guard
+ * as the IDE, `core/config/markdown/instructionFiles.ts`). The CLI has no
+ * Restricted Mode, so the file is always read. Throws as `readFileSync` does.
+ */
+export function readInstructionFile(
+  filePath: string,
+  warn: (notice: InstructionFileNotice) => void = warnOnce,
+): string {
+  const guarded = guardInstructionFile(
+    filePath,
+    fs.readFileSync(filePath, "utf-8"),
+  );
+  for (const notice of guarded.notices) warn(notice);
+  return guarded.content;
 }

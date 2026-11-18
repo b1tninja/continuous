@@ -36,11 +36,25 @@ const POWERSHELL_DISCARD = /^(\d?>\s*\$null|2>&1)(?=$|[\s|;&])/;
 const CMD_DISCARD = /^(2?>\s*nul|2>&1)(?=$|[\s|&])/i;
 
 /**
+ * PowerShell reads curly quotes as quotes (U+2018 to U+201E), an en dash, em
+ * dash or horizontal bar as the dash of a parameter, and any Unicode space as
+ * a space. This scanner knows the ASCII ones only, so curly double quotes
+ * around a `'`, then `; Remove-Item x ;`, then the same again would be one
+ * quoted word here and three commands there. A command holding one, anywhere,
+ * is not understood.
+ */
+const POWERSHELL_LOOKALIKE =
+  /[\u2018-\u201f\u2013-\u2015\u00a0\u0085\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff\v\f]/;
+
+/**
  * Scans a command in the grammar of the shell that will run it. POSIX
  * shells and PowerShell share one scanner with different rules; cmd has its
  * own, because `%VAR%` is expanded before cmd parses anything.
  */
 export function scanCommand(command: string, shell: ShellKind): ScanResult {
+  if (shell === "powershell" && POWERSHELL_LOOKALIKE.test(command)) {
+    return fail("a character PowerShell reads as a quote, a dash or a space");
+  }
   if (isPosixShell(shell) || shell === "powershell") {
     return scanSimple(command, shell);
   }

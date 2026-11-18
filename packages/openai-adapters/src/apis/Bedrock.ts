@@ -32,38 +32,10 @@ import {
 } from "openai/resources/index";
 
 import {
-  applyCrossRegionInference,
-  bedrockCachePartsForModel,
-  bedrockCachePoint,
-  bedrockCachePointAfterTextOnly,
-  bedrockCacheTtl,
-  bedrockFinishReason,
-  bedrockModelAccessMessage,
-  bedrockMinMaxTokens,
-  bedrockOmitUnsupportedInference,
-  bedrockRepairsStreamedToolInput,
-  bedrockReasoningFields,
-  bedrockSamplingParams,
-  bedrockStreamsToolInputCleanly,
-  bedrockToolsNeedNonStreaming,
-  bedrockUsageToCompletionUsage,
-  cleanReplyText,
-  createThinkingTagSplitter,
-  crossRegionFallbackModelId,
-  effortToBudgetTokens,
-  fillMissingToolResults,
-  flushDsmlHold,
-  getBedrockErrorHint,
-  holdBackDsmlMarker,
-  isInvalidModelIdentifierError,
-  isStreamingToolUseUnsupportedError,
-  leaksDsmlMarker,
-  normalizeToolUseIds,
-  repairStreamedToolInput,
-  ThinkingSplit,
-  ToolInputGate,
-  toolSchemaKeys,
-} from "./bedrockHelpers.js";
+  bedrockRefusedField,
+  converseRequestHasField,
+  converseRequestWithoutField,
+} from "@continuedev/llm-info";
 import { holdChunk } from "../dialects/holdSignal.js";
 import type { RecoveredCall } from "../dialects/qwenXml.js";
 import {
@@ -74,19 +46,41 @@ import {
   type TextToolRecovery,
 } from "../dialects/recovery.js";
 import {
-  bedrockRefusedField,
-  converseRequestHasField,
-  converseRequestWithoutField,
-} from "@continuedev/llm-info";
+  applyCrossRegionInference,
+  bedrockCachePartsForModel,
+  bedrockCachePoint,
+  bedrockCachePointAfterTextOnly,
+  bedrockCacheTtl,
+  bedrockFinishReason,
+  bedrockMinMaxTokens,
+  bedrockModelAccessMessage,
+  bedrockOmitUnsupportedInference,
+  bedrockReasoningFields,
+  bedrockRepairsStreamedToolInput,
+  bedrockSamplingParams,
+  bedrockStreamsToolInputCleanly,
+  bedrockToolsNeedNonStreaming,
+  bedrockUsageToCompletionUsage,
+  cleanReplyText,
+  createThinkingTagSplitter,
+  crossRegionFallbackModelId,
+  fillMissingToolResults,
+  flushDsmlHold,
+  getBedrockErrorHint,
+  holdBackDsmlMarker,
+  isInvalidModelIdentifierError,
+  isStreamingToolUseUnsupportedError,
+  leaksDsmlMarker,
+  normalizeToolUseIds,
+  repairConverseTurns,
+  repairStreamedToolInput,
+  ThinkingSplit,
+  ToolInputGate,
+  toolSchemaKeys,
+} from "./bedrockHelpers.js";
 
-import {
-  AutoCacheTtl,
-  isCachePinned,
-  optsOutOfPromptCache,
-  requestedCacheTtl,
-} from "./cacheTtl.js";
-import { recordFieldFallback, refusedFields } from "./fieldFallbacks.js";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
+import { fromStatic } from "@aws-sdk/token-providers";
 import {
   createAgentForUrl,
   defaultUseSystemCa,
@@ -94,7 +88,6 @@ import {
   needsCustomAgent,
 } from "@continuedev/fetch";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
-import { fromStatic } from "@aws-sdk/token-providers";
 import { BedrockConfig } from "../types.js";
 import {
   chatChunk,
@@ -111,6 +104,17 @@ import {
   FimCreateParamsStreaming,
   RerankCreateParams,
 } from "./base.js";
+import {
+  AutoCacheTtl,
+  isCachePinned,
+  optsOutOfPromptCache,
+  requestedCacheTtl,
+} from "./cacheTtl.js";
+import { recordFieldFallback, refusedFields } from "./fieldFallbacks.js";
+import {
+  reasoningSwitch,
+  requestedReasoningEffort,
+} from "./reasoningSwitch.js";
 
 import {
   isTaskListBlockText,
@@ -577,17 +581,21 @@ export class BedrockApi implements BaseLlmApi {
       pushCurrentMessage();
     }
 
+    // A turn that converted to nothing (a reply stopped before any text, say)
+    // would leave two user or two assistant messages in a row
+    const repaired = repairConverseTurns(converted);
+
     // If caching is enabled, add cache points
     if (cache?.conversation) {
       this._addCachingToLastTwoUserMessages(
-        converted,
+        repaired,
         cache.ttl,
         pinned,
         cache.afterTextOnly ?? false,
       );
     }
 
-    return converted;
+    return repaired;
   }
 
   /**
@@ -649,34 +657,23 @@ export class BedrockApi implements BaseLlmApi {
   }
 
   /**
-   * `reasoning_effort` from the OpenAI body as the reasoning switch: unset
-   * sends nothing, `none` turns reasoning off where a model takes an explicit
-   * off, and the others turn it on (`minimal` as low, `xhigh` and `max` as
-   * high, the most any Bedrock family accepts). The body wins; else the
-   * config's `requestOptions.extraBodyProperties.reasoning_effort` (a catalog
-   * variant, or a CLI use's `modeModels` effort) stands in, since the config
-   * has no reasoning field of its own.
+   * `reasoning_effort` from the OpenAI body as the reasoning switch
+   * (reasoningSwitch.ts): unset sends nothing, `none` turns reasoning off
+   * where a model takes an explicit off, and the others turn it on (`minimal`
+   * as low, `xhigh` and `max` as high, the most any Bedrock family accepts).
+   * The body wins over the config's `extraBodyProperties.reasoning_effort`.
    */
   private reasoningFromBody(oaiBody: ChatCompletionCreateParams): {
     reasoning: boolean | undefined;
     budgetTokens: number;
   } {
-    const fromConfig =
-      this.config.requestOptions?.extraBodyProperties?.reasoning_effort;
-    const effort =
-      oaiBody.reasoning_effort ??
-      (typeof fromConfig === "string"
-        ? (fromConfig as ChatCompletionCreateParams["reasoning_effort"])
-        : undefined);
-    if (!effort) return { reasoning: undefined, budgetTokens: 0 };
-    if (effort === "none") return { reasoning: false, budgetTokens: 0 };
-    const level =
-      effort === "minimal" || effort === "low"
-        ? "low"
-        : effort === "medium"
-          ? "medium"
-          : "high";
-    return { reasoning: true, budgetTokens: effortToBudgetTokens(level) };
+    const { reasoning, budgetTokens } = reasoningSwitch(
+      requestedReasoningEffort(
+        oaiBody,
+        this.config.requestOptions?.extraBodyProperties,
+      ),
+    );
+    return { reasoning, budgetTokens };
   }
 
   private _convertBody(
@@ -1276,6 +1273,10 @@ export class BedrockApi implements BaseLlmApi {
       // Each toolUse block gets its own tool_calls index, so a reply with
       // several calls is not merged into one.
       let toolIndex = -1;
+      // The tool_calls index of each toolUse block, by contentBlockIndex, so
+      // an input fragment goes to its own call (fragments carry only the
+      // block index; the id comes with the start)
+      const toolIndexByBlock = new Map<number, number>();
       // A toolUse block is held until its input is known to parse (see
       // ToolInputGate): a model that streams it broken is retried once
       // through Converse, before any of it has reached the caller.
@@ -1374,15 +1375,22 @@ export class BedrockApi implements BaseLlmApi {
             continue;
           }
 
-          // Handle tool use
+          // Handle tool use. A fragment belongs to the call its block
+          // started (contentBlockIndex), not to the newest call: with parallel
+          // calls their fragments can interleave
           if (delta.toolUse) {
+            const blockIndex = chunk.contentBlockDelta?.contentBlockIndex;
+            const callIndex =
+              (blockIndex === undefined
+                ? undefined
+                : toolIndexByBlock.get(blockIndex)) ?? Math.max(toolIndex, 0);
             const fragment = chatChunkFromDelta({
               model: body.model,
               id,
               delta: {
                 tool_calls: [
                   {
-                    index: Math.max(toolIndex, 0),
+                    index: callIndex,
                     id: delta.toolUse.toolUseId,
                     type: "function",
                     function: {
@@ -1403,6 +1411,10 @@ export class BedrockApi implements BaseLlmApi {
 
           if (start.toolUse) {
             toolIndex++;
+            const startedBlock = chunk.contentBlockStart.contentBlockIndex;
+            if (startedBlock !== undefined) {
+              toolIndexByBlock.set(startedBlock, toolIndex);
+            }
             toolName = start.toolUse.name;
             const opened = chatChunkFromDelta({
               model: body.model,

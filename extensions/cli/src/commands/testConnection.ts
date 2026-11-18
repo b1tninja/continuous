@@ -11,7 +11,9 @@
  * paste: nothing is changed automatically. With `--provider anthropic` it
  * lists models with the user's own key (ANTHROPIC_API_KEY, or the variable
  * named by --api-key-env) and, with --model, warns when that model is deprecated
- * or retiring (core/util/anthropicSurfaceTest.ts).
+ * or retiring (core/util/anthropicSurfaceTest.ts). With --model the id itself
+ * is checked (`GET /models/{id}`): an id the key cannot reach is named with
+ * close matches from the list (core/util/providerModelLookup.ts).
  */
 
 import {
@@ -47,6 +49,15 @@ export function formatTestResult(
       r.models.length ? `: ${r.models.slice(0, 10).join(", ")}` : ""
     }${r.models.length > 10 ? ", ..." : ""}`,
   ];
+  if (r.modelCheck) {
+    lines.push(
+      r.modelCheck.status === "found"
+        ? `Model: ${r.modelCheck.summary}`
+        : r.modelCheck.status === "not-found"
+          ? `Warning: ${r.modelCheck.message}`
+          : `Model not checked: ${r.modelCheck.message}`,
+    );
+  }
   if (r.probe) {
     lines.push(
       r.probe.ok
@@ -110,6 +121,7 @@ export async function testConnectionCommand(
     apiBase: options.apiBase,
     apiKey,
     model: options.model,
+    checkModel: options.model,
     fetchFn: options.fetchFn,
     record: options.record !== false,
     measuredFile: options.measuredFile,

@@ -5,7 +5,10 @@ import { ToolCallTitle } from "src/tools/ToolCallTitle.js";
 
 import type { ChatHistoryItem } from "../../../../../core/index.js";
 import { MarkdownRenderer } from "../MarkdownRenderer.js";
+import type { ThinkingDisplay } from "../thinkingDisplay.js";
 import { ToolResultSummary } from "../ToolResultSummary.js";
+
+import { ThoughtLine } from "./ThinkingBlock.js";
 
 /**
  * Formats message content for display, converting message parts array back to
@@ -45,14 +48,30 @@ interface MemoizedMessageProps {
   item: ChatHistoryItem;
   index: number;
   hideBullet?: boolean;
+  /** How a reply's reasoning shows (thinkingDisplay.ts); default `fold`. */
+  thinkingDisplay?: ThinkingDisplay;
 }
 
 export const MemoizedMessage = memo<MemoizedMessageProps>(
-  ({ item, index, hideBullet = false }) => {
+  ({ item, index, hideBullet = false, thinkingDisplay = "fold" }) => {
     const { message, toolCallStates, conversationSummary } = item;
     const isUser = message.role === "user";
     const isSystem = message.role === "system";
     const isAssistant = message.role === "assistant";
+
+    // The reply's reasoning, folded to one line above it
+    const reasoning =
+      isAssistant && thinkingDisplay !== "hide" && item.reasoning?.text?.trim()
+        ? item.reasoning
+        : undefined;
+    const thought = reasoning ? (
+      <ThoughtLine
+        text={reasoning.text}
+        startAt={reasoning.startAt}
+        endAt={reasoning.endAt}
+        expanded={thinkingDisplay === "expanded"}
+      />
+    ) : null;
 
     // Handle system messages
     if (isSystem) {
@@ -84,6 +103,7 @@ export const MemoizedMessage = memo<MemoizedMessageProps>(
     if (toolCallStates && toolCallStates.length > 0) {
       return (
         <Box key={index} flexDirection="column">
+          {thought}
           {/* Render assistant message content if any */}
           {message.content && (
             <Box marginBottom={1}>
@@ -162,7 +182,7 @@ export const MemoizedMessage = memo<MemoizedMessageProps>(
     // Handle regular messages
     const isStreaming = isAssistant && !message.content && !toolCallStates;
 
-    return (
+    const body = (
       <Box key={index} marginBottom={1}>
         <Text color={isUser ? "blue" : "white"}>{hideBullet ? " " : "●"}</Text>
         <Text> </Text>
@@ -177,6 +197,15 @@ export const MemoizedMessage = memo<MemoizedMessageProps>(
         )}
         {isStreaming && <Text color="dim">▋</Text>}
       </Box>
+    );
+
+    return thought ? (
+      <Box key={index} flexDirection="column">
+        {thought}
+        {body}
+      </Box>
+    ) : (
+      body
     );
   },
   (prevProps, nextProps) => {
@@ -194,7 +223,9 @@ export const MemoizedMessage = memo<MemoizedMessageProps>(
       prevProps.item.conversationSummary ===
         nextProps.item.conversationSummary &&
       prevProps.index === nextProps.index &&
-      prevProps.hideBullet === nextProps.hideBullet
+      prevProps.hideBullet === nextProps.hideBullet &&
+      prevProps.thinkingDisplay === nextProps.thinkingDisplay &&
+      prevProps.item.reasoning?.text === nextProps.item.reasoning?.text
     );
   },
 );

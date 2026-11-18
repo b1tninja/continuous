@@ -46,13 +46,24 @@ export function getRepoInfo(remoteUrl?: string): {
   };
 }
 
+export type RepoInfo = ReturnType<typeof getRepoInfo>;
+
 // Helper function to get responsive repo URL text based on available width
 export function getResponsiveRepoText(
   remoteUrl?: string,
   availableWidth: number = 0,
 ): string {
-  const repoInfo = getRepoInfo(remoteUrl);
+  return formatRepoText(getRepoInfo(remoteUrl), availableWidth);
+}
 
+/**
+ * The repo text for a width, from repo info already read. Runs no git: the
+ * status bar reads the info once and calls this on every resize.
+ */
+export function formatRepoText(
+  repoInfo: RepoInfo,
+  availableWidth: number = 0,
+): string {
   // If no available width provided, show nothing
   if (availableWidth <= 0) {
     return "";

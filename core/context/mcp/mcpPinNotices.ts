@@ -55,3 +55,33 @@ export function announcePins(
     // the audit never blocks a call
   }
 }
+
+/**
+ * A trusted server's new or changed tools were pinned on sight (TR24): say
+ * so and write it to the audit trail, since nobody approved them one by one.
+ * Never throws.
+ */
+export function announceTrustedApproval(
+  server: string,
+  tools: readonly string[],
+  sink: string[],
+  print: (message: string) => void = (m) => console.warn(m),
+): void {
+  if (!tools.length) return;
+  const notice = `MCP server ${server} is trusted in your permissions.yaml, so its new or changed tools were approved as listed: ${tools.join(", ")}.`;
+  sink.push(notice);
+  print(notice);
+  try {
+    getAuditTrail().decision({
+      callId: `mcp-trusted-${server}-${Date.now()}`,
+      tool: `mcp:${server}`,
+      args: JSON.stringify({ server, tools }),
+      policy: "allow",
+      by: "system",
+      source: "mcp-trusted-server",
+      reason: `trusted server: new or changed tools pinned on sight (${tools.join(", ")})`,
+    });
+  } catch {
+    // the audit never blocks a call
+  }
+}

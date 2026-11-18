@@ -1,4 +1,10 @@
 import type { ContextItem } from "../..";
+import {
+  HIDDEN_CHARACTERS_EXCEPT_TAGS,
+  hasSmugglingCharacters,
+  stripHiddenCharacters,
+} from "../../util/hiddenCharacters";
+import { BuiltInToolNames } from "../builtIn";
 
 /**
  * Client-side prompt-injection hint (plan section 7.4). Anthropic's auto mode
@@ -7,7 +13,8 @@ import type { ContextItem } from "../..";
  * it. It is a hint, not a guarantee: a determined attacker can word things
  * so none of these patterns match, and ordinary text can match by accident.
  * It never blocks anything and never changes what a tool returns beyond the
- * notice.
+ * notice, with one exception a host opts into: an MCP result or a file read
+ * flagged for hidden characters has them removed (`FlagOptions.stripHidden`).
  */
 
 /** Start of the notice. The reviewer history uses it to see that an output was flagged. */
@@ -84,7 +91,10 @@ const PATTERNS: Pattern[] = [
   {
     id: "claims-authority",
     label: "claims to speak for the user or to hold the user's approval",
-    re: /\bmessage\s+(from|by)\s+the\s+(user|developer|system|administrator|admin)\s*:|\bthe\s+user\s+(has|have)\s+(already\s+)?(authori[sz]ed|approved|allowed|granted|permitted)\b/i,
+    // The last branch is the tag a subagent's messages from the person or
+    // from another agent come in: only ever a user message from the harness,
+    // never tool output
+    re: /\bmessage\s+(from|by)\s+the\s+(user|developer|system|administrator|admin)\s*:|\bthe\s+user\s+(has|have)\s+(already\s+)?(authori[sz]ed|approved|allowed|granted|permitted)\b|<\s*message\s+from\s*=\s*["']?(person|agent)\b/i,
   },
   {
     id: "weaken-approval",
@@ -130,7 +140,7 @@ export function detectInstructionLikeText(text: string): InjectionMatch[] {
   const found = PATTERNS.filter((p) => p.re.test(seen)).map(
     ({ id, label }) => ({ id, label }),
   );
-  if (HIDDEN_UNICODE.test(text)) {
+  if (hasSmugglingCharacters(text)) {
     found.push({
       id: "hidden-unicode",
       label:
@@ -139,9 +149,6 @@ export function detectInstructionLikeText(text: string): InjectionMatch[] {
   }
   return found;
 }
-
-/** Unicode tag characters (the U+E0000 block) and bidirectional overrides. */
-const HIDDEN_UNICODE = /[\u{E0000}-\u{E007F}\u202A-\u202E\u2066-\u2069]/u;
 
 /**
  * The text as the patterns see it: compatibility-normalised, with soft
@@ -153,10 +160,7 @@ const HIDDEN_UNICODE = /[\u{E0000}-\u{E007F}\u202A-\u202E\u2066-\u2069]/u;
 export function normalizeForDetection(text: string): string {
   return text
     .normalize("NFKC")
-    .replace(
-      /[\u00AD\u200B-\u200F\u2060-\u2064\uFEFF\u202A-\u202E\u2066-\u2069]/g,
-      "",
-    )
+    .replace(HIDDEN_CHARACTERS_EXCEPT_TAGS, "")
     .replace(
       /[\u{E0020}-\u{E007E}]+/gu,
       (run) =>
@@ -183,16 +187,57 @@ export function isFlaggedOutput(text: string | undefined): boolean {
   return !!text?.startsWith(INJECTION_NOTICE_MARKER);
 }
 
+/** What a host may ask of the flagging, beyond the notice. */
+export interface FlagOptions {
+  /**
+   * Remove hidden characters from output the detector flagged for them
+   * (`hidden-unicode`). Hosts set it for MCP results and file reads
+   * (`stripsHiddenCharacters`). Output that is not flagged for them is
+   * returned as it was, so ordinary text, and its display, do not change.
+   */
+  stripHidden?: boolean;
+}
+
+const FILE_READ_TOOLS = new Set<string>([
+  BuiltInToolNames.ReadFile,
+  BuiltInToolNames.ReadFileRange,
+  BuiltInToolNames.ReadCurrentlyOpenFile,
+  // The CLI's read tool
+  "Read",
+]);
+
+/** Whether a tool's flagged output has its hidden characters removed: MCP results and file reads. */
+export function stripsHiddenCharacters(
+  toolName: string,
+  uri?: string,
+): boolean {
+  return !!uri?.startsWith("mcp:") || FILE_READ_TOOLS.has(toolName);
+}
+
+function flaggedText(
+  text: string,
+  matches: InjectionMatch[],
+  options: FlagOptions,
+): string {
+  const hidden = matches.some((m) => m.id === "hidden-unicode");
+  const body =
+    hidden && options.stripHidden ? stripHiddenCharacters(text) : text;
+  return injectionNotice(matches) + body;
+}
+
 /**
  * The same notice for a tool result that is one string, as the CLI keeps it.
  * Text that does not match, or that already carries the notice, is returned
  * as it was.
  */
-export function flagToolText(text: string): { text: string; flagged: boolean } {
+export function flagToolText(
+  text: string,
+  options: FlagOptions = {},
+): { text: string; flagged: boolean } {
   if (isFlaggedOutput(text)) return { text, flagged: false };
   const matches = detectInstructionLikeText(text);
   if (matches.length === 0) return { text, flagged: false };
-  return { text: injectionNotice(matches) + text, flagged: true };
+  return { text: flaggedText(text, matches, options), flagged: true };
 }
 
 /**
@@ -200,7 +245,10 @@ export function flagToolText(text: string): { text: string; flagged: boolean } {
  * instructions. Items that do not match, and items already flagged, are
  * returned as they were.
  */
-export function flagToolOutput(items: ContextItem[]): {
+export function flagToolOutput(
+  items: ContextItem[],
+  options: FlagOptions = {},
+): {
   items: ContextItem[];
   flagged: boolean;
 } {
@@ -210,7 +258,7 @@ export function flagToolOutput(items: ContextItem[]): {
     const matches = detectInstructionLikeText(item.content);
     if (matches.length === 0) return item;
     flagged = true;
-    return { ...item, content: injectionNotice(matches) + item.content };
+    return { ...item, content: flaggedText(item.content, matches, options) };
   });
   return { items: flagged ? out : items, flagged };
 }

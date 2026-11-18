@@ -7,18 +7,25 @@ import {
 } from "@heroicons/react/24/outline";
 import { useContext, useEffect, useMemo, useState } from "react";
 
+import { parseContextOverflow } from "core/llm/contextOverflow";
+import { parseMissingSecretNames } from "core/util/unresolvedSecrets";
 import { GhostButton } from "../../components";
 import { MissingSecretsPanel } from "../../components/config/MissingSecretsPanel";
 import { useEditModel } from "../../components/mainInput/Lump/useEditBlock";
 import { useMainEditor } from "../../components/mainInput/TipTapEditor";
+import { OPEN_MODEL_SELECT_EVENT } from "../../components/modelSelection/ModelSelect";
 import ToggleDiv from "../../components/ToggleDiv";
 import { useAuth } from "../../context/Auth";
 import { IdeMessengerContext } from "../../context/IdeMessenger";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import { selectSelectedChatModel } from "../../redux/slices/configSlice";
+import { newSession } from "../../redux/slices/sessionSlice";
 import { setDialogMessage, setShowDialog } from "../../redux/slices/uiSlice";
-import { streamResponseThunk } from "../../redux/thunks/streamResponse";
-import { OPEN_MODEL_SELECT_EVENT } from "../../components/modelSelection/ModelSelect";
+import {
+  inputHasText,
+  retryFailedRequest,
+  retryPlanFor,
+} from "../../redux/thunks/retryFailedRequest";
 import { analyzeError } from "../../util/errorAnalysis";
 import {
   describeTransientFailure,
@@ -26,7 +33,6 @@ import {
   MAX_AUTO_RETRY_SECONDS,
   transientFailure,
 } from "../../util/transientFailure";
-import { parseMissingSecretNames } from "core/util/unresolvedSecrets";
 
 interface StreamErrorProps {
   error: unknown;
@@ -151,36 +157,13 @@ const StreamErrorDialog = ({ error }: StreamErrorProps) => {
     dispatch(setDialogMessage(undefined));
   };
 
+  // Sends what failed again without rewriting the conversation
+  // (retryFailedRequest): a failed new message is back in the input
   const resubmit = () => {
-    let index = -1;
-    for (let i = history.length - 1; i >= 0; i--) {
-      if (
-        history[i].message.role === "user" ||
-        history[i].message.role === "tool"
-      ) {
-        index = i;
-        break;
-      }
-    }
-
-    if (!mainEditor) {
-      console.error("Main editor not found, cannot resubmit message.");
-      return;
-    }
-
-    const editorState =
-      index === -1 ? mainEditor.getJSON() : history[index].editorState;
-
-    void dispatch(
-      streamResponseThunk({
-        editorState,
-        modifiers: {
-          noContext: true,
-          useCodebase: false,
-        },
-        index: index === -1 ? 0 : index,
-      }),
-    );
+    const input = mainEditor?.getJSON();
+    const plan = retryPlanFor(history, inputHasText(input));
+    void dispatch(retryFailedRequest({ input }));
+    if (plan.kind === "send-input") mainEditor?.commands.clearContent(false);
     closeDialog();
   };
 
@@ -314,6 +297,45 @@ const StreamErrorDialog = ({ error }: StreamErrorProps) => {
             <code>{selectedModel.underlyingProviderName}</code>
           </span>
         ) : null}
+      </div>
+    );
+  }
+
+  // The prompt was longer than the model takes. Our count is an estimate;
+  // core has now learned how far off it was (contextOverflow.ts), so trying
+  // again drops more of the oldest history and fits. Compacting would send
+  // the same too-long conversation to be summarised, so it is not offered.
+  const overflow = message ? parseContextOverflow(message) : undefined;
+  if (overflow && !customErrorMessage) {
+    const fmt = (n?: number) => (n ? n.toLocaleString() : undefined);
+    const sizes =
+      overflow.actualTokens && overflow.maxTokens
+        ? ` (${fmt(overflow.actualTokens)} tokens; the limit is ${fmt(overflow.maxTokens)})`
+        : "";
+    errorContent = (
+      <div className="flex flex-col gap-2" data-testid="context-overflow">
+        <span>
+          {`The conversation is too long for ${selectedModel?.title ?? "this model"}${sizes}.`}
+        </span>
+        <span className="text-description-muted">
+          Trying again leaves out more of the oldest messages so it fits. A new
+          session starts with an empty context. Your message is kept.
+        </span>
+        <div className="flex flex-row flex-wrap justify-start gap-3 py-2">
+          <GhostButton className="flex items-center" onClick={resubmit}>
+            <ArrowPathIcon className="mr-1.5 h-3.5 w-3.5" />
+            <span>Try again</span>
+          </GhostButton>
+          <GhostButton
+            className="flex items-center"
+            onClick={() => {
+              closeDialog();
+              dispatch(newSession());
+            }}
+          >
+            <span>New session</span>
+          </GhostButton>
+        </div>
       </div>
     );
   }

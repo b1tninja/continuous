@@ -11,6 +11,7 @@ import {
   renderFlow,
   resetFlowState,
   ScriptedLlm,
+  stopWithEsc,
   textTurn,
   tick,
   toolTurn,
@@ -330,8 +331,9 @@ describe("TUIChat - message queue and steering", () => {
       await type(ui.stdin, ENTER);
       expect(messageQueue.getQueueLength()).toBe(1);
 
-      // Esc stops the agent; two more open the edit picker
-      await type(ui.stdin, ESC);
+      // Esc (and Enter, to the question) stops the agent; two more Esc open
+      // the edit picker
+      await stopWithEsc(ui.stdin);
       await waitUntil(
         () => messageQueue.isPaused(),
         "the queue to pause",
@@ -385,7 +387,7 @@ describe("TUIChat - message queue and steering", () => {
 
       await type(ui.stdin, "queued while working");
       await type(ui.stdin, ENTER);
-      await type(ui.stdin, ESC);
+      await stopWithEsc(ui.stdin);
 
       await waitUntil(
         () => (ui.lastFrame() ?? "").includes("paused"),
@@ -431,7 +433,7 @@ describe("TUIChat - message queue and steering", () => {
       await first.started;
       await type(ui.stdin, "keep this");
       await type(ui.stdin, ENTER);
-      await type(ui.stdin, ESC);
+      await stopWithEsc(ui.stdin);
       await waitUntil(
         () => messageQueue.isPaused(),
         "the queue to pause",

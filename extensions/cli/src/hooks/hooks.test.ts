@@ -68,13 +68,19 @@ describe("hookConfig", () => {
       );
     });
 
-    it("matches partial regex", () => {
+    it("matches a regex anywhere, and a plain name only exactly", () => {
       const config: HooksConfig = {
-        PreToolUse: [{ matcher: "File", hooks: baseGroup.hooks }],
+        PreToolUse: [{ matcher: ".*File", hooks: baseGroup.hooks }],
       };
       expect(
         getMatchingHookGroups(config, "PreToolUse", "ReadFile"),
       ).toHaveLength(1);
+      const plain: HooksConfig = {
+        PreToolUse: [{ matcher: "File", hooks: baseGroup.hooks }],
+      };
+      expect(
+        getMatchingHookGroups(plain, "PreToolUse", "ReadFile"),
+      ).toHaveLength(0);
       expect(getMatchingHookGroups(config, "PreToolUse", "Bash")).toHaveLength(
         0,
       );
@@ -103,13 +109,13 @@ describe("hookConfig", () => {
       expect(result).toHaveLength(2);
     });
 
-    it("handles invalid regex gracefully", () => {
+    it("runs the hook when the matcher is not a valid regex (fail closed)", () => {
       const config: HooksConfig = {
         PreToolUse: [{ matcher: "[invalid", hooks: baseGroup.hooks }],
       };
-      // Invalid regex should not match
+      // A matcher that does not compile must not disable a guard hook
       expect(getMatchingHookGroups(config, "PreToolUse", "Bash")).toHaveLength(
-        0,
+        1,
       );
     });
 
