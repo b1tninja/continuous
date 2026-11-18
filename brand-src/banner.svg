@@ -4,28 +4,16 @@
       <stop offset="0" stop-color="#4F46E5"/>
       <stop offset="1" stop-color="#1E1B4B"/>
     </linearGradient>
-    <!-- The mark's own gradients, copied from mark.svg (ids prefixed so they do not clash with bg) -->
-    <linearGradient id="mark-bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#312E81"/>
-      <stop offset="1" stop-color="#1E1B4B"/>
-    </linearGradient>
-    <linearGradient id="mark-shine" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.16"/>
-      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
-    </linearGradient>
-    <linearGradient id="mark-loop" gradientUnits="userSpaceOnUse" x1="100" y1="0" x2="412" y2="0">
-      <stop offset="0" stop-color="#6366F1"/>
-      <stop offset="0.5" stop-color="#818CF8"/>
-      <stop offset="1" stop-color="#A78BFA"/>
-    </linearGradient>
+    <linearGradient id="mbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1B2455"/><stop offset="1" stop-color="#150F3D"/></linearGradient>
+    <linearGradient id="loop" gradientUnits="userSpaceOnUse" x1="100" y1="0" x2="412" y2="0"><stop offset="0" stop-color="#3B82F6"/><stop offset="0.5" stop-color="#818CF8"/><stop offset="1" stop-color="#A78BFA"/></linearGradient>
+    <linearGradient id="edge" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="512" y2="512"><stop offset="0" stop-color="#4C8DFF"/><stop offset="0.55" stop-color="#8B7CF6"/><stop offset="1" stop-color="#A78BFA"/></linearGradient>
+    <filter id="glow" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="6"/></filter>
   </defs>
   <rect width="1600" height="800" fill="url(#bg)"/>
   <!-- The mark from mark.svg, scaled to 320px and centred vertically on the left -->
   <g transform="translate(120 240) scale(0.625)">
-    <rect x="24" y="24" width="464" height="464" rx="108" fill="url(#mark-bg)"/>
-    <rect x="24" y="24" width="464" height="464" rx="108" fill="url(#mark-shine)"/>
-    <path d="M256 256 C300 172 412 172 412 256 C412 340 300 340 256 256 C212 172 100 172 100 256 C100 340 212 340 256 256 Z" fill="none" stroke="url(#mark-loop)" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="350.5" cy="193" r="30" fill="#67E8F9"/>
+<rect x="16" y="16" width="480" height="480" rx="112" fill="url(#mbg)"/><rect x="28" y="28" width="456" height="456" rx="96" fill="none" stroke="url(#edge)" stroke-width="10" filter="url(#glow)" opacity="0.7"/><rect x="28" y="28" width="456" height="456" rx="96" fill="none" stroke="url(#edge)" stroke-width="5"/>
+<path d="M256 256 C300 172 412 172 412 256 C412 340 300 340 256 256 C212 172 100 172 100 256 C100 340 212 340 256 256 Z" fill="none" stroke="url(#loop)" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
   <text x="520" y="380" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="150" font-weight="600" fill="#EEF2FF">Continuous</text>
   <text x="524" y="470" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="46" fill="#A5F3FC">AI code agent for VS Code, community fork</text>
