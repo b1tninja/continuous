@@ -234,12 +234,13 @@ export function workspaceIdentityBlock(input: WorkspaceIdentityInput): string {
     for (const label of labels) {
       lines.push(`- ${sanitizeValue(label, L.maxNameChars).text}`);
     }
-    if (input.roots.length > L.maxRoots) {
-      lines.push(`- ... and ${input.roots.length - L.maxRoots} more`);
-    }
   } else {
     lines.push("Workspace folders: none open");
   }
+  const omittedRoots =
+    input.roots.length > L.maxRoots
+      ? `- ... and ${input.roots.length - L.maxRoots} more`
+      : undefined;
   if (input.repoName) {
     lines.push(
       `Repository: ${sanitizeValue(input.repoName, L.maxNameChars).text}`,
@@ -250,11 +251,20 @@ export function workspaceIdentityBlock(input: WorkspaceIdentityInput): string {
       `Branch at the start of the session: ${sanitizeValue(input.branch, L.maxNameChars).text}`,
     );
   }
-  const body = capBlock(
-    lines,
-    L.maxIdentityChars,
-    (n) => `... ${n} more lines not shown`,
-  );
+  // A long root name carries its own cut notice, so the character cap can
+  // land before the "and N more" line. Hold that line back and leave room
+  // for it, or a full window of roots would hide how many were left out.
+  const omittedNote = (n: number) => `... ${n} more lines not shown`;
+  const identityBudget = omittedRoots
+    ? L.maxIdentityChars - omittedRoots.length - 1
+    : L.maxIdentityChars;
+  let body = capBlock(lines, identityBudget, omittedNote);
+  if (
+    omittedRoots &&
+    body.length + 1 + omittedRoots.length <= L.maxIdentityChars
+  ) {
+    body = `${body}\n${omittedRoots}`;
+  }
   return `<context name="environment">\n${body}\n</context>`;
 }
 
