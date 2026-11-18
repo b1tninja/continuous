@@ -1,0 +1,5 @@
+```shell
+curl https://cli.sentry.dev/install -fsS | bash
+sentry auth login
+claude mcp add sentry -- sentry mcp
+```

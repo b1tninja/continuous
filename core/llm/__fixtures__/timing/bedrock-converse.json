@@ -1,0 +1,32 @@
+{
+  "_comment": "What core/llm/llms/Bedrock.ts yields for a ConverseStream: reasoning, text, then the metadata event's usage with metrics.latencyMs ('the latency for the streaming request, in milliseconds', ConverseStreamMetrics) as usage.response.latencyMs. `at` is milliseconds after the request was sent. Synthesized; no API was called.",
+  "events": [
+    {
+      "at": 1600,
+      "message": {
+        "role": "thinking",
+        "content": "Checking the two files first."
+      }
+    },
+    {
+      "at": 2000,
+      "message": { "role": "thinking", "content": "", "signature": "sig" }
+    },
+    {
+      "at": 2100,
+      "message": { "role": "assistant", "content": "Both files agree." }
+    },
+    {
+      "at": 21600,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "usage": {
+          "promptTokens": 30000,
+          "completionTokens": 1220,
+          "response": { "stopReason": "end_turn", "latencyMs": 21400 }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,121 @@
+{
+  "_comment": [
+    "A long local session on Strata, as the chat's ledger records it: each request's usage (prompt tokens, and the cached part as Strata's reused count) and how long its prompt took. Derived from metrics-2026-11-15-live.trimmed.json (one read-only GET of the local server's /metrics on 2026-11-15, trimmed to counts), oldest first; no text.",
+    "head is the pinned root checkpoint every forced re-read fell back to (the system prompt and tools).",
+    "afterCompaction is null: no compaction was run on the owner's server for this fixture, because that would have sent requests to it while it was in use. The C106 live check records it (the pre-warm and the first request after it); until then the test of the switch-over is a todo."
+  ],
+  "source": "metrics-2026-11-15-live.trimmed.json",
+  "window": 524288,
+  "head": 16384,
+  "requests": [
+    {
+      "id": "bff5557b40a0",
+      "usage": {
+        "promptTokens": 415446,
+        "cachedTokens": 16384
+      },
+      "promptMs": 87606.3,
+      "outputTokens": 751
+    },
+    {
+      "id": "455ab0cacba7",
+      "usage": {
+        "promptTokens": 416843,
+        "cachedTokens": 16384
+      },
+      "promptMs": 86884.7,
+      "outputTokens": 54
+    },
+    {
+      "id": "cb453748afa7",
+      "usage": {
+        "promptTokens": 417232,
+        "cachedTokens": 416896
+      },
+      "promptMs": 956.4,
+      "outputTokens": 943
+    },
+    {
+      "id": "f0c968e19672",
+      "usage": {
+        "promptTokens": 418214,
+        "cachedTokens": 418174
+      },
+      "promptMs": 741.2,
+      "outputTokens": 107
+    },
+    {
+      "id": "29f520cdf847",
+      "usage": {
+        "promptTokens": 417856,
+        "cachedTokens": 16384
+      },
+      "promptMs": 86358.2,
+      "outputTokens": 729
+    },
+    {
+      "id": "105fe6631cf5",
+      "usage": {
+        "promptTokens": 419231,
+        "cachedTokens": 16384
+      },
+      "promptMs": 88422.4,
+      "outputTokens": 53
+    },
+    {
+      "id": "24bf0d181ca7",
+      "usage": {
+        "promptTokens": 418893,
+        "cachedTokens": 16384
+      },
+      "promptMs": 88302.6,
+      "outputTokens": 342
+    },
+    {
+      "id": "a7eddfabfaab",
+      "usage": {
+        "promptTokens": 419930,
+        "cachedTokens": 16384
+      },
+      "promptMs": 87623.4,
+      "outputTokens": 744
+    },
+    {
+      "id": "a53232850caf",
+      "usage": {
+        "promptTokens": 420713,
+        "cachedTokens": 420675
+      },
+      "promptMs": 687.4,
+      "outputTokens": 93
+    },
+    {
+      "id": "558c4e84dbcc",
+      "usage": {
+        "promptTokens": 420336,
+        "cachedTokens": 16384
+      },
+      "promptMs": 88306.4,
+      "outputTokens": 191
+    },
+    {
+      "id": "0130dcd747fd",
+      "usage": {
+        "promptTokens": 421231,
+        "cachedTokens": 16384
+      },
+      "promptMs": 86583.8,
+      "outputTokens": 118
+    },
+    {
+      "id": "9e8c86cf5fc7",
+      "usage": {
+        "promptTokens": 421597,
+        "cachedTokens": 421349
+      },
+      "promptMs": 905.3,
+      "outputTokens": 98
+    }
+  ],
+  "afterCompaction": null
+}

@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 
+import { writeFileAtomicSync } from "core/util/atomicWrite.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -38,6 +39,9 @@ vi.mock("./writeFile.js", () => ({
   generateDiff: vi.fn().mockReturnValue("mocked diff"),
 }));
 
+vi.mock("core/util/atomicWrite.js", () => ({
+  writeFileAtomicSync: vi.fn(),
+}));
 vi.mock("fs", async () => {
   const actual = await vi.importActual("fs");
   return {
@@ -60,7 +64,7 @@ describe("multiEditTool CLI specific", () => {
     // Mock fs functions to simulate file operations
     vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.readFileSync).mockReturnValue(originalContent);
-    vi.mocked(fs.writeFileSync).mockImplementation(() => {});
+    vi.mocked(writeFileAtomicSync).mockImplementation(() => {});
     vi.mocked(fs.realpathSync).mockImplementation((path) => path.toString());
 
     // Setup utility mocks with proper return values
@@ -174,10 +178,9 @@ describe("multiEditTool CLI specific", () => {
       expect(result).toBe(
         `Successfully edited ${testFilePath} with 1 edit\nDiff:\nmocked diff`,
       );
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect(writeFileAtomicSync).toHaveBeenCalledWith(
         testFilePath,
         newContent,
-        "utf-8",
       );
     });
 
@@ -197,7 +200,7 @@ describe("multiEditTool CLI specific", () => {
     });
 
     it("should throw error if file write fails", async () => {
-      vi.mocked(fs.writeFileSync).mockImplementation(() => {
+      vi.mocked(writeFileAtomicSync).mockImplementation(() => {
         throw new Error("Write failed");
       });
 
@@ -412,7 +415,7 @@ describe("multiEditTool outside the working directory by File edits level", () =
       edits: [{ old_string: "Hello", new_string: "Hi" }],
     });
     const message = await multiEditTool.run(prepared.args);
-    expect(fs.writeFileSync).toHaveBeenCalled();
+    expect(writeFileAtomicSync).toHaveBeenCalled();
     expect(message).toContain(`Wrote outside the workspace: ${outsidePath}`);
   });
 

@@ -1,0 +1,71 @@
+---
+title: "Headless output"
+description: "The event stream of continuous -p --format stream-json: one JSON object per line, versioned, masked."
+---
+
+`continuous -p` prints the final answer. Two flags change what goes to stdout:
+
+| Flag                    | stdout                                                                                       |
+| ----------------------- | -------------------------------------------------------------------------------------------- |
+| (none)                  | The final answer as text.                                                                    |
+| `--format json`         | The final answer as one JSON value (the answer itself when it is JSON, else wrapped).        |
+| `--format stream-json`  | One JSON object per line, from the start of the run to its end. Nothing else goes to stdout. |
+
+```bash
+continuous -p --format stream-json "fix the failing test" | jq -c 'select(.type == "tool_decision")'
+```
+
+## The stream
+
+Each line is a complete JSON object followed by `\n`, UTF-8, as [JSON Lines](https://jsonlines.org/) describes. Notices, warnings and errors meant for a person go to stderr. The schema is checked into the repository as [`extensions/cli/spec/stream-json.schema.json`](https://github.com/b1tninja/continuous/blob/main/extensions/cli/spec/stream-json.schema.json), and a test fails when the TypeScript type and the schema disagree.
+
+Every line has `type`, `seq` (1, 2, 3 ... with no gaps) and `time` (ISO 8601, UTC).
+
+| `type`          | When                                                                       | Fields                                                                                                                                   |
+| --------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `init`          | First line of every run that got as far as loading a model                 | `schemaVersion`, `sessionId`, `cliVersion`, `model`, `provider`, `cwd`, `mode`, `reasoningEffort` (when the requests carry one), `limits` (when a run limit is set) |
+| `model`         | The model or reasoning effort changed after `init`, once per change         | `model` (the API id), `provider`, `name` (as in `models:`), `reasoningEffort` (when the requests carry one), `reason` (`use`: a `modeModels` entry; `item`: a Loop item's own model; `manual`; `restore`; `subagent`: a subagent's own model), `use`, `agent` (the subagent), `fallbackReason` (why the model asked for is not the one that runs) |
+| `usage`         | After each model request                                                   | `request` (1 for the first), `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `costUsd`, `totalCostUsd`, `costEstimated`; `priceSource` when the request was priced, `servedTier` when the provider served a non-standard tier |
+| `reasoning`     | A reply's reasoning, whole, with `--include-reasoning` only               | `role` (`assistant`), `content`, `durationMs` (from the first reasoning to the start of the answer)                                      |
+| `message`       | A complete reply of the model (not a partial chunk)                        | `role` (`assistant`), `content`                                                                                                          |
+| `tool_use`      | The model asked for a tool call                                            | `callId`, `tool`, `args`                                                                                                                 |
+| `tool_decision` | The permission system decided                                              | `callId`, `tool`, `decision` (`allowed`, `asked`, `refused`), `by` (`rules`, `reviewer`, `system`, `person`), `source`, `rule`, `reason`, `answer`, `held` |
+| `tool_result`   | A call ended                                                               | `callId`, `tool`, `status` (`done`, `errored`, `canceled`), `output`, `outputLength`, `truncated`                                        |
+| `run_limit`     | A run limit ended the run                                                  | `reason` (`budget`, `turns`, `duration`), `phase`, `message`, `exitCode`, `spentUsd`                                                     |
+| `error`         | The run failed                                                             | `kind` (`config`, `refused`, `provider`, `output_schema`, `internal`), `message`, `code`                                                  |
+| `result`        | Last line of every run, whatever ended it                                  | `schemaVersion`, `status` (`success`, `error`, `refused`, `stopped`, `interrupted`), `exitCode`, `result`, `durationMs`, `numRequests`, `numToolCalls`, `numRefusals`, `numIdgafObjections` (calls IDGAF ran that a rule or guard would have refused or asked about), `usage`, `totalCostUsd`, `costEstimated`, `priceSources`, and `servedTiers` when a provider served a non-standard tier |
+
+`result.exitCode` is the code the process exits with; see [Exit codes](/cli/exit-codes).
+
+### Order
+
+- `init` is first and `result` is last, exactly once. A failure before the model is loaded (a bad config) writes `error` and `result` only.
+- For one call: `tool_use`, then `tool_decision`, then `tool_result`. A call a hook blocked, or one the repeat guard refused, has no `tool_decision`.
+- The calls of one round run at the same time, so their `tool_result` lines come in the order they finish.
+- A request's `usage` line comes before its `message` and its `tool_use` lines. With `--include-reasoning`, its `reasoning` line comes after `usage` and before them.
+- Ctrl+C writes `result` with `status: "interrupted"` and exit code 130.
+
+### Masking and size
+
+Every text and every argument goes through the same masker as the audit trail and the approval prompt: a value that looks like a credential becomes `«masked:<kind>»`. Masking is best effort, as in the audit trail: a secret in a shape nobody listed passes through.
+
+A `tool_result` output is cut at 4000 characters and a string argument of `tool_use` at 2000, each ending in ` [cut]`. `outputLength` is the length before the cut. Reasoning (thinking) text is written only with `--include-reasoning`, as `reasoning` lines, masked like the rest; often it is a summary the provider returns rather than the model's whole thinking.
+
+A price source is `{ kind, label, url?, asOf? }`, where `kind` is `user` (a price you entered), `provider` (a list the provider publishes, downloaded, such as OpenRouter's), `curated` (a price table in Continuous checked against the provider's pricing page on `asOf`) or `community` (the models.dev catalogue: a third-party estimate, used only when nothing else prices the model). With a `servedTier` such as `flex` or `priority`, the cost is the standard-tier price.
+
+The counts (`usage`, `numRequests`, `totalCostUsd`) are for this run only. Spend and calls restored with `--resume` or `--fork` are not counted.
+
+### Versioning
+
+`schemaVersion` is `1`. It goes up when a field changes meaning, or a field or an event type is removed. Adding an optional field or a new event type does not raise it, so a reader must ignore fields and types it does not know.
+
+## How it compares
+
+These formats were read on 2026-11-12. There is no shared standard for an agent's headless event stream, so the field names here are this project's own:
+
+- **Claude Code** `--output-format stream-json`: newline-delimited JSON whose last line is a `result` message (`subtype` `success`, `error_max_turns`, `error_during_execution`, `error_max_budget_usd`, ...; `total_cost_usd`, `num_turns`, `permission_denials`). There is no version field; readers are told to ignore values they do not recognise. [Claude Code headless mode](https://code.claude.com/docs/en/headless), [Agent SDK (TypeScript)](https://code.claude.com/docs/en/agent-sdk/typescript)
+- **Codex** `codex exec --json`: JSONL with `thread.started`, `turn.started`, `turn.completed` (with `usage`), `turn.failed`, `item.started`, `item.updated`, `item.completed` and `error`; progress goes to stderr. [Codex non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode), [`exec_events.rs`](https://github.com/openai/codex/blob/main/codex-rs/exec/src/exec_events.rs)
+- **Gemini CLI** `--output-format stream-json`: `init`, `message`, `tool_use`, `tool_result`, `error`, `result`, each with `type` and `timestamp`. [Gemini CLI headless mode](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/headless.md)
+- **Agent Client Protocol** (`continuous acp`) is a JSON-RPC protocol, not a log: `session/update` notifications with `tool_call` and `tool_call_update`. [ACP prompt turn](https://agentclientprotocol.com/protocol/prompt-turn)
+
+What this stream adds: a `tool_decision` line that says whether a call was allowed, asked or refused and by what, a `usage` line per request, a version number, and masking of every field.

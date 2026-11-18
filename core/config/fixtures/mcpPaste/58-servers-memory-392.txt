@@ -1,0 +1,4 @@
+```sh
+docker run --rm -v claude-memory:/volume --user root --entrypoint sh mcp/memory \
+  -c 'rm -f /volume/*.js && cp /app/dist/*.js /volume/ && chown -R node:node /volume'
+```

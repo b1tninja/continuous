@@ -6,9 +6,18 @@ import { DEEPSEEK_API_BASE } from "../apis/DeepSeek.js";
 import { INCEPTION_API_BASE } from "../apis/Inception.js";
 import { OpenAIApi } from "../apis/OpenAI.js";
 import { constructLlmApi } from "../index.js";
+import {
+  liveKey,
+  liveProviderSkipReason,
+  liveProviderTestsEnabled,
+} from "./liveProviderGuard.js";
 import { getLlmApi, testChat, testEmbed, testFim, testRerank } from "./util.js";
 
-dotenv.config();
+// Live tests call paid provider APIs: they need RUN_LIVE_PROVIDER_TESTS=1 as
+// well as a key. Read .env only once opted in, so it cannot restore removed keys.
+if (liveProviderTestsEnabled()) {
+  dotenv.config();
+}
 
 export interface TestConfigOptions {
   skipTools: boolean;
@@ -51,7 +60,7 @@ const TESTS: Omit<ModelConfig & { options?: TestConfigOptions }, "name">[] = [
   {
     provider: "openai",
     model: "gpt-4o",
-    apiKey: process.env.OPENAI_API_KEY!,
+    apiKey: liveKey("OPENAI_API_KEY")!,
     roles: ["chat"],
     options: {
       skipTools: false,
@@ -61,7 +70,7 @@ const TESTS: Omit<ModelConfig & { options?: TestConfigOptions }, "name">[] = [
   {
     provider: "openai",
     model: "gpt-4o-mini",
-    apiKey: process.env.OPENAI_API_KEY!,
+    apiKey: liveKey("OPENAI_API_KEY")!,
     roles: ["chat"],
     options: {
       skipTools: false,
@@ -71,7 +80,7 @@ const TESTS: Omit<ModelConfig & { options?: TestConfigOptions }, "name">[] = [
   {
     provider: "anthropic",
     model: "claude-haiku-4-5",
-    apiKey: process.env.ANTHROPIC_API_KEY!,
+    apiKey: liveKey("ANTHROPIC_API_KEY")!,
     roles: ["chat"],
     options: {
       skipTools: false,
@@ -81,7 +90,7 @@ const TESTS: Omit<ModelConfig & { options?: TestConfigOptions }, "name">[] = [
   {
     provider: "gemini",
     model: "gemini-2.5-pro",
-    apiKey: process.env.GEMINI_API_KEY!,
+    apiKey: liveKey("GEMINI_API_KEY")!,
     roles: ["chat"],
     options: {
       skipTools: false,
@@ -91,7 +100,7 @@ const TESTS: Omit<ModelConfig & { options?: TestConfigOptions }, "name">[] = [
   {
     provider: "gemini",
     model: "gemini-2.5-flash",
-    apiKey: process.env.GEMINI_API_KEY!,
+    apiKey: liveKey("GEMINI_API_KEY")!,
     roles: ["chat"],
     options: {
       skipTools: false,
@@ -101,7 +110,7 @@ const TESTS: Omit<ModelConfig & { options?: TestConfigOptions }, "name">[] = [
   {
     provider: "mistral",
     model: "codestral-latest",
-    apiKey: process.env.MISTRAL_API_KEY!,
+    apiKey: liveKey("MISTRAL_API_KEY")!,
     roles: ["chat", "autocomplete"],
     options: {
       skipTools: false,
@@ -111,43 +120,43 @@ const TESTS: Omit<ModelConfig & { options?: TestConfigOptions }, "name">[] = [
   // {
   //   provider: "deepseek",
   //   model: "deepseek-coder",
-  //   apiKey: process.env.DEEPSEEK_API_KEY!,
+  //   apiKey: liveKey("DEEPSEEK_API_KEY")!,
   //   roles: ["autocomplete"],
   // },
   {
     provider: "openai",
     model: "text-embedding-3-small",
-    apiKey: process.env.OPENAI_API_KEY!,
+    apiKey: liveKey("OPENAI_API_KEY")!,
     roles: ["embed"],
   },
   {
     provider: "voyage",
     model: "voyage-code-3",
-    apiKey: process.env.VOYAGE_API_KEY!,
+    apiKey: liveKey("VOYAGE_API_KEY")!,
     roles: ["embed"],
   },
   // {
   //   provider: "cohere",
   //   model: "embed-v4.0",
-  //   apiKey: process.env.COHERE_API_KEY!,
+  //   apiKey: liveKey("COHERE_API_KEY")!,
   //   roles: ["embed"],
   // },
   // {
   //   provider: "gemini",
   //   model: "models/text-embedding-004",
-  //   apiKey: process.env.GEMINI_API_KEY!,
+  //   apiKey: liveKey("GEMINI_API_KEY")!,
   //   roles: ["embed"],
   // },
   {
     provider: "voyage",
     model: "rerank-lite-1",
-    apiKey: process.env.VOYAGE_API_KEY!,
+    apiKey: liveKey("VOYAGE_API_KEY")!,
     roles: ["rerank"],
   },
   {
     provider: "relace",
     model: "instant-apply",
-    apiKey: process.env.RELACE_API_KEY!,
+    apiKey: liveKey("RELACE_API_KEY")!,
     roles: ["chat"],
     options: {
       skipTools: true,
@@ -158,7 +167,7 @@ const TESTS: Omit<ModelConfig & { options?: TestConfigOptions }, "name">[] = [
   {
     provider: "inception",
     model: "mercury-coder",
-    apiKey: process.env.INCEPTION_API_KEY!,
+    apiKey: liveKey("INCEPTION_API_KEY")!,
     roles: ["chat"],
     options: {
       skipTools: false,
@@ -168,14 +177,14 @@ const TESTS: Omit<ModelConfig & { options?: TestConfigOptions }, "name">[] = [
   // {
   //   provider: "cohere",
   //   model: "rerank-v3.5",
-  //   apiKey: process.env.COHERE_API_KEY!,
+  //   apiKey: liveKey("COHERE_API_KEY")!,
   //   roles: ["rerank"],
   // },
   {
     provider: "azure",
     model: "gpt-4.1",
     apiBase: "https://continue-openai.openai.azure.com",
-    apiKey: process.env.AZURE_OPENAI_GPT41_API_KEY,
+    apiKey: liveKey("AZURE_OPENAI_GPT41_API_KEY"),
     roles: ["chat"],
     env: {
       deployment: "gpt-4.1",
@@ -186,7 +195,7 @@ const TESTS: Omit<ModelConfig & { options?: TestConfigOptions }, "name">[] = [
   // {
   //   provider: "bedrock",
   //   model: "us.anthropic.claude-3-5-sonnet-20240620-v1:0",
-  //   apiKey: process.env.BEDROCK_API_KEY!,
+  //   apiKey: liveKey("BEDROCK_API_KEY")!,
   //   roles: ["chat"],
   //   env: {
   //     region: "us-east-1",
@@ -198,7 +207,9 @@ const TESTS: Omit<ModelConfig & { options?: TestConfigOptions }, "name">[] = [
   // },
 ];
 
-if (process.env.IGNORE_API_KEY_TESTS === "true") {
+if (!liveProviderTestsEnabled()) {
+  test.skip(`live provider tests (skipped: ${liveProviderSkipReason([])})`, () => {});
+} else if (process.env.IGNORE_API_KEY_TESTS === "true") {
   test("Skipping API key tests", () => {
     console.log("Skipping API key tests due to IGNORE_API_KEY_TESTS being set");
   });
@@ -206,6 +217,7 @@ if (process.env.IGNORE_API_KEY_TESTS === "true") {
   TESTS.forEach((config) => {
     // Skip tests that don't have API keys configured
     if (!config.apiKey) {
+      test.skip(`${config.provider}/${config.model} (skipped: no API key)`, () => {});
       return;
     }
     describe(`${config.provider}/${config.model}`, () => {

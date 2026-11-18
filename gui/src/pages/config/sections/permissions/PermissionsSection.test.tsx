@@ -101,7 +101,7 @@ describe("PermissionsSection", () => {
     await setup();
     const deny = screen.getByTestId("group-deny");
     expect(deny.textContent).toContain("runTerminalCommand(terraform apply*)");
-    expect(deny.textContent).toContain("Always on");
+    expect(deny.textContent).toContain("Locked rule");
     expect(deny.textContent).toContain("Locked");
     expect(screen.getByTestId("group-ask").textContent).toContain("You");
     const allow = screen.getByTestId("group-allow");

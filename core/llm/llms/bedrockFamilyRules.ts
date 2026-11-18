@@ -296,13 +296,25 @@ export const FAMILY_RULES: FamilyRule[] = [
   {
     id: "grok-4.6",
     match: /(^|\.)xai\.grok-4\.[67]$/i,
-    status: "unprobed",
+    status: "probed",
     read: "2026-11-10",
+    probedOn: "2026-11-14",
+    evidence: ["live-runtime 2026-11-14: us.xai.grok-4.6, us.xai.grok-4.7"],
+    unsupportedInference: ["stopSequences"],
+    // A 64-token budget came back as hidden reasoning with no answer
+    minMaxTokens: 1024,
     sources: [
       `${AWS}/model-card-xai-grok-4-6.html`,
       "https://docs.x.ai/docs/guides/reasoning",
     ],
-    // Responses: reasoning {effort}; Chat Completions: reasoning_effort.
+    // Measured: reasoning_effort "low" is accepted on Converse. There is no
+    // off value: reasoning cannot be turned off, so off maps to "low".
+    converseReasoning: {
+      field: "reasoning_effort",
+      values: ["low", "medium", "high", "xhigh"],
+      off: "low",
+      defaultWhenAbsent: "medium",
+    },
     candidateReasoningFields: ["reasoning_effort", "reasoning.effort"],
     toolChoice: "unknown",
     sampling:
@@ -313,6 +325,11 @@ export const FAMILY_RULES: FamilyRule[] = [
       "reasoning cannot be turned off; effort low, medium, high, xhigh",
       "on bedrock-runtime only us.xai.grok-4.6 and global.xai.grok-4.6 answer; xai.grok-4.6 is the Mantle id with path /openai/v1",
       "Chat Completions does not return reasoning tokens",
+      "MEASURED 2026-11-14 (4.6, 4.7): stopSequences refused; reasoning_effort low accepted",
+      "MEASURED: reasoning arrives redacted (reasoningContent with no text)",
+      "MEASURED: caches by itself: cacheReadInputTokens on a repeated prefix with no cachePoint",
+      "MEASURED: parallel streamed calls open after a reasoning block (contentBlockIndex 1, 2), each input in one fragment, valid JSON",
+      "MEASURED: one request took over 100 s while the same probe alone took 2 to 8 s",
     ],
   },
   {
@@ -357,6 +374,38 @@ export const FAMILY_RULES: FamilyRule[] = [
       "MEASURED 2026-11-10 (120b): reasoning_effort low and high are accepted and visibly change the reasoning; none is refused by the model (\"Harmony does not support reasoning_effort='none'\"), so off maps to low",
       "MEASURED: temperature with topP accepted; stopSequences refused",
       "MEASURED: a 20-token maxTokens returned no visible text; 20b was not probed beyond the availability call",
+    ],
+  },
+  {
+    // OpenAI's closed GPT models on Bedrock: GPT-5.6 Sol, Terra and Luna, GPT-6
+    // Sol and Luna, GPT-6.1 Sol, by their regional or global profile. GPT OSS
+    // (above) and Daybreak Blue (Mantle only) are not matched here.
+    id: "gpt-closed",
+    match: /(^|\.)openai\.gpt-(?:5\.[5-9]|6(?:\.\d+)?)-(?:sol|terra|luna)$/i,
+    status: "probed",
+    read: "2026-11-14",
+    probedOn: "2026-11-14",
+    evidence: [
+      "live-runtime 2026-11-14: us.openai.gpt-6-luna, gpt-6.1-sol, gpt-5.6-terra",
+    ],
+    unsupportedInference: ["stopSequences"],
+    // Sol and Terra spent a 60-token budget on reasoning and made no call
+    minMaxTokens: 1024,
+    sources: [`${AWS}/bedrock-mantle.html`],
+    // No Converse field: reasoning_effort is refused ("Unknown parameter:
+    // 'reasoning_effort'"). The Responses API takes reasoning.effort.
+    candidateReasoningFields: ["reasoning.effort"],
+    toolChoice: "unknown",
+    sampling: "stopSequences refused on Converse",
+    dialect: "native-structured",
+    contextLength: 1_050_000,
+    maxOutputTokens: 128_000,
+    quirks: [
+      "MEASURED 2026-11-14: stopSequences refused ('This model doesn't support the stopSequences field')",
+      "MEASURED: reasoning_effort in additionalModelRequestFields refused ('Unknown parameter: reasoning_effort'); reasoning cannot be set on Converse",
+      "MEASURED: Terra and Sol may open with a reasoningContent block, so tool calls start at contentBlockIndex 1 or later",
+      "MEASURED: parallel tool calls stream as separate blocks with valid JSON; ids look like call_<hex>",
+      "MEASURED: a 60-token cap ended at max_tokens with the arguments cut short (Luna) or with only reasoning (Sol, Terra)",
     ],
   },
 ];

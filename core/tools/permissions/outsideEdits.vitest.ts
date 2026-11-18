@@ -111,18 +111,21 @@ describe("File edits outside the workspace, by level", () => {
     expect(write(editFileTool, OUTSIDE, { edits: "idgaf" }).policy).toBe(ALLOW);
   });
 
-  it("what is locked or the person's own floor still holds at IDGAF", () => {
-    expect(
-      write(createNewFileTool, OUTSIDE, {
-        edits: "idgaf",
-        floor: ["writeFile(/srv/other/**)"],
-      }).policy,
-    ).toBe(OFF);
-    // the policy files are refused at IDGAF wherever they are
+  it("IDGAF runs what the floor or the policy-file lock would refuse, and records it", () => {
+    const floored = write(createNewFileTool, OUTSIDE, {
+      edits: "idgaf",
+      floor: ["writeFile(/srv/other/**)"],
+    });
+    expect(floored.policy).toBe(ALLOW);
+    expect(floored.idgafOverride).toMatchObject({
+      policy: OFF,
+      source: "floor",
+    });
     const own = write(createNewFileTool, "/home/me/.continue/config.yaml", {
       edits: "idgaf",
     });
-    expect(own.policy).toBe(OFF);
+    expect(own.policy).toBe(ALLOW);
+    expect(own.idgafOverride).toMatchObject({ policy: OFF, source: "floor" });
   });
 
   it("Manual, Cautious and Automatic still ask, with the note", () => {

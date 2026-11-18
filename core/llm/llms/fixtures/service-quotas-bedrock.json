@@ -1,0 +1,293 @@
+{
+  "pages": [
+    {
+      "Quotas": [
+        {
+          "ServiceCode": "bedrock",
+          "ServiceName": "Amazon Bedrock",
+          "QuotaArn": "arn:aws:servicequotas:us-east-1:123456789012:bedrock/L-0A1B2C01",
+          "QuotaCode": "L-0A1B2C01",
+          "QuotaName": "Cross-region model inference tokens per minute for Anthropic Claude Opus 5.5",
+          "Value": 0.0,
+          "Unit": "None",
+          "Adjustable": true,
+          "GlobalQuota": false,
+          "QuotaAppliedAtLevel": "ACCOUNT",
+          "Period": {
+            "PeriodValue": 1,
+            "PeriodUnit": "MINUTE"
+          }
+        },
+        {
+          "ServiceCode": "bedrock",
+          "ServiceName": "Amazon Bedrock",
+          "QuotaArn": "arn:aws:servicequotas:us-east-1:123456789012:bedrock/L-0A1B2C02",
+          "QuotaCode": "L-0A1B2C02",
+          "QuotaName": "Cross-region model inference requests per minute for Anthropic Claude Opus 5.5",
+          "Value": 0.0,
+          "Unit": "None",
+          "Adjustable": true,
+          "GlobalQuota": false,
+          "QuotaAppliedAtLevel": "ACCOUNT",
+          "Period": {
+            "PeriodValue": 1,
+            "PeriodUnit": "MINUTE"
+          }
+        },
+        {
+          "ServiceCode": "bedrock",
+          "ServiceName": "Amazon Bedrock",
+          "QuotaArn": "arn:aws:servicequotas:us-east-1:123456789012:bedrock/L-0A1B2C03",
+          "QuotaCode": "L-0A1B2C03",
+          "QuotaName": "Global cross-region model inference tokens per minute for Anthropic Claude Opus 5.5",
+          "Value": 0.0,
+          "Unit": "None",
+          "Adjustable": true,
+          "GlobalQuota": false,
+          "QuotaAppliedAtLevel": "ACCOUNT",
+          "Period": {
+            "PeriodValue": 1,
+            "PeriodUnit": "MINUTE"
+          }
+        },
+        {
+          "ServiceCode": "bedrock",
+          "ServiceName": "Amazon Bedrock",
+          "QuotaArn": "arn:aws:servicequotas:us-east-1:123456789012:bedrock/L-0A1B2C04",
+          "QuotaCode": "L-0A1B2C04",
+          "QuotaName": "Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.5 V1",
+          "Value": 2000000.0,
+          "Unit": "None",
+          "Adjustable": true,
+          "GlobalQuota": false,
+          "QuotaAppliedAtLevel": "ACCOUNT",
+          "Period": {
+            "PeriodValue": 1,
+            "PeriodUnit": "MINUTE"
+          }
+        },
+        {
+          "ServiceCode": "bedrock",
+          "ServiceName": "Amazon Bedrock",
+          "QuotaArn": "arn:aws:servicequotas:us-east-1:123456789012:bedrock/L-0A1B2C05",
+          "QuotaCode": "L-0A1B2C05",
+          "QuotaName": "Cross-region model inference requests per minute for Anthropic Claude Sonnet 4.5 V1",
+          "Value": 200.0,
+          "Unit": "None",
+          "Adjustable": true,
+          "GlobalQuota": false,
+          "QuotaAppliedAtLevel": "ACCOUNT",
+          "Period": {
+            "PeriodValue": 1,
+            "PeriodUnit": "MINUTE"
+          }
+        },
+        {
+          "ServiceCode": "bedrock",
+          "ServiceName": "Amazon Bedrock",
+          "QuotaArn": "arn:aws:servicequotas:us-east-1:123456789012:bedrock/L-0A1B2C06",
+          "QuotaCode": "L-0A1B2C06",
+          "QuotaName": "Global cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.5 V1",
+          "Value": 4000000.0,
+          "Unit": "None",
+          "Adjustable": true,
+          "GlobalQuota": false,
+          "QuotaAppliedAtLevel": "ACCOUNT",
+          "Period": {
+            "PeriodValue": 1,
+            "PeriodUnit": "MINUTE"
+          }
+        },
+        {
+          "ServiceCode": "bedrock",
+          "ServiceName": "Amazon Bedrock",
+          "QuotaArn": "arn:aws:servicequotas:us-east-1:123456789012:bedrock/L-0A1B2C07",
+          "QuotaCode": "L-0A1B2C07",
+          "QuotaName": "Model invocation max tokens per day for Anthropic Claude Sonnet 4.5 V1 (doubled for cross-region calls)",
+          "Value": 2880000000.0,
+          "Unit": "None",
+          "Adjustable": false,
+          "GlobalQuota": false,
+          "QuotaAppliedAtLevel": "ACCOUNT"
+        },
+        {
+          "ServiceCode": "bedrock",
+          "ServiceName": "Amazon Bedrock",
+          "QuotaArn": "arn:aws:servicequotas:us-east-1:123456789012:bedrock/L-0A1B2C08",
+          "QuotaCode": "L-0A1B2C08",
+          "QuotaName": "On-demand model inference tokens per minute for Anthropic Claude 3.5 Sonnet",
+          "Value": 400000.0,
+          "Unit": "None",
+          "Adjustable": true,
+          "GlobalQuota": false,
+          "QuotaAppliedAtLevel": "ACCOUNT",
+          "Period": {
+            "PeriodValue": 1,
+            "PeriodUnit": "MINUTE"
+          }
+        },
+        {
+          "ServiceCode": "bedrock",
+          "ServiceName": "Amazon Bedrock",
+          "QuotaArn": "arn:aws:servicequotas:us-east-1:123456789012:bedrock/L-0A1B2C09",
+          "QuotaCode": "L-0A1B2C09",
+          "QuotaName": "On-demand model inference tokens per minute for Anthropic Claude 3.5 Sonnet V2",
+          "Value": 0.0,
+          "Unit": "None",
+          "Adjustable": true,
+          "GlobalQuota": false,
+          "QuotaAppliedAtLevel": "ACCOUNT",
+          "Period": {
+            "PeriodValue": 1,
+            "PeriodUnit": "MINUTE"
+          }
+        }
+      ],
+      "NextToken": "eyJ0b2tlbiI6IjIifQ=="
+    },
+    {
+      "Quotas": [
+        {
+          "ServiceCode": "bedrock",
+          "ServiceName": "Amazon Bedrock",
+          "QuotaArn": "arn:aws:servicequotas:us-east-1:123456789012:bedrock/L-0A1B2C10",
+          "QuotaCode": "L-0A1B2C10",
+          "QuotaName": "On-demand model inference tokens per minute for Amazon Nova Pro",
+          "Value": 1000000.0,
+          "Unit": "None",
+          "Adjustable": true,
+          "GlobalQuota": false,
+          "QuotaAppliedAtLevel": "ACCOUNT",
+          "Period": {
+            "PeriodValue": 1,
+            "PeriodUnit": "MINUTE"
+          }
+        },
+        {
+          "ServiceCode": "bedrock",
+          "ServiceName": "Amazon Bedrock",
+          "QuotaArn": "arn:aws:servicequotas:us-east-1:123456789012:bedrock/L-0A1B2C11",
+          "QuotaCode": "L-0A1B2C11",
+          "QuotaName": "On-demand model inference requests per minute for Amazon Nova Pro",
+          "Value": 250.0,
+          "Unit": "None",
+          "Adjustable": true,
+          "GlobalQuota": false,
+          "QuotaAppliedAtLevel": "ACCOUNT",
+          "Period": {
+            "PeriodValue": 1,
+            "PeriodUnit": "MINUTE"
+          }
+        },
+        {
+          "ServiceCode": "bedrock",
+          "ServiceName": "Amazon Bedrock",
+          "QuotaArn": "arn:aws:servicequotas:us-east-1:123456789012:bedrock/L-0A1B2C12",
+          "QuotaCode": "L-0A1B2C12",
+          "QuotaName": "Cross-region model inference tokens per minute for Amazon Nova 2.0 Lite",
+          "Value": 4000000.0,
+          "Unit": "None",
+          "Adjustable": true,
+          "GlobalQuota": false,
+          "QuotaAppliedAtLevel": "ACCOUNT",
+          "Period": {
+            "PeriodValue": 1,
+            "PeriodUnit": "MINUTE"
+          }
+        },
+        {
+          "ServiceCode": "bedrock",
+          "ServiceName": "Amazon Bedrock",
+          "QuotaArn": "arn:aws:servicequotas:us-east-1:123456789012:bedrock/L-0A1B2C13",
+          "QuotaCode": "L-0A1B2C13",
+          "QuotaName": "On-demand model inference tokens per minute for Meta Llama 4 Scout 17B Instruct",
+          "Value": 300000.0,
+          "Unit": "None",
+          "Adjustable": true,
+          "GlobalQuota": false,
+          "QuotaAppliedAtLevel": "ACCOUNT",
+          "Period": {
+            "PeriodValue": 1,
+            "PeriodUnit": "MINUTE"
+          }
+        },
+        {
+          "ServiceCode": "bedrock",
+          "ServiceName": "Amazon Bedrock",
+          "QuotaArn": "arn:aws:servicequotas:us-east-1:123456789012:bedrock/L-0A1B2C14",
+          "QuotaCode": "L-0A1B2C14",
+          "QuotaName": "On-demand model inference tokens per minute for Mistral AI Mistral Large 3",
+          "Value": 0.0,
+          "Unit": "None",
+          "Adjustable": true,
+          "GlobalQuota": false,
+          "QuotaAppliedAtLevel": "ACCOUNT",
+          "Period": {
+            "PeriodValue": 1,
+            "PeriodUnit": "MINUTE"
+          }
+        },
+        {
+          "ServiceCode": "bedrock",
+          "ServiceName": "Amazon Bedrock",
+          "QuotaArn": "arn:aws:servicequotas:us-east-1:123456789012:bedrock/L-0A1B2C15",
+          "QuotaCode": "L-0A1B2C15",
+          "QuotaName": "On-demand model inference tokens per minute for Anthropic Claude Sonnet 4 V1 1M Context Length",
+          "Value": 0.0,
+          "Unit": "None",
+          "Adjustable": true,
+          "GlobalQuota": false,
+          "QuotaAppliedAtLevel": "ACCOUNT",
+          "Period": {
+            "PeriodValue": 1,
+            "PeriodUnit": "MINUTE"
+          }
+        },
+        {
+          "ServiceCode": "bedrock",
+          "ServiceName": "Amazon Bedrock",
+          "QuotaArn": "arn:aws:servicequotas:us-east-1:123456789012:bedrock/L-0A1B2C16",
+          "QuotaCode": "L-0A1B2C16",
+          "QuotaName": "Batch inference job size (in GB) for Amazon Nova Pro",
+          "Value": 1.0,
+          "Unit": "None",
+          "Adjustable": false,
+          "GlobalQuota": false,
+          "QuotaAppliedAtLevel": "ACCOUNT"
+        },
+        {
+          "ServiceCode": "bedrock",
+          "ServiceName": "Amazon Bedrock",
+          "QuotaArn": "arn:aws:servicequotas:us-east-1:123456789012:bedrock/L-0A1B2C17",
+          "QuotaCode": "L-0A1B2C17",
+          "QuotaName": "On-demand latency-optimized model inference tokens per minute for Amazon Nova Pro",
+          "Value": 0.0,
+          "Unit": "None",
+          "Adjustable": true,
+          "GlobalQuota": false,
+          "QuotaAppliedAtLevel": "ACCOUNT",
+          "Period": {
+            "PeriodValue": 1,
+            "PeriodUnit": "MINUTE"
+          }
+        },
+        {
+          "ServiceCode": "bedrock",
+          "ServiceName": "Amazon Bedrock",
+          "QuotaArn": "arn:aws:servicequotas:us-east-1:123456789012:bedrock/L-0A1B2C18",
+          "QuotaCode": "L-0A1B2C18",
+          "QuotaName": "On-demand model inference tokens per minute for Qwen Qwen3 32B",
+          "Value": 0.0,
+          "Unit": "None",
+          "Adjustable": true,
+          "GlobalQuota": false,
+          "QuotaAppliedAtLevel": "ACCOUNT",
+          "Period": {
+            "PeriodValue": 1,
+            "PeriodUnit": "MINUTE"
+          }
+        }
+      ]
+    }
+  ]
+}

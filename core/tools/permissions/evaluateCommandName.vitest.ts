@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { evaluateTerminalCommandSecurity } from "@continuedev/terminal-security";
 import type { ShellKind } from "../../util/shell";
-import { evaluateToolPolicyWithRules } from "./evaluate";
+import { evaluateToolPolicyWithRules as evaluateAndRun } from "./evaluate";
+import { wouldDecide } from "./idgafView.testutil";
 import { DEFAULT_POLICY_LEVELS } from "./policy";
+
+// At IDGAF every call runs; these tests read what the guard would have
+// decided (wouldDecide), which IDGAF records instead of acting on.
+const evaluateToolPolicyWithRules = (
+  input: Parameters<typeof evaluateAndRun>[0],
+) => wouldDecide(evaluateAndRun(input));
 
 const ASK = "allowedWithPermission" as const;
 const OFF = "disabled" as const;

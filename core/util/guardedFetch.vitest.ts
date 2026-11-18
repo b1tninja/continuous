@@ -83,11 +83,12 @@ describe("fetchWithGuardedRedirects", () => {
 
   it("stops after too many redirects", async () => {
     resolve({});
-    const fetchFn = vi
-      .fn()
-      .mockResolvedValue(redirect("https://a.example.com/"));
+    let n = 0;
+    const fetchFn = vi.fn(async () => redirect(`https://a.example.com/${++n}`));
     await expect(
       fetchWithGuardedRedirects(new URL("https://a.example.com/"), fetchFn),
     ).rejects.toThrow(/Too many/);
+    // the start and five redirects
+    expect(fetchFn).toHaveBeenCalledTimes(6);
   });
 });

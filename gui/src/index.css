@@ -255,3 +255,31 @@ body.vscode-high-contrast-light *:focus-visible {
   outline: 1px solid var(--vscode-focusBorder, currentColor);
   outline-offset: 1px;
 }
+
+/*
+ * The plan tree's running dot pulses; under reduced motion (the system's or
+ * VS Code's) it is a static ring instead, so "running" does not depend on
+ * movement. The rule above already stops every animation.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  body:not(.vscode-reduce-motion) .plan-tree-dot {
+    animation: plan-tree-pulse 1.4s ease-in-out infinite;
+  }
+}
+@keyframes plan-tree-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-tree-dot {
+    box-shadow:
+      0 0 0 1px var(--vscode-editor-background, transparent),
+      0 0 0 3px var(--vscode-textLink-foreground, currentColor);
+  }
+}
+body.vscode-reduce-motion .plan-tree-dot {
+  box-shadow:
+    0 0 0 1px var(--vscode-editor-background, transparent),
+    0 0 0 3px var(--vscode-textLink-foreground, currentColor);
+}

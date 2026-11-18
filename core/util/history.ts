@@ -1,15 +1,77 @@
 import * as fs from "fs";
 import * as path from "path";
 
-import { BaseSessionMetadata, Session } from "../index.js";
+import { BaseSessionMetadata, Session, SessionStorage } from "../index.js";
 import { ListHistoryOptions } from "../protocol/core.js";
 
+import { writeFileAtomicSync } from "./atomicWrite.js";
+import { withoutPrompts } from "./promptLogs.js";
+import { stripPromptsFromSessionBytes } from "./promptLogsFile.js";
 import { NEW_SESSION_TITLE } from "./constants.js";
 import {
+  getGlobalDirPath,
+  getSessionBlobFolderPath,
+  getSessionDataFolderPath,
   getSessionFilePath,
+  getSessionLogFilePath,
   getSessionsFolderPath,
   getSessionsListPath,
 } from "./paths.js";
+import {
+  blobReader,
+  replaySessionLog,
+  type ReplayResult,
+  type SessionDelta,
+  sessionFromReplay,
+  SessionLogWriter,
+  type SessionSaveResult,
+} from "./sessionLog.js";
+import {
+  formatFileSize,
+  isOverSessionBudget,
+  serializeSession,
+  SESSION_FILE_BUDGET_BYTES,
+  sessionBudgetWarning,
+  SLOW_SESSION_SAVE_MS,
+} from "./sessionFile.js";
+import {
+  forgetSessionOpen,
+  markSessionOpen,
+  openSessions,
+} from "./sessionLeases.js";
+import {
+  deleteFromTrash,
+  emptyTrash,
+  isSafeSessionId,
+  listTrash,
+  liveSessionExists,
+  moveSessionToTrash,
+  purgeExpiredTrash,
+  restoreSessionFromTrash,
+  type TrashedSession,
+} from "./sessionTrash.js";
+
+export type { TrashedSession } from "./sessionTrash.js";
+
+/** What `HistoryManager.trash` did. */
+export type TrashSessionResult =
+  | {
+      status: "trashed";
+      sessionId: string;
+      deletedAt: number;
+      purgeAfter: number;
+    }
+  | {
+      /** Open in another running process: nothing was moved. */
+      status: "open-elsewhere";
+      sessionId: string;
+      pid: number;
+      host: string;
+      at: number;
+    };
+
+const TRASH_PURGE_EVERY_MS = 10 * 60 * 1000;
+
 function safeParseArray<T>(
   value: string,
   errorMessage: string = "Error parsing array",
@@ -22,23 +84,192 @@ function safeParseArray<T>(
   }
 }
 
-/**
- * Replaces `file` by writing a temp file in the same directory and renaming
- * it over the destination. A crash mid-write leaves the temp file, and
- * readers keep seeing the previous complete file.
- */
+/** Session files are private to the person: 0600 when first written. */
 function writeAtomic(file: string, contents: string): void {
-  const tmp = `${file}.${process.pid}.tmp`;
+  writeFileAtomicSync(file, contents, { mode: 0o600, fallbackInPlace: false });
+}
+
+const QUARANTINE_MARK = ".corrupt-";
+
+/** True for a damaged session file that was set aside (`<id>.corrupt-<time>.json`). */
+export function isQuarantinedSessionFile(name: string): boolean {
+  return path.basename(name).includes(QUARANTINE_MARK);
+}
+
+/**
+ * Moves a damaged session file aside as `<id>.corrupt-<time>.json` in the
+ * same folder and returns the new path. The bytes are kept so they can be
+ * repaired by hand; nothing later writes to that name. Throws when the file
+ * can be neither renamed nor copied.
+ */
+export function quarantineSessionFile(file: string): string {
+  const ext = file.endsWith(".jsonl") ? ".jsonl" : ".json";
+  const base = file.endsWith(ext) ? file.slice(0, -ext.length) : file;
+  let kept = `${base}${QUARANTINE_MARK}${Date.now()}${ext}`;
+  for (let n = 1; fs.existsSync(kept); n++) {
+    kept = `${base}${QUARANTINE_MARK}${Date.now()}-${n}${ext}`;
+  }
   try {
-    fs.writeFileSync(tmp, contents, { mode: 0o600 });
-    fs.renameSync(tmp, file);
+    fs.renameSync(file, kept);
+  } catch {
+    // Windows refuses to rename a file that is open elsewhere; a copy keeps
+    // the bytes just as well.
+    fs.copyFileSync(file, kept, fs.constants.COPYFILE_EXCL);
+  }
+  return kept;
+}
+
+/** What `loadWithStatus` found. */
+export interface SessionLoadResult {
+  session: Session;
+  /**
+   * Set when the session file existed and could not be used. `keptAt` is
+   * where its bytes are now; `reason` never holds file contents.
+   */
+  damaged?: { keptAt: string; reason: string };
+}
+
+/** One sentence for the person about a damaged session file. */
+export function damagedSessionNotice(damaged: {
+  keptAt: string;
+  reason: string;
+}): string {
+  return `This session's file is damaged and was not loaded (${damaged.reason}). It is kept at ${damaged.keptAt}.`;
+}
+
+/** Why a session file cannot be used, without quoting it. */
+function parseSessionText(
+  raw: string,
+): { session: Session } | { reason: string } {
+  if (raw.trim() === "") return { reason: "the file is empty" };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    // The parser's message quotes the text around the error; a session
+    // holds the conversation, so only the fact is reported.
+    return { reason: "it is not valid JSON" };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { reason: "it does not hold a session" };
+  }
+  return { session: parsed as Session };
+}
+
+/** True for a session file name in either format (not the list, not a temp file). */
+export function isSessionFileName(name: string): boolean {
+  const base = path.basename(name);
+  return (
+    (base.endsWith(".json") || base.endsWith(".jsonl")) &&
+    base !== "sessions.json" &&
+    !base.includes(".tmp") &&
+    !isQuarantinedSessionFile(base)
+  );
+}
+
+/** A session's blob folder, from the path of its `.jsonl` file. */
+function blobDirOfLog(file: string): string {
+  return path.join(path.dirname(file), path.basename(file, ".jsonl"), "blobs");
+}
+
+/** What was read from a `.jsonl` session, for the writer to continue from. */
+export interface SessionLogRead {
+  replay: ReplayResult;
+  /** Blobs referred to that are not stored. */
+  missingBlobs: number;
+}
+
+/** Text of a session log plus what this process has queued for it. */
+type LogOverlay = ReturnType<SessionLogWriter["overlay"]>;
+
+function replayWithOverlay(
+  raw: string,
+  overlay: LogOverlay,
+): ReturnType<typeof replaySessionLog> {
+  if (!overlay) return replaySessionLog(raw);
+  let base = overlay.replaceText ?? raw;
+  if (
+    overlay.replaceText === undefined &&
+    overlay.inflightStart !== undefined &&
+    overlay.inflightText !== undefined &&
+    Buffer.byteLength(raw, "utf8") <
+      overlay.inflightStart + Buffer.byteLength(overlay.inflightText, "utf8")
+  ) {
+    base =
+      Buffer.from(raw, "utf8")
+        .subarray(0, overlay.inflightStart)
+        .toString("utf8") + overlay.inflightText;
+  }
+  return replaySessionLog(base + overlay.pendingText);
+}
+
+function parseSessionLog(
+  raw: string,
+  file: string,
+  overlay?: LogOverlay,
+): { session: Session; log: SessionLogRead } | { reason: string } {
+  const replay = replayWithOverlay(raw, overlay);
+  if ("reason" in replay) return replay;
+  const missing = new Set<string>();
+  const session = sessionFromReplay(
+    replay,
+    blobReader(blobDirOfLog(file), overlay?.blobs),
+    { missing },
+  );
+  return { session, log: { replay, missingBlobs: missing.size } };
+}
+
+/**
+ * Reads one session file, `.json` or `.jsonl`. A file whose contents cannot
+ * be used is moved aside (see quarantineSessionFile) and reported in
+ * `damaged`; a file that is not there answers `undefined`; one that cannot
+ * be read at all throws and is left alone. A `.jsonl` whose last line was
+ * cut short is read without it.
+ */
+export function readSessionFile(
+  file: string,
+  overlay?: LogOverlay,
+):
+  | { session: Session; log?: SessionLogRead }
+  | { damaged: SessionLoadResult["damaged"] }
+  | undefined {
+  let raw: string;
+  try {
+    // Prompts are dropped from the bytes before parsing: a file saved while
+    // every request kept its prompt can be hundreds of MB (promptLogsFile.ts)
+    // A .jsonl is read as written: its writer keeps no prompts, and the
+    // appender continues at the byte offset the replay ends at
+    raw = file.endsWith(".jsonl")
+      ? fs.readFileSync(file, "utf8")
+      : stripPromptsFromSessionBytes(fs.readFileSync(file)).toString("utf8");
   } catch (error) {
-    try {
-      fs.unlinkSync(tmp);
-    } catch {
-      // the temp file was already renamed, or never created
-    }
-    throw error;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    // Not readable right now (permissions, a lock, too many open files) is
+    // not the same as damaged: the file is left where it is, and not opened
+    // as an empty session that the next save would write over it.
+    const code = (error as NodeJS.ErrnoException).code ?? "error";
+    throw new Error(
+      `Session file ${file} could not be read (${code}). It was not opened, so that it is not overwritten.`,
+    );
+  }
+  const parsed = file.endsWith(".jsonl")
+    ? parseSessionLog(raw, file, overlay)
+    : parseSessionText(raw);
+  if ("session" in parsed) return parsed;
+  return {
+    damaged: { keptAt: quarantineOrThrow(file), reason: parsed.reason },
+  };
+}
+
+function quarantineOrThrow(file: string): string {
+  try {
+    return quarantineSessionFile(file);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? "error";
+    // Opening it as an empty session would let the next save replace it.
+    throw new Error(
+      `Session file ${file} is damaged and could not be set aside (${code}). It was not opened, so that it is not overwritten.`,
+    );
   }
 }
 
@@ -92,7 +323,17 @@ function metadataFromSessionFile(
   file: string,
 ): BaseSessionMetadata | undefined {
   try {
-    const session = JSON.parse(fs.readFileSync(file, "utf8")) as Session;
+    let session: Session;
+    if (file.endsWith(".jsonl")) {
+      // Titles and counts only: blobs are not read
+      const replay = replaySessionLog(fs.readFileSync(file, "utf8"));
+      if ("reason" in replay) return undefined;
+      session = sessionFromReplay(replay, () => "");
+    } else {
+      session = JSON.parse(
+        stripPromptsFromSessionBytes(fs.readFileSync(file)).toString("utf8"),
+      ) as Session;
+    }
     if (!session || typeof session !== "object" || !session.sessionId) {
       return undefined;
     }
@@ -115,18 +356,17 @@ function metadataFromSessionFile(
 /** Rebuild the list from the session files when sessions.json cannot be read. */
 function rebuildSessionsList(): BaseSessionMetadata[] {
   const folder = getSessionsFolderPath();
-  return fs
-    .readdirSync(folder)
-    .filter(
-      (name) =>
-        name.endsWith(".json") &&
-        name !== "sessions.json" &&
-        !name.includes(".tmp"),
-    )
-    .flatMap((name) => {
-      const meta = metadataFromSessionFile(path.join(folder, name));
-      return meta ? [meta] : [];
-    });
+  const names = fs.readdirSync(folder).filter(isSessionFileName);
+  const logs = new Set(names.filter((n) => n.endsWith(".jsonl")));
+  return (
+    names
+      // A .json beside its .jsonl is a migration that did not finish removing it
+      .filter((name) => !(name.endsWith(".json") && logs.has(`${name}l`)))
+      .flatMap((name) => {
+        const meta = metadataFromSessionFile(path.join(folder, name));
+        return meta ? [meta] : [];
+      })
+  );
 }
 
 /**
@@ -173,8 +413,34 @@ function updateSessionsList(
   });
 }
 
+const writersToFlushOnExit = new Set<SessionLogWriter>();
+
+/** One exit hook per process writes what every writer still has queued. */
+function flushOnExit(writer: SessionLogWriter): void {
+  if (writersToFlushOnExit.size === 0) {
+    process.once("exit", () => {
+      for (const w of writersToFlushOnExit) w.flushAllSync();
+    });
+  }
+  writersToFlushOnExit.add(writer);
+}
+
 export class HistoryManager {
+  private log = new SessionLogWriter({
+    logFile: getSessionLogFilePath,
+    jsonFile: getSessionFilePath,
+    blobDir: getSessionBlobFolderPath,
+  });
+  private useLog = false;
+  private readonly warnedOverBudget = new Set<string>();
+
+  /** `budgetBytes`: when a save logs that the file is too large. */
+  constructor(
+    private readonly budgetBytes: number = SESSION_FILE_BUDGET_BYTES,
+  ) {}
+
   list(options: ListHistoryOptions): BaseSessionMetadata[] {
+    this.purgeTrashNowAndThen();
     const filepath = getSessionsListPath();
     if (!fs.existsSync(filepath)) {
       return [];
@@ -209,115 +475,518 @@ export class HistoryManager {
     return sessions;
   }
 
+  /**
+   * Save new and changed sessions as an append-only `.jsonl` log with large
+   * strings as blobs (STOR6/STOR7) instead of rewriting a `.json` file. Off
+   * by default here, so the CLI keeps writing `.json`; the IDE turns it on
+   * from the `sessionLogStorage` setting. Either way both formats are read.
+   */
+  setSessionLog(enabled: boolean): void {
+    this.useLog = enabled;
+    if (enabled) flushOnExit(this.log);
+  }
+
+  get sessionLogEnabled(): boolean {
+    return this.useLog;
+  }
+
+  /** Counters of the log writer, for tests and measurement. */
+  get sessionLogStats() {
+    return this.log.stats;
+  }
+
+  /** Resolves when queued session writes (of one session, or all) are on disk. */
+  flush(sessionId?: string): Promise<void> {
+    return this.log.flush(sessionId);
+  }
+
   delete(sessionId: string) {
-    // Delete a session
-    const sessionFile = getSessionFilePath(sessionId);
-    if (!fs.existsSync(sessionFile)) {
-      throw new Error(`Session file ${sessionFile} does not exist`);
+    const jsonFile = getSessionFilePath(sessionId);
+    const logFile = getSessionLogFilePath(sessionId);
+    if (!fs.existsSync(jsonFile) && !fs.existsSync(logFile)) {
+      throw new Error(`Session file ${jsonFile} does not exist`);
     }
-    fs.unlinkSync(sessionFile);
+    this.log.drop(sessionId);
+    fs.rmSync(jsonFile, { force: true });
+    fs.rmSync(logFile, { force: true });
+    fs.rmSync(getSessionDataFolderPath(sessionId), {
+      recursive: true,
+      force: true,
+    });
 
     updateSessionsList((sessionsList) =>
       sessionsList.filter((session) => session.sessionId !== sessionId),
     );
   }
 
-  clearAll() {
-    fs.rmSync(getSessionsFolderPath(), { recursive: true, force: true });
-  }
-
-  load(sessionId: string): Session {
+  /**
+   * Moves the session to the trash (core/util/sessionTrash.ts), restorable
+   * for 7 days. Writes this process still has queued for it land first, so
+   * the trashed copy is the whole session. When another running process
+   * (another window, a terminal agent) has it open, nothing moves unless
+   * `force`: the answer says where it is open, for the caller to ask.
+   */
+  async trash(
+    sessionId: string,
+    options: { force?: boolean; now?: number } = {},
+  ): Promise<TrashSessionResult> {
+    if (!isSafeSessionId(sessionId)) {
+      throw new Error(`Session ${sessionId} does not exist`);
+    }
     try {
-      const sessionFile = getSessionFilePath(sessionId);
-      if (!fs.existsSync(sessionFile)) {
-        throw new Error(`Session file ${sessionFile} does not exist`);
+      // A new session's first write may still be queued
+      await this.log.flush(sessionId);
+    } catch {
+      // what is on disk is trashed; the queued rest is dropped below
+    }
+    if (!liveSessionExists(sessionId)) {
+      throw new Error(`Session ${sessionId} does not exist`);
+    }
+    if (!options.force) {
+      const open = openSessions({ exceptPid: process.pid }).get(sessionId);
+      if (open) {
+        return {
+          status: "open-elsewhere",
+          sessionId,
+          pid: open.pid,
+          host: open.host,
+          at: open.at,
+        };
       }
-      const session: Session = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
-      session.sessionId = sessionId;
-      return session;
-    } catch (e) {
-      console.log(`Error loading session: ${e}`);
-      return {
-        history: [],
-        title: NEW_SESSION_TITLE,
+    }
+    this.log.drop(sessionId);
+    const listed = readSessionsList(getSessionsListPath()).find(
+      (s) => s.sessionId === sessionId,
+    );
+    const file = fs.existsSync(getSessionLogFilePath(sessionId))
+      ? getSessionLogFilePath(sessionId)
+      : getSessionFilePath(sessionId);
+    const metadata = listed ??
+      metadataFromSessionFile(file) ?? {
+        sessionId,
+        title: "",
+        dateCreated: String(Date.now()),
         workspaceDirectory: "",
-        sessionId: sessionId,
       };
+    const trashed = moveSessionToTrash(sessionId, metadata, {
+      root: getGlobalDirPath(),
+      now: options.now,
+    });
+    updateSessionsList((list) => list.filter((s) => s.sessionId !== sessionId));
+    forgetSessionOpen(sessionId);
+    return {
+      status: "trashed",
+      sessionId,
+      deletedAt: trashed.deletedAt,
+      purgeAfter: trashed.purgeAfter,
+    };
+  }
+
+  /**
+   * Puts a trashed session back, with the list entry it had. Throws when it
+   * is not in the trash or a session with its id exists again.
+   */
+  restore(sessionId: string): BaseSessionMetadata {
+    const trashed = restoreSessionFromTrash(sessionId, {
+      root: getGlobalDirPath(),
+    });
+    const entry = { ...trashed.metadata, sessionId };
+    updateSessionsList((list) => {
+      const rest = list.filter((s) => s.sessionId !== sessionId);
+      // sessions.json is in creation order: back to the place it had
+      const created =
+        Number(entry.dateCreated) || Date.parse(entry.dateCreated);
+      const at = rest.findIndex((s) => {
+        const t = Number(s.dateCreated) || Date.parse(s.dateCreated);
+        return Number.isFinite(t) && Number.isFinite(created) && t > created;
+      });
+      if (at === -1) rest.push(entry);
+      else rest.splice(at, 0, entry);
+      return rest;
+    });
+    return entry;
+  }
+
+  /** What is in the trash, newest deletion first (expired ones are removed). */
+  listTrash(now?: number): TrashedSession[] {
+    return listTrash({ root: getGlobalDirPath(), now });
+  }
+
+  /** Removes one trashed session for good. */
+  deleteFromTrash(sessionId: string): boolean {
+    return deleteFromTrash(sessionId, { root: getGlobalDirPath() });
+  }
+
+  /** Removes everything in the trash for good. */
+  emptyTrash(): number {
+    return emptyTrash({ root: getGlobalDirPath() });
+  }
+
+  private lastTrashPurge = 0;
+
+  /** Expired trash goes when the list is read, at most every 10 minutes. */
+  private purgeTrashNowAndThen(): void {
+    const now = Date.now();
+    if (now - this.lastTrashPurge < TRASH_PURGE_EVERY_MS) return;
+    this.lastTrashPurge = now;
+    try {
+      purgeExpiredTrash({ root: getGlobalDirPath(), now });
+    } catch {
+      // tried again later
     }
   }
 
-  save(session: Session) {
-    // Save the main session json file
-    // Explicitely rewriting here to influence the written key order in the file!
-    // e.g. id at the top, history next, etc.
-    const orderedSession: Session = {
-      sessionId: session.sessionId,
-      title: session.title,
-      workspaceDirectory: session.workspaceDirectory,
-      history: session.history,
-    };
-    if (session.mode) {
-      orderedSession.mode = session.mode;
-    }
-    if (session.chatModelTitle !== undefined) {
-      orderedSession.chatModelTitle = session.chatModelTitle;
-    }
-    if (session.usage !== undefined) {
-      orderedSession.usage = session.usage;
-    }
-    if (session.promptCache !== undefined) {
-      orderedSession.promptCache = session.promptCache;
-    }
-    if (session.checkpoints?.length) {
-      orderedSession.checkpoints = session.checkpoints;
-    }
-    if (session.taskPlan?.items.length) {
-      orderedSession.taskPlan = session.taskPlan;
-    }
-    if (session.planFile) {
-      orderedSession.planFile = session.planFile;
-    }
-    if (session.queuedMessages?.length) {
-      orderedSession.queuedMessages = session.queuedMessages;
-    }
-    if (session.loop) {
-      orderedSession.loop = session.loop;
-    }
-    if (session.loopRequested) {
-      orderedSession.loopRequested = true;
-    }
+  /** Every session and everything in the trash, for good ("Clear chats"). */
+  clearAll() {
+    this.log.dropAll();
+    fs.rmSync(getSessionsFolderPath(), { recursive: true, force: true });
+    emptyTrash({ root: getGlobalDirPath() });
+  }
 
-    writeAtomic(
-      getSessionFilePath(session.sessionId),
-      JSON.stringify(orderedSession, undefined, 2),
-    );
+  /**
+   * The session, or an empty one under the same id when there is no file or
+   * the file is damaged. A damaged file is moved aside first, so a later
+   * save under this id replaces nothing. Throws when the file cannot be
+   * read, or is damaged and cannot be moved aside. Use `loadWithStatus` to tell the person about it.
+   */
+  load(sessionId: string): Session {
+    const result = this.loadWithStatus(sessionId);
+    if (result.damaged) console.warn(damagedSessionNotice(result.damaged));
+    return result.session;
+  }
+
+  loadWithStatus(sessionId: string): SessionLoadResult {
+    const logFile = getSessionLogFilePath(sessionId);
+    const overlay = this.log.overlay(sessionId);
+    const useLogFile = !!overlay || fs.existsSync(logFile);
+    const sessionFile = useLogFile ? logFile : getSessionFilePath(sessionId);
+    const empty: Session = {
+      history: [],
+      title: NEW_SESSION_TITLE,
+      workspaceDirectory: "",
+      sessionId: sessionId,
+    };
+    let read: ReturnType<typeof readSessionFile>;
+    if (overlay && !fs.existsSync(logFile)) {
+      // Its first write (a new or migrated session) is still queued
+      const parsed = parseSessionLog("", logFile, overlay);
+      read = "session" in parsed ? parsed : undefined;
+    } else {
+      read = readSessionFile(sessionFile, overlay);
+    }
+    if (!read) {
+      console.log(
+        `Error loading session: Session file ${sessionFile} does not exist`,
+      );
+      return { session: empty };
+    }
+    if ("damaged" in read) return { session: empty, damaged: read.damaged };
+    read.session.sessionId = sessionId;
+    // A cleanup run in another process leaves an open session alone
+    markSessionOpen(sessionId);
+    if (read.log && !overlay) this.continueLog(sessionId, logFile, read.log);
+    return { session: read.session };
+  }
+
+  /** After reading a `.jsonl`: drop a cut-off last line and let saves append. */
+  private continueLog(
+    sessionId: string,
+    file: string,
+    log: SessionLogRead,
+  ): void {
+    const { replay } = log;
+    if (replay.torn) {
+      try {
+        // The cut-off line is not a change anyone saw saved; the next append
+        // starts on a line of its own
+        fs.truncateSync(file, replay.validBytes);
+      } catch {
+        return; // left as it is; the next save writes it whole
+      }
+    }
+    if (log.missingBlobs) {
+      console.warn(
+        `Session ${sessionId}: ${log.missingBlobs} stored output(s) are missing and were replaced by a marker.`,
+      );
+    }
+    if (this.useLog) {
+      const decoded = sessionFromReplay(
+        replay,
+        blobReader(blobDirOfLog(file)),
+      ).history;
+      this.log.adopt(sessionId, replay, decoded);
+    }
+  }
+
+  /**
+   * Saves the whole session. With the session log on, only what changed
+   * since the last save in this process is appended (a `.json` is migrated
+   * on its first save); with it off, the `.json` is rewritten (and a `.jsonl`
+   * of the same session is replaced by it). Answers the revision a
+   * `saveDelta` can continue from, or null when deltas cannot be used.
+   */
+  save(full: Session): SessionSaveResult & { fileBytes?: number } {
+    // No prompt is written: each repeats the conversation before it, so
+    // keeping them made the file grow with the square of its length
+    const session = { ...full, history: withoutPrompts(full.history) };
+    if (this.useLog && !this.log.isJsonFallback(session.sessionId)) {
+      const started = Date.now();
+      const result = this.log.saveFull(session);
+      if (result.rev !== null) {
+        const fileBytes = this.afterLogSave(session.sessionId, started);
+        this.updateListEntry(session.sessionId, {
+          title: session.title,
+          workspaceDirectory: session.workspaceDirectory,
+          messageCount: session.history.filter(
+            (item) => item.message.role === "assistant",
+          ).length,
+          fileBytes,
+        });
+        return { ...result, fileBytes };
+      }
+    }
+    const fileBytes = this.saveJson(session);
+    return { rev: null, fileBytes };
+  }
+
+  /**
+   * Saves the items and fields the webview changed since its last save.
+   * Answers needFull when this process cannot apply it (the log is off, it
+   * restarted, another save came in between, or the file changed under it):
+   * the webview then sends the whole session with `save`.
+   */
+  saveDelta(delta: SessionDelta): SessionSaveResult & { fileBytes?: number } {
+    if (!this.useLog) return { rev: null, needFull: true };
+    const started = Date.now();
+    const before = this.log.listEntry(delta.sessionId);
+    const result = this.log.saveDelta({
+      ...delta,
+      items: delta.items.map(({ index, item }) => ({
+        index,
+        item: withoutPrompts([item])[0],
+      })),
+    });
+    if (result.needFull) return result;
+    const fileBytes = this.afterLogSave(delta.sessionId, started);
+    this.updateListEntry(delta.sessionId, {
+      title: delta.meta.title ?? before?.title ?? "",
+      workspaceDirectory:
+        delta.meta.workspaceDirectory ?? before?.workspaceDirectory ?? "",
+      messageCount: this.log.messageCount(delta.sessionId),
+      fileBytes,
+    });
+    return { ...result, fileBytes };
+  }
+
+  /**
+   * After a save to the log: the session's size on disk (the log plus the
+   * blobs it refers to), checked against the session budget as a `.json`
+   * save is.
+   */
+  private afterLogSave(sessionId: string, started: number): number {
+    const elapsed = Date.now() - started;
+    // Every save to the log, the webview's mid-turn checkpoints included,
+    // records the session as open, so a cleanup run elsewhere leaves it alone
+    markSessionOpen(sessionId);
+    const sizes = this.log.sessionBytes(sessionId);
+    const fileBytes = sizes ? sizes.logBytes + sizes.blobBytes : 0;
+    this.warnIfLarge(sessionId, fileBytes, elapsed, "log");
+    return fileBytes;
+  }
+
+  /**
+   * sessions.json, rewritten only when what it shows of the session changed:
+   * the size counts when it moved by a tenth or crossed the session budget,
+   * so a save that adds a few lines does not rewrite the list.
+   */
+  private updateListEntry(
+    sessionId: string,
+    entry: {
+      title: string;
+      workspaceDirectory: string;
+      messageCount: number;
+      fileBytes: number;
+    },
+  ): void {
+    const last = this.log.listEntry(sessionId);
+    if (
+      last &&
+      last.title === entry.title &&
+      last.workspaceDirectory === entry.workspaceDirectory &&
+      last.messageCount === entry.messageCount &&
+      !sizeMoved(last.fileBytes, entry.fileBytes, this.budgetBytes)
+    ) {
+      return;
+    }
+    writeSessionsListEntry(sessionId, { ...entry, storage: "log" });
+    this.log.setListed(sessionId, entry);
+  }
+
+  /** Writes the session as `.json`; answers the bytes written. */
+  private saveJson(session: Session): number {
+    // The key order of the file is fixed by orderSession: id at the top,
+    // history next, etc.
+    const started = Date.now();
+    const contents = serializeSession(session);
+    const fileBytes = Buffer.byteLength(contents, "utf8");
+    writeAtomic(getSessionFilePath(session.sessionId), contents);
+    const elapsed = Date.now() - started;
+
+    markSessionOpen(session.sessionId);
+    this.warnIfLarge(session.sessionId, fileBytes, elapsed);
+
+    // The .json is now the newer copy: a .jsonl of the same session (the
+    // log was turned off) would shadow it. A session whose migration check
+    // failed keeps its state, so it is not tried again in this process.
+    if (!this.log.isJsonFallback(session.sessionId)) {
+      this.log.drop(session.sessionId);
+    }
+    const logFile = getSessionLogFilePath(session.sessionId);
+    if (fs.existsSync(logFile)) {
+      fs.rmSync(logFile, { force: true });
+      fs.rmSync(getSessionBlobFolderPath(session.sessionId), {
+        recursive: true,
+        force: true,
+      });
+    }
 
     const messageCount = session.history.filter(
       (item) => item.message.role === "assistant",
     ).length;
-    updateSessionsList((sessionsList) => {
-      let found = false;
-      for (const sessionMetadata of sessionsList) {
-        if (sessionMetadata.sessionId === session.sessionId) {
-          sessionMetadata.title = session.title;
-          sessionMetadata.workspaceDirectory = session.workspaceDirectory;
-          sessionMetadata.messageCount = messageCount;
-          found = true;
-          break;
+    writeSessionsListEntry(session.sessionId, {
+      title: session.title,
+      workspaceDirectory: session.workspaceDirectory,
+      messageCount,
+      fileBytes,
+      storage: "json",
+    });
+    return fileBytes;
+  }
+
+  /** Logged once per session and process: every save of a large session would repeat it. */
+  private warnIfLarge(
+    sessionId: string,
+    fileBytes: number,
+    elapsed: number,
+    storage: SessionStorage = "json",
+  ): void {
+    if (
+      isOverSessionBudget(fileBytes, this.budgetBytes) &&
+      !this.warnedOverBudget.has(sessionId)
+    ) {
+      this.warnedOverBudget.add(sessionId);
+      console.warn(
+        sessionBudgetWarning(sessionId, fileBytes, this.budgetBytes, storage),
+      );
+    }
+    if (elapsed >= SLOW_SESSION_SAVE_MS) {
+      console.warn(
+        `Saving session ${sessionId} took ${elapsed} ms (${formatFileSize(fileBytes)})`,
+      );
+    }
+  }
+
+  /**
+   * Fills in `fileBytes` for listed sessions saved before it was recorded,
+   * from the file itself. Call it on a page of the list, not all of it.
+   */
+  withFileSizes(sessions: BaseSessionMetadata[]): BaseSessionMetadata[] {
+    return sessions.map((session) => {
+      if (session.fileBytes !== undefined) return session;
+      try {
+        const id = session.sessionId;
+        const logFile = getSessionLogFilePath(id);
+        if (fs.existsSync(logFile)) {
+          // A log session: the log plus its stored outputs, as a save reports
+          const fileBytes =
+            fs.statSync(logFile).size +
+            folderBytes(getSessionBlobFolderPath(id));
+          return { ...session, fileBytes, storage: "log" as const };
         }
+        const { size } = fs.statSync(getSessionFilePath(id));
+        return { ...session, fileBytes: size, storage: "json" as const };
+      } catch {
+        return session;
       }
-      if (!found) {
-        sessionsList.push({
-          sessionId: session.sessionId,
-          title: session.title,
-          dateCreated: String(Date.now()),
-          workspaceDirectory: session.workspaceDirectory,
-          messageCount,
-        });
-      }
-      return sessionsList;
     });
   }
+}
+
+function writeSessionsListEntry(
+  sessionId: string,
+  entry: {
+    title: string;
+    workspaceDirectory: string;
+    messageCount: number;
+    fileBytes?: number;
+    storage?: SessionStorage;
+  },
+): void {
+  updateSessionsList((sessionsList) => {
+    let found = false;
+    for (const sessionMetadata of sessionsList) {
+      if (sessionMetadata.sessionId === sessionId) {
+        sessionMetadata.title = entry.title;
+        sessionMetadata.workspaceDirectory = entry.workspaceDirectory;
+        sessionMetadata.messageCount = entry.messageCount;
+        if (entry.fileBytes !== undefined) {
+          sessionMetadata.fileBytes = entry.fileBytes;
+        }
+        if (entry.storage !== undefined) {
+          sessionMetadata.storage = entry.storage;
+        }
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      sessionsList.push({
+        sessionId,
+        title: entry.title,
+        dateCreated: String(Date.now()),
+        workspaceDirectory: entry.workspaceDirectory,
+        messageCount: entry.messageCount,
+        ...(entry.fileBytes !== undefined && { fileBytes: entry.fileBytes }),
+        ...(entry.storage !== undefined && { storage: entry.storage }),
+      });
+    }
+    return sessionsList;
+  });
+}
+
+/** Whether the listed size moved enough to rewrite sessions.json for it. */
+function sizeMoved(
+  listed: number | undefined,
+  now: number,
+  budget: number,
+): boolean {
+  if (listed === undefined) return true;
+  if (
+    isOverSessionBudget(listed, budget) !== isOverSessionBudget(now, budget)
+  ) {
+    return true;
+  }
+  return Math.abs(now - listed) * 10 >= listed;
+}
+
+/** Bytes of the files directly in `dir` (a blob folder has no subfolders). */
+function folderBytes(dir: string): number {
+  let bytes = 0;
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return 0;
+  }
+  for (const name of names) {
+    try {
+      const st = fs.statSync(path.join(dir, name));
+      if (st.isFile()) bytes += st.size;
+    } catch {
+      // removed meanwhile
+    }
+  }
+  return bytes;
 }
 
 const historyManager = new HistoryManager();

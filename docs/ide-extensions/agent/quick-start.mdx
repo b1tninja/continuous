@@ -78,6 +78,20 @@ By default, Agent mode will ask permission when it wants to use a tool. Click `A
 
 You can use tool policies to exclude or make usage automatic for specific tools. See [MCP Tools](../../customize/mcp-tools.mdx) for more background.
 
+## How to Resume a Stopped Response
+
+When you stop a reply with **Stop**, a request fails, or the window closes or reloads while the agent works, **Resume** appears under the last turn. It is also there when you reopen that session from history.
+
+Resume carries on without retyping. A partial answer is kept and the model continues from it; a turn that had no answer yet sends your message again. Tool calls that already ran keep their results and are not run again. A tool call stopped before it ran is not run either: the model is told so, and if it still needs the call it asks again, under the current mode's permissions.
+
+In the CLI, press Enter on an empty prompt after an interrupt to resume.
+
+## How to Reopen an Earlier Session
+
+The History page groups sessions by workspace folder. The group of the open workspace comes first and open, its newest session at the top; other folders follow, each ordered by its newest session and closed until clicked, and sessions saved without a folder come last. **Group by: Date** switches back to the list by date. A search opens every group.
+
+**Last Session** on an empty chat, and the session a window restores when it starts, are sessions of the open workspace: windows share one stored "last session", so a window no longer opens a conversation from another workspace.
+
 ## How to View Tool Responses
 
 Any data returned from a tool call is automatically fed back into the model as a context item. Most errors are also caught and returned, so that Agent mode can decide how to proceed.

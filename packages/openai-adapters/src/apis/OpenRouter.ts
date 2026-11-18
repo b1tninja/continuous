@@ -17,6 +17,26 @@ export const OPENROUTER_HEADERS: Record<string, string> = {
   "X-OpenRouter-Categories": "ide-extension",
 };
 
+/**
+ * The reasoning switch (reasoningSwitch.ts) as OpenRouter's `reasoning`
+ * object, which takes the same effort names (`none` turns reasoning off;
+ * models that must reason refuse it). OpenRouter documents no top-level
+ * `reasoning_effort`, so the field is moved, not copied. A `reasoning` the
+ * config already sets wins. Turning reasoning on costs reasoning tokens.
+ */
+export function openRouterReasoning<T extends ChatCompletionCreateParams>(
+  body: T,
+): T {
+  const effort = body.reasoning_effort;
+  if (effort === undefined || effort === null) return body;
+  const { reasoning_effort: _moved, ...rest } = body;
+  const existing = (body as { reasoning?: unknown }).reasoning;
+  return {
+    ...rest,
+    reasoning: existing ?? { effort },
+  } as unknown as T;
+}
+
 export class OpenRouterApi extends OpenAIApi {
   constructor(config: OpenRouterConfig) {
     super({
@@ -41,7 +61,7 @@ export class OpenRouterApi extends OpenAIApi {
   }
 
   override modifyChatBody<T extends ChatCompletionCreateParams>(body: T): T {
-    const modifiedBody = super.modifyChatBody(body);
+    const modifiedBody = openRouterReasoning(super.modifyChatBody(body));
 
     if (!this.isAnthropicModel(modifiedBody.model)) {
       return modifiedBody;

@@ -10,15 +10,25 @@ import Bedrock from "./Bedrock";
  * The CLI's converter has the same check in openai-adapters
  * (src/apis/Bedrock.turns.live.vitest.ts); keep the two scenario lists alike.
  *
- * Opt-in: RUN_BEDROCK_LIVE=1 and a Bedrock credential in the environment
+ * Opt-in: RUN_LIVE_PROVIDER_TESTS=1 RUN_BEDROCK_LIVE=1 and a Bedrock credential in the environment
  * (AWS_BEARER_TOKEN_BEDROCK, or a profile). Costs well under a cent per run
  * on the default models.
  *
- *   RUN_BEDROCK_LIVE=1 npx vitest run llm/llms/Bedrock.turns.live.vitest.ts
+ *   RUN_LIVE_PROVIDER_TESTS=1 RUN_BEDROCK_LIVE=1 npx vitest run llm/llms/Bedrock.turns.live.vitest.ts
  *
  * Knobs: LIVE_MODELS (comma-separated model IDs), AWS_REGION.
  */
-const live = process.env.RUN_BEDROCK_LIVE === "1" ? describe : describe.skip;
+// Paid calls: RUN_LIVE_PROVIDER_TESTS=1 is the consent, RUN_BEDROCK_LIVE=1 selects Bedrock.
+// AWS credentials come from the default chain, so there is no key to check here.
+const live =
+  process.env.RUN_LIVE_PROVIDER_TESTS === "1" &&
+  process.env.RUN_BEDROCK_LIVE === "1"
+    ? describe
+    : (name: string, fn: () => void) =>
+        describe.skip(
+          `${name} (skipped: set RUN_LIVE_PROVIDER_TESTS=1 and RUN_BEDROCK_LIVE=1)`,
+          fn,
+        );
 
 const MODELS = (
   process.env.LIVE_MODELS ??

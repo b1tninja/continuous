@@ -4,92 +4,14 @@ import ignore from "ignore";
 import path from "path";
 import { fileURLToPath } from "url";
 import { ContinueError, ContinueErrorReason } from "../util/errors";
+import {
+  DEFAULT_SECURITY_IGNORE_DIRS,
+  DEFAULT_SECURITY_IGNORE_FILETYPES,
+} from "./securityPatterns";
 
-// Security-focused ignore patterns - these should always be excluded for security reasons
-export const DEFAULT_SECURITY_IGNORE_FILETYPES = [
-  // Environment and configuration files with secrets
-  "*.env",
-  "*.env.*",
-  ".env*",
-  "config.json",
-  "config.yaml",
-  "config.yml",
-  "settings.json",
-  "appsettings.json",
-  "appsettings.*.json",
-
-  // Certificate and key files
-  "*.key",
-  "*.pem",
-  "*.p12",
-  "*.pfx",
-  "*.crt",
-  "*.cer",
-  "*.jks",
-  "*.keystore",
-  "*.truststore",
-
-  // Database files that may contain sensitive data
-  "*.db",
-  "*.sqlite",
-  "*.sqlite3",
-  "*.mdb",
-  "*.accdb",
-
-  // Credential and secret files
-  "*.secret",
-  "*.secrets",
-  "auth.json",
-  "*.token",
-
-  // Backup files that might contain sensitive data
-  "*.bak",
-  "*.backup",
-  "*.old",
-  "*.orig",
-
-  // Docker secrets
-  "docker-compose.override.yml",
-  "docker-compose.override.yaml",
-
-  // SSH and GPG
-  "id_rsa",
-  "id_dsa",
-  "id_ecdsa",
-  "id_ed25519",
-  "*.ppk",
-  "*.gpg",
-];
-
-export const DEFAULT_SECURITY_IGNORE_DIRS = [
-  // Environment and configuration directories
-  ".env/",
-  "env/",
-
-  // Cloud provider credential directories
-  ".aws/",
-  ".gcp/",
-  ".azure/",
-  ".kube/",
-  ".docker/",
-
-  // Secret directories
-  "secrets/",
-  ".secrets/",
-  "private/",
-  ".private/",
-  "certs/",
-  "certificates/",
-  "keys/",
-  ".ssh/",
-  ".gnupg/",
-  ".gpg/",
-
-  // Temporary directories that might contain sensitive data
-  "tmp/secrets/",
-  "temp/secrets/",
-  ".tmp/",
-];
+// The security patterns live in a pure module (no fs or path) so the webview
+// can check a dropped file against the same list as the indexer.
+export { DEFAULT_SECURITY_IGNORE_DIRS, DEFAULT_SECURITY_IGNORE_FILETYPES };
 
 // Additional non-security patterns for general indexing exclusion
 export const ADDITIONAL_INDEXING_IGNORE_FILETYPES = [

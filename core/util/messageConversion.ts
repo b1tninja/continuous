@@ -75,7 +75,7 @@ export function convertToUnifiedMessage(
  */
 export function convertFromUnifiedMessage(
   message: ChatMessage,
-): ChatCompletionMessageParam {
+): ChatCompletionMessageParam | null {
   switch (message.role) {
     case "system":
       return {
@@ -121,12 +121,10 @@ export function convertFromUnifiedMessage(
       };
 
     case "thinking":
-      // Thinking messages don't have a direct equivalent in OpenAI format
-      // Convert to assistant message with content
-      return {
-        role: "assistant",
-        content: convertFromMessageContent(message.content),
-      };
+      // No OpenAI message carries reasoning back. Sent as assistant text it
+      // would make two assistant turns in a row and show the reasoning as
+      // part of the answer, so it is left out.
+      return null;
 
     default:
       throw new Error(`Unsupported message role: ${(message as any).role}`);
@@ -304,16 +302,35 @@ export function convertToUnifiedHistory(
 export function convertFromUnifiedHistory(
   historyItems: ChatHistoryItem[],
 ): ChatCompletionMessageParam[] {
-  const messages: ChatCompletionMessageParam[] = [];
+  return convertChatMessagesToOpenAI(
+    chatMessagesFromUnifiedHistory(historyItems).messages,
+  );
+}
 
-  for (const item of historyItems) {
-    const baseMessage = convertFromUnifiedMessage(item.message);
+/**
+ * The messages a history stands for, before conversion to the OpenAI format:
+ * each item's message (a user message with its context items in front), then
+ * a result for each of its tool call states ("Tool cancelled" for one with no
+ * output). `itemIndex[i]` is the index of the history item `messages[i]` came
+ * from. The CLI normalises these (core/llm/normalizeTurns.ts) before
+ * converting them.
+ */
+export function chatMessagesFromUnifiedHistory(
+  historyItems: ChatHistoryItem[],
+): { messages: ChatMessage[]; itemIndex: number[] } {
+  const messages: ChatMessage[] = [];
+  const itemIndex: number[] = [];
 
-    // If this is a user message with context items, expand the content
+  historyItems.forEach((item, index) => {
+    let message = item.message;
+
+    // If this is a user message with context items, expand the content.
+    // Array content keeps its format.
     if (
-      item.message.role === "user" &&
+      message.role === "user" &&
       item.contextItems &&
-      item.contextItems.length > 0
+      item.contextItems.length > 0 &&
+      typeof message.content === "string"
     ) {
       const contextContent = item.contextItems
         .map(
@@ -321,36 +338,36 @@ export function convertFromUnifiedHistory(
             `<context name="${contextItem.name}">\n${contextItem.content}\n</context>\n\n`,
         )
         .join("");
-
-      baseMessage.content =
-        typeof baseMessage.content === "string"
-          ? contextContent + baseMessage.content
-          : baseMessage.content; // Keep array format if it's already an array
+      message = { ...message, content: contextContent + message.content };
     }
 
-    messages.push(baseMessage);
+    messages.push(message);
+    itemIndex.push(index);
 
     // Add tool result messages if there are completed tool calls, and fallback when tool output is missing
-    if (item.toolCallStates) {
-      for (const toolState of item.toolCallStates) {
-        if (toolState.output && toolState.output.length > 0) {
-          messages.push({
-            role: "tool",
-            content: toolState.output.map((o: any) => o.content).join("\n"),
-            tool_call_id: toolState.toolCallId,
-          });
-        } else {
-          messages.push({
-            role: "tool",
-            content: "Tool cancelled",
-            tool_call_id: toolState.toolCallId,
-          });
-        }
-      }
+    for (const toolState of item.toolCallStates ?? []) {
+      messages.push({
+        role: "tool",
+        content:
+          toolState.output && toolState.output.length > 0
+            ? toolState.output.map((o: any) => o.content).join("\n")
+            : "Tool cancelled",
+        toolCallId: toolState.toolCallId,
+      });
+      itemIndex.push(index);
     }
-  }
+  });
 
-  return messages;
+  return { messages, itemIndex };
+}
+
+/** ChatMessages in the OpenAI format; reasoning turns are left out. */
+export function convertChatMessagesToOpenAI(
+  messages: ChatMessage[],
+): ChatCompletionMessageParam[] {
+  return messages
+    .map(convertFromUnifiedMessage)
+    .filter((m): m is ChatCompletionMessageParam => m !== null);
 }
 
 /**

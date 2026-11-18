@@ -9,6 +9,7 @@ import {
   partialModelSchema,
   requestOptionsSchema,
 } from "./models.js";
+import { webConfigSchema } from "./web.js";
 
 export const contextSchema = z.object({
   name: z.string().optional(),
@@ -242,9 +243,9 @@ export const toolPermissionsSchema = z.object({
             .optional(),
           /** Changed lines above which the built-in large-change check asks (default 300). Read from the personal config only. */
           largeChangeLines: z.number().int().min(1).optional(),
-          /** Largest web page, in bytes, the fetch tool and @url read (default 2 MiB). Read from the personal config only. */
+          /** Deprecated: use `web.limits.maxBytes`. Largest web page, in bytes, the fetch tool and @url read (default 2 MiB). Read from the personal config only. */
           fetchMaxBytes: z.number().int().min(1).optional(),
-          /** Seconds a web fetch may take in all, including the body (default 20). Read from the personal config only. */
+          /** Deprecated: use `web.limits.timeoutSeconds`. Seconds a web fetch may take in all, including the body (default 20). Read from the personal config only. */
           fetchTimeoutSeconds: z.number().int().min(1).optional(),
           /** `ask`: after untrusted content enters a session, calls that send data out or change state outside the workspace ask (default `off`). Read from the personal config only. */
           taintedSessionRule: z.enum(["off", "ask"]).optional(),
@@ -297,6 +298,20 @@ export const baseConfigYamlSchema = z.object({
   rulesByMode: rulesByModeSchema.optional(),
   toolPermissions: toolPermissionsSchema.optional(),
   terminal: terminalSchema.optional(),
+  /** How web pages are fetched: identity, robots.txt, limits, cache, per-host overrides (schemas/web.ts). */
+  web: webConfigSchema.optional(),
+  /**
+   * Model information updates: OpenRouter's public model list (names, sizes,
+   * prices). `automatic` (default) refreshes it in the background when the
+   * copy is older than `modelCatalogRefreshHours`; `manual` only when asked
+   * (provider setup offers it); `off` never contacts openrouter.ai. `ask` is
+   * the old spelling of `manual`; `never` is `manual` without the offer.
+   */
+  modelCatalog: z
+    .enum(["automatic", "manual", "off", "ask", "never"])
+    .optional(),
+  /** Hours before an automatic refresh replaces the list (default 24). */
+  modelCatalogRefreshHours: z.number().positive().optional(),
   env: envRecord.optional(),
   requestOptions: requestOptionsSchema.optional(),
 });

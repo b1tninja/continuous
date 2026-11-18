@@ -96,7 +96,7 @@ describe("PendingToolCallToolbar: assistive technology", () => {
       screen
         .getByTestId("reject-tool-call-button-a")
         .getAttribute("aria-keyshortcuts"),
-    ).toMatch(/\+Backspace$/);
+    ).toBeNull(); // Backspace deletes a word, so it is not a shortcut
   });
 });
 

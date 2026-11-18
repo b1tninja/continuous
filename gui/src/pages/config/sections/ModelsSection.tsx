@@ -1,21 +1,22 @@
 import { ModelRole } from "@continuedev/config-yaml";
 import { ModelDescription } from "core";
 import { useContext, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Shortcut from "../../../components/gui/Shortcut";
 import { useProviderSetupDialog } from "../../../components/ProviderSetup/useProviderSetupDialog";
-import { useEditModel } from "../../../components/mainInput/Lump/useEditBlock";
-import { Card, Divider, Toggle } from "../../../components/ui";
+import { useModelConfigDialog } from "../../../components/ModelConfig/useModelConfigDialog";
+import { Button, Card, Divider, Toggle } from "../../../components/ui";
 import { useAuth } from "../../../context/Auth";
 import { IdeMessengerContext } from "../../../context/IdeMessenger";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks";
 import { updateSelectedModelByRole } from "../../../redux/thunks/updateSelectedModelByRole";
 import { getMetaKeyLabel, isJetBrains } from "../../../util";
+import { CONFIG_ROUTES } from "../../../util/navigation";
 import { ConfigHeader } from "../components/ConfigHeader";
 import { ModelRoleRow } from "../components/ModelRoleRow";
 import { AssignModelsCard } from "../components/AssignModelsCard";
 import { ModeModelsTable } from "../components/ModeModelsTable";
-import { ProviderInstancesCard } from "../components/ProviderInstancesCard";
-import { ProvidersCard } from "../components/ProvidersCard";
+import { ModelInformationControl } from "./ModelInformationControl";
 
 const MODEL_DOCS_URLS = {
   chat: {
@@ -42,6 +43,7 @@ export function ModelsSection() {
   const { selectedProfile } = useAuth();
   const dispatch = useAppDispatch();
   const ideMessenger = useContext(IdeMessengerContext);
+  const navigate = useNavigate();
 
   const config = useAppSelector((state) => state.config.config);
   const jetbrains = isJetBrains();
@@ -62,7 +64,7 @@ export function ModelsSection() {
     );
   }
 
-  const handleConfigureModel = useEditModel();
+  const handleConfigureModel = useModelConfigDialog();
 
   const { openSetup } = useProviderSetupDialog();
 
@@ -170,9 +172,22 @@ export function ModelsSection() {
         )}
       </Card>
 
-      <ProviderInstancesCard />
-
-      <ProvidersCard />
+      <Card>
+        <div className="flex items-center justify-between gap-2 px-3 py-2">
+          <div className="text-xs text-description-muted">
+            Provider connections, keys and accounts are on their own page.
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="my-0 shrink-0"
+            onClick={() => navigate(CONFIG_ROUTES.PROVIDERS)}
+            data-testid="open-providers"
+          >
+            Providers…
+          </Button>
+        </div>
+      </Card>
 
       {!jetbrains && <ModeModelsTable />}
 
@@ -244,6 +259,8 @@ export function ModelsSection() {
           </div>
         </Toggle>
       </Card>
+
+      <ModelInformationControl />
     </div>
   );
 }

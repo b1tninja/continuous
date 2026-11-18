@@ -172,6 +172,92 @@ export function terminalEnvironment(
     .env;
 }
 
+/**
+ * What a command is given so that a pager cannot hold it: the command has no
+ * terminal, nobody can press `q`, and `git log` or `man` waiting in `less`
+ * would wait until the tool's timeout. `cat` prints and ends. `LESS` is the
+ * value git itself uses when the variable is not set (quit when the text fits
+ * one screen, keep colours, do not clear the screen).
+ */
+export const PAGER_DEFAULTS: Readonly<Record<string, string>> = {
+  PAGER: "cat",
+  GIT_PAGER: "cat",
+  MANPAGER: "cat",
+  LESS: "FRX",
+};
+
+/**
+ * `env` (already scrubbed) with the pager defaults. The person's own choices
+ * stand: a name in `terminal.passEnv` is never touched, whether the host sets
+ * it or not, and with `terminal.environment: inherit` a value the host sets is
+ * kept. `LESS` holds flags rather than a program, so it is only filled in when
+ * it is not set. Names compare without case on Windows, as its environment
+ * does.
+ */
+export function withPagerDefaults(
+  env: Readonly<Record<string, string>>,
+  opts: { platform?: NodeJS.Platform } = {},
+): Record<string, string> {
+  const platform = opts.platform ?? process.platform;
+  const fold = (name: string) =>
+    platform === "win32" ? name.toUpperCase() : name;
+  const passed = new Set((configured?.passEnv ?? []).map(fold));
+  const present = new Map(Object.keys(env).map((key) => [fold(key), key]));
+  const inherit = getTerminalEnvironmentMode() === "inherit";
+  const out: Record<string, string> = { ...env };
+  for (const [name, value] of Object.entries(PAGER_DEFAULTS)) {
+    if (passed.has(fold(name))) continue;
+    const existing = present.get(fold(name));
+    if (existing !== undefined) {
+      if (inherit || name === "LESS") continue;
+      delete out[existing];
+    }
+    out[name] = value;
+  }
+  return out;
+}
+
+/**
+ * `env` with `names` added to `WSLENV`, so that `wsl.exe` hands them to the
+ * command inside the distribution: a Windows variable reaches WSL only when
+ * `WSLENV` names it, so a name the person passed with `terminal.passEnv` used
+ * to stop at the WSL boundary. Each name gets `/u` (from Windows into WSL
+ * only), and a name `WSLENV` already lists, with any flags, is left as it is.
+ * Only names that are set in `env` are added, and only names go into
+ * `WSLENV`: the values travel as the variables themselves.
+ */
+export function withWslEnvNames(
+  env: Readonly<Record<string, string>>,
+  names: readonly string[],
+): Record<string, string> {
+  // Windows environment names compare without case
+  const key =
+    Object.keys(env).find((k) => k.toUpperCase() === "WSLENV") ?? "WSLENV";
+  const current = env[key] ?? "";
+  const entries = current.split(":").filter(Boolean);
+  const listed = new Set(
+    entries.map((entry) => entry.split("/")[0].toUpperCase()),
+  );
+  const present = new Set(Object.keys(env).map((k) => k.toUpperCase()));
+  const added: string[] = [];
+  for (const name of names) {
+    // A name with `:` or `/` would break the list; WSLENV itself is not a value to forward
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) continue;
+    const upper = name.toUpperCase();
+    if (upper === "WSLENV" || listed.has(upper) || !present.has(upper))
+      continue;
+    listed.add(upper);
+    added.push(`${name}/u`);
+  }
+  if (!added.length) return { ...env };
+  return { ...env, [key]: [...entries, ...added].join(":") };
+}
+
+/** The names the person passed with `terminal.passEnv` (names only). */
+export function passedEnvNames(): string[] {
+  return [...(configured?.passEnv ?? [])];
+}
+
 function scrubPolicyFor(
   mode: TerminalEnvironmentMode,
   settings: TerminalEnvironmentSettings | undefined,

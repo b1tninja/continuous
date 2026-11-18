@@ -1,5 +1,5 @@
-import { AtSymbolIcon, PhotoIcon, PlusIcon } from "@heroicons/react/24/outline";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { AtSymbolIcon, PhotoIcon, PlusIcon } from "@heroicons/react/24/outline";
 import { modelSupportsImages } from "core/llm/autodetect";
 import { useRef } from "react";
 import { useAppSelector } from "../../../redux/hooks";
@@ -9,7 +9,8 @@ import { HoverButton } from "./HoverItem";
 
 interface AttachMenuProps {
   onAddContextItem?: () => void;
-  onImageFileSelected?: (file: File) => void;
+  /** All the files chosen in one go, so they are checked and reported together. */
+  onImageFilesSelected?: (files: File[]) => void;
   hideImageUpload?: boolean;
   hideAddContext?: boolean;
 }
@@ -46,11 +47,10 @@ export function AttachMenu(props: AttachMenuProps) {
           style={{ display: "none" }}
           tabIndex={-1}
           aria-hidden="true"
-          accept=".jpg,.jpeg,.png,.gif,.svg,.webp"
+          accept=".jpg,.jpeg,.png,.gif,.webp"
           onChange={(e) => {
-            for (const file of e.target?.files ?? []) {
-              props.onImageFileSelected?.(file);
-            }
+            const files = Array.from(e.target?.files ?? []);
+            if (files.length) props.onImageFilesSelected?.(files);
             if (fileInputRef.current) fileInputRef.current.value = "";
           }}
         />

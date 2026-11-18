@@ -13,7 +13,8 @@ import { oracleModel, textOnlyModel } from "./stubs";
 
 /**
  * Runs the turn-prompt evaluation against a real model. Skipped unless
- * TURNS_EVAL_MODEL (or TURNS_EVAL_STUB) is set, so CI never calls a model.
+ * TURNS_EVAL_STUB is set, or TURNS_EVAL_MODEL with RUN_LIVE_PROVIDER_TESTS=1
+ * (the wrapper sets both), so CI never calls a model.
  *
  * Normally run it through the wrapper, which adds flags, a check before
  * calling a hosted API, and an exit code:
@@ -41,7 +42,10 @@ import { oracleModel, textOnlyModel } from "./stubs";
  * The test passes whatever the result; read the printed report, or use the
  * wrapper's --strict for an exit code.
  */
-const model = process.env.TURNS_EVAL_MODEL;
+const model =
+  process.env.RUN_LIVE_PROVIDER_TESTS === "1"
+    ? process.env.TURNS_EVAL_MODEL
+    : undefined;
 const stub = process.env.TURNS_EVAL_STUB;
 
 function pickModel() {
@@ -94,70 +98,74 @@ function pickProfiles(): readonly PromptProfile[] {
   return chosen.length ? chosen : PROFILES;
 }
 
-describe.skipIf(!model && !stub)("turn prompt evaluation (live model)", () => {
-  it(
-    "runs every scenario under each profile and prints the report",
-    async () => {
-      const { label, model: chat } = pickModel();
-      const profiles = pickProfiles();
-      const reasoning = pickReasoning();
-      const runs = Math.max(1, Number(process.env.TURNS_EVAL_RUNS ?? 1) || 1);
-      const maxTokens = Number(process.env.TURNS_EVAL_MAX_TOKENS) || undefined;
-      const results = await runTurnsEval(chat, {
-        profiles,
-        concurrency: 2,
-        timeoutMs: 300_000,
-        reasoning,
-        model,
-        runs,
-        maxTokens,
-      });
-      const summary = summarize(results, undefined, profiles);
-      const report = formatReport(
-        [
-          label,
-          reasoning ? `reasoning ${reasoning}` : "",
-          maxTokens ? `${maxTokens} max tokens` : "",
-        ]
-          .filter(Boolean)
-          .join(", "),
-        results,
-        summary,
-        undefined,
-        maxTokens,
-      );
-      // Written to stdout directly so the report is not swallowed by a reporter.
-      process.stdout.write(`\n${report}\n`);
-      if (process.env.TURNS_EVAL_OUT) {
-        writeFileSync(process.env.TURNS_EVAL_OUT, report + "\n");
-      }
-      if (process.env.TURNS_EVAL_DUMP) {
-        writeFileSync(
-          process.env.TURNS_EVAL_DUMP,
-          JSON.stringify(
-            results.map((r) => ({
-              scenario: r.scenario.id,
-              profile: r.profile,
-              run: r.run,
-              ms: r.ms,
-              error: r.error,
-              text: r.text,
-              calls: r.calls,
-              failures: r.failures,
-            })),
-            null,
-            2,
-          ) + "\n",
+describe.skipIf(!model && !stub)(
+  `turn prompt evaluation (live model)${model || stub ? "" : " (skipped: set TURNS_EVAL_STUB, or TURNS_EVAL_MODEL with RUN_LIVE_PROVIDER_TESTS=1)"}`,
+  () => {
+    it(
+      "runs every scenario under each profile and prints the report",
+      async () => {
+        const { label, model: chat } = pickModel();
+        const profiles = pickProfiles();
+        const reasoning = pickReasoning();
+        const runs = Math.max(1, Number(process.env.TURNS_EVAL_RUNS ?? 1) || 1);
+        const maxTokens =
+          Number(process.env.TURNS_EVAL_MAX_TOKENS) || undefined;
+        const results = await runTurnsEval(chat, {
+          profiles,
+          concurrency: 2,
+          timeoutMs: 300_000,
+          reasoning,
+          model,
+          runs,
+          maxTokens,
+        });
+        const summary = summarize(results, undefined, profiles);
+        const report = formatReport(
+          [
+            label,
+            reasoning ? `reasoning ${reasoning}` : "",
+            maxTokens ? `${maxTokens} max tokens` : "",
+          ]
+            .filter(Boolean)
+            .join(", "),
+          results,
+          summary,
+          undefined,
+          maxTokens,
         );
-      }
-      if (process.env.TURNS_EVAL_RESULT) {
-        writeFileSync(
-          process.env.TURNS_EVAL_RESULT,
-          JSON.stringify({ passed: summary.passed }),
-        );
-      }
-      expect(results.length).toBeGreaterThan(0);
-    },
-    30 * 60_000,
-  );
-});
+        // Written to stdout directly so the report is not swallowed by a reporter.
+        process.stdout.write(`\n${report}\n`);
+        if (process.env.TURNS_EVAL_OUT) {
+          writeFileSync(process.env.TURNS_EVAL_OUT, report + "\n");
+        }
+        if (process.env.TURNS_EVAL_DUMP) {
+          writeFileSync(
+            process.env.TURNS_EVAL_DUMP,
+            JSON.stringify(
+              results.map((r) => ({
+                scenario: r.scenario.id,
+                profile: r.profile,
+                run: r.run,
+                ms: r.ms,
+                error: r.error,
+                text: r.text,
+                calls: r.calls,
+                failures: r.failures,
+              })),
+              null,
+              2,
+            ) + "\n",
+          );
+        }
+        if (process.env.TURNS_EVAL_RESULT) {
+          writeFileSync(
+            process.env.TURNS_EVAL_RESULT,
+            JSON.stringify({ passed: summary.passed }),
+          );
+        }
+        expect(results.length).toBeGreaterThan(0);
+      },
+      30 * 60_000,
+    );
+  },
+);

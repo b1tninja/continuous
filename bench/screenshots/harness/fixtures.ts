@@ -12,15 +12,18 @@ import type {
 import { listEffectiveRules } from "core/tools/permissions/effectiveRules";
 import { DEFAULT_POLICY_LEVELS } from "core/tools/permissions/policy";
 import { parsePolicyFile } from "core/tools/permissions/settingsFile";
-import { createLoop, enterWait } from "core/util/loopMode";
+import { createLoop, enterWait, stopLoop } from "core/util/loopMode";
 import { addBlockedCall } from "@gui/redux/slices/blockedCallsSlice";
 import { setPolicyLevel } from "@gui/redux/slices/uiSlice";
 import { POLICY_AREAS } from "core/tools/permissions/policy";
 import type { MockIdeMessenger } from "@gui/context/MockIdeMessenger";
 import {
+  addRequestUsageToSession,
   newSession,
   setLoop,
+  setPromptCacheState,
   noteToolDialectLeak,
+  setActive,
   setMode,
   setRecoveryHold,
   setTaskPlan,
@@ -178,6 +181,20 @@ const PLAN: TaskPlan = {
   updatedAt: NOW.toISOString(),
 } as TaskPlan;
 
+function loopScene(
+  store: Store,
+  change: (loop: LoopState) => LoopState,
+  // A running loop takes its next step when nothing streams, which in the
+  // harness ends in an error; a turn in flight keeps the picture still
+  inFlight = false,
+): void {
+  store.dispatch(newSession(session([], "Fix parseConfig")));
+  store.dispatch(setMode("loop" as never));
+  store.dispatch(setTaskPlan(PLAN));
+  store.dispatch(setLoop(change(loopState())));
+  if (inFlight) store.dispatch(setActive());
+}
+
 function loopState(): LoopState {
   // the real clock: a loop whose start is far in the past is stopped by its own time budget
   const loop = createLoop(PLAN, {
@@ -268,7 +285,264 @@ const permissionsEditor: Fixture = async ({ messenger, navigate }) => {
     ?.scrollIntoView({ block: "start" });
 };
 
+// ---- Loop mode: the plan tile and its tree ---------------------------------
+
+const TILE_TITLES = [
+  "Port sdk-forge/loop.py pickup to the projecthub CLI",
+  "Move the roadmap sync onto projecthub issues",
+  "Point every project AGENTS.md at the projecthub plan",
+  "Move verify.py's five gates into projecthub",
+  "Retire the sdk-forge githooks path and re-point core.hooksPath",
+  "Write the migration note in PORTFOLIO.md",
+  "Run the whole suite from a clean checkout",
+  "Tag the release",
+];
+
+const PLAN_URI =
+  "file:///c:/work/app/.continuous/plans/finish-the-migration.md";
+
+function planCall(): ToolCallState {
+  return {
+    toolCallId: "plan-1",
+    toolCall: {
+      id: "plan-1",
+      type: "function",
+      function: { name: "present_plan", arguments: "{}" },
+    },
+    parsedArgs: {
+      title: "Finish the sdk-forge to projecthub migration",
+      plan: "Move the planning tools onto projecthub, one project at a time.",
+      todos: TILE_TITLES,
+    },
+    status: "done",
+    output: [
+      {
+        name: "Finish the sdk-forge to projecthub migration",
+        description: ".continuous/plans/finish-the-migration.md",
+        content: "Plan saved",
+        uri: { type: "file", value: PLAN_URI },
+      },
+    ],
+  } as ToolCallState;
+}
+
+function tilePlan(texts = TILE_TITLES): TaskPlan {
+  return {
+    items: texts.map((text, i) => ({
+      id: String(i + 1),
+      text,
+      status: "pending" as const,
+      ...(i === 1 ? { budget: { turns: 12 } } : {}),
+    })),
+    updatedAt: NOW.toISOString(),
+  } as TaskPlan;
+}
+
+function toolTurn(command: string): ChatHistoryItem {
+  return assistant("", [
+    {
+      toolCallId: "t-" + command.length,
+      toolCall: {
+        id: "t-" + command.length,
+        type: "function",
+        function: {
+          name: "run_terminal_command",
+          arguments: JSON.stringify({ command }),
+        },
+      },
+      status: "done",
+      parsedArgs: { command },
+    } as ToolCallState,
+  ]);
+}
+
+type LoopPatch = (loop: LoopState, plan: TaskPlan) => LoopState;
+
+/** The plan card at the head of a Loop session, with the loop in the state `patch` sets */
+function tileFixture(opts: {
+  patch: LoopPatch;
+  plan?: TaskPlan;
+  /** The plan the loop was created from, when it differs (a re-plan waits) */
+  loopPlan?: TaskPlan;
+  history?: ChatHistoryItem[];
+  /** Open the tree with a click, as a person would */
+  open?: boolean;
+}): Fixture {
+  return async ({ store }) => {
+    const plan = opts.plan ?? tilePlan();
+    const base = createLoop(opts.loopPlan ?? plan, {
+      now: new Date(Date.now() - 400_000),
+      sessionTokens: 0,
+      autonomy: "auto",
+      title: "Finish the sdk-forge to projecthub migration",
+    });
+    const patched = opts.patch({ ...base, round: 2 }, plan);
+    store.dispatch(
+      newSession(
+        session(
+          [
+            user("Plan the migration, then build it"),
+            assistant("", [planCall()]),
+            ...(opts.history ?? []),
+          ],
+          "Finish the migration",
+        ),
+      ),
+    );
+    store.dispatch(setMode("loop" as never));
+    store.dispatch(setTaskPlan(plan));
+    store.dispatch(setLoop(patched));
+    // a turn is running: the loop driver leaves a running loop alone
+    if (patched.status === "running") store.dispatch(setActive());
+    if (opts.open) {
+      await new Promise((r) => setTimeout(r, 600));
+      (
+        document.querySelector(
+          "[data-testid=plan-tree-root] > div",
+        ) as HTMLElement | null
+      )?.click();
+      // and the fold of the finished items, to show what was replaced
+      await new Promise((r) => setTimeout(r, 100));
+      (
+        document.querySelector(
+          "[data-testid=plan-tree-fold-done] > div",
+        ) as HTMLElement | null
+      )?.click();
+    }
+  };
+}
+
+const withItems =
+  (statuses: Record<string, Partial<LoopState["items"][number]>>) =>
+  (loop: LoopState): LoopState => ({
+    ...loop,
+    items: loop.items.map((i) => ({ ...i, ...statuses[i.id] })),
+  });
+
 export const FIXTURES: Record<string, Fixture> = {
+  /** Loop mode, the plan tile: collapsed, one click to audit */
+  "loop-plan-tile": tileFixture({
+    patch: (loop) => ({
+      ...withItems({
+        "1": { status: "done" },
+        "2": { status: "running", attempts: 1 },
+      })(loop),
+      current: {
+        kind: "item",
+        itemId: "2",
+        historyIndex: 2,
+        startedAt: new Date(Date.now() - 130_000).toISOString(),
+      },
+    }),
+  }),
+  /** Loop mode, the plan tree open: done fold, the current item with its live lines, upcoming rows */
+  "loop-plan-running": tileFixture({
+    open: true,
+    history: [
+      toolTurn("pytest -q tests/test_roadmap.py"),
+      toolTurn('pip install -e ".[dev]"'),
+    ],
+    patch: (loop) =>
+      ({
+        ...withItems({
+          "1": { status: "done" },
+          "2": { status: "running", attempts: 1, addedInRound: 2 },
+        })(loop),
+        current: {
+          kind: "item",
+          itemId: "2",
+          historyIndex: 2,
+          startedAt: new Date(Date.now() - 130_000).toISOString(),
+        },
+        replacedItems: [
+          {
+            id: "0",
+            text: "Re-run the gates on the PR head",
+            round: 2,
+            replacedBy: "2",
+          },
+        ],
+        autoDecisions: [
+          {
+            kind: "plan",
+            by: "system",
+            source: "Plan edits: Permissive",
+            text: "Plan updated: 7 kept, 1 added, 1 dropped; check of item 1 replaced",
+            at: new Date().toISOString(),
+          },
+          {
+            kind: "question",
+            by: "system",
+            source: "Questions: Permissive",
+            text: "Auto-answered: Merge PR #7 as-is? -> Merge it after writing the gate record",
+            at: new Date().toISOString(),
+          },
+        ],
+      }) as LoopState,
+  }),
+  /** Loop mode, a re-plan waiting to be accepted: dropped struck through, new to-do, kept folded */
+  "loop-plan-waiting": (() => {
+    const previous = TILE_TITLES.slice();
+    const next = tilePlan([
+      TILE_TITLES[0],
+      "Write PR #7's gate record to the log",
+      ...TILE_TITLES.slice(2),
+    ]);
+    // the new to-do has an id the loop does not know
+    next.items[1] = { ...next.items[1], id: "9" };
+    return tileFixture({
+      plan: next,
+      loopPlan: tilePlan(),
+      patch: (loop) => ({
+        ...withItems({ "1": { status: "done" } })(loop),
+        status: "awaiting_plan" as const,
+        replanReason:
+          "It changes or removes the check of item 2, which ended stuck without running it.",
+        replanned: { planTexts: previous },
+      }),
+    });
+  })(),
+  /** Loop mode, an item failed and a repair re-plan runs */
+  "loop-plan-failed": tileFixture({
+    history: [toolTurn("pytest -q")],
+    patch: (loop) => ({
+      ...withItems({
+        "1": { status: "done" },
+        "2": {
+          status: "failed",
+          attempts: 2,
+          check: {
+            status: "failed",
+            command: "pytest -q",
+            exitCode: 1,
+            output: "collected 12 items\n2 failed, 10 passed in 3.4s",
+            at: new Date().toISOString(),
+          },
+        },
+      })(loop),
+      current: {
+        kind: "replan",
+        itemId: "2",
+        itemText: TILE_TITLES[1],
+        historyIndex: 2,
+        startedAt: new Date(Date.now() - 20_000).toISOString(),
+      },
+    }),
+  }),
+  /** Loop mode, finished: one fold, the root says N/N done */
+  "loop-plan-finished": tileFixture({
+    patch: (loop) => ({
+      ...withItems(
+        Object.fromEntries(
+          TILE_TITLES.map((_, i) => [
+            String(i + 1),
+            { status: "done" as const },
+          ]),
+        ),
+      )(loop),
+      status: "stopped" as const,
+    }),
+  }),
   /** A new, empty chat */
   idle: ({ store }) => {
     store.dispatch(newSession());
@@ -411,15 +685,29 @@ export const FIXTURES: Record<string, Fixture> = {
       document.querySelector("[data-testid=attach-menu-button]") as HTMLElement
     )?.click();
   },
-  /** The "..." menu under the prompt, open */
-  "overflow-open": async ({ store }) => {
-    store.dispatch(newSession());
+  /** A conversation with usage: the row under the prompt, every control in it */
+  "status-row": ({ store }) => statusRowScene(store),
+  /** The same, with the usage breakdown opened from the readout */
+  "usage-open": async ({ store }) => {
+    statusRowScene(store);
     await new Promise((r) => setTimeout(r, 800));
-    (
-      document.querySelector(
-        "[data-testid=input-overflow-button]",
-      ) as HTMLElement
-    )?.click();
+    // The last one: earlier messages keep a hidden toolbar of their own
+    const readouts = document.querySelectorAll<HTMLElement>(
+      "[data-testid=usage-indicator]",
+    );
+    readouts[readouts.length - 1]?.click();
+    // Let the popover be placed above the readout before the picture
+    await new Promise((r) => setTimeout(r, 300));
+  },
+  /** What the context holds, opened from the context meter beside the cost */
+  "context-open": async ({ store }) => {
+    contextScene(store);
+    await new Promise((r) => setTimeout(r, 800));
+    const meters = document.querySelectorAll<HTMLElement>(
+      "[data-testid=context-meter]",
+    );
+    meters[meters.length - 1]?.click();
+    await new Promise((r) => setTimeout(r, 300));
   },
   /** The preset picker in the toolbar, open: glyph, what each sets, the check */
   "preset-open": async ({ store }) => {
@@ -435,6 +723,119 @@ export const FIXTURES: Record<string, Fixture> = {
     store.dispatch(setMode("loop" as never));
     store.dispatch(setTaskPlan(PLAN));
     store.dispatch(setLoop(loopState()));
+  },
+  /** Loop mode, running item 2: the status line, "Now:" and the progress */
+  "loop-running": ({ store }) => {
+    loopScene(
+      store,
+      (loop) => ({
+        ...loop,
+        title: "Fix parseConfig so defaults merge before the unit converts",
+        status: "running",
+        waitingSince: undefined,
+        current: {
+          kind: "item",
+          itemId: "2",
+          historyIndex: 0,
+          startedAt: new Date().toISOString(),
+        },
+      }),
+      true,
+    );
+  },
+  /** Three questions wait on the person: the tray shows one, with a pager */
+  "loop-questions": ({ store }) => {
+    const question = (id: string, text: string) => ({
+      id,
+      itemId: "2",
+      question: text,
+      kind: "blocking" as const,
+      options: [
+        "Merge it as it is (recommended)",
+        "Leave it open",
+        "Write the record first",
+      ],
+      askedAt: new Date().toISOString(),
+    });
+    loopScene(store, (loop) => ({
+      ...loop,
+      status: "waiting",
+      questions: [
+        question(
+          "q1",
+          "PR #7 is open and green by its own report. Should I merge it as-is, or wait for you?",
+        ),
+        question("q2", "Which branch should the migration land on?"),
+        question("q3", "Do you want the gate record written into the repo?"),
+      ],
+    }));
+  },
+  /** A re-plan waits to be accepted: the tray holds Review diff, Keep planning, Accept plan */
+  "loop-replan": ({ store }) => {
+    loopScene(store, (loop) => ({
+      ...loop,
+      status: "awaiting_plan",
+      replanReason:
+        "Item 2 failed twice: the test runner is not installed, so the plan adds an install step first.",
+    }));
+  },
+  /** An item failed and its repair re-plan runs: the red state */
+  "loop-failed": ({ store }) => {
+    loopScene(
+      store,
+      (loop) => ({
+        ...loop,
+        status: "replanning",
+        waitingSince: undefined,
+        items: loop.items.map((i) =>
+          i.id === "2" ? { ...i, status: "failed" as const } : i,
+        ),
+        current: {
+          kind: "replan",
+          itemId: "2",
+          historyIndex: 0,
+          startedAt: new Date().toISOString(),
+        },
+      }),
+      true,
+    );
+  },
+  /** Every item done: Close replaces Stop */
+  "loop-finished": ({ store }) => {
+    loopScene(store, (loop) =>
+      stopLoop(
+        {
+          ...loop,
+          items: loop.items.map((i) => ({ ...i, status: "done" as const })),
+        },
+        "done",
+        "Every item is done.",
+      ),
+    );
+  },
+  /** The person stopped the loop: Resume and Close */
+  "loop-stopped": ({ store }) => {
+    loopScene(store, (loop) =>
+      stopLoop(loop, "stopped", "You stopped the loop."),
+    );
+  },
+  /** The gear opened: strategy, Parallel and the note */
+  "loop-settings-open": async ({ store }) => {
+    loopScene(
+      store,
+      (loop) => ({
+        ...loop,
+        status: "running",
+        waitingSince: undefined,
+      }),
+      true,
+    );
+    await new Promise((r) => setTimeout(r, 800));
+    (
+      document.querySelector(
+        "[data-testid=loop-settings-toggle]",
+      ) as HTMLElement
+    )?.click();
   },
   /** Loop mode at IDGAF with seven refused calls: the one-line chip and the blocked badge */
   "loop-idgaf": ({ store }) => {
@@ -586,10 +987,24 @@ function bedrock(ok: boolean): Fixture {
   };
 }
 
+/** OpenRouter provider setup with the one-time "Pull model information" card. */
+function catalogue(): Fixture {
+  return async ({ messenger }) => {
+    const h = messenger.responseHandlers as any;
+    h["modelCatalog/status"] = async () => ({
+      policy: "ask",
+      refreshHours: 24,
+    });
+    h["modelCatalog/cached"] = async () => null;
+    await sleep(400);
+  };
+}
+
 // The loop frame is mounted on its own (see main.tsx, LoopFrameDemo); the state is in the name.
 const noop: Fixture = async () => {};
 
 Object.assign(FIXTURES, {
+  catalogue: catalogue(),
   "loop-frame-running": noop,
   "loop-frame-waiting": noop,
   "loop-frame-failed": noop,
@@ -728,4 +1143,146 @@ Object.assign(FIXTURES, {
 
 Object.assign(FIXTURES, AUDIT_FIXTURES);
 
+/** A drag event as Chromium builds it, with VS Code's types set. */
+function dispatchDrag(type: string, data: Record<string, string>) {
+  const target = document.querySelector(
+    "[data-testid=editor-input-main]",
+  ) as HTMLElement | null;
+  if (!target) return;
+  const dataTransfer = new DataTransfer();
+  for (const [k, v] of Object.entries(data)) dataTransfer.setData(k, v);
+  target.dispatchEvent(
+    new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer }),
+  );
+}
+
+const WORKSPACE = "file:///Users/user/workspace1";
+
+Object.assign(FIXTURES, {
+  /** A file dragged over the input (not yet dropped): the drop target */
+  "drop-target": async ({ store }: FixtureContext) => {
+    store.dispatch(newSession());
+    await sleep(800);
+    dispatchDrag("dragenter", {
+      "application/vnd.code.uri-list": `${WORKSPACE}/src/app.ts`,
+    });
+    await sleep(200);
+  },
+  /** A drop of .env and a file outside the workspace: the refusal note */
+  "drop-refused": async ({ store }: FixtureContext) => {
+    store.dispatch(newSession());
+    await sleep(800);
+    const uris = [`${WORKSPACE}/.env`, "file:///tmp/elsewhere/notes.md"];
+    dispatchDrag("drop", {
+      ResourceURLs: JSON.stringify(uris),
+      "application/vnd.code.uri-list": uris.join("\r\n"),
+    });
+    await sleep(400);
+  },
+});
+
 export const FIXTURE_NAMES = Object.keys(FIXTURES);
+
+/** A reply that reported usage, with the prompt cache warm. */
+/**
+ * A conversation whose context has something in every common part: an
+ * attached file, a file read, a test run and the replies, with a reported
+ * count close to what they hold, so the split is the one a person would see.
+ */
+function contextScene(store: Store): void {
+  const line = (
+    n: number,
+  ) => `export const value${n} = compute(${n}); // a line of code
+`;
+  const file = (lines: number) =>
+    Array.from({ length: lines }, (_, i) => line(i)).join("");
+  const readCall = {
+    id: "call-read",
+    type: "function" as const,
+    function: {
+      name: "read_file",
+      arguments: JSON.stringify({ filepath: "src/config/parseConfig.ts" }),
+    },
+  };
+  const ask: ChatHistoryItem = {
+    message: { role: "user", content: "Why does the parseConfig test fail?" },
+    contextItems: [
+      {
+        id: { providerTitle: "file", itemId: "readme" },
+        name: "README.md",
+        description: "README.md",
+        content: file(220),
+      },
+    ],
+  };
+  const read: ChatHistoryItem = {
+    message: { role: "assistant", content: "", toolCalls: [readCall] },
+    contextItems: [],
+    toolCallStates: [
+      {
+        toolCallId: readCall.id,
+        toolCall: readCall,
+        status: "done",
+        parsedArgs: { filepath: "src/config/parseConfig.ts" },
+        output: [
+          {
+            name: "parseConfig.ts",
+            description: "src/config/parseConfig.ts",
+            content: file(700),
+          },
+        ],
+      } as ToolCallState,
+    ],
+  };
+  store.dispatch(
+    newSession(
+      session([
+        ask,
+        read,
+        assistant("Running the test to confirm.", [runCommandCall("done")]),
+        assistant(MARKDOWN_REPLY),
+      ]),
+    ),
+  );
+  store.dispatch(
+    addRequestUsageToSession({
+      provider: CHAT_MODEL.provider,
+      model: CHAT_MODEL.model,
+      usage: { promptTokens: 15_000, completionTokens: 400 },
+    }),
+  );
+  store.dispatch(
+    setPromptCacheState({
+      escalated: false,
+      lastRequestAt: Date.now() - 60_000,
+      lastTtl: "5m",
+      lastInputTokens: 15_000,
+    }),
+  );
+}
+
+function statusRowScene(store: Store): void {
+  store.dispatch(
+    newSession(
+      session([
+        user("Why does the parseConfig test fail?"),
+        assistant(MARKDOWN_REPLY),
+      ]),
+    ),
+  );
+  store.dispatch(
+    addRequestUsageToSession({
+      provider: CHAT_MODEL.provider,
+      model: CHAT_MODEL.model,
+      usage: { promptTokens: 84_000, completionTokens: 1_200 },
+    }),
+  );
+  store.dispatch(
+    setPromptCacheState({
+      escalated: false,
+      lastRequestAt: Date.now() - 60_000,
+      lastTtl: "5m",
+      lastInputTokens: 84_000,
+    }),
+  );
+}

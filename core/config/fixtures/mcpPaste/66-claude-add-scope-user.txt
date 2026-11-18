@@ -1,0 +1,1 @@
+claude mcp add --transport http hubspot --scope user https://mcp.hubspot.com/anthropic
