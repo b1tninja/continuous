@@ -11,6 +11,11 @@ import { ToCoreProtocol } from "core/protocol";
 import { renderChatMessage } from "core/util/messageContent";
 import { buildLedgerEntry } from "../../util/cacheLedger";
 import {
+  noteCompiledRequest,
+  noteCompileFailure,
+  noteContextWindow,
+} from "../../util/chatDebugLog";
+import {
   detectCacheMiss,
   expectedRebuildCauses,
   expectedRoute,
@@ -228,11 +233,17 @@ export const streamNormalInput = createAsyncThunk<
 
     if (precompiledRes.status === "error") {
       if (precompiledRes.error.includes("Not enough context")) {
+        noteContextWindow("Compile refused the request: not enough context");
         dispatch(setInlineErrorMessage("out-of-context"));
         dispatch(setInactive());
         return;
       } else {
-        throw new Error(precompiledRes.error);
+        const compileError = new Error(precompiledRes.error);
+        // Marked so the stream wrapper does not also record it as a provider
+        // error. The name stays Error: callers match on that.
+        (compileError as Error & { compileChat?: boolean }).compileChat = true;
+        noteCompileFailure(precompiledRes.error);
+        throw compileError;
       }
     }
 
@@ -243,6 +254,7 @@ export const streamNormalInput = createAsyncThunk<
       contextPercentage,
       outputTokensAvailable,
     } = precompiledRes.content;
+    noteCompiledRequest({ didPrune, didAge });
 
     // A local model with no configured limit may use the room that is left,
     // so a large tool call is not cut off for no gain

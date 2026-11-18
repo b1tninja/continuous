@@ -300,5 +300,6 @@ export const useFindWidget = (
   return {
     highlights,
     widget,
+    open,
   };
 };

@@ -1,11 +1,20 @@
 import { createAsyncThunk } from "@reduxjs/toolkit";
 
 import StreamErrorDialog from "../../pages/gui/StreamError";
+import { noteProviderFailure } from "../../util/chatDebugLog";
 import { analyzeError } from "../../util/errorAnalysis";
 import { classifyRequestFailure } from "../../util/requestFailures";
 
 const OVERLOADED_RETRIES = 3;
 const OVERLOADED_DELAY_MS = 2000;
+
+function isCompileChatError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "compileChat" in error &&
+    (error as Error & { compileChat?: boolean }).compileChat === true
+  );
+}
 
 function isOverloadedErrorMessage(message?: string): boolean {
   if (!message) return false;
@@ -50,6 +59,9 @@ export const streamThunkWrapper = createAsyncThunk<
       // Every failed attempt is noted for the session, including the ones
       // retried below. A request the user stopped is not a failure.
       const kind = classifyRequestFailure(message, statusCode);
+      if (!isCompileChatError(e)) {
+        noteProviderFailure(message);
+      }
       if (kind && selectedModel) {
         dispatch(
           recordRequestFailure({
