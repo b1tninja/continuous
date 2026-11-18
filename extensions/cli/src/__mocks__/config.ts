@@ -1,8 +1,5 @@
 import { vi } from "vitest";
 
-export const getApiClient = vi.fn<(accessToken: string | null) => any>(
-  () => null,
-);
 export const getLlmApi =
   vi.fn<
     (

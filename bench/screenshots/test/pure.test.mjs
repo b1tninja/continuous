@@ -21,14 +21,13 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 
 describe("views", () => {
   it("every view names a fixture that harness/fixtures.ts defines", () => {
-    const text = fs.readFileSync(
-      path.join(here, "..", "harness", "fixtures.ts"),
-      "utf8",
-    );
+    const text = ["fixtures.ts", "auditFixtures.ts"]
+      .map((f) => fs.readFileSync(path.join(here, "..", "harness", f), "utf8"))
+      .join("\n");
     for (const [name, v] of Object.entries(VIEWS)) {
       assert.ok(
         new RegExp(`(^|\\s)"?${v.fixture}"?:\\s`, "m").test(text),
-        `view ${name}: fixture ${v.fixture} is not in fixtures.ts`,
+        `view ${name}: fixture ${v.fixture} is not in fixtures.ts or auditFixtures.ts`,
       );
     }
   });

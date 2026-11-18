@@ -10,10 +10,10 @@ import { looksSecret } from "./secretCommands";
  * file, or points a tool at another server. So the name decides.
  *
  *   dangerous  loads code, runs a program, or changes which program a name
- *              means: asks at every level, YOLO included (like a command whose
+ *              means: asks at every level below IDGAF, where it is recorded (like a command whose
  *              name is a variable)
  *   sensitive  redirects configuration, credentials, network or where files
- *              go: asks below YOLO, like a protected path
+ *              go: asks below IDGAF, like a protected path
  *   harmless   reviewed as inert (colour, locale, log level): never asks
  *   unknown    nothing says it matters: no extra ask. The command is still
  *              never read as read-only (readOnlyCommand.ts), and every rule
@@ -23,9 +23,9 @@ import { looksSecret } from "./secretCommands";
  * sensitive, and matching more is the safe direction. The lists are built in.
  * `EnvNameOptions` lets a caller add names (`ask`) or take names off
  * (`allow`); the caller must read them from the person's own config and from
- * nothing else (not a workspace file, an assistant or the environment).
- * Nothing feeds it yet (ROADMAP follow-up), so today only the built-in lists
- * apply.
+ * nothing else (not a workspace file, an assistant or the environment):
+ * `readUserEnvNames` (userEnvNames.ts). An `allow` entry never lowers a name
+ * the built-in policy marks dangerous.
  *
  * Sources, one per family. Every page below was re-read on 2026-11-11 (the
  * fetch date is the same for all) and each classified name was checked against
@@ -358,18 +358,12 @@ function listMatches(
   });
 }
 
-/** Classify a variable name. Pure: the value is judged separately (`valueRunsCode`). */
-export function classifyEnvName(
-  name: string,
-  options: EnvNameOptions = {},
-): EnvClass {
+/**
+ * Classify a variable name by the built-in lists alone. The person's own
+ * `allow` and `ask` lists are applied on top by `classifyEnvName`.
+ */
+function builtinClass(name: string): EnvClass {
   const lower = name.toLowerCase();
-  if (listMatches(options.allow, name)) {
-    return { risk: "harmless", why: "allowed in your config" };
-  }
-  if (listMatches(options.ask, name)) {
-    return { risk: "dangerous", why: "listed in your config" };
-  }
   if (
     HARMLESS.has(lower) ||
     HARMLESS_PREFIXES.some((p) => lower.startsWith(p))
@@ -393,6 +387,29 @@ export function classifyEnvName(
     return { risk: "sensitive", why: "a credential variable" };
   }
   return { risk: "unknown", why: "no known effect" };
+}
+
+/**
+ * Classify a variable name. Pure: the value is judged separately
+ * (`valueRunsCode`). An `ask` entry always raises a name. An `allow` entry
+ * lowers a name only from sensitive or unknown: a name the built-in policy
+ * marks dangerous stays dangerous, because it asks at every level and a
+ * config entry must not remove that floor.
+ */
+export function classifyEnvName(
+  name: string,
+  options: EnvNameOptions = {},
+): EnvClass {
+  const base = builtinClass(name);
+  if (listMatches(options.ask, name)) {
+    return base.risk === "dangerous"
+      ? base
+      : { risk: "dangerous", why: "listed in your config" };
+  }
+  if (base.risk !== "dangerous" && listMatches(options.allow, name)) {
+    return { risk: "harmless", why: "allowed in your config" };
+  }
+  return base;
 }
 
 /**

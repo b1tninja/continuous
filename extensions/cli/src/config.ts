@@ -7,40 +7,9 @@ import {
   LLMConfig,
   onFieldFallback,
 } from "@continuedev/openai-adapters";
-import {
-  Configuration,
-  DefaultApi,
-} from "@continuedev/sdk/dist/api/dist/index.js";
 
 import { AuthConfig } from "./auth/workos.js";
-import { env } from "./env.js";
 import { logger } from "./util/logger.js";
-import { getUniqueId } from "./util/uniqueId.js";
-import { getVersion } from "./version.js";
-
-/**
- * Creates user-agent header value for CLI requests
- */
-function getUserAgent(): string {
-  const version = getVersion();
-  return `Continue-CLI/${version}`;
-}
-
-/**
- * Merges user-agent header into request options
- */
-function _mergeUserAgentIntoRequestOptions(
-  requestOptions: ModelConfig["requestOptions"],
-): ModelConfig["requestOptions"] {
-  return {
-    ...requestOptions,
-    headers: {
-      ...requestOptions?.headers,
-      "user-agent": getUserAgent(),
-      "x-continue-unique-id": getUniqueId(),
-    },
-  };
-}
 
 /**
  * The caching settings for a Bedrock model. The CLI only runs agent loops, so
@@ -94,6 +63,20 @@ export function anthropicTtl(
 }
 
 /**
+ * The model config a subagent's requests are built from: its cache lifetime is
+ * `cacheBehavior.subagentTtl` (C85), 5 minutes unless that says otherwise,
+ * because a run's requests come seconds apart. "inherit" keeps the model's own
+ * `cacheBehavior.ttl` (or the CLI's Auto default). Only the lifetime changes:
+ * whether the model caches at all is decided as for any other request, and
+ * CONTINUOUS_FORCE_CACHE_5M=1 still wins in the adapters.
+ */
+export function subagentCacheModel(model: ModelConfig): ModelConfig {
+  const policy = model.cacheBehavior?.subagentTtl ?? "5m";
+  if (policy === "inherit") return model;
+  return { ...model, cacheBehavior: { ...model.cacheBehavior, ttl: policy } };
+}
+
+/**
  * Once per process: when an adapter drops a request field a model refused
  * (the request-field policy, plans/ROADMAP.md C58), say so once, with the
  * config line that makes the choice permanent. The exit summary lists them
@@ -121,6 +104,7 @@ export function createLlmApi(
     apiBase: model.apiBase,
     requestOptions: model.requestOptions,
     env: model.env,
+    omitSampling: model.defaultCompletionOptions?.omitSampling,
     // Prompt caching settings. The Bedrock adapter reads `promptCaching` and
     // `cacheBehavior`; see `bedrockCachingSettings` for what it gets when the
     // model config says nothing. The Anthropic adapter has its own
@@ -164,15 +148,4 @@ export function getLlmApi(
   }
 
   return [llmApi, model];
-}
-
-export function getApiClient(
-  accessToken: string | undefined | null,
-): DefaultApi {
-  return new DefaultApi(
-    new Configuration({
-      basePath: env.apiBase.replace(/\/$/, ""),
-      accessToken: accessToken ?? undefined,
-    }),
-  );
 }

@@ -4,10 +4,17 @@ import type { ShellKind } from "../../util/shell";
 import { commandCandidates } from "./candidates";
 import { effectsOfCommand } from "./commandSpecs";
 import { hiddenCommandName } from "./commandName";
-import { evaluateToolPolicyWithRules } from "./evaluate";
+import { evaluateToolPolicyWithRules as evaluateAndRun } from "./evaluate";
+import { wouldDecide } from "./idgafView.testutil";
 import { DEFAULT_POLICY_LEVELS } from "./policy";
 import { classifyReadOnly } from "./readOnlyCommand";
 import { matchTerminalCommand, parseToolPermissions } from "./rules";
+
+// At IDGAF every call runs; these tests read what the guard would have
+// decided (wouldDecide), which IDGAF records instead of acting on.
+const evaluateToolPolicyWithRules = (
+  input: Parameters<typeof evaluateAndRun>[0],
+) => wouldDecide(evaluateAndRun(input));
 
 const ASK = "allowedWithPermission" as const;
 const OFF = "disabled" as const;
@@ -33,7 +40,7 @@ const run = (
     ...extra,
   });
 
-const at = (tools: "yolo" | "permissive" | "automatic") => ({
+const at = (tools: "idgaf" | "permissive" | "automatic") => ({
   approval: { levels: { ...DEFAULT_POLICY_LEVELS, tools } },
 });
 
@@ -81,11 +88,11 @@ describe("a deny rule on a cmdlet sees every one of its aliases", () => {
   });
 
   it.each(cases)(
-    "%s: %s is a floor rule at YOLO, and no allow rule loosens it",
+    "%s: %s is a floor rule at IDGAF, and no allow rule loosens it",
     (cmdlet, alias, args) => {
       const r = run(`${alias} ${args}`, "powershell", {
         approval: {
-          levels: { ...DEFAULT_POLICY_LEVELS, tools: "yolo" },
+          levels: { ...DEFAULT_POLICY_LEVELS, tools: "idgaf" },
           floor: [`runTerminalCommand(${cmdlet}*)`],
         },
         permissions: { allow: ["runTerminalCommand(*)"] },
@@ -140,7 +147,7 @@ describe("a command that defines an alias asks, and cannot be loosened", () => {
 
   it.each(defining)("%j asks at every level", (command) => {
     expect(hiddenCommandName(command, "powershell")).toBeDefined();
-    for (const level of ["yolo", "permissive", "automatic"] as const) {
+    for (const level of ["idgaf", "permissive", "automatic"] as const) {
       expect(run(command, "powershell", at(level)), level).toMatchObject({
         policy: ASK,
         protection: "hidden-command",

@@ -1,7 +1,10 @@
 import { createAsyncThunk, unwrapResult } from "@reduxjs/toolkit";
 import { ContextItem, IDE, McpUiState, ToolCallState } from "core";
 import { CLIENT_TOOLS_IMPLS } from "core/tools/builtIn";
-import { flagToolOutput } from "core/tools/permissions/injection";
+import {
+  flagToolOutput,
+  stripsHiddenCharacters,
+} from "core/tools/permissions/injection";
 import {
   CHECKPOINT_TOOL_NAMES,
   resolveCheckpointTargets,
@@ -10,6 +13,8 @@ import {
 import { ContinueError, ContinueErrorReason } from "core/util/errors";
 
 import { callClientTool } from "../../util/clientTools/callClientTool";
+import { allowOutsideWorkspaceOf } from "../../util/outsideEdits";
+import { runawayActionForLevel } from "../../util/runawayAction";
 import { selectSelectedChatModel } from "../slices/configSlice";
 import {
   acceptToolCall,
@@ -61,6 +66,7 @@ export const callToolById = createAsyncThunk<
   await snapshotBeforeEdit(toolCallState, state.session.history, {
     dispatch,
     ide: extra.ideMessenger.ide,
+    allowOutside: allowOutsideWorkspaceOf(state),
   });
 
   let output: ContextItem[] | undefined = undefined;
@@ -98,6 +104,14 @@ export const callToolById = createAsyncThunk<
     // Tool is called on core side
     const result = await extra.ideMessenger.request("tools/call", {
       toolCall: toolCallState.toolCall,
+      // File edits at IDGAF: the file tools may leave the workspace
+      ...(allowOutsideWorkspaceOf(getState())
+        ? { allowOutsideWorkspace: true }
+        : {}),
+      // Output that looks like a runaway: stopped, unless Tools lets it run
+      runawayAction: runawayActionForLevel(getState().ui?.policyLevels?.tools),
+      // The session whose fetched pages the web tools read
+      sessionId: getState().session.id,
     });
     if (result.status === "error") {
       throw new Error(result.error);
@@ -132,8 +146,14 @@ export const callToolById = createAsyncThunk<
   } else if (output?.length) {
     // Client-side injection hint (plan 7.4): tool output that reads like
     // instructions gets a reminder in front of it, so the model treats it as
-    // data. The text is otherwise unchanged.
-    const { items: checked } = flagToolOutput(output);
+    // data. The text is otherwise unchanged, except that an MCP result or a
+    // file read flagged for hidden characters has them removed.
+    const { items: checked } = flagToolOutput(output, {
+      stripHidden: stripsHiddenCharacters(
+        toolCallState.toolCall.function.name,
+        toolCallState.tool?.uri,
+      ),
+    });
     output = checked;
     dispatch(
       updateToolCallOutput({
@@ -192,7 +212,11 @@ export const callToolById = createAsyncThunk<
 async function snapshotBeforeEdit(
   toolCallState: ToolCallState,
   history: RootState["session"]["history"],
-  { dispatch, ide }: { dispatch: AppThunkDispatch; ide: IDE },
+  {
+    dispatch,
+    ide,
+    allowOutside,
+  }: { dispatch: AppThunkDispatch; ide: IDE; allowOutside?: boolean },
 ) {
   const toolName = toolCallState.toolCall.function.name;
   if (!CHECKPOINT_TOOL_NAMES.includes(toolName)) {
@@ -208,6 +232,7 @@ async function snapshotBeforeEdit(
       toolName,
       toolCallState.parsedArgs,
       ide,
+      { allowOutside },
     );
     for (const uri of uris) {
       dispatch(

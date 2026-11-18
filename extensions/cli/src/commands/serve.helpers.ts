@@ -1,10 +1,12 @@
 import { timingSafeEqual } from "node:crypto";
+import type { IncomingHttpHeaders } from "node:http";
 
 import chalk from "chalk";
 import type { ChatHistoryItem, Session, ToolStatus } from "core/index.js";
 import { createHistoryItem } from "core/util/messageConversion.js";
 import type { Express, NextFunction, Request, Response } from "express";
 
+import { runTurnWithStopHooks } from "../hooks/lifecycleHooks.js";
 import {
   describePromptBlocked,
   runUserPromptSubmitHooks,
@@ -20,16 +22,21 @@ import { streamChatResponse } from "../stream/streamChatResponse.js";
 import { StreamCallbacks } from "../stream/streamChatResponse.types.js";
 import { logger } from "../util/logger.js";
 
+import {
+  MAX_FAILED_AUTH_PER_MINUTE,
+  rateLimitMiddleware,
+  WindowCounter,
+} from "./serve.auth.js";
+
 /**
  * Where `cn serve` listens, and who may talk to it (plans/policy-areas.md,
  * "cn serve"). The server takes messages, approvals and loop answers, and
  * will take the policy levels, so anything that can reach the port can act
- * as the person. It listens on loopback unless told otherwise. Every request
- * carries a bearer token when one is given with `--token` (or
- * `CONTINUOUS_SERVE_TOKEN`). On loopback a token is optional; a server that
- * listens beyond this computer will not start without one.
- * On loopback the Host header must be a loopback name or address, and a
- * request that carries an Origin header is refused.
+ * as the person. It listens on loopback unless `--host` says otherwise.
+ * A bearer token is optional on loopback and required off it; when one is
+ * given every request carries it, in the Authorization header and nowhere else. The Host
+ * header must name the interface the server is bound to, and a request that
+ * carries an Origin header is refused unless `--allow-origin` lists it.
  */
 
 export const DEFAULT_SERVE_HOST = "127.0.0.1";
@@ -48,34 +55,6 @@ export function isLoopbackHost(host: string): boolean {
   );
 }
 
-/**
- * Why the server must not start with these options, or undefined when it
- * may. On loopback a token is optional. Off loopback one is required, at
- * least 16 characters, because anything on the network could otherwise act
- * as the person.
- */
-export function serveBindingProblem(
-  host: string,
-  token: string | undefined,
-): string | undefined {
-  if (isLoopbackHost(host)) return undefined;
-  const trimmed = token?.trim() ?? "";
-  if (trimmed.length >= 16) return undefined;
-  return `--host ${host} listens beyond this computer, so --token (or CONTINUOUS_SERVE_TOKEN) is required and must be at least 16 characters.`;
-}
-
-/**
- * The token every request must carry, from `--token` or the environment, or
- * undefined when none was given (loopback only, see `serveBindingProblem`).
- */
-export function resolveServeToken(
-  token: string | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): string | undefined {
-  const trimmed = (token ?? env.CONTINUOUS_SERVE_TOKEN ?? "").trim();
-  return trimmed || undefined;
-}
-
 /** The host from a Host header, without a port and without IPv6 brackets. */
 export function hostHeaderName(hostHeader: string | undefined): string {
   const raw = (hostHeader ?? "").trim();
@@ -90,18 +69,34 @@ export function hostHeaderName(hostHeader: string | undefined): string {
   return raw;
 }
 
+/** The port in a Host header, when it names one. */
+export function hostHeaderPort(
+  hostHeader: string | undefined,
+): string | undefined {
+  const raw = (hostHeader ?? "").trim();
+  const bracketed = /^\[[^\]]+\]:(\d+)$/.exec(raw);
+  if (bracketed) return bracketed[1];
+  return /^[^:]+:(\d+)$/.exec(raw)?.[1];
+}
+
 const UNSPECIFIED_HOSTS = new Set(["0.0.0.0", "::", "0:0:0:0:0:0:0:0"]);
 
 /**
- * Whether this request's Host header is the interface the server bound.
- * On loopback, only a loopback name or address is accepted.
+ * Whether this request's Host header is the interface the server bound, and
+ * the port when it names one. On loopback, only a loopback name or address
+ * is accepted.
  */
 export function hostHeaderAllowed(
   hostHeader: string | undefined,
   boundHost: string,
+  port?: number,
 ): boolean {
   const presented = hostHeaderName(hostHeader);
   if (!presented) return false;
+  const presentedPort = hostHeaderPort(hostHeader);
+  if (port !== undefined && presentedPort && presentedPort !== String(port)) {
+    return false;
+  }
   if (isLoopbackHost(boundHost)) return isLoopbackHost(presented);
   const bound = boundHost
     .trim()
@@ -111,13 +106,36 @@ export function hostHeaderAllowed(
   return presented.toLowerCase() === bound;
 }
 
-/** A browser sends Origin. curl and other local clients do not. */
-export function originHeaderAllowed(origin: string | undefined): boolean {
-  return origin === undefined || origin.trim() === "";
+/** An origin as it is compared: lower case, no trailing slash. */
+function normalizeOrigin(origin: string): string {
+  return origin.trim().toLowerCase().replace(/\/+$/, "");
+}
+
+/** Whether `--allow-origin` may list this value. No wildcard, no "null". */
+export function validAllowedOrigin(origin: string): boolean {
+  try {
+    const u = new URL(origin);
+    return (u.protocol === "http:" || u.protocol === "https:") && !!u.host;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A browser sends Origin; curl and other local clients do not. An Origin is
+ * accepted only when it is on the allowlist exactly.
+ */
+export function originHeaderAllowed(
+  origin: string | undefined,
+  allowed: readonly string[] = [],
+): boolean {
+  if (origin === undefined || origin.trim() === "") return true;
+  const wanted = normalizeOrigin(origin);
+  return allowed.some((a) => normalizeOrigin(a) === wanted);
 }
 
 export interface ServeRequestProblem {
-  status: 421 | 403;
+  status: 403;
   error: string;
 }
 
@@ -126,24 +144,63 @@ export interface ServeRequestProblem {
  * when the Host and Origin headers are acceptable.
  */
 export function serveRequestProblem(
-  headers: { host?: string; origin?: string },
+  headers: { host?: string; origin?: string; secFetchSite?: string },
   boundHost: string,
+  options: { port?: number; allowedOrigins?: readonly string[] } = {},
 ): ServeRequestProblem | undefined {
-  if (!hostHeaderAllowed(headers.host, boundHost)) {
+  if (!hostHeaderAllowed(headers.host, boundHost, options.port)) {
     return {
-      status: 421,
+      status: 403,
       error: isLoopbackHost(boundHost)
         ? "The Host header must be the loopback name or address this server is bound to."
         : "The Host header must match the address this server is bound to.",
     };
   }
-  if (!originHeaderAllowed(headers.origin)) {
+  if (!originHeaderAllowed(headers.origin, options.allowedOrigins)) {
     return {
       status: 403,
-      error: "Requests that carry an Origin header are refused.",
+      error:
+        "Requests that carry an Origin header are refused unless the origin is allowed with --allow-origin.",
+    };
+  }
+  // A browser says how the request relates to the page that made it. "none"
+  // is the person typing the address; anything else is a page, so refuse. No
+  // header at all is a client that is not a browser (curl, Node, the TUI).
+  const site = headers.secFetchSite?.trim();
+  if (site !== undefined && site.toLowerCase() !== "none") {
+    return {
+      status: 403,
+      error: "Requests made by a web page (Sec-Fetch-Site) are refused.",
     };
   }
   return undefined;
+}
+
+/** Methods that carry no body the server reads */
+const BODYLESS_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * 415 when a request that carries a body is not JSON. A cross-site form or a
+ * text/plain fetch is a "simple" request a page can send without a preflight;
+ * refusing every non-JSON body closes that. A POST with no body (/pause,
+ * /exit) needs no content type.
+ */
+export function bodyContentTypeProblem(req: {
+  method: string;
+  headers: IncomingHttpHeaders;
+}): { status: 415; error: string } | undefined {
+  if (BODYLESS_METHODS.has(req.method.toUpperCase())) return undefined;
+  const length = Number(req.headers["content-length"] ?? 0);
+  const chunked = req.headers["transfer-encoding"] !== undefined;
+  if (!(length > 0) && !chunked) return undefined;
+  const type = (headerValue(req.headers["content-type"]) ?? "")
+    .trim()
+    .toLowerCase();
+  if (type.startsWith("application/json")) return undefined;
+  return {
+    status: 415,
+    error: "A request body must be sent as application/json.",
+  };
 }
 
 function headerValue(value: string | string[] | undefined): string | undefined {
@@ -151,29 +208,62 @@ function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value.join(", ") : value;
 }
 
+export interface ServeGuardOptions {
+  boundHost: string;
+  /** The bearer token; undefined when none was given (loopback only) */
+  token: string | undefined;
+  port?: number;
+  allowedOrigins?: readonly string[];
+}
+
 /**
- * Refuse a request whose Host is not the bound loopback name or address, or
- * that carries an Origin header, then require the bearer token.
+ * Refuse a request whose Host is not the bound address or whose Origin is not
+ * allowed, limit the request rate per address, then require the bearer token.
  */
 export function installServeGuards(
   app: Express,
-  options: { boundHost: string; token: string | undefined },
+  options: ServeGuardOptions,
 ): void {
-  const { boundHost, token } = options;
+  const { boundHost, token, port, allowedOrigins = [] } = options;
+  app.disable("x-powered-by");
   app.use((req: Request, res: Response, next: NextFunction) => {
+    const origin = headerValue(req.headers.origin);
     const problem = serveRequestProblem(
       {
         host: headerValue(req.headers.host),
-        origin: headerValue(req.headers.origin),
+        origin,
+        secFetchSite: headerValue(req.headers["sec-fetch-site"]),
       },
       boundHost,
+      { port, allowedOrigins },
     );
     if (problem) {
       res.status(problem.status).json({ error: problem.error });
       return;
     }
+    const bodyProblem = bodyContentTypeProblem(req);
+    if (bodyProblem) {
+      res.status(bodyProblem.status).json({ error: bodyProblem.error });
+      return;
+    }
+    // An allowed origin gets its own name back, never a wildcard. The
+    // preflight carries no Authorization header, so it is answered here.
+    if (origin?.trim()) {
+      res.setHeader("Access-Control-Allow-Origin", origin.trim());
+      res.setHeader("Vary", "Origin");
+      if (req.method === "OPTIONS") {
+        res.setHeader(
+          "Access-Control-Allow-Headers",
+          "Authorization, Content-Type",
+        );
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        res.status(204).end();
+        return;
+      }
+    }
     next();
   });
+  app.use(rateLimitMiddleware());
   if (token) app.use(bearerTokenMiddleware(token));
 }
 
@@ -189,14 +279,32 @@ export function authorizeRequest(
   return given.length === expected.length && timingSafeEqual(given, expected);
 }
 
-/** Express middleware: every request must carry the token. */
-export function bearerTokenMiddleware(token: string) {
+/**
+ * Express middleware: every request must carry the token in the
+ * Authorization header. A token in the query string is never read (URLs end
+ * up in logs). An address that keeps failing is held off with 429.
+ */
+export function bearerTokenMiddleware(
+  token: string,
+  failures: WindowCounter = new WindowCounter(
+    MAX_FAILED_AUTH_PER_MINUTE,
+    60_000,
+  ),
+) {
   return (req: Request, res: Response, next: NextFunction): void => {
+    const who = req.socket.remoteAddress ?? "unknown";
+    if (failures.blocked(who)) {
+      res.status(429).json({ error: "Too many failed attempts." });
+      return;
+    }
     if (authorizeRequest(req.header("authorization"), token)) {
       next();
       return;
     }
-    res.status(401).json({ error: "A bearer token is required." });
+    failures.hit(who);
+    res.status(401).set("WWW-Authenticate", "Bearer").json({
+      error: "A bearer token is required in the Authorization header.",
+    });
   };
 }
 
@@ -348,13 +456,28 @@ export async function streamChatResponseWithInterruption(
   };
 
   try {
-    const response = await streamChatResponse(
-      state.session.history,
-      state.model,
-      llmApi,
-      abortController,
-      callbacks,
-    );
+    // A Stop hook that blocks sends the agent back to work, up to three
+    // times for this message (D4)
+    const response = await runTurnWithStopHooks({
+      runTurn: async () =>
+        (await streamChatResponse(
+          state.session.history,
+          state.model,
+          llmApi,
+          abortController,
+          callbacks,
+        )) || undefined,
+      addUserMessage: (text) => services.chatHistory.addUserMessage(text),
+      notice: (text) => {
+        logger.info(chalk.yellow(text));
+        try {
+          services.chatHistory.addSystemMessage(text);
+        } catch (err) {
+          logger.error("Failed to add the Stop hook notice", err);
+        }
+      },
+      cancelled: () => abortController.signal.aborted,
+    });
     return response || "";
   } finally {
     clearInterval(interruptionChecker);
@@ -379,22 +502,4 @@ export interface ServerState {
   serverRunning: boolean;
   pendingPermission: PendingPermission | null;
   systemMessage?: string;
-}
-
-/**
- * Check if the agent should be marked as complete based on conversation history.
- * The agent is complete if the last message is from the assistant and has no tool calls.
- */
-export function checkAgentComplete(
-  history: { message: { role: string; tool_calls?: any[] } }[] | undefined,
-): boolean {
-  if (!history || history.length === 0) {
-    return false;
-  }
-  const lastItem = history[history.length - 1];
-  if (lastItem?.message?.role !== "assistant") {
-    return false;
-  }
-  const toolCalls = (lastItem.message as any).tool_calls;
-  return !toolCalls || toolCalls.length === 0;
 }

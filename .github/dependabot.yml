@@ -16,8 +16,6 @@ updates:
       - "/extensions/cli"
       - "/packages/config-types"
       - "/packages/config-yaml"
-      - "/packages/continue-sdk"
-      - "/packages/continue-sdk/typescript"
       - "/packages/fetch"
       - "/packages/llm-info"
       - "/packages/openai-adapters"

@@ -26,35 +26,42 @@ runs:
   using: "composite"
   steps:
     - uses: actions/setup-node@v7
+      id: node
       with:
         node-version-file: ".nvmrc"
 
-    - uses: actions/cache@v6
+    # Cache policy (docs/ci-caching.md). Pull requests restore; only main saves the big entries
+    # (the VS Code download is 700 MB, and every pull request ref used to keep its own copy).
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       id: vscode-node-modules-cache
       with:
         path: extensions/vscode/node_modules
-        key: ${{ runner.os }}-vscode-node-modules-${{ hashFiles('extensions/vscode/package-lock.json') }}
+        key: ${{ runner.os }}-vscode-node-modules-node${{ steps.node.outputs.node-version }}-${{ hashFiles('extensions/vscode/package-lock.json') }}
 
     # Restore only, from what setup-component saved after a clean install. Prepackage
     # edits core/node_modules, so this job must not save it, and npm ci would delete it.
-    - uses: actions/cache/restore@v6
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       id: core-node-modules-cache
       with:
         path: core/node_modules
-        key: ${{ runner.os }}-core-node-modules-${{ hashFiles('core/package-lock.json') }}
+        key: ${{ runner.os }}-core-node-modules-node${{ steps.node.outputs.node-version }}-${{ hashFiles('core/package-lock.json') }}
 
-    # We don't want to cache the Continue extension, so it is deleted at the end of the job
-    - uses: actions/cache@v6
+    # The extensions the tests install from the marketplace (install-e2e-extensions.js skips one
+    # that is already there). The Continue extension is deleted before this is saved.
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       id: test-extensions-cache
       with:
         path: extensions/vscode/e2e/.test-extensions
-        key: CONSTANT
+        key: ${{ runner.os }}-vscode-test-extensions-${{ hashFiles('extensions/vscode/scripts/install-e2e-extensions.js') }}
 
-    - uses: actions/cache@v6
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       id: storage-cache
       with:
         path: extensions/vscode/e2e/storage
         key: ${{ runner.os }}-vscode-storage-${{ hashFiles('extensions/vscode/package-lock.json', 'extensions/vscode/package.json') }}
+
+    - name: Build packages
+      uses: ./.github/actions/setup-packages
 
     - name: Download build artifact
       uses: actions/download-artifact@v8
@@ -62,10 +69,9 @@ runs:
         name: vscode-extension-build-Linux
         path: extensions/vscode/build
 
-    - name: Build packages and download e2e dependencies
+    - name: Install and download e2e dependencies
       shell: bash
       run: |
-        node ./scripts/build-packages.js
         if [ "${{ steps.core-node-modules-cache.outputs.cache-hit }}" != "true" ]; then
           (cd core && npm ci)
         fi
@@ -79,6 +85,22 @@ runs:
         fi
       env:
         GITHUB_TOKEN: ${{ inputs.github_token }}
+
+    # Saved here, straight after the install and the download, so the entries hold the clean
+    # state and a test failure later does not lose them.
+    - name: Save extension node_modules
+      if: steps.vscode-node-modules-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: extensions/vscode/node_modules
+        key: ${{ steps.vscode-node-modules-cache.outputs.cache-primary-key }}
+
+    - name: Save VS Code download
+      if: steps.storage-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: extensions/vscode/e2e/storage
+        key: ${{ steps.storage-cache.outputs.cache-primary-key }}
 
     - name: Fix VSCode binary permissions
       shell: bash
@@ -118,6 +140,22 @@ runs:
       run: |
         cd extensions/vscode
         rm -rf e2e/.test-extensions/continue*
+
+    - name: Save test extensions
+      if: steps.test-extensions-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: extensions/vscode/e2e/.test-extensions
+        key: ${{ steps.test-extensions-cache.outputs.cache-primary-key }}
+
+    - uses: ./.github/actions/cache-report
+      if: always()
+      with:
+        entries: |
+          vscode-node-modules|${{ steps.vscode-node-modules-cache.outcome }}|${{ steps.vscode-node-modules-cache.outputs.cache-hit }}|${{ steps.vscode-node-modules-cache.outputs.cache-matched-key }}
+          core-node-modules|${{ steps.core-node-modules-cache.outcome }}|${{ steps.core-node-modules-cache.outputs.cache-hit }}|${{ steps.core-node-modules-cache.outputs.cache-matched-key }}
+          vscode-test-extensions|${{ steps.test-extensions-cache.outcome }}|${{ steps.test-extensions-cache.outputs.cache-hit }}|${{ steps.test-extensions-cache.outputs.cache-matched-key }}
+          vscode-storage|${{ steps.storage-cache.outcome }}|${{ steps.storage-cache.outputs.cache-hit }}|${{ steps.storage-cache.outputs.cache-matched-key }}
 
     - name: Sanitize test file name
       id: sanitize_filename

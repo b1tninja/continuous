@@ -8,6 +8,7 @@ import {
   newNonce,
   reviewerPromptVersion,
 } from "../prompt";
+import { promptText, type ReviewerPromptVariant } from "../promptV3";
 import { findReviewerAddressedText } from "../reviewerAddressed";
 import { reviewCompletionOptions, ReviewerReasoning } from "../review";
 import type {
@@ -31,6 +32,8 @@ export interface ReviewerConfig {
    * carries it into the result; it does not interpret it.
    */
   profile?: string;
+  /** `v3` measures the tightened prompt (promptV3.ts); absent is the shipped one. */
+  promptVariant?: ReviewerPromptVariant;
   reasoning?: ReviewerReasoning;
   /**
    * The deterministic check for text addressed to the reviewer, which in
@@ -127,7 +130,7 @@ function merged(
 export function messagesFor(
   c: LabelledCase,
   dataset: Pick<ReviewDataset, "environment">,
-  config: Pick<ReviewerConfig, "guidance">,
+  config: Pick<ReviewerConfig, "guidance" | "promptVariant">,
   nonce: string = newNonce(),
 ) {
   const env = merged(dataset.environment, c.environment);
@@ -155,6 +158,7 @@ export function messagesFor(
       environment: settingsEnv,
     },
     guidance: validGuidance(config),
+    systemPrompt: promptText(config.promptVariant),
     nonce,
   });
 }
@@ -272,7 +276,9 @@ async function runOne(
     });
     const ms = Date.now() - t0;
     const text = messageText(reply?.content);
-    const parsed = parseReviewerReply(text);
+    const parsed = parseReviewerReply(text, {
+      allowNeedsNone: config.promptVariant === "v3",
+    });
     const finishReason = finishReasonOf(reply);
     const named = client as { providerName?: string; model?: string };
     const excluded =
@@ -355,6 +361,7 @@ export async function runReviewEval(
   const promptVersion = reviewerPromptVersion(
     validGuidance(config),
     config.profile,
+    promptText(config.promptVariant),
   );
   const runs: CaseOutcome[][] = [];
   for (let k = 0; k < Math.max(1, opts.repeat ?? 1); k++) {
@@ -391,7 +398,7 @@ export interface PlanModel {
 /** What a real run would send, computed without calling anything. */
 export function planCost(
   dataset: ReviewDataset,
-  configs: Pick<ReviewerConfig, "guidance">[],
+  configs: Pick<ReviewerConfig, "guidance" | "promptVariant">[],
   concurrency = 4,
   options: { model?: PlanModel; maxTokens?: number; repeat?: number } = {},
 ): CostPlan {

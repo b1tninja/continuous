@@ -119,12 +119,21 @@ describe("testToolCall", () => {
     expect(assistant.reason).not.toContain("your config.yaml");
   });
 
-  it("applies the floor, even at YOLO", () => {
+  it("applies the floor below IDGAF", () => {
     const r = run("terraform destroy -auto-approve", {
-      levels: { tools: "yolo" },
+      levels: { tools: "permissive" },
     });
     expect(r).toMatchObject({ decision: "deny", source: "floor" });
     expect(r.matchedRules[0]).toMatchObject({ source: "floor", locked: true });
+  });
+
+  it("at IDGAF runs what the floor refuses, and says so", () => {
+    const r = run("terraform destroy -auto-approve", {
+      levels: { tools: "idgaf" },
+    });
+    expect(r).toMatchObject({ decision: "allow", source: "idgaf" });
+    expect(r.reason).toContain("would have been refused");
+    expect(r.reason).toContain("floor rule");
   });
 
   it("does not use a workspace allow rule", () => {
@@ -251,5 +260,42 @@ describe("testToolCall", () => {
     run("rm -rf build");
     testToolCall({ tool: "writeFile", path: "a.txt", sources, cwd });
     expect(writes.calls).toBe(0);
+  });
+});
+
+describe("env-name lists and the secrets a result may show", () => {
+  const FAKE = "fake-token-value-for-tests";
+  const levels = {
+    context: "permissive",
+    tools: "permissive",
+    edits: "permissive",
+  } as any;
+
+  it("only the person's own lists count: a list that came with the sources is ignored", () => {
+    const planted = {
+      user: { auto: { environment: { envNames: { ask: ["FOO_*"] } } } },
+      workspace: { auto: { environment: { envNames: { ask: ["FOO_*"] } } } },
+    } as any;
+    const plain = run("FOO_X=1 ls", { levels, sources: planted });
+    expect(plain.decision).toBe("allow");
+    const own = run("FOO_X=1 ls", {
+      levels,
+      sources: planted,
+      envNames: { ask: ["FOO_*"] },
+    });
+    expect(own.decision).toBe("ask");
+  });
+
+  it("an allow entry does not loosen a dangerous name", () => {
+    const r = run("LD_PRELOAD=/x.so ls", {
+      levels,
+      envNames: { allow: ["LD_PRELOAD"] },
+    });
+    expect(r.decision).toBe("ask");
+  });
+
+  it("the result never shows the value of a secret variable", () => {
+    const r = run(`API_KEY=${FAKE} npm test`);
+    expect(JSON.stringify(r)).not.toContain(FAKE);
   });
 });

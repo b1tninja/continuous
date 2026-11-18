@@ -120,8 +120,8 @@ describe("Auto mode in evaluateToolPolicies", () => {
     expect(note.payload.note).toBe("Auto: Not sure. [uncertain]");
   });
 
-  it("never asks the reviewer about an ask rule or a protected path", async () => {
-    for (const source of ["ask-rule", "protected-path"]) {
+  it("never asks the reviewer about an ask rule, a protected path or the secret-read plus network pair", async () => {
+    for (const source of ["ask-rule", "protected-path", "secret-egress"]) {
       const { result, review } = await run(
         "run_terminal_command",
         { policy: ASK, source, reason: "x" },
@@ -277,8 +277,8 @@ describe("approval modes in evaluateToolPolicies", () => {
     expect(seen[0].approval).toEqual(TOOLS_PERMISSIVE);
   });
 
-  it("accepts the loosening core made for Permissive or YOLO", async () => {
-    for (const source of ["permissive", "yolo"]) {
+  it("accepts the loosening core made for Permissive or IDGAF", async () => {
+    for (const source of ["permissive", "idgaf"]) {
       const { result } = await runApproval({ policy: ALLOW, source });
       expect(result.policy).toBe(ALLOW);
     }
@@ -286,7 +286,7 @@ describe("approval modes in evaluateToolPolicies", () => {
 
   it("a tool the user switched off stays off whatever core says", async () => {
     const { result } = await runApproval(
-      { policy: ALLOW, source: "yolo" },
+      { policy: ALLOW, source: "idgaf" },
       "disabled",
     );
     expect(result.policy).toBe(OFF);

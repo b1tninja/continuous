@@ -19,6 +19,7 @@ import {
   resolveToolDialectPreset,
 } from "./toolDialectPresets.js";
 import {
+  type MeasuredFacts,
   surfaceFactsLine,
   surfaceFamily,
   type SurfaceQuery,
@@ -105,6 +106,8 @@ export async function probeToolDialect(
     toolsAdvertised?: boolean;
     /** The provider/engine/API surface, with the label to show for it. */
     surface?: { query: SurfaceQuery; label: string };
+    /** What earlier probes of this exact endpoint measured (core/util/measuredFacts.ts). */
+    measured?: MeasuredFacts;
   } = {},
 ): Promise<ToolDialectProbeResult> {
   let support: ToolCallSupport;
@@ -125,6 +128,7 @@ export async function probeToolDialect(
     ? surfaceFactsLine(options.surface.label, {
         ...options.surface.query,
         modelFamily: family,
+        ...(options.measured ? { measured: options.measured } : {}),
       })
     : undefined;
   return {

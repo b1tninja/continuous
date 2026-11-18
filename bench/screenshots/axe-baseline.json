@@ -1,0 +1,125 @@
+{
+  "tool": "bench/screenshots axe.mjs",
+  "axeTags": ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"],
+  "note": "Known violations per view: rule -> most nodes seen at any width or theme. Fix and tighten with --update; never add by hand.",
+  "views": {
+    "agents-ended": {
+      "color-contrast": 7
+    },
+    "agents-running": {
+      "color-contrast": 7
+    },
+    "attach-open": {},
+    "audit-inbox": {
+      "color-contrast": 3
+    },
+    "audit-list": {
+      "color-contrast": 5
+    },
+    "bedrock-fail": {},
+    "bedrock-ok": {
+      "color-contrast": 1
+    },
+    "catalogue": {},
+    "chat": {},
+    "chat-first-run": {},
+    "conversation": {
+      "color-contrast": 13,
+      "scrollable-region-focusable": 1
+    },
+    "dialect": {},
+    "held": {
+      "color-contrast": 1
+    },
+    "loop": {},
+    "permissions-editor": {
+      "color-contrast": 5
+    },
+    "permissions-error": {},
+    "permissions-intro": {},
+    "permissions-loading": {},
+    "preset-open": {},
+    "settings-configs": {},
+    "settings-general": {
+      "color-contrast": 8
+    },
+    "settings-help": {
+      "color-contrast": 3
+    },
+    "settings-indexing": {},
+    "settings-models": {
+      "color-contrast": 1
+    },
+    "settings-permissions": {},
+    "settings-rules": {
+      "color-contrast": 2
+    },
+    "settings-tools": {},
+    "streaming": {
+      "color-contrast": 1
+    },
+    "tool-call": {
+      "color-contrast": 1
+    },
+    "tool-call-done": {
+      "color-contrast": 1
+    },
+    "approval": {
+      "color-contrast": 1,
+      "scrollable-region-focusable": 1
+    },
+    "loop-running": {
+      "color-contrast": 1
+    },
+    "loop-failed": {
+      "color-contrast": 1
+    },
+    "loop-finished": {},
+    "loop-stopped": {},
+    "loop-settings-open": {},
+    "loop-questions": {},
+    "loop-replan": {},
+    "loop-plan-failed": {
+      "color-contrast": 3,
+      "label-content-name-mismatch": 2
+    },
+    "loop-plan-finished": {},
+    "loop-plan-running": {
+      "color-contrast": 3,
+      "label-content-name-mismatch": 3
+    },
+    "loop-plan-tile": {
+      "color-contrast": 1
+    },
+    "loop-plan-waiting": {
+      "color-contrast": 1,
+      "label-content-name-mismatch": 1
+    },
+    "onboarding-local": {
+      "button-name": 1,
+      "select-name": 1
+    },
+    "onboarding-local-chooser": {
+      "button-name": 1,
+      "select-name": 1
+    },
+    "onboarding-local-server": {
+      "button-name": 1,
+      "select-name": 1
+    },
+    "status-row": {
+      "color-contrast": 13,
+      "scrollable-region-focusable": 1
+    },
+    "usage-open": {
+      "aria-hidden-focus": 3,
+      "color-contrast": 13,
+      "scrollable-region-focusable": 1
+    },
+    "context-open": {
+      "aria-hidden-focus": 3,
+      "color-contrast": 14,
+      "scrollable-region-focusable": 2
+    }
+  }
+}

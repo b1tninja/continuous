@@ -4,7 +4,6 @@ import {
   mergeUnrolledAssistants,
   PackageIdentifier,
 } from "@continuedev/config-yaml";
-import { DefaultApiInterface } from "@continuedev/sdk/dist/api/dist/index.js";
 
 import { isStringRule } from "src/hubLoader.js";
 import { loadMarkdownRulesWithMetadata } from "src/systemMessage.js";
@@ -16,6 +15,7 @@ import {
   loadConfiguration,
   unrollPackageIdentifiersAsConfigYaml,
 } from "../configLoader.js";
+import { isSafeMode } from "../safeMode.js";
 import { logger } from "../util/logger.js";
 
 import { BaseService, ServiceWithDependencies } from "./BaseService.js";
@@ -23,7 +23,6 @@ import { serviceContainer } from "./ServiceContainer.js";
 import { ToolPermissionServiceState } from "./ToolPermissionService.js";
 import {
   AgentFileServiceState,
-  ApiClientServiceState,
   ConfigServiceState,
   SERVICE_NAMES,
 } from "./types.js";
@@ -40,7 +39,6 @@ const DEFAULT_MODEL_IDENTIFIER: PackageIdentifier = {
 interface ConfigServiceInit {
   authConfig: AuthConfig;
   configPath: string | undefined;
-  apiClient: DefaultApiInterface;
   agentFileState: AgentFileServiceState;
   injectedConfigOptions?: BaseCommandOptions;
   isHeadless?: boolean;
@@ -64,11 +62,7 @@ export class ConfigService
    * Declare dependencies on other services
    */
   getDependencies(): string[] {
-    return [
-      SERVICE_NAMES.AUTH,
-      SERVICE_NAMES.API_CLIENT,
-      SERVICE_NAMES.AGENT_FILE,
-    ];
+    return [SERVICE_NAMES.AUTH, SERVICE_NAMES.AGENT_FILE];
   }
 
   getAdditionalBlocksFromOptions(
@@ -214,7 +208,6 @@ export class ConfigService
 
   async addDefaultChatModelIfNone(
     config: AssistantUnrolled,
-    apiClient: DefaultApiInterface,
     authConfig: AuthConfig | undefined,
     isHeadless?: boolean,
   ): Promise<AssistantUnrolled> {
@@ -227,7 +220,6 @@ export class ConfigService
           [DEFAULT_MODEL_IDENTIFIER],
           null,
           null,
-          apiClient,
         );
         const defaultModel = modelConfig?.models?.[0];
         if (!defaultModel) {
@@ -237,7 +229,8 @@ export class ConfigService
       } catch (e) {
         if (isHeadless) {
           throw new Error(
-            "No model specified in headless mode (and failed to load default model)",
+            "No model specified in headless mode (and failed to load default model). " +
+              "No config.yaml was found or it has no model: put one at ~/.continuous/config.yaml or pass --config <file>.",
           );
         } else {
           logger.error(
@@ -253,13 +246,8 @@ export class ConfigService
   private async loadConfig(
     init: ConfigServiceInit,
   ): Promise<ConfigServiceState> {
-    const {
-      authConfig,
-      configPath,
-      apiClient,
-      injectedConfigOptions,
-      agentFileState,
-    } = init;
+    const { authConfig, configPath, injectedConfigOptions, agentFileState } =
+      init;
     const { injected, additional } = this.getAdditionalBlocksFromOptions(
       injectedConfigOptions,
       agentFileState,
@@ -268,7 +256,6 @@ export class ConfigService
     const result = await loadConfiguration(
       authConfig,
       configPath,
-      apiClient,
       injected,
       init.isHeadless,
     );
@@ -276,7 +263,13 @@ export class ConfigService
     const loadedConfig = result.config;
     const merged = mergeUnrolledAssistants(loadedConfig, additional);
 
-    const markdownRules = loadMarkdownRulesWithMetadata();
+    // --safe: rules and MCP servers from files are not used. Text passed
+    // with --rule still reaches the system message (systemMessage.ts).
+    if (isSafeMode()) {
+      merged.rules = [];
+      merged.mcpServers = [];
+    }
+    const markdownRules = isSafeMode() ? [] : loadMarkdownRulesWithMetadata();
     if (markdownRules.length > 0) {
       const existingRuleContents = new Set(
         (merged.rules ?? []).map((r) => (typeof r === "string" ? r : r?.rule)),
@@ -289,7 +282,6 @@ export class ConfigService
 
     const withModel = await this.addDefaultChatModelIfNone(
       merged,
-      apiClient,
       authConfig,
       init.isHeadless,
     );
@@ -372,14 +364,6 @@ export class ConfigService
     try {
       // Get current auth and API client state needed for config loading
       const authConfig = loadAuthConfig();
-      const { apiClient } = await serviceContainer.get<ApiClientServiceState>(
-        SERVICE_NAMES.API_CLIENT,
-      );
-
-      if (!apiClient) {
-        throw new Error("API client not available");
-      }
-
       const agentFileState = await serviceContainer.get<AgentFileServiceState>(
         SERVICE_NAMES.AGENT_FILE,
       );
@@ -391,7 +375,6 @@ export class ConfigService
 
       const result = await this.loadConfig({
         agentFileState,
-        apiClient,
         authConfig,
         configPath: newConfigPath,
         injectedConfigOptions: {},

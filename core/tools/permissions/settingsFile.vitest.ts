@@ -10,6 +10,24 @@ import {
   writePolicyFile,
 } from "./settingsFile";
 
+describe("safetyChecks", () => {
+  it("reads and writes on and off, and ignores anything else", () => {
+    expect(parsePolicyFile("safetyChecks: on").settings.safetyChecks).toBe(
+      true,
+    );
+    expect(parsePolicyFile("safetyChecks: off").settings.safetyChecks).toBe(
+      false,
+    );
+    expect(parsePolicyFile("safetyChecks: maybe").notices[0]).toMatch(
+      /safetyChecks/,
+    );
+    const on = applyPolicyUpdate(undefined, { safetyChecks: true });
+    expect(on).toMatch(/safetyChecks: on/);
+    const off = applyPolicyUpdate(on, { safetyChecks: false });
+    expect(off).toMatch(/safetyChecks: off/);
+  });
+});
+
 describe("parsePolicyFile", () => {
   it("a missing or empty file is the defaults", () => {
     for (const text of [undefined, "", "  \n"]) {
@@ -56,12 +74,12 @@ mcpServers:
     });
   });
 
-  it("a saved yolo is read as the default, with a notice", () => {
-    const r = parsePolicyFile("levels:\n  tools: yolo\n  questions: yolo\n");
+  it("a saved idgaf is read as the default, with a notice", () => {
+    const r = parsePolicyFile("levels:\n  tools: idgaf\n  questions: idgaf\n");
     expect(r.settings.levels.tools).toBe(DEFAULT_POLICY_LEVELS.tools);
     expect(r.settings.levels.questions).toBe(DEFAULT_POLICY_LEVELS.questions);
     expect(r.notices.join("\n")).toContain(
-      "levels.tools: yolo is for one session",
+      "levels.tools: idgaf is for one session",
     );
   });
 
@@ -102,14 +120,14 @@ describe("applyPolicyUpdate", () => {
     expect(parsePolicyFile(after).settings.levels.tools).toBe("permissive");
   });
 
-  it("never writes YOLO: the area keeps what the file had", () => {
+  it("never writes IDGAF: the area keeps what the file had", () => {
     const first = applyPolicyUpdate(undefined, {
       levels: { ...DEFAULT_POLICY_LEVELS, tools: "permissive" },
     });
     const second = applyPolicyUpdate(first, {
-      levels: { ...DEFAULT_POLICY_LEVELS, tools: "yolo", plan: "yolo" },
+      levels: { ...DEFAULT_POLICY_LEVELS, tools: "idgaf", plan: "idgaf" },
     });
-    expect(second).not.toContain("yolo");
+    expect(second).not.toContain("idgaf");
     expect(parsePolicyFile(second).settings.levels.tools).toBe("permissive");
   });
 
@@ -151,5 +169,70 @@ describe("the file on disk", () => {
       levels: { ...DEFAULT_POLICY_LEVELS, edits: "permissive" },
     });
     expect(readPolicyFile(file).settings.levels.edits).toBe("permissive");
+  });
+
+  it("does not write over a file that is not valid YAML", () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "policy-file-"));
+    const file = path.join(dir, "permissions.yaml");
+    const broken = "floor:\n  - Bash(rm -rf*)\nallow: [Read\n";
+    fs.writeFileSync(file, broken);
+    expect(() =>
+      writePolicyFile(file, {
+        levels: { ...DEFAULT_POLICY_LEVELS, edits: "permissive" },
+      }),
+    ).toThrow();
+    expect(fs.readFileSync(file, "utf-8")).toBe(broken);
+    expect(fs.readdirSync(dir)).toEqual(["permissions.yaml"]);
+  });
+
+  it("keeps comments and the keys it does not set", () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "policy-file-"));
+    const file = path.join(dir, "permissions.yaml");
+    fs.writeFileSync(
+      file,
+      "# mine\nfloor:\n  - Bash(rm -rf*) # never\nallow:\n  - Read\n",
+    );
+    writePolicyFile(file, {
+      levels: { ...DEFAULT_POLICY_LEVELS, edits: "permissive" },
+    });
+    const after = fs.readFileSync(file, "utf-8");
+    expect(after).toContain("# mine");
+    expect(after).toContain("- Bash(rm -rf*) # never");
+    expect(after).toContain("- Read");
+    expect(readPolicyFile(file).settings.levels.edits).toBe("permissive");
+    expect(fs.readdirSync(dir)).toEqual(["permissions.yaml"]);
+  });
+});
+
+describe("plan.mcpTools", () => {
+  it("reads the tools the person lets Plan mode use, and ignores what is not a name", () => {
+    const text = [
+      "plan:",
+      "  mcpTools:",
+      "    - docs/search",
+      "    - 3",
+      "    - wiki/*",
+      "",
+    ].join(String.fromCharCode(10));
+    expect(parsePolicyFile(text).settings.planMcpTools).toEqual([
+      "docs/search",
+      "wiki/*",
+    ]);
+  });
+
+  it("reads plan.allowTerminal, absent by default", () => {
+    const parse = (v: string) =>
+      parsePolicyFile(`plan:\n  allowTerminal: ${v}\n`).settings
+        .planAllowTerminal;
+    expect(parse("true")).toBe(true);
+    expect(parse("false")).toBe(false);
+    expect(parse("maybe")).toBeUndefined();
+    expect(
+      parsePolicyFile(undefined).settings.planAllowTerminal,
+    ).toBeUndefined();
+  });
+
+  it("is absent when the file does not say", () => {
+    expect(parsePolicyFile(undefined).settings.planMcpTools).toBeUndefined();
   });
 });

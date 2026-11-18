@@ -1,3 +1,4 @@
+import { maskCommandForDisplay } from "core/tools/permissions/displayMask";
 import { useContext, useState } from "react";
 import { IdeMessengerContext } from "../../../../context/IdeMessenger";
 import { useAppDispatch } from "../../../../redux/hooks";
@@ -8,6 +9,8 @@ type Props = {
   toolCallId: string;
   toolName: string;
   parsedArgs: Record<string, unknown>;
+  /** The id of the element that says what the call does, for aria-describedby. */
+  describedBy?: string;
 };
 
 type State =
@@ -30,7 +33,12 @@ const COULD_NOT_SAVE = "Could not save the rule.";
  * install, a network fetch, a script), the rule would switch that check off
  * for it. Then the exact rule is shown first and a second click saves it.
  */
-export function AlwaysAllowButton({ toolCallId, toolName, parsedArgs }: Props) {
+export function AlwaysAllowButton({
+  toolCallId,
+  toolName,
+  parsedArgs,
+  describedBy,
+}: Props) {
   const ideMessenger = useContext(IdeMessengerContext);
   const dispatch = useAppDispatch();
   const [state, setState] = useState<State>({ kind: "idle" });
@@ -95,12 +103,15 @@ export function AlwaysAllowButton({ toolCallId, toolName, parsedArgs }: Props) {
   return (
     <>
       {state.kind === "confirm" && (
-        <span
-          className="max-w-64 truncate font-mono text-2xs text-warning"
-          title={`The safety check would still ask about this. Saves: ${state.rule}`}
-          data-testid={`always-allow-confirm-${toolCallId}`}
-        >
-          {state.rule}
+        // The whole rule, wrapped and never cut: it is what a second click saves.
+        <span className="min-w-0 basis-full text-right text-2xs text-warning">
+          A safety check would still ask about this. Saves the rule:{" "}
+          <code
+            className="font-mono break-all whitespace-pre-wrap"
+            data-testid={`always-allow-confirm-${toolCallId}`}
+          >
+            {maskCommandForDisplay(state.rule)}
+          </code>
         </span>
       )}
       <Button
@@ -108,6 +119,7 @@ export function AlwaysAllowButton({ toolCallId, toolName, parsedArgs }: Props) {
         size="sm"
         className="my-0.5 min-h-6 font-medium text-description"
         disabled={state.kind === "working"}
+        aria-describedby={describedBy}
         onClick={onClick}
         title={
           state.kind === "confirm"
@@ -134,8 +146,7 @@ export function AlwaysAllowButton({ toolCallId, toolName, parsedArgs }: Props) {
       {state.kind === "message" && (
         <span
           role="alert"
-          className="max-w-48 truncate text-2xs text-description"
-          title={state.text}
+          className="min-w-0 basis-full text-right text-2xs break-words text-description"
           data-testid={`always-allow-message-${toolCallId}`}
         >
           {state.text}

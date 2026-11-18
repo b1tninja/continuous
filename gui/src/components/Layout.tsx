@@ -1,4 +1,5 @@
 import { OnboardingModes } from "core/protocol/core";
+import { ChatAnnouncer } from "./a11y/ChatAnnouncer";
 import { useContext, useEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import styled from "styled-components";
@@ -6,17 +7,20 @@ import { CustomScrollbarDiv } from ".";
 import { AuthProvider } from "../context/Auth";
 import { IdeMessengerContext } from "../context/IdeMessenger";
 import { LocalStorageProvider } from "../context/LocalStorage";
+import { PaletteCommandListeners } from "../hooks/usePaletteCommandListeners";
 import { useWebviewListener } from "../hooks/useWebviewListener";
 import { useAppDispatch, useAppSelector } from "../redux/hooks";
 import { setCodeToEdit } from "../redux/slices/editState";
 import { setShowDialog } from "../redux/slices/uiSlice";
 import { enterEdit, exitEdit } from "../redux/thunks/edit";
 import { loadPolicySettings } from "../redux/thunks/policySettings";
+import { confirmSessionSwitch } from "../redux/thunks/interruptConfirm";
 import { saveCurrentSession } from "../redux/thunks/session";
 import { fontSize, isMetaEquivalentKeyPressed } from "../util";
 import { ROUTES } from "../util/navigation";
 import { FatalErrorIndicator } from "./config/FatalErrorNotice";
 import TextDialog from "./dialogs";
+import { InterruptConfirm } from "./InterruptConfirm";
 import { useMainEditor } from "./mainInput/TipTapEditor";
 import {
   isNewUserOnboarding,
@@ -42,7 +46,7 @@ const Layout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const dispatch = useAppDispatch();
-  // The shared settings file replaces what the webview remembered (YOLO is
+  // The shared settings file replaces what the webview remembered (IDGAF is
   // for one session only)
   useEffect(() => {
     void dispatch(loadPolicySettings());
@@ -63,6 +67,10 @@ const Layout = () => {
   useWebviewListener(
     "newSession",
     async () => {
+      // Running work is stopped only when the person says so (NI1)
+      if (!(await dispatch(confirmSessionSwitch("newSession")).unwrap())) {
+        return;
+      }
       navigate(ROUTES.HOME);
       if (isInEdit) {
         await dispatch(exitEdit({}));
@@ -90,6 +98,9 @@ const Layout = () => {
   useWebviewListener(
     "focusContinueInputWithNewSession",
     async () => {
+      if (!(await dispatch(confirmSessionSwitch("newSession")).unwrap())) {
+        return;
+      }
       navigate(ROUTES.HOME);
       if (isInEdit) {
         await dispatch(
@@ -206,6 +217,8 @@ const Layout = () => {
       <AuthProvider>
         <LayoutTopDiv>
           <OSRContextMenu />
+          <ChatAnnouncer />
+          <PaletteCommandListeners />
           <div
             style={{
               scrollbarGutter: "stable both-edges",
@@ -230,6 +243,8 @@ const Layout = () => {
               {/* The fatal error for chat is shown below input */}
               {!isHome && <FatalErrorIndicator />}
             </GridDiv>
+            {/* The chat shows the question above its input; other pages here */}
+            {!isHome && <InterruptConfirm floating />}
           </div>
           <div style={{ fontSize: fontSize(-4) }} id="tooltip-portal-div" />
         </LayoutTopDiv>

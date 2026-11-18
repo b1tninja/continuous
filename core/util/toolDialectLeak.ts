@@ -11,6 +11,7 @@ import {
   stripCode,
   type ToolCallLike,
 } from "./toolDialectDetect.js";
+import { resolveToolDialectPreset } from "./toolDialectPresets.js";
 
 /**
  * The dialects the recovery switch can turn into calls, as `toolDialect`
@@ -78,6 +79,15 @@ export function providerRecoversText(
   );
 }
 
+/** The `toolDialect` value that recovers this classifier dialect, or undefined when none does. */
+export function recoverableDialect(
+  dialect: string,
+): ToolDialectSetting | undefined {
+  return Object.hasOwn(RECOVERABLE, dialect)
+    ? (RECOVERABLE as Record<string, ToolDialectSetting>)[dialect]
+    : undefined;
+}
+
 export interface ToolDialectLeak {
   dialect: ToolDialectSetting;
 }
@@ -94,6 +104,8 @@ export function detectToolDialectLeak(args: {
   current?: ToolDialectSetting;
   /** The server parses this model's calls itself (MetadataHint.serverParses). */
   serverParses?: boolean;
+  /** Model id, name or slug: a family whose template renders no tools gets no suggestion. */
+  model?: string;
 }): ToolDialectLeak | undefined {
   if (args.serverParses) return undefined;
   if (args.current && args.current !== "auto") return undefined;
@@ -106,13 +118,32 @@ export function detectToolDialectLeak(args: {
     c.dialect
   ];
   if (!dialect || c.confidence < ACCEPT_THRESHOLD) return undefined;
+  if (!dialectFitsModel(dialect, args.model)) return undefined;
   return { dialect };
+}
+
+/**
+ * Whether suggesting `dialect` for this model is sound. A family whose preset
+ * says it has no text dialect (Gemma 3: its template renders no tools, so any
+ * call it writes is a prompt-engineered convention, fixture
+ * gemma3-has-no-tool-section) gets no suggestion, whatever shape the reply
+ * had; RQ7 found the bare Llama JSON accepted only because a scan forced
+ * llama-json on it. A bare JSON object is below the classifier's bar today, so
+ * this is the guard that keeps it that way if the bar moves.
+ */
+function dialectFitsModel(
+  dialect: ToolDialectSetting,
+  model: string | undefined,
+): boolean {
+  if (!model) return true;
+  if (dialect === "llama-json" && /gemma/i.test(model)) return false;
+  return resolveToolDialectPreset(model)?.textDialect !== "none";
 }
 
 /** The notice's text. */
 export function leakNoticeText(_dialect: string): string {
   // The format name goes in the button tooltip, where it does not crowd the line
-  return "This model typed a tool request as plain text, so it did not run. Let Continue read that format for this model?";
+  return "This model typed a tool request as plain text, so it did not run. Let Continuous read that format for this model?";
 }
 
 /** The CLI's one-line hint. */
@@ -158,6 +189,34 @@ function jsonNamesTool(text: string, known: string[]): boolean {
   }
 }
 
+const THINK_TAG = /<(\/?)think(?:ing)?>/g;
+
+/**
+ * The reply without its reasoning: closed `<think>` / `<thinking>` spans, an
+ * unterminated one to the end, and a leading span whose opener the chat
+ * template wrote into the prompt (text up to a first stray close tag). A call
+ * written inside reasoning is not a call the turn failed to make (vLLM #39056),
+ * so the nudge reads what is left. One pass over the tags, so a reply near the
+ * 1 MiB hold cap costs no more than reading it.
+ */
+export function stripThinkBlocks(text: string): string {
+  let out = "";
+  let kept = 0; // start of the text not yet decided
+  let open = false;
+  for (const m of text.matchAll(THINK_TAG)) {
+    const closing = m[1] === "/";
+    if (closing) {
+      // a stray close drops what came before it; a matched one ends a span
+      kept = m.index + m[0].length;
+      open = false;
+    } else if (!open) {
+      out += text.slice(kept, m.index);
+      open = true;
+    }
+  }
+  return open ? out : out + text.slice(kept);
+}
+
 /**
  * Whether a reply is a tool call written as text, whatever the provider and
  * whatever `toolDialect` says: the turn that reply ends has done nothing, and
@@ -165,7 +224,8 @@ function jsonNamesTool(text: string, known: string[]): boolean {
  * Nothing is parsed and nothing runs. Conservative on purpose: a reply with
  * structured calls is not a leak; only a markup shape the classifier accepts
  * counts; the markup must sit outside code fences and inline code (an example
- * is not a call); and it must name a tool that was actually offered.
+ * is not a call); it must sit outside any think block (stripThinkBlocks);
+ * and it must name a tool that was actually offered.
  */
 export function isLeakedToolCall(args: {
   content: string | null | undefined;
@@ -174,8 +234,9 @@ export function isLeakedToolCall(args: {
 }): boolean {
   const known = args.knownTools ?? [];
   if (known.length === 0 || (args.toolCalls?.length ?? 0) > 0) return false;
+  const content = stripThinkBlocks(args.content ?? "");
   const c = classifyToolReply({
-    content: args.content,
+    content,
     toolCalls: args.toolCalls,
     knownTools: known,
   });
@@ -186,7 +247,7 @@ export function isLeakedToolCall(args: {
   ) {
     return false;
   }
-  const { outside } = stripCode(args.content ?? "");
+  const { outside } = stripCode(content);
   // A whole reply that is one JSON object naming an offered tool is below the
   // classifier's bar on its own (an object with a name is common), but the
   // offered-tool check makes it safe here.

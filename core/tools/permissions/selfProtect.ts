@@ -7,14 +7,19 @@ import {
 import { commandCandidateSet } from "./candidates";
 import { isLockedProductPath } from "./lockedPaths";
 import { normalizeProtectedPath } from "./protected";
+import {
+  isPowerShellProfilePath,
+  POWERSHELL_PROFILE_VARIABLE,
+} from "./protectedPaths";
 import { pathWords, wordsOf } from "./protectedCall";
 import { classifyReadOnly } from "./readOnlyCommand";
 
 /**
  * The permission and policy files protect themselves. A call that would write
- * or delete one is a locked floor: no setting, rule or level lets it run
- * unasked, YOLO included, because a model that can edit the policy can undo
- * every other protection. `protect-config` is a separate, switchable rule over
+ * or delete one is a locked floor: no setting, rule or level below IDGAF lets
+ * it run unasked, because a model that can edit the policy can undo every
+ * other protection. IDGAF runs it and records it (evaluate.ts,
+ * idgafRunsEverything). `protect-config` is a separate, switchable rule over
  * the wider set of files that change what runs later; this one has no switch.
  *
  * What counts is every path the product loads as config, code, rules or hooks,
@@ -27,7 +32,7 @@ import { classifyReadOnly } from "./readOnlyCommand";
  * Like protected paths this reads the path as written and resolved, and a
  * terminal command by its words: it is a guard that sees what is visible, not
  * a sandbox. A path built at run time (a variable, a glob, a backtick, a bare
- * name after a `cd` into the home folder) is not seen: at YOLO a command with
+ * name after a `cd` into the home folder) is not seen: at IDGAF a command with
  * such a write target asks (runtimeWriteTarget.ts, ROADMAP B31), and the
  * sandbox that denies writes to these folders (W8) is what holds for certain.
  */
@@ -74,6 +79,44 @@ function policyPathHit(
   return isPolicyFilePath(path, globalDirs, normCwd) ? { path } : undefined;
 }
 
+const NO_READERS: ReadonlySet<string> = new Set();
+
+/**
+ * Programs that only print or test a file. `$PROFILE` keeps the parser from
+ * vouching `Get-Content $PROFILE` as read-only, and a refusal of a read at
+ * Automatic would only be noise, so their candidates are not profile writes.
+ */
+const PROFILE_READERS: ReadonlySet<string> = new Set([
+  "get-content",
+  "gc",
+  "cat",
+  "type",
+  "test-path",
+  "get-item",
+  "select-string",
+  "sls",
+  "more",
+]);
+
+/** One path word, matched against one list of files. */
+type PathMatch = (
+  raw: string | undefined,
+  home: string,
+  cwd?: string,
+) => PolicyFileHit | undefined;
+
+/** D-012: a PowerShell profile, as a path or as `$PROFILE`. */
+function profilePathHit(
+  raw: string | undefined,
+  home: string,
+  cwd?: string,
+): PolicyFileHit | undefined {
+  if (!raw) return undefined;
+  if (POWERSHELL_PROFILE_VARIABLE.test(raw.trim())) return { path: raw.trim() };
+  const path = normalizeProtectedPath(raw, home, cwd);
+  return path && isPowerShellProfilePath(path) ? { path } : undefined;
+}
+
 const WRITE_TOOLS = new Set([
   "create_new_file",
   "edit_existing_file",
@@ -100,22 +143,29 @@ function terminalHit(
   home: string,
   cwd: string | undefined,
   shell: ShellKind | undefined,
+  match: PathMatch,
+  readers: ReadonlySet<string> = NO_READERS,
 ): PolicyFileHit | undefined {
   // A command the parser vouched as only reading cannot write.
   if (classifyReadOnly(command, { cwd, shell }).vouched) return undefined;
   const { list } = commandCandidateSet(command, shell);
   const reading = new Set(
     wordsOf(list).flatMap((w, i) =>
-      w[0] === "git" && GIT_NOT_WRITING.has(w[1] ?? "") ? [list[i]] : [],
+      (w[0] === "git" && GIT_NOT_WRITING.has(w[1] ?? "")) ||
+      readers.has((w[0] ?? "").toLowerCase())
+        ? [list[i]]
+        : [],
     ),
   );
   // Candidates derived from a git command that only stages or reads (the
   // command without `git`, its path argument alone) are not writes either.
+  // (PowerShell's candidates are also lower-cased, so the test folds case.)
+  const readingLow = [...reading].map((r) => r.toLowerCase());
   const considered = list.filter(
-    (c) => ![...reading].some((r) => r.includes(c)),
+    (c) => !readingLow.some((r) => r.includes(c.toLowerCase())),
   );
   for (const word of pathWords(considered)) {
-    const hit = policyPathHit(word, home, cwd);
+    const hit = match(word, home, cwd);
     if (hit) return hit;
   }
   return undefined;
@@ -151,12 +201,7 @@ function stringArgs(root: unknown): { strings: string[]; capped: boolean } {
   return { strings, capped };
 }
 
-/**
- * Would this call write or delete a policy file? `mcp` is set for an MCP
- * tool, with its `readonly` hint: a tool that says it only reads is skipped,
- * any other MCP call naming such a path in its arguments is a hit.
- */
-export function policyFileHit(args: {
+export interface WriteTargetArgs {
   toolName: string;
   parsedArgs: Record<string, unknown>;
   resolvedPath?: string;
@@ -164,13 +209,41 @@ export function policyFileHit(args: {
   home?: string;
   cwd?: string;
   shell?: ShellKind;
-}): PolicyFileHit | undefined {
+}
+
+/**
+ * Would this call write or delete a policy file? `mcp` is set for an MCP
+ * tool, with its `readonly` hint: a tool that says it only reads is skipped,
+ * any other MCP call naming such a path in its arguments is a hit.
+ */
+export function policyFileHit(
+  args: WriteTargetArgs,
+): PolicyFileHit | undefined {
+  return writeTargetHit(args, policyPathHit);
+}
+
+/**
+ * Would this call write a PowerShell profile (D-012)? Read the same way as a
+ * policy file: a file tool's target, a command's words unless the parser
+ * vouched it only reads, an MCP call's arguments.
+ */
+export function profileWriteHit(
+  args: WriteTargetArgs,
+): PolicyFileHit | undefined {
+  return writeTargetHit(args, profilePathHit, PROFILE_READERS);
+}
+
+function writeTargetHit(
+  args: WriteTargetArgs,
+  match: PathMatch,
+  readers?: ReadonlySet<string>,
+): PolicyFileHit | undefined {
   const { toolName, parsedArgs, resolvedPath, cwd } = args;
   const home = args.home ?? os.homedir();
   if (toolName === "run_terminal_command") {
     const command = parsedArgs.command;
     return typeof command === "string"
-      ? terminalHit(command, home, cwd, args.shell)
+      ? terminalHit(command, home, cwd, args.shell, match, readers)
       : undefined;
   }
   if (args.mcp) {
@@ -179,7 +252,7 @@ export function policyFileHit(args: {
     for (const value of strings) {
       // A string may be a path or a sentence that holds one (`type x > C:/...`).
       for (const word of [value, ...value.split(/[\s"'`=<>|;&,()]+/)]) {
-        const hit = policyPathHit(word, home, cwd);
+        const hit = match(word, home, cwd);
         if (hit) return hit;
       }
     }
@@ -190,7 +263,5 @@ export function policyFileHit(args: {
   if (!WRITE_TOOLS.has(toolName)) return undefined;
   const written =
     typeof parsedArgs.filepath === "string" ? parsedArgs.filepath : undefined;
-  return (
-    policyPathHit(written, home, cwd) ?? policyPathHit(resolvedPath, home, cwd)
-  );
+  return match(written, home, cwd) ?? match(resolvedPath, home, cwd);
 }

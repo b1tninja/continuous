@@ -16,6 +16,7 @@ import {
 export const SUITES_DIR = path.join(LAB_ROOT, "suites");
 export const SUITE_NAMES = [
   "dialect-probe",
+  "args-whitespace",
   "prompt-variants",
   "reviewer",
   "leaks",
@@ -280,8 +281,16 @@ function expandReviewer(suite, ctx) {
   return stratified(cases, ctx.opts.limit);
 }
 
+/** Same shape as the dialect probes, native tools only: the text arms add nothing here. */
+const expandArgsWhitespace = (suite, ctx) =>
+  expandDialectProbe(suite, {
+    ...ctx,
+    opts: { ...ctx.opts, modes: "native" },
+  });
+
 const EXPANDERS = {
   "dialect-probe": expandDialectProbe,
+  "args-whitespace": expandArgsWhitespace,
   "prompt-variants": expandPromptVariants,
   leaks: expandLeaks,
   reviewer: expandReviewer,

@@ -1,9 +1,11 @@
 import type { ReactNode } from "react";
+import type { RuleUse } from "core/tools/permissions/audit/auditOverview";
 import type {
   AreaReport,
   EffectiveRule,
 } from "core/tools/permissions/effectiveRules";
 import type { RuleDecision } from "core/tools/permissions/rules";
+import { RuleUseNote } from "./AuditOverviewPanel";
 import {
   DECISION_LABEL,
   DecisionChip,
@@ -20,14 +22,22 @@ export interface RowExtra {
   below?: ReactNode;
 }
 
+/** The audit figures of a rule, and how many days the audit covers */
+export interface RuleUseInfo {
+  use: RuleUse;
+  coverageDays: number;
+}
+
 export function RuleRow({
   rule,
   highlighted,
   extra,
+  useInfo,
 }: {
   rule: EffectiveRule;
   highlighted?: boolean;
   extra?: RowExtra;
+  useInfo?: RuleUseInfo;
 }) {
   return (
     <li
@@ -74,6 +84,9 @@ export function RuleRow({
           {rule.lockedReason}
         </div>
       )}
+      {useInfo && (
+        <RuleUseNote use={useInfo.use} coverageDays={useInfo.coverageDays} />
+      )}
       {rule.areaNote && (
         <div className="text-2xs text-description-muted">{rule.areaNote}</div>
       )}
@@ -100,11 +113,13 @@ export function RuleList({
   rules,
   highlight,
   extraFor,
+  useFor,
   emptyText,
 }: {
   rules: EffectiveRule[];
   highlight?: string[];
   extraFor?: (rule: EffectiveRule) => RowExtra | undefined;
+  useFor?: (rule: EffectiveRule) => RuleUseInfo | undefined;
   emptyText?: string;
 }) {
   if (rules.length === 0) {
@@ -136,6 +151,7 @@ export function RuleList({
                   rule={r}
                   highlighted={highlight?.includes(r.raw)}
                   extra={extraFor?.(r)}
+                  useInfo={useFor?.(r)}
                 />
               ))}
             </ul>

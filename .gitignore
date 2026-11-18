@@ -185,3 +185,7 @@ keys
 # Local model lab: raw results and learned profiles stay on the machine that made them
 bench/lab/results/
 bench/lab/profiles/
+
+# Generated into the VSIX folder at prepackage time (extensions/vscode/scripts/stage-notices.js)
+extensions/vscode/NOTICE
+extensions/vscode/THIRD_PARTY_NOTICES.txt

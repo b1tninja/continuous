@@ -2,7 +2,7 @@
 // with the values of the built-in "Dark Modern"-like and "Light Modern"-like
 // themes. Approximations: the point is a stable, realistic palette for
 // before/after comparisons, not a pixel match of one editor release.
-export type ThemeName = "dark" | "light";
+export type ThemeName = "dark" | "light" | "hc";
 
 const dark: Record<string, string> = {
   "editor-background": "#1f1f1f",
@@ -131,9 +131,38 @@ const light: Record<string, string> = {
   "gitDecoration-addedResourceForeground": "#587c0c",
 };
 
+// "Dark High Contrast": opaque black surfaces, white text, and a contrast
+// border. Opt-in (--theme hc); the default run is dark and light.
+const hc: Record<string, string> = {
+  ...dark,
+  "editor-background": "#000000",
+  "editor-foreground": "#ffffff",
+  foreground: "#ffffff",
+  descriptionForeground: "#ffffff",
+  "panel-background": "#000000",
+  "panel-border": "#6fc3df",
+  "panel-foreground": "#ffffff",
+  border: "#6fc3df",
+  "sideBar-background": "#000000",
+  "sideBar-foreground": "#ffffff",
+  "sideBar-border": "#6fc3df",
+  "input-background": "#000000",
+  "input-foreground": "#ffffff",
+  "input-border": "#6fc3df",
+  "input-placeholderForeground": "#ffffffa6",
+  "badge-background": "#000000",
+  "badge-foreground": "#ffffff",
+  "list-deemphasizedForeground": "#ffffff",
+  "button-secondaryBackground": "#000000",
+  "button-secondaryForeground": "#ffffff",
+  contrastBorder: "#6fc3df",
+  focusBorder: "#f38518",
+};
+
 export const THEMES: Record<ThemeName, Record<string, string>> = {
   dark,
   light,
+  hc,
 };
 
 /** Sets every `--vscode-*` variable on <html>, as VS Code does for a webview. */
@@ -142,7 +171,11 @@ export function applyTheme(name: ThemeName): void {
   for (const [key, value] of Object.entries(THEMES[name])) {
     root.style.setProperty(`--vscode-${key}`, value);
   }
-  root.setAttribute("data-vscode-theme-kind", `vscode-${name}`);
+  root.setAttribute(
+    "data-vscode-theme-kind",
+    name === "hc" ? "vscode-high-contrast" : `vscode-${name}`,
+  );
+  document.body.classList.toggle("vscode-high-contrast", name === "hc");
   document.body.style.backgroundColor = THEMES[name]["editor-background"];
   document.body.style.color = THEMES[name]["foreground"];
   document.body.style.fontFamily = THEMES[name]["font-family"];

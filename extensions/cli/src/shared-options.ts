@@ -1,12 +1,26 @@
 import { Command } from "commander";
 
+import { addRunLimitOptions } from "./budget/runLimits.js";
+import { addReasoningFlags } from "./flags/reasoningFlags.js";
+import { applyDebugPromptLogFlag } from "./util/debugPromptLog.js";
+
+/**
+ * The root command's options: the common ones, run limits, reasoning, and
+ * `--no-session-persistence` (V11, `-p` only; flags/flagValidator.ts).
+ */
+export function addRootOptions(program: Command): Command {
+  return addReasoningFlags(
+    addRunLimitOptions(addCommonOptions(program)),
+  ).option(
+    "--no-session-persistence",
+    "Headless (-p): keep this run's session in memory only; nothing is written to the sessions folder, so it cannot be resumed",
+  );
+}
+
 // Function to add common options to any command
 export function addCommonOptions(command: Command): Command {
   return command
-    .option(
-      "--config <path>",
-      "Configuration file for the assistant (can be a file path or hub slug)",
-    )
+    .option("--config <path>", "Path to the config.yaml file to use")
     .option(
       "--org <slug>",
       "Organization slug to use for this session (supported only in headless mode)",
@@ -19,13 +33,20 @@ export function addCommonOptions(command: Command): Command {
     )
     .option(
       "--policy <spec>",
-      "Who decides what a rule leaves open, per area (context, tools, edits, plan, questions): a preset (careful, acceptEdits, handsOff, reviewer, yolo) or area=level pairs such as tools=permissive,plan=manual. Levels: manual, cautious, automatic, permissive, yolo (idgaf).",
+      "Who decides what a rule leaves open, per area (context, tools, edits, plan, questions): a preset (careful, acceptEdits, handsOff, reviewer, idgaf) or area=level pairs such as tools=permissive,plan=manual. Levels: manual, cautious, automatic, permissive, idgaf. Or a path to a policy file in the permissions.yaml format. Headless runs (-p, serve) are at your saved levels unless this or --auto is given, and a call that would ask is refused.",
     )
     .option("--verbose", "Enable verbose logging")
+    .option(
+      "--debug-prompt-log",
+      "Keep each request's full prompt in ~/.continuous/logs/prompts/ (secrets masked, 50 MB, 14 days). Off by default",
+    )
+    .on("option:debug-prompt-log", () =>
+      applyDebugPromptLogFlag({ debugPromptLog: true }),
+    )
     .option("--beta-status-tool", "Enable beta status tool")
     .option(
       "--rule <rule>",
-      "Add a rule (can be a file path, hub slug, or string content). Can be specified multiple times.",
+      "Add a rule: the rule text, or a path to a rule file (starting with ./, / or ~). Can be specified multiple times.",
       (value: string, previous: string[] | undefined) => {
         const array = Array.isArray(previous) ? previous : [];
         array.push(value);
@@ -34,8 +55,8 @@ export function addCommonOptions(command: Command): Command {
       [] as string[],
     )
     .option(
-      "--mcp <slug>",
-      "Add an MCP server from the hub (slug in format 'owner/package'). Can be specified multiple times.",
+      "--mcp <url-or-path>",
+      "Add an MCP server: an http(s) URL, or a path to a YAML file that defines one (starting with ./, / or ~). Can be specified multiple times.",
       (value: string, previous: string[] | undefined) => {
         const array = Array.isArray(previous) ? previous : [];
         array.push(value);
@@ -44,8 +65,8 @@ export function addCommonOptions(command: Command): Command {
       [] as string[],
     )
     .option(
-      "--model <slug>",
-      "Add a model from the hub (slug in format 'owner/package'). Can be specified multiple times.",
+      "--model <path>",
+      "Add a model from a YAML file that defines one (path starting with ./, / or ~). Can be specified multiple times.",
       (value: string, previous: string[] | undefined) => {
         const array = Array.isArray(previous) ? previous : [];
         array.push(value);
@@ -55,7 +76,7 @@ export function addCommonOptions(command: Command): Command {
     )
     .option(
       "--prompt <prompt>",
-      "Add to the initial user message (can be a file path, hub slug, or string content). Can be specified multiple times.",
+      "Add to the initial user message: the text, or a path to a file that holds it (starting with ./ or /). Can be specified multiple times.",
       (value: string, previous: string[] | undefined) => {
         const array = Array.isArray(previous) ? previous : [];
         array.push(value);
@@ -93,10 +114,7 @@ export function addCommonOptions(command: Command): Command {
       },
       [] as string[],
     )
-    .option(
-      "--agent <slug>",
-      "Load agent file from the hub (slug in format 'owner/package')",
-    );
+    .option("--agent <path>", "Load an agent file (path to a .md file)");
 }
 
 // Function to merge parent options into subcommand options
@@ -111,7 +129,7 @@ export function mergeParentOptions(parentCommand: Command, options: any): any {
     "readonly",
     "auto",
     "autoReview",
-    "tools",
+    "policy",
     "verbose",
     "rule",
     "mcp",
@@ -123,6 +141,12 @@ export function mergeParentOptions(parentCommand: Command, options: any): any {
     "agent",
     "betaSubagentTool",
     "trustProjectConfig",
+    "trustProjectHooks",
+    "ignoreBrokenConfig",
+    "maxBudgetUsd",
+    "maxTurns",
+    "maxDuration",
+    "budgetAllowUnpriced",
   ];
 
   for (const optName of inheritableOptions) {

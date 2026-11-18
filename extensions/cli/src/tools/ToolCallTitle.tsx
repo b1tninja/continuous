@@ -1,3 +1,4 @@
+import { maskArgsForDisplay } from "core/tools/permissions/displayMask.js";
 import { Text } from "ink";
 import React from "react";
 
@@ -12,7 +13,9 @@ import { getToolDisplayName } from "./index.js";
  * @returns A React node with bolded tool name like "<b>ToolName</b>(arg)" or just "<b>ToolName</b>" if no args
  */
 export function ToolCallTitle(props: { toolName: string; args?: any }) {
-  const { toolName, args } = props;
+  const { toolName } = props;
+  // Display only: the tool is called with the real arguments
+  const args = props.args ? maskArgsForDisplay(props.args) : props.args;
 
   const displayName = getToolDisplayName(toolName);
 

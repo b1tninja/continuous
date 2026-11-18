@@ -5,12 +5,7 @@ import { vi } from "vitest";
 import { TUIChat } from "../TUIChat.js";
 
 import { MockRemoteServer } from "./mockRemoteServer.js";
-import {
-  MockApiClient,
-  mockAssistant,
-  MockLlmApi,
-  MockMCPService,
-} from "./TUIChat.setup.js";
+import { mockAssistant, MockLlmApi, MockMCPService } from "./TUIChat.setup.js";
 
 // Shared mock FileIndex to avoid duplication
 const MOCK_FILE_INDEX = {
@@ -127,7 +122,6 @@ export function runTest(
                 model: { provider: "test", name: "test" },
               },
               mcp: { mcpService: new MockMCPService() },
-              apiClient: { apiClient: new MockApiClient() },
             },
             loading: false,
             error: null,
@@ -150,8 +144,6 @@ export function runTest(
                       };
                     case "mcp":
                       return { mcpService: new MockMCPService() };
-                    case "apiClient":
-                      return { apiClient: new MockApiClient() };
                     case "fileIndex":
                       return MOCK_FILE_INDEX;
                     default:
@@ -283,7 +275,6 @@ export function runTestSuite(
                       model: { provider: "test", name: "test" },
                     },
                     mcp: { mcpService: new MockMCPService() },
-                    apiClient: { apiClient: new MockApiClient() },
                   },
                   loading: false,
                   error: null,
@@ -306,8 +297,6 @@ export function runTestSuite(
                             };
                           case "mcp":
                             return { mcpService: new MockMCPService() };
-                          case "apiClient":
-                            return { apiClient: new MockApiClient() };
                           case "fileIndex":
                             return MOCK_FILE_INDEX;
                           default:

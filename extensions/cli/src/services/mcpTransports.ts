@@ -1,5 +1,3 @@
-import { Agent as HttpsAgent } from "https";
-
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -10,6 +8,7 @@ import {
 } from "node_modules/@continuedev/config-yaml/dist/schemas/mcp/index.js";
 
 import { mcpStdioEnv } from "../childEnv.js";
+import { networkFetch } from "../util/networkFetch.js";
 
 import { MCPConnectionInfo } from "./types.js";
 
@@ -17,10 +16,8 @@ export function constructSseTransport(
   serverConfig: SseMcpServer,
   apiKey: string | undefined,
 ): SSEClientTransport {
-  const sseAgent =
-    serverConfig.requestOptions?.verifySsl === false
-      ? new HttpsAgent({ rejectUnauthorized: false })
-      : undefined;
+  // proxy, caBundlePath, useSystemCa, client certificate and verifySsl
+  const fetchFn = networkFetch(serverConfig.requestOptions);
 
   const headers = {
     ...serverConfig.requestOptions?.headers,
@@ -30,20 +27,22 @@ export function constructSseTransport(
   };
 
   return new SSEClientTransport(new URL(serverConfig.url), {
+    fetch: fetchFn,
     eventSourceInit: {
       fetch: (input, init) =>
-        fetch(input, {
-          ...init,
-          headers: {
-            ...init?.headers,
-            ...headers,
-          },
-          ...(sseAgent && { agent: sseAgent }),
-        }),
+        fetchFn(
+          input as RequestInfo | URL,
+          {
+            ...init,
+            headers: {
+              ...init?.headers,
+              ...headers,
+            },
+          } as RequestInit,
+        ),
     },
     requestInit: {
       headers,
-      ...(sseAgent && { agent: sseAgent }),
     },
   });
 }
@@ -52,11 +51,6 @@ export function constructHttpTransport(
   serverConfig: HttpMcpServer,
   apiKey: string | undefined,
 ): StreamableHTTPClientTransport {
-  const streamableAgent =
-    serverConfig.requestOptions?.verifySsl === false
-      ? new HttpsAgent({ rejectUnauthorized: false })
-      : undefined;
-
   const headers = {
     ...serverConfig.requestOptions?.headers,
     ...(apiKey && {
@@ -65,9 +59,9 @@ export function constructHttpTransport(
   };
 
   return new StreamableHTTPClientTransport(new URL(serverConfig.url), {
+    fetch: networkFetch(serverConfig.requestOptions),
     requestInit: {
       headers,
-      ...(streamableAgent && { agent: streamableAgent }),
     },
   });
 }

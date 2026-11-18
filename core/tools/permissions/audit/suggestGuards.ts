@@ -2,6 +2,7 @@ import { destinationsOf } from "../destinations";
 import { effectsOfCommand } from "../commandSpecs";
 import type { RuleSourcesInput } from "../effectiveRules";
 import { classifyReadOnly } from "../readOnlyCommand";
+import { readUserEnvNames } from "../userEnvNames";
 import type { ToolPolicy } from "@continuedev/terminal-security";
 import { testToolCall, type ToolCallTestResult } from "../testToolCall";
 
@@ -131,6 +132,7 @@ function run(
       tool: probe.tool,
       [probe.field]: probe.value,
       sources,
+      envNames: readUserEnvNames(),
       ...(ctx.cwd ? { cwd: ctx.cwd } : {}),
       ...(ctx.basePolicy ? { basePolicy: ctx.basePolicy } : {}),
     } as never);

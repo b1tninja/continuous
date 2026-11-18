@@ -7,17 +7,15 @@ import {
   SecretResult,
   SecretType,
 } from "@continuedev/config-yaml";
-import { DefaultApiInterface } from "@continuedev/sdk/dist/api";
 import * as dotenv from "dotenv";
 
 import { env } from "./env.js";
 
+/**
+ * Resolves `${{ secrets.NAME }}` references from this machine only: the
+ * process environment and the local .env files. Nothing is sent to a server.
+ */
 export class CLIPlatformClient implements PlatformClient {
-  constructor(
-    private orgScopeId: string | null,
-    private readonly apiClient: DefaultApiInterface,
-  ) {}
-
   private findSecretInEnvFile(
     filePath: string,
     secretName: string,
@@ -97,8 +95,7 @@ export class CLIPlatformClient implements PlatformClient {
       undefined,
     );
 
-    // First, check local env files for secrets (highest priority for CLI)
-    // This allows users to override any secret with a local environment variable
+    // Process environment first, then the local env files
     for (let i = 0; i < fqsns.length; i++) {
       const secretFromEnv = this.findSecretInLocalEnvFiles(fqsns[i]);
       if (secretFromEnv?.found) {
@@ -106,34 +103,23 @@ export class CLIPlatformClient implements PlatformClient {
       }
     }
 
-    // For secrets not found locally, try to resolve through the API
-    const unresolvedIndices = results
-      .map((r, i) => (r === undefined ? i : -1))
-      .filter((i) => i !== -1);
-
-    if (unresolvedIndices.length > 0) {
-      try {
-        const unresolvedFqsns = unresolvedIndices.map((i) => fqsns[i]);
-        const apiResults: any = await this.apiClient.syncSecrets({
-          syncSecretsRequest: {
-            fqsns: unresolvedFqsns,
-            orgScopeId: this.orgScopeId,
-          },
-        });
-
-        // Merge API results - keep all found results (with or without value)
-        for (let j = 0; j < apiResults.length; j++) {
-          if (apiResults[j]?.found) {
-            results[unresolvedIndices[j]] = apiResults[j];
-          }
-        }
-      } catch (error) {
-        console.warn(
-          `Error resolving FQSNs through API: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
+    // Anything still unresolved stays undefined. Say so here, by name, because
+    // the config loader only reports a missing secret much later and without
+    // saying where to put it. Names only: values are never printed.
+    const missing = Array.from(
+      new Set(
+        fqsns
+          .filter((_, i) => results[i] === undefined)
+          .map((f) => f.secretName),
+      ),
+    );
+    if (missing.length > 0) {
+      console.warn(
+        `Secret${missing.length > 1 ? "s" : ""} not found locally: ${missing.join(", ")}. ` +
+          `Set ${missing.length > 1 ? "each" : "it"} as an environment variable or in a .env file ` +
+          `(${path.join(env.continueHome, ".env")}, .continuous/.env, .continue/.env or .env in the project). ` +
+          `Secrets are never fetched from a server.`,
+      );
     }
 
     return results;

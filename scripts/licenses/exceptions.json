@@ -1,0 +1,7 @@
+{
+  "@img/*": "sharp prebuilt binaries: libvips is LGPL-3.0-or-later, shipped as a separate dynamically loaded native module (not linked into our code); sharp itself is Apache-2.0. Reviewed 2026-11-11.",
+  "flatbuffers": "declares 'SEE LICENSE IN LICENSE'; the LICENSE file is Apache-2.0. Reviewed 2026-11-11.",
+  "jinja-js": "declares 'BSD' without a clause count; the repository text is the 3-clause BSD licence. Reviewed 2026-11-11.",
+  "elkjs": "declares 'EPL-2.0 OR GPL-3.0-or-later'; we take it under EPL-2.0 (file-level weak copyleft, used unmodified, source is the published package). Reviewed 2026-11-11.",
+  "khroma": "declares no licence field; the shipped 'license' file is MIT (Fabio Spampinato, Andrew Maney). Reviewed 2026-11-11."
+}

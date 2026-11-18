@@ -1,5 +1,18 @@
+import type { RequestOptions } from "../index.js";
+import {
+  ANTHROPIC_FALLBACK_VERSION,
+  ANTHROPIC_LIST_VERSION,
+} from "../util/anthropicApiVersion.js";
+import { isNonPublicHostname } from "../util/networkAddress.js";
+import { networkFetch, networkFetchWith } from "../util/networkFetch.js";
+
 import { LLMClasses, llmFromProviderAndOptions } from "./llms/index.js";
 import { listOpenAICompatibleModels } from "./localServers.js";
+import {
+  modelInfoFetchBlocked,
+  pullOpenRouterCatalog,
+} from "./modelCatalogStore.js";
+import { catalogToFetchedModels } from "./openRouterCatalog.js";
 
 export interface FetchedModel {
   name: string;
@@ -20,6 +33,8 @@ export interface FetchedModel {
   createdAt?: string;
   /** True when the provider reports the model as deprecated or retired. */
   deprecated?: boolean;
+  /** ISO date the provider has scheduled the model's retirement for, when it says. */
+  retiresAt?: string;
 }
 
 const OLLAMA_EXCLUDED_CAPABILITIES = ["vision", "audio", "embedding"];
@@ -73,9 +88,15 @@ function getOllamaIcon(modelName: string): string {
   return bestMatch ? OLLAMA_ICON_MAP[bestMatch] : "ollama.png";
 }
 
-async function fetchOllamaModels(): Promise<FetchedModel[]> {
+async function fetchOllamaModels(
+  requestOptions?: RequestOptions,
+): Promise<FetchedModel[]> {
   try {
-    const response = await fetch("https://ollama.com/library");
+    const response = await networkFetch(
+      "https://ollama.com/library",
+      undefined,
+      requestOptions,
+    );
     if (!response.ok) {
       throw new Error(`Failed to fetch Ollama library: ${response.status}`);
     }
@@ -133,28 +154,18 @@ async function fetchOllamaModels(): Promise<FetchedModel[]> {
   }
 }
 
-async function fetchOpenRouterModels(): Promise<FetchedModel[]> {
+/**
+ * The public OpenRouter list. Downloading it also keeps the dated copy
+ * (`model-catalog/openrouter.json`), so prices are there for later without a
+ * second request.
+ */
+async function fetchOpenRouterModels(
+  requestOptions?: RequestOptions,
+): Promise<FetchedModel[]> {
+  const blocked = modelInfoFetchBlocked();
+  if (blocked) throw new Error(blocked);
   try {
-    const response = await fetch("https://openrouter.ai/api/v1/models");
-    if (!response.ok) {
-      throw new Error(`Failed to fetch OpenRouter models: ${response.status}`);
-    }
-
-    const data = await response.json();
-    if (!data.data || !Array.isArray(data.data)) {
-      return [];
-    }
-
-    return data.data
-      .filter((m: any) => m.id && m.name)
-      .map((m: any) => ({
-        name: m.name,
-        modelId: m.id,
-        icon: "openrouter.png",
-        contextLength: m.context_length,
-        maxTokens: m.top_provider?.max_completion_tokens,
-        supportsTools: (m.supported_parameters ?? []).includes("tools"),
-      }));
+    return catalogToFetchedModels(await pullOpenRouterCatalog(requestOptions));
   } catch (error) {
     console.error("Error fetching OpenRouter models:", error);
     return [];
@@ -165,24 +176,71 @@ function withTrailingSlash(url: string): string {
   return url.endsWith("/") ? url : `${url}/`;
 }
 
+/** Pages of 100 models read at most: a bound on a misbehaving gateway. */
+const ANTHROPIC_MAX_PAGES = 10;
+
 async function fetchAnthropicModels(
   apiKey?: string,
   apiBase?: string,
+  requestOptions?: RequestOptions,
 ): Promise<FetchedModel[]> {
   const root = withTrailingSlash(apiBase || "https://api.anthropic.com/v1/");
-  const url = new URL("models", root);
-  url.searchParams.set("limit", "100");
-  const response = await fetch(url, {
-    headers: {
-      "x-api-key": apiKey ?? "",
-      "anthropic-version": "2023-06-01",
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch Anthropic models: ${response.status}`);
+  const rows: any[] = [];
+  let afterId: string | undefined;
+  // The newer API version returns the lifecycle fields and changes nothing
+  // else on this endpoint (K23); a gateway that refuses it with a 400 is asked
+  // again with the older one, which the rest of the pages then use.
+  let version = ANTHROPIC_LIST_VERSION;
+  for (let page = 0; page < ANTHROPIC_MAX_PAGES; page++) {
+    const url = new URL("models", root);
+    url.searchParams.set("limit", "100");
+    if (afterId) url.searchParams.set("after_id", afterId);
+    const send = () =>
+      networkFetch(
+        url,
+        {
+          headers: {
+            "x-api-key": apiKey ?? "",
+            "anthropic-version": version,
+          },
+        },
+        requestOptions,
+      );
+    let response = await send();
+    if (response.status === 400 && version !== ANTHROPIC_FALLBACK_VERSION) {
+      version = ANTHROPIC_FALLBACK_VERSION;
+      response = await send();
+    }
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Anthropic models: ${response.status}`);
+    }
+    const data = await response.json();
+    rows.push(...(data.data ?? []));
+    // `has_more` and `last_id` are the documented cursor: `last_id` is the
+    // `after_id` of the next page.
+    const next: unknown = data.last_id;
+    if (!data.has_more || typeof next !== "string" || next === afterId) break;
+    afterId = next;
   }
-  const data = await response.json();
-  return (data.data ?? []).map((m: any) => ({
+  return rows.map(anthropicModelToFetched);
+}
+
+/**
+ * One entry of Anthropic's `GET /v1/models` (platform.claude.com/docs/en/api/models/list):
+ * `max_input_tokens` and `max_tokens` for the window, `capabilities.image_input`
+ * for images, and `lifecycle` / `retires_at` for retirement. Each is used
+ * only when the answer carries it, so an older API version or a gateway that
+ * strips fields leaves the bundled defaults in place. Effort levels are not
+ * turned into `reasoningEfforts`: those become OpenAI-style
+ * `reasoning_effort` variants, which the Messages API does not take.
+ */
+export function anthropicModelToFetched(m: any): FetchedModel {
+  const imageInput = m.capabilities?.image_input?.supported;
+  const retiresAt =
+    typeof m.retires_at === "string" && !Number.isNaN(Date.parse(m.retires_at))
+      ? m.retires_at
+      : undefined;
+  return {
     name: m.display_name ?? m.id,
     modelId: m.id,
     icon: "anthropic.png",
@@ -192,23 +250,26 @@ async function fetchAnthropicModels(
     ),
     maxTokens: m.max_tokens ?? undefined,
     supportsTools: true,
+    ...(typeof imageInput === "boolean" ? { supportsImages: imageInput } : {}),
     createdAt: m.created_at ?? undefined,
     // `lifecycle` is only returned by newer API versions; leave unset otherwise.
     deprecated:
       typeof m.lifecycle === "string" ? m.lifecycle !== "active" : undefined,
-  }));
+    ...(retiresAt ? { retiresAt } : {}),
+  };
 }
 
 async function fetchGeminiModels(
   apiKey?: string,
   apiBase?: string,
+  requestOptions?: RequestOptions,
 ): Promise<FetchedModel[]> {
   const base = withTrailingSlash(
     apiBase || "https://generativelanguage.googleapis.com/v1beta/",
   );
   const url = new URL("models", base);
   url.searchParams.set("key", apiKey ?? "");
-  const response = await fetch(url);
+  const response = await networkFetch(url, undefined, requestOptions);
   if (!response.ok) {
     throw new Error(`Failed to fetch Gemini models: ${response.status}`);
   }
@@ -314,11 +375,25 @@ export async function fetchModels(
   provider: string,
   apiKey?: string,
   apiBase?: string,
+  /** The user's top-level `requestOptions`: proxy, CA, system store, verifySsl. */
+  requestOptions?: RequestOptions,
 ): Promise<FetchedModel[]> {
   const compatibleBase = compatibleModelsBase(provider, apiBase);
   if (compatibleBase) {
     try {
-      return await listOpenAICompatibleModels(compatibleBase, apiKey);
+      // A server on this machine or the local network is reached directly, as
+      // before: a corporate proxy cannot see it.
+      let local = true;
+      try {
+        local = isNonPublicHostname(new URL(compatibleBase).hostname);
+      } catch {
+        // not a URL: the request reports it
+      }
+      return await listOpenAICompatibleModels(
+        compatibleBase,
+        apiKey,
+        local ? undefined : networkFetchWith(requestOptions),
+      );
     } catch (error: any) {
       throw new Error(
         `Failed to fetch models for ${provider}: ${error?.message ?? error}`,
@@ -327,13 +402,13 @@ export async function fetchModels(
   }
   switch (provider) {
     case "ollama":
-      return fetchOllamaModels();
+      return fetchOllamaModels(requestOptions);
     case "openrouter":
-      return fetchOpenRouterModels();
+      return fetchOpenRouterModels(requestOptions);
     case "anthropic":
-      return fetchAnthropicModels(apiKey, apiBase);
+      return fetchAnthropicModels(apiKey, apiBase, requestOptions);
     case "gemini":
-      return fetchGeminiModels(apiKey, apiBase);
+      return fetchGeminiModels(apiKey, apiBase, requestOptions);
     default:
       return fetchProviderModelsViaListModels(provider, apiKey, apiBase);
   }

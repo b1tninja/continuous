@@ -2,51 +2,68 @@
 title: "cn serve"
 ---
 
-`continuous serve` starts the terminal agent as an HTTP server that takes messages, approvals and loop answers. Anything that can reach the port can act as you, so it listens on loopback by default and checks every request.
+`continuous serve` starts the terminal agent as an HTTP server that takes messages, approvals and loop answers. Anything that can reach the port can act as you, so it listens on loopback by default, checks the Host and Origin of every request, and requires a token you choose when it listens beyond this computer.
 
 ```bash
 continuous serve --port 8000
 ```
 
-| Option                | Default     | Meaning                                                                                  |
-| --------------------- | ----------- | ---------------------------------------------------------------------------------------- |
-| `--port <port>`       | `8000`      | Port to listen on                                                                        |
-| `--host <host>`       | `127.0.0.1` | Interface to listen on                                                                   |
-| `--token <token>`     | none        | Bearer token every request must carry. Also read from `CONTINUOUS_SERVE_TOKEN`          |
-| `--timeout <seconds>` | `300`       | Inactivity timeout                                                                       |
+| Option                        | Default       | Meaning                                                                                                  |
+| ----------------------------- | ------------- | -------------------------------------------------------------------------------------------------------- |
+| `--port <port>`               | `8000`        | Port to listen on                                                                                        |
+| `--host <host>`               | `127.0.0.1`   | Interface to listen on. Anything but loopback listens beyond this computer, needs `--token`, and prints a warning |
+| `--token <token>`             | none          | Bearer token every request must carry, at least 16 characters. Also read from `CONTINUOUS_SERVE_TOKEN`. Optional on loopback, required elsewhere |
+| `--allow-origin <origin...>`  | none          | A browser origin that may call the server, such as `http://localhost:3000`. Exact match, no wildcard     |
+| `--timeout <seconds>`         | `300`         | Inactivity timeout                                                                                       |
 
 ## Access token
 
-On loopback (`127.0.0.1`, `::1`, `localhost`) a token is optional. Without one, requests need no `Authorization` header.
+A token is your choice. On loopback (the default) the server needs none and does not make one up: a request that passes the Host and Origin checks is answered. Pass `--token` or set `CONTINUOUS_SERVE_TOKEN` to require one; it must be at least 16 characters and is never echoed or written to the log. With `--host` set to anything but loopback the token is required.
 
-Off loopback, for example `--host 0.0.0.0`, the server does not start without a token of at least 16 characters. Set it in the environment to keep it out of the process list:
+| Listening on | No token                                   | Token given                                                  |
+| ------------ | ------------------------------------------ | ------------------------------------------------------------ |
+| Loopback     | Starts. No bearer check                    | Starts. Every request needs the token                        |
+| Elsewhere    | Refused: message on stderr, exit status `2` | Starts with a warning. Every request needs the token        |
+
+Send the token in the `Authorization` header:
 
 ```bash
 export CONTINUOUS_SERVE_TOKEN="$(openssl rand -hex 24)"
-continuous serve --host 0.0.0.0
+continuous serve
+curl -H "Authorization: Bearer $CONTINUOUS_SERVE_TOKEN" http://127.0.0.1:8000/state
 ```
 
-With a token set, a request without `Authorization: Bearer <token>` gets `401`. The terminal agent in remote mode sends `CONTINUOUS_SERVE_TOKEN` when it is set.
+Setting it in the environment keeps it out of the process list. A token in the query string is not read: URLs end up in logs and history, so `?token=...` gets `401`. A request without a valid token gets `401`; an address that fails repeatedly is held off with `429` for a minute. The terminal agent in remote mode and `continuous agents list` send `CONTINUOUS_SERVE_TOKEN` when it is set.
+
+An approval that arrives over a server with no token has no authenticated person behind it, so the audit trail records it as the system's (`by: system`). With a token it is recorded as `by: person`, as before.
+
+### What the agent may run
+
+The server runs headless, at your own policy levels (the ones in `permissions.yaml`, or the defaults). A tool call that would ask is refused, because nobody is at a prompt: the model gets a result that says so, and the server's stderr gets one line per tool naming the flags that allow it. Write `--auto` or `--policy` before the word `serve` to let more run, as in `continuous --policy handsOff serve`. At start-up the server prints one line on stderr with the levels it runs at. Until 2.18.0 the server allowed `Bash` and every unlisted tool; `CONTINUOUS_HEADLESS_LEGACY_ALLOW=1` restores that for one release.
+
+### When the server refuses to start
+
+`continuous serve` does not start with an option it cannot honour. It prints one line on stderr saying what was refused and what to change, and exits with status `2` (the usage-error status, as in `continuous secrets scan`). The line never contains a token. The cases are a non-loopback `--host` with no token (pass `--token` or set `CONTINUOUS_SERVE_TOKEN`, or use `--host 127.0.0.1`) and a token shorter than 16 characters. Check it in a script with `continuous serve --host 0.0.0.0; echo $?`.
 
 ## Host and Origin checks
 
-These apply with or without a token, before the token is checked:
+These apply before the token is checked, whatever the token setting. A Host that does not match gets `403`, not `421` as in earlier versions.
 
-- The `Host` header must be the address the server is bound to. On loopback it must be a loopback name or address; anything else gets `421`. This stops a DNS-rebinding page from reaching the server.
-- A request with an `Origin` header gets `403`. Browsers send `Origin`; `curl` and other local clients do not.
+- The `Host` header must be the address the server is bound to: `127.0.0.1`, `localhost` or `[::1]` on loopback (with this server's port, when the header has one), or the `--host` value elsewhere. Anything else gets `403`. This stops a DNS-rebinding page from reaching the server.
+- A request with an `Origin` header gets `403` unless the origin is listed with `--allow-origin`. Browsers send `Origin`; `curl` and other local clients do not. A listed origin is answered with its own name in `Access-Control-Allow-Origin`, never `*`. The server has no WebSocket route and refuses every upgrade request with `403`.
+- A request with a `Sec-Fetch-Site` header gets `403` unless its value is `none`. Browsers send it, so a request a web page makes (`cross-site`, `same-site`, `same-origin`) is refused. A client that sends no such header, such as `curl`, Node or the remote terminal agent, is not affected.
+- A request that carries a body gets `415` unless its `Content-Type` is `application/json`. This closes the form and `text/plain` posts a page can send without a preflight. A `POST` with no body, such as `/pause` and `/exit`, needs no content type.
 
-A browser page cannot call the server, even on loopback with no token. To call it from a script, send no `Origin` header and a loopback `Host`:
+## Limits and masking
 
-```bash
-curl http://127.0.0.1:8000/state
-```
+A request body over 1 MB gets `413`. Each address is limited to 1200 requests a minute (`429`). `GET /state` and `GET /diff` pass what they return through the display masker and the secret scanner, so a key in the conversation or in a diff is shown as a placeholder. For `GET /state` that covers every field: the conversation, a pending permission, the queued messages (`messageQueue`), the held questions (`pendingQuestions`) and the loop (`loop`, with its questions, reports and check output). The masking is by pattern, so a secret in a shape no rule lists is not caught.
 
 ## Agents
 
 `GET /agents` lists the agents of the session: the session itself, the subagents it started and the workers of a Loop wave. It answers the same Host, Origin and token checks as the other routes.
 
 ```bash
-curl http://127.0.0.1:8000/agents
+curl -H "Authorization: Bearer $CONTINUOUS_SERVE_TOKEN" http://127.0.0.1:8000/agents
 continuous agents list              # the same list as a tree
 continuous agents list --json       # the JSON as the server sent it
 continuous agents list --url http://127.0.0.1:9000 --token "$CONTINUOUS_SERVE_TOKEN"

@@ -263,17 +263,12 @@ const baz = foo;`;
       });
     });
 
-    it("should return single match at position 0 for whitespace-only string", () => {
+    it("should not return an emptySearch match for whitespace-only string", () => {
       const content = "const foo = 'bar';";
       const search = "   \n\t  ";
       const matches = findSearchMatches(content, search);
 
-      expect(matches).toHaveLength(1);
-      expect(matches[0]).toEqual({
-        startIndex: 0,
-        endIndex: 0,
-        strategyName: "emptySearch",
-      });
+      expect(matches.some((m) => m.strategyName === "emptySearch")).toBe(false);
     });
   });
 

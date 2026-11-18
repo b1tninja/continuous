@@ -3,6 +3,7 @@ import React from "react";
 import { vi } from "vitest";
 
 import { ToolPermissionSelector } from "../components/ToolPermissionSelector.js";
+import { CONFIRM_ARM_MS } from "../hooks/useInterruptConfirm.js";
 
 describe("TUIChat - Stream Stopping on Tool Rejection", () => {
   beforeEach(() => {
@@ -32,17 +33,16 @@ describe("TUIChat - Stream Stopping on Tool Rejection", () => {
 
     await vi.advanceTimersByTimeAsync(50);
 
-    // Simulate user rejecting the tool call (press escape)
+    // Esc rejects this call only: the stream goes on (no single key ends it)
     stdin.write("\x1b"); // ESC key
 
     await vi.advanceTimersByTimeAsync(50);
 
-    // Verify that the tool was rejected with stop stream
     expect(handleResponse).toHaveBeenCalledWith(
       "test-request-123",
       false, // approved = false
       false, // createPolicy = false
-      true, // stopStream = true
+      false, // stopStream = false
     );
   });
 
@@ -63,9 +63,11 @@ describe("TUIChat - Stream Stopping on Tool Rejection", () => {
 
     await vi.advanceTimersByTimeAsync(50);
 
-    // Press 'n' to reject
+    // Press 'n' to reject and stop; it asks first, and Enter confirms
     stdin.write("n");
 
+    await vi.advanceTimersByTimeAsync(CONFIRM_ARM_MS);
+    stdin.write("\r");
     await vi.advanceTimersByTimeAsync(50);
 
     // Verify rejection with stop stream

@@ -1,4 +1,4 @@
-import { ChevronDownIcon } from "@heroicons/react/24/outline";
+import { BriefcaseIcon, ChevronDownIcon } from "@heroicons/react/24/outline";
 import { ArrowPathIcon } from "@heroicons/react/24/solid";
 import type { ProfileDescription } from "core/config/ConfigHandler";
 import { useAppSelector } from "../../redux/hooks";
@@ -20,12 +20,17 @@ export function SelectedAssistantButton({
 
   const isSidebar = variant === "sidebar";
   const iconSize = isSidebar ? "h-4 w-4" : "h-3 w-3";
-  const buttonPadding = isSidebar ? "px-2 py-1.5" : "px-0 py-0.5";
+  const buttonPadding = isSidebar ? "px-2 py-1.5" : "min-h-6 px-0 py-0.5";
   const buttonStyle = isSidebar ? {} : { fontSize: fontSize(-3) };
 
   return (
     <ListboxButton
       data-testid="assistant-select-button"
+      aria-label={
+        selectedProfile && !configLoading
+          ? `Config: ${selectedProfile.title}`
+          : undefined
+      }
       className={`overflow-hidden border-none bg-transparent text-description hover:brightness-110 ${isSidebar ? "w-full justify-start" : "gap-1.5"} ${buttonPadding}`}
       style={buttonStyle}
     >
@@ -52,10 +57,20 @@ export function SelectedAssistantButton({
             </span>
           ) : (
             <>
-              {selectedProfile.iconUrl && (
+              {selectedProfile.iconUrl ? (
                 <AssistantIcon assistant={selectedProfile} size={iconSize} />
+              ) : (
+                // Up to 480 px the name gives way to this icon: a name is never
+                // cut mid-word, and the full title is the label and tooltip
+                <BriefcaseIcon
+                  data-testid="assistant-select-icon"
+                  className={`${iconSize} shrink-0 min-[481px]:hidden`}
+                  aria-hidden="true"
+                />
               )}
-              <span className={`hidden text-xs select-none xs:line-clamp-1`}>
+              <span
+                className={`hidden text-xs select-none min-[481px]:line-clamp-1`}
+              >
                 {selectedProfile.title}
               </span>
             </>

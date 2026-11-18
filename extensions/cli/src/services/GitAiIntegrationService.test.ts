@@ -9,8 +9,14 @@ import { GitAiIntegrationService } from "./GitAiIntegrationService.js";
 
 // Mock child_process
 vi.mock("child_process", () => ({
-  exec: vi.fn(),
+  execFile: vi.fn(),
   spawn: vi.fn(),
+}));
+
+// The opt-in and the PATH lookup have their own tests (gitAiBinary.test.ts)
+vi.mock("./gitAiBinary.js", () => ({
+  isGitAiOptedIn: vi.fn(() => true),
+  resolveGitAiBinary: vi.fn(() => "/usr/local/bin/git-ai"),
 }));
 
 // Mock session functions
@@ -49,7 +55,7 @@ describe("GitAiIntegrationService", () => {
     const session = await import("../session.js");
     const { serviceContainer } = await import("./ServiceContainer.js");
 
-    mockExec = childProcess.exec as any;
+    mockExec = childProcess.execFile as any;
     mockSpawn = childProcess.spawn as any;
     mockGetCurrentSession = session.getCurrentSession as any;
     mockGetSessionFilePath = session.getSessionFilePath as any;
@@ -83,24 +89,30 @@ describe("GitAiIntegrationService", () => {
 
   describe("initialization", () => {
     it("should check if git-ai is available on initialization", async () => {
-      mockExec.mockImplementation((_cmd: string, callback: Function) => {
-        callback(null); // No error = git-ai is available
-      });
+      mockExec.mockImplementation(
+        (_bin: string, _args: string[], _opts: object, callback: Function) => {
+          callback(null); // No error = git-ai is available
+        },
+      );
 
       const state = await service.initialize();
 
       expect(state.isEnabled).toBe(true);
       expect(state.isGitAiAvailable).toBe(true);
       expect(mockExec).toHaveBeenCalledWith(
-        "git-ai --version",
+        "/usr/local/bin/git-ai",
+        ["--version"],
+        expect.any(Object),
         expect.any(Function),
       );
     });
 
     it("should mark git-ai as unavailable if version check fails", async () => {
-      mockExec.mockImplementation((_cmd: string, callback: Function) => {
-        callback(new Error("command not found")); // Error = git-ai not available
-      });
+      mockExec.mockImplementation(
+        (_bin: string, _args: string[], _opts: object, callback: Function) => {
+          callback(new Error("command not found")); // Error = git-ai not available
+        },
+      );
 
       const state = await service.initialize();
 
@@ -109,11 +121,49 @@ describe("GitAiIntegrationService", () => {
     });
   });
 
+  describe("opt-in", () => {
+    it("stays off and executes nothing unless the user opted in", async () => {
+      const bin = await import("./gitAiBinary.js");
+      (bin.isGitAiOptedIn as any).mockReturnValueOnce(false);
+
+      const state = await service.initialize();
+
+      expect(state.isEnabled).toBe(false);
+      expect(mockExec).not.toHaveBeenCalled();
+      expect(mockSpawn).not.toHaveBeenCalled();
+      await service.beforeFileEdit("/test/workspace/a.ts");
+      expect(mockSpawn).not.toHaveBeenCalled();
+    });
+
+    it("is off before initialization", () => {
+      expect(service.getState().isEnabled).toBe(false);
+    });
+
+    it("runs the resolved absolute path, never the bare name", async () => {
+      mockExec.mockImplementation(
+        (_b: string, _a: string[], _o: object, cb: Function) => cb(null),
+      );
+      await service.initialize();
+      const proc = new EventEmitter() as any;
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.stdin = { write: vi.fn(), end: vi.fn() };
+      mockSpawn.mockReturnValue(proc);
+      const pending = service.beforeFileEdit("/test/workspace/a.ts");
+      await new Promise((r) => setTimeout(r, 0));
+      proc.emit("close", 0);
+      await pending;
+      expect(mockSpawn.mock.calls[0][0]).toBe("/usr/local/bin/git-ai");
+    });
+  });
+
   describe("trackToolUse", () => {
     beforeEach(async () => {
-      mockExec.mockImplementation((_cmd: string, callback: Function) => {
-        callback(null); // git-ai is available
-      });
+      mockExec.mockImplementation(
+        (_bin: string, _args: string[], _opts: object, callback: Function) => {
+          callback(null); // git-ai is available
+        },
+      );
       await service.initialize();
     });
 
@@ -153,7 +203,7 @@ describe("GitAiIntegrationService", () => {
       await service.trackToolUse(toolCall, "PreToolUse");
 
       expect(mockSpawn).toHaveBeenCalledWith(
-        "git-ai",
+        "/usr/local/bin/git-ai",
         ["checkpoint", "continue-cli", "--hook-input", "stdin"],
         { cwd: "/test/workspace" },
       );
@@ -267,9 +317,11 @@ describe("GitAiIntegrationService", () => {
 
     it("should not track if git-ai is unavailable", async () => {
       // Reinitialize with git-ai unavailable
-      mockExec.mockImplementation((_cmd: string, callback: Function) => {
-        callback(new Error("not found"));
-      });
+      mockExec.mockImplementation(
+        (_bin: string, _args: string[], _opts: object, callback: Function) => {
+          callback(new Error("not found"));
+        },
+      );
       await service.initialize();
 
       const toolCall: PreprocessedToolCall = {

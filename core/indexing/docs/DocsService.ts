@@ -436,8 +436,7 @@ export default class DocsService {
     siteIndexingConfig: SiteIndexingConfig,
     forceReindex: boolean = false,
   ): Promise<void> {
-    const { startUrl, useLocalCrawling, maxDepth, faviconUrl } =
-      siteIndexingConfig;
+    const { startUrl, maxDepth, faviconUrl } = siteIndexingConfig;
 
     // First, if indexing is already in process, don't attempt
     // This queue is necessary because indexAndAdd is invoked circularly by config edits
@@ -548,8 +547,6 @@ export default class DocsService {
         this.config,
         maxDepth,
         undefined,
-        // Unset means crawl on this machine. false opts into the upstream service.
-        useLocalCrawling !== false,
         this.githubToken,
       );
       const crawlerGen = docsCrawler.crawl(new URL(startUrl));
@@ -679,7 +676,10 @@ export default class DocsService {
 
       const favicon =
         faviconUrl ||
-        (await fetchFavicon(new URL(siteIndexingConfig.startUrl)));
+        (await fetchFavicon(
+          new URL(siteIndexingConfig.startUrl),
+          this.config.requestOptions,
+        ));
 
       if (this.shouldCancel(startUrl, startedWithEmbedder)) {
         return;
@@ -1162,7 +1162,9 @@ export default class DocsService {
 
   private async updateMetadataInSqlite(siteIndexingConfig: SiteIndexingConfig) {
     const { startUrl, title, faviconUrl } = siteIndexingConfig;
-    const favicon = faviconUrl || (await fetchFavicon(new URL(startUrl)));
+    const favicon =
+      faviconUrl ||
+      (await fetchFavicon(new URL(startUrl), this.config.requestOptions));
     if (!this.config.selectedModelByRole.embed) {
       console.warn(
         `Attempting to add metadata for ${startUrl} without embeddings provider specified`,

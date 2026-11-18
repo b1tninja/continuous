@@ -26,6 +26,7 @@ import {
   TESTABLE_TOOLS,
   type ToolCallTestResult,
 } from "core/tools/permissions/testToolCall.js";
+import { readUserEnvNames } from "core/tools/permissions/userEnvNames.js";
 
 import { env } from "../env.js";
 import { PERMISSIONS_YAML_PATH } from "../permissions/permissionsYamlLoader.js";
@@ -228,6 +229,7 @@ function testCommand(
     ...(mode ? { mode } : {}),
     levels: parsed.levels,
     sources: sources(options),
+    envNames: readUserEnvNames(),
     cwd: options.cwd ?? process.cwd(),
     ...(options.output ? { outputText: options.output } : {}),
   });

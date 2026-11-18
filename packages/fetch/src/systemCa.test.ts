@@ -3,7 +3,11 @@ import { HttpsProxyAgent } from "https-proxy-agent";
 import tls from "node:tls";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createAgentForUrl, needsCustomAgent } from "./agent.js";
-import { CertsCache, defaultUseSystemCa } from "./certs.js";
+import {
+  CertsCache,
+  defaultUseSystemCa,
+  resetSystemCaWarning,
+} from "./certs.js";
 import { getAgentOptions } from "./getAgentOptions.js";
 
 const SYSTEM_CERT =
@@ -66,11 +70,19 @@ describe("system CA", () => {
     vi.restoreAllMocks();
     const original = (tls as any).getCACertificates;
     (tls as any).getCACertificates = undefined;
+    resetSystemCaWarning();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
-      CertsCache.getInstance().clear();
+      await CertsCache.getInstance().clear();
       const options = await getAgentOptions({ useSystemCa: true });
       expect(options.ca.length).toBeGreaterThan(0); // bundled roots still present
+      // One clear warning naming the Node version needed, not one per request.
+      await CertsCache.getInstance().clear();
+      await getAgentOptions({ useSystemCa: true });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0][0])).toMatch(/22\.15/);
     } finally {
+      warn.mockRestore();
       (tls as any).getCACertificates = original;
     }
   });

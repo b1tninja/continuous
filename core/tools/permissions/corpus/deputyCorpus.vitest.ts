@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import { deputyCallHit } from "../deputyCall";
 import type { PolicyLevel } from "../policy";
 import { testToolCall, type TestDecision } from "../testToolCall";
+import { getBaseToolDefinitions } from "../../index";
 import { ROWS, type Row } from "./corpusRows";
 
 // protected-edits-06 edits /etc/hosts: labelled ask, and a floor case
 const EXPECTED_NEW_ASKS = ["protected-edits-06"];
+const EXPECTED_SCHEMA_ASKS: string[] = [];
 
 /**
  * What the confused-deputy rule for the host file tools changes on the 287
@@ -96,7 +98,8 @@ describe("the confused-deputy rule on the 287 labelled calls", () => {
       if (run("off")) reviewerOff++;
       if (run("on")) reviewerOn++;
     }
-    expect([reviewerOff, reviewerOn]).toEqual([194, 192]);
+    // WB45: fetches to trustedDomains hosts no longer reach the reviewer (5 calls)
+    expect([reviewerOff, reviewerOn]).toEqual([189, 187]);
   });
 
   it("no corpus call trips a floor inside the rule", () => {
@@ -113,5 +116,42 @@ describe("the confused-deputy rule on the 287 labelled calls", () => {
       return hit !== undefined;
     }).map((r) => r.id);
     expect(floors).toEqual([]);
+  });
+});
+
+/**
+ * The schema evidence for MCP path arguments (mcpPathSchema.ts) on the same
+ * 287 calls. The corpus has no MCP calls, so each row is replayed as if an
+ * MCP tool had made it, with that tool's real built-in schema as the
+ * `inputSchema`: "off" reads the names only (the rule before), "on" adds the
+ * schema. The rule only ever returns an ask, so a new deny is impossible by
+ * construction; the test counts asks and checks nothing is loosened.
+ */
+describe("MCP schema evidence on the 287 labelled calls", () => {
+  const defs = new Map(
+    getBaseToolDefinitions().map((t) => [t.function.name, t]),
+  );
+  const replay = (row: Row, withSchema: boolean) =>
+    deputyCallHit({
+      toolName: row.tool,
+      parsedArgs: row.args,
+      mcp: true,
+      schema: withSchema ? defs.get(row.tool)?.function.parameters : undefined,
+      cwd: "/home/dev/shop",
+      home: "/home/dev",
+      flavor: "posix",
+    });
+
+  it("adds asks only, never loosens, never denies", () => {
+    const newAsks: string[] = [];
+    const loosened: string[] = [];
+    for (const row of ROWS) {
+      const off = replay(row, false);
+      const on = replay(row, true);
+      if (!off && on) newAsks.push(row.id);
+      if (off && !on) loosened.push(row.id);
+    }
+    expect(loosened).toEqual([]);
+    expect(newAsks).toEqual(EXPECTED_SCHEMA_ASKS);
   });
 });

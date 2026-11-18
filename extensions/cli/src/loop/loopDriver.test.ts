@@ -50,6 +50,7 @@ import {
   prepareLoopTurn,
   requestLoopTurnEnd,
   resetLoopMemory,
+  resumeStoppedLoop,
   runLoopItemAgain,
   setRunningLoopBudget,
   skipLoopItem,
@@ -247,6 +248,93 @@ describe("Loop mode's driver in the CLI", () => {
       ["pending", undefined],
     ]);
     expect(services.toolPermissions.getCurrentMode()).toBe("normal");
+  });
+
+  async function stuckThenCheckReplaced(
+    plan: "idgaf" | "permissive" | "cautious",
+  ) {
+    await savePlan(
+      {
+        title: "Work",
+        plan: "The work.",
+        todos: ["One", "Two"],
+        todo_details: [{ todo: 1, check: "node one.js" }],
+      },
+      cwd,
+    );
+    setPolicyLevels({ ...getPolicyLevels(), plan, questions: plan });
+    const loop = startLoopFromPlan("normal")!;
+    commitLoop(setLoopStrategy(loop, "finish"));
+    runItem("stuck");
+    runItem("done");
+    const replan = nextTurn(history().length);
+    expect(replan?.kind).toBe("replan");
+    append(user(replan!.prompt));
+    // The re-plan swaps the stuck item's check for an easier one
+    await savePlan(
+      {
+        title: "Work",
+        plan: "The work.",
+        todos: ["One", "Two"],
+        todo_details: [{ todo: 1, check: "node --check one.js" }],
+      },
+      cwd,
+    );
+    append(toolCallItem("PresentPlan", {}, "call_plan"));
+    return nextTurn(history().length);
+  }
+
+  for (const level of ["idgaf", "permissive"] as const) {
+    it(`a re-plan that replaces a check goes on by itself at Plan edits ${level}, with a notice`, async () => {
+      const next = await stuckThenCheckReplaced(level);
+      expect(next?.kind).toBe("item");
+      expect(loopNow().status).toBe("running");
+      expect(loopNow().autoDecisions?.at(-1)).toMatchObject({
+        kind: "plan",
+        by: "system",
+        text: "Plan updated: 2 kept, 0 added, 0 dropped; check of item 1 replaced",
+      });
+    });
+  }
+
+  it("the same re-plan waits on its card at Plan edits Cautious", async () => {
+    expect(await stuckThenCheckReplaced("cautious")).toBeUndefined();
+    expect(loopNow().status).toBe("awaiting_plan");
+    expect(loopNow().replanReason).toContain("ended stuck");
+  });
+
+  it("a plan's open decisions are answered by the system when Questions is permissive", async () => {
+    await savePlan(
+      {
+        title: "Work",
+        plan: "The work.",
+        todos: ["One"],
+        decisions: [
+          {
+            question: "Which store?",
+            options: ["sqlite", "postgres (recommended)"],
+            pick: "sqlite",
+            todos: [1],
+          },
+        ],
+      },
+      cwd,
+    );
+    setPolicyLevels({
+      ...getPolicyLevels(),
+      plan: "idgaf",
+      questions: "idgaf",
+    });
+    startLoopFromPlan("normal");
+    expect(loopNow().autoDecisions?.at(-1)).toMatchObject({
+      kind: "question",
+      by: "system",
+      text: "Auto-answered: Which store? -> postgres",
+    });
+    const file = fs.readdirSync(path.join(cwd, ".continuous", "plans"))[0];
+    expect(
+      fs.readFileSync(path.join(cwd, ".continuous", "plans", file), "utf8"),
+    ).toContain("postgres");
   });
 
   it("a supervised re-plan waits for Continue the loop", async () => {
@@ -480,6 +568,28 @@ describe("Loop mode's driver in the CLI", () => {
     );
   });
 
+  it("a resumed loop follows this process's levels, not the ones saved with it", async () => {
+    await planOf("One");
+    const plan = getSessionTaskPlan()!;
+    const now = new Date("2026-11-07T10:00:00Z");
+    const saved = {
+      ...createLoop(plan, { now, sessionTokens: 0, autonomy: "auto" }),
+      policy: { plan: "cautious", questions: "cautious" },
+      status: "stopped" as const,
+    } as LoopState;
+    commitLoop(saved);
+    setPolicyLevels({
+      ...getPolicyLevels(),
+      plan: "idgaf",
+      questions: "idgaf",
+    });
+    expect(resumeStoppedLoop(now)).toBe(true);
+    expect(getSessionLoop()?.policy).toMatchObject({
+      plan: "idgaf",
+      questions: "idgaf",
+    });
+  });
+
   it("an unattended loop wakes when its wait runs out", async () => {
     await planOf("One");
     const plan = getSessionTaskPlan()!;
@@ -671,9 +781,9 @@ describe("Loop mode's driver in the CLI", () => {
       services.toolPermissions.switchMode("auto");
       runItem("done");
       await runCheck("1");
-      // Windows PowerShell's -Command reports 1 for any failing native
-      // command, so the code the check chose (3) survives only on POSIX.
-      const code = process.platform === "win32" ? 1 : 3;
+      // The code the check chose, on every platform: under PowerShell the
+      // check runs through withRealExitCode (core/util/shell.ts).
+      const code = 3;
       expect(loopNow().items[0]).toMatchObject({
         status: "pending",
         check: { status: "failed", exitCode: code },

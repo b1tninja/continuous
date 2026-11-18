@@ -9,8 +9,18 @@ import Mistral from "./llms/Mistral";
 import OpenAI from "./llms/OpenAI";
 
 import { BaseLLM } from ".";
+import {
+  LIVE_PROVIDER_FLAG,
+  liveProviderTestsEnabled,
+} from "../test/liveProviderGuard";
 
-dotenv.config();
+// These tests call real, paid provider APIs. They run only with
+// RUN_LIVE_PROVIDER_TESTS=1 and a key; a key alone is not consent. Read .env
+// only once opted in, so a .env file cannot restore keys the guard removed.
+const LIVE = liveProviderTestsEnabled();
+if (LIVE) {
+  dotenv.config();
+}
 
 const COMPLETION_OPTIONS: Partial<CompletionOptions> = {
   // temperature: 0.5,
@@ -58,9 +68,7 @@ function testLLM(
   // These tests call the real provider APIs. Without a key (a fork's push builds, local
   // runs) there is nothing to test, so skip instead of failing with authentication errors.
   if (!llm.apiKey) {
-    console.log(
-      `Skipping ${llm.providerName}/${llm.model}: no API key configured`,
-    );
+    test.skip(`${llm.providerName}/${llm.model} (skipped: no API key)`, () => {});
     return;
   }
   anyLiveProviderTested = true;
@@ -213,6 +221,10 @@ function testLLM(
 }
 
 describe("LLM", () => {
+  if (!LIVE) {
+    test.skip(`live provider tests (skipped: set ${LIVE_PROVIDER_FLAG}=1 to call the real APIs)`, () => {});
+    return;
+  }
   if (process.env.IGNORE_API_KEY_TESTS === "true") {
     test("Skipping API key tests", () => {
       console.log(

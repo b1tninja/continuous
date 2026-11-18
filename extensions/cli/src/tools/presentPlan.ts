@@ -30,6 +30,7 @@ import {
   requestLoopTurnEnd,
   startLoopFromPlan,
 } from "../loop/loopSession.js";
+import { writePlanText } from "../plans/planStore.js";
 import { services } from "../services/index.js";
 import { quizService } from "../services/QuizService.js";
 import {
@@ -38,6 +39,10 @@ import {
   updateSessionPlanFile,
   updateSessionTaskPlan,
 } from "../session.js";
+import {
+  answerIfIdgaf,
+  questionsNeverAskHere,
+} from "../util/idgafQuestions.js";
 import { reloadPlanFile } from "../util/planFileReload.js";
 
 import type { Tool } from "./types.js";
@@ -82,7 +87,7 @@ export async function savePlan(args: PresentPlanArgs, cwd = process.cwd()) {
   });
   const file = path.join(dir, fileName);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(
+  writePlanText(
     file,
     serializePlanFile({
       title: parsed.title,
@@ -102,7 +107,7 @@ export async function savePlan(args: PresentPlanArgs, cwd = process.cwd()) {
     decisions: parsed.decisions,
     /** Writes the file again with the person's answers to the decisions. */
     writeAnswers(answered: PlanDecision[]) {
-      fs.writeFileSync(
+      writePlanText(
         file,
         serializePlanFile({
           title: parsed.title,
@@ -137,10 +142,52 @@ async function askDecisions(
 }
 
 /**
+ * Questions is IDGAF: every open decision answered from what the plan offered
+ * (the labelled option, the model's pick, the first option), one line each.
+ */
+function autoAnswerAll(decisions: PlanDecision[]): {
+  decisions: PlanDecision[];
+  lines: string[];
+} {
+  const answers: { question: string; answer: string }[] = [];
+  const lines: string[] = [];
+  for (const decision of decisions) {
+    if (decision.answer?.trim()) continue;
+    const auto = answerIfIdgaf({
+      question: decision.question,
+      options: decision.options,
+      pick: decision.pick,
+    });
+    if (!auto) continue;
+    answers.push({ question: decision.question, answer: auto.text });
+    lines.push(auto.line);
+  }
+  return { decisions: answeredDecisions(decisions, answers), lines };
+}
+
+/**
  * Build: read the plan file back and make its checkboxes the task list
  * (src/util/planFileReload.ts).
  */
 export { reloadPlanFile };
+
+/**
+ * Questions is IDGAF (ID 3): nobody is there to answer "Build this plan?", so
+ * the turn ends with the plan saved instead of blocking, as the IDE's plan
+ * card does. Nothing is built and nothing is asked.
+ */
+export function idgafPlanSavedResult(args: {
+  relativePath: string;
+  todos: number;
+  open: number;
+  autoLines: string;
+  weak?: string;
+}): string {
+  const open = args.open
+    ? ` Its ${args.open === 1 ? "decision waits" : `${args.open} decisions wait`} for the person in the file.`
+    : "";
+  return `Plan saved to ${args.relativePath} with ${args.todos} to-dos.${open}${args.autoLines}${args.weak ? ` ${args.weak}` : ""} Questions is IDGAF, so nobody was asked whether to build it and you are still in Plan mode: do not implement anything. End your turn now; the person builds it when they come back (Shift+Tab out of Plan mode, or \`continuous plan build ${args.relativePath}\`).`;
+}
 
 /** The plan question: Build, Build in a loop, Keep planning, or a change. */
 function askBuild(relativePath: string, checks: string): Promise<string> {
@@ -224,24 +271,51 @@ export const presentPlanTool: Tool = {
       return `Plan saved to ${relativePath} with ${plan.items.length} to-dos.${weak ? ` ${weak}` : ""} End your turn now.`;
     }
 
+    // Questions is IDGAF: the plan's open decisions are answered from what
+    // the plan offered, in the file, before anything else (TUI and headless)
+    let autoLines = "";
+    let answeredDecisionsList = decisions;
+    if (decisions.length > 0 && questionsNeverAskHere()) {
+      const answered = autoAnswerAll(decisions);
+      answeredDecisionsList = answered.decisions;
+      writeAnswers(answeredDecisionsList);
+      reloadPlanFile(file);
+      autoLines = `\n${answered.lines.join("\n")}`;
+    }
+    const openDecisions = answeredDecisionsList.filter((d) => !d.answer);
+
     if (services.toolPermissions.isHeadless()) {
       // Nobody can approve: the file is the result. Its decisions wait in
       // the file for the person; the model must not settle them.
       safeStderr(`Plan saved to ${relativePath}\n`);
-      const open = decisions.length
-        ? ` Its ${decisions.length === 1 ? "decision waits" : `${decisions.length} decisions wait`} for the person in the file; do not settle ${decisions.length === 1 ? "it" : "them"}.`
+      const open = openDecisions.length
+        ? ` Its ${openDecisions.length === 1 ? "decision waits" : `${openDecisions.length} decisions wait`} for the person in the file; do not settle ${openDecisions.length === 1 ? "it" : "them"}.`
         : "";
-      return `Plan saved to ${relativePath} with ${plan.items.length} to-dos.${open}${weak ? ` ${weak}` : ""} This is a headless run, so nobody can approve it now: do not implement anything. Stop, and end your reply with the line "Plan: ${relativePath}".`;
+      return `Plan saved to ${relativePath} with ${plan.items.length} to-dos.${open}${autoLines}${weak ? ` ${weak}` : ""} This is a headless run, so nobody can approve it now: do not implement anything. Stop, and end your reply with the line "Plan: ${relativePath}".`;
+    }
+
+    // Questions is IDGAF: the plan is the result and the turn ends (ID 3)
+    if (!isLoopEntry() && questionsNeverAskHere()) {
+      requestLoopTurnEnd();
+      return idgafPlanSavedResult({
+        relativePath,
+        todos: plan.items.length,
+        open: openDecisions.length,
+        autoLines,
+        weak,
+      });
     }
 
     // The decisions first, each with its options and the model's pick as the
     // default; the answers go into the file, so Build reads them back.
-    let decided = decisions;
-    if (decisions.length > 0 && !isLoopEntry()) {
-      decided = await askDecisions(decisions);
+    let decided = answeredDecisionsList;
+    if (openDecisions.length > 0 && !isLoopEntry()) {
+      decided = await askDecisions(answeredDecisionsList);
       writeAnswers(decided);
     }
-    const decisionLines = describeDecisions(decided);
+    const decisionLines = [describeDecisions(decided), autoLines.trim()]
+      .filter(Boolean)
+      .join("\n");
     const withDecisions = (text: string) =>
       decisionLines ? `${text}\n\n${decisionLines}` : text;
 

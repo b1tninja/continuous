@@ -3,43 +3,24 @@ import {
   ContextItem,
   ContextProviderDescription,
   ContextProviderExtras,
-  FetchFunction,
 } from "../..";
-import { getHeaders } from "../../continueServer/stubs/headers";
-const TRIAL_PROXY_URL = "https://proxy-server-blue-l6vsfbzhba-uw.a.run.app";
 
-export const fetchSearchResults = async (
-  query: string,
-  n: number,
-  fetchFn: FetchFunction,
-): Promise<ContextItem[]> => {
-  const resp = await fetchFn(WebContextProvider.ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await getHeaders()),
-    },
-    body: JSON.stringify({
-      query,
-      n,
-    }),
-  });
+import { modelToolFetch } from "../../util/modelToolFetch";
 
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Failed to fetch web context: ${text}`);
-  }
-  return await resp.json();
-};
+import { fetchSearchResults } from "./webSearchBackend";
 
+/**
+ * Only offered when the person has picked a search provider in `web.search`
+ * (core/tools/webSearch); it never contacts a service of ours. It uses the
+ * same provider layer as `search_web`.
+ */
 export default class WebContextProvider extends BaseContextProvider {
-  public static ENDPOINT = new URL("web", TRIAL_PROXY_URL);
   private static DEFAULT_N = 6;
 
   static description: ContextProviderDescription = {
     title: "web",
     displayTitle: "Web",
-    description: "Search the web",
+    description: "Search the web with your own search endpoint",
     type: "normal",
     renderInlineAs: "",
   };
@@ -51,7 +32,9 @@ export default class WebContextProvider extends BaseContextProvider {
     return await fetchSearchResults(
       extras.fullInput,
       this.options.n ?? WebContextProvider.DEFAULT_N,
-      extras.fetch,
+      // Not `extras.fetch`: the global request headers are not the search
+      // endpoint's to receive
+      modelToolFetch(extras.config ?? {}),
     );
   }
 }

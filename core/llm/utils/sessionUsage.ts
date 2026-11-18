@@ -1,6 +1,11 @@
 import type { ModelUsage, SessionUsage, Usage } from "../..";
 import { totalInputTokens } from "./cacheStats";
-import { calculateRequestCost } from "./calculateRequestCost";
+import {
+  calculateRequestCost,
+  standardPricedServedTier,
+  type PriceSource,
+} from "./calculateRequestCost";
+import { distinctPriceSources } from "./priceSourceText";
 
 export const EMPTY_SESSION_USAGE: SessionUsage = {
   promptTokens: 0,
@@ -11,6 +16,15 @@ export const EMPTY_SESSION_USAGE: SessionUsage = {
 
 export function modelUsageKey(provider: string, model: string): string {
   return `${provider}/${model}`;
+}
+
+function olderEstimate(
+  a: ModelUsage["priceEstimate"],
+  b: ModelUsage["priceEstimate"],
+): NonNullable<ModelUsage["priceEstimate"]> {
+  if (!a) return b!;
+  if (!b) return a;
+  return Date.parse(a.fetchedAt) <= Date.parse(b.fetchedAt) ? a : b;
 }
 
 /**
@@ -24,6 +38,8 @@ export function addRequestUsage(
   provider: string,
   model: string,
   usage: Usage,
+  /** The request's price when the caller already has it (the terminal agent). */
+  pricedAs?: ReturnType<typeof calculateRequestCost>,
 ): SessionUsage {
   const base = session ?? EMPTY_SESSION_USAGE;
   const key = modelUsageKey(provider, model);
@@ -43,7 +59,10 @@ export function addRequestUsage(
   const cacheWrite = usage.promptTokensDetails?.cacheWriteTokens ?? 0;
   const allInput = totalInputTokens(provider, model, usage);
   const freshInput = Math.max(0, allInput - cacheRead - cacheWrite);
-  const priced = calculateRequestCost(provider, model, usage);
+  const priced =
+    pricedAs === undefined
+      ? calculateRequestCost(provider, model, usage)
+      : pricedAs;
 
   const next: ModelUsage = {
     ...prev,
@@ -54,6 +73,16 @@ export function addRequestUsage(
     cacheWriteTokens: prev.cacheWriteTokens + cacheWrite,
     cost: prev.cost + (priced?.cost ?? 0),
     pricedRequests: prev.pricedRequests + (priced ? 1 : 0),
+    ...(priced?.estimate || prev.priceEstimate
+      ? {
+          priceEstimate: olderEstimate(prev.priceEstimate, priced?.estimate),
+        }
+      : {}),
+    ...(priced?.priceSource ? { priceSource: priced.priceSource } : {}),
+    // Only a tier priced at the standard rates needs the tier note
+    ...(standardPricedServedTier(priced)
+      ? { servedTier: standardPricedServedTier(priced) }
+      : {}),
   };
 
   const prevDetails = base.promptTokensDetails ?? {};
@@ -86,6 +115,12 @@ export interface SessionUsageSummary {
   cost: number | undefined;
   /** True when some requests were priced and some were not, so `cost` undercounts. */
   costIsPartial: boolean;
+  /** Set when part of `cost` is an estimate from a downloaded price list: its date (ISO). */
+  priceListDate?: string;
+  /** Where the prices of `cost` came from, one entry per source. */
+  priceSources: PriceSource[];
+  /** Non-standard service tiers the providers reported serving. */
+  servedTiers: string[];
 }
 
 /** Totals across every model of a session. */
@@ -111,8 +146,19 @@ export function summarizeSessionUsage(
     sum.cacheWriteTokens += m.cacheWriteTokens;
     sum.cost += m.cost;
   }
+  let oldest: string | undefined;
+  for (const m of models) {
+    const at = m.priceEstimate?.fetchedAt;
+    if (at && (!oldest || Date.parse(at) < Date.parse(oldest))) oldest = at;
+  }
+  const servedTiers = [
+    ...new Set(models.map((m) => m.servedTier).filter((t): t is string => !!t)),
+  ];
   return {
     ...sum,
+    ...(oldest ? { priceListDate: oldest } : {}),
+    priceSources: distinctPriceSources(models.map((m) => m.priceSource)),
+    servedTiers,
     requests,
     cost: priced > 0 ? sum.cost : undefined,
     costIsPartial: priced > 0 && priced < requests,

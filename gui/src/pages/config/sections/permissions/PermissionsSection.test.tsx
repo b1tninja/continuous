@@ -24,7 +24,7 @@ const report = listEffectiveRules({
   ],
   cliFile: { exclude: ["Write(.git/**)"] },
   maxNewPlanItems: 3,
-  notices: ["permissions.yaml: levels.tools: yolo is for one session only"],
+  notices: ["permissions.yaml: levels.tools: idgaf is for one session only"],
 });
 
 const askResult = {
@@ -81,7 +81,9 @@ async function setup() {
 describe("PermissionsSection", () => {
   it("has five area tabs, with the Tools tab first showing its level", async () => {
     await setup();
-    const tabs = within(screen.getByRole("tablist")).getAllByRole("tab");
+    const tabs = within(
+      screen.getByRole("tablist", { name: "Permission areas" }),
+    ).getAllByRole("tab");
     expect(tabs.map((t) => t.textContent?.replace(/\d+$/, ""))).toEqual([
       "Context use",
       "Tool use",
@@ -99,7 +101,7 @@ describe("PermissionsSection", () => {
     await setup();
     const deny = screen.getByTestId("group-deny");
     expect(deny.textContent).toContain("runTerminalCommand(terraform apply*)");
-    expect(deny.textContent).toContain("Always on");
+    expect(deny.textContent).toContain("Locked rule");
     expect(deny.textContent).toContain("Locked");
     expect(screen.getByTestId("group-ask").textContent).toContain("You");
     const allow = screen.getByTestId("group-allow");
@@ -187,6 +189,6 @@ describe("PermissionsSection", () => {
 
   it("shows the notices the reader of the files reported", async () => {
     await setup();
-    expect(screen.getByText(/yolo is for one session only/)).toBeTruthy();
+    expect(screen.getByText(/idgaf is for one session only/)).toBeTruthy();
   });
 });

@@ -15,8 +15,9 @@ import {
   runTerminalCommandTool,
   searchWebTool,
 } from "../definitions";
-import { maskDeep } from "./audit/mask";
+import { maskArgsForDisplay } from "./displayMask";
 import { levelOfCall, type ApprovalSettings } from "./approval";
+import type { EnvNameOptions } from "./envNames";
 import { lintCommand, type LintFinding } from "./commandLint";
 import { findRuleMatch, type DecisionSource } from "./decide";
 import {
@@ -36,10 +37,12 @@ import {
   DEFAULT_POLICY_LEVELS,
   POLICY_AREA_LABELS,
   type PolicyArea,
-  type PolicyLevel,
+  type WebLevel,
   type PolicyLevels,
 } from "./policy";
 import type { ProtectedKind } from "./protected";
+import type { Sink } from "./taint/taintSinks";
+import type { TaintFact } from "./taint/taintState";
 import type { RuleDecision, RuleSource, ToolPermissions } from "./rules";
 
 /**
@@ -69,6 +72,8 @@ export interface TestToolCallInput {
   levels?: Partial<PolicyLevels>;
   /** The rule sources (see readRuleSources); `levels` here are overridden by `levels` above */
   sources: RuleSourcesInput;
+  /** The person's own `auto.environment.envNames` (readUserEnvNames); never from `sources` */
+  envNames?: EnvNameOptions;
   /** The tool's own setting; defaults to the tool's default */
   basePolicy?: ToolPolicy;
   /** The workspace folder; relative paths are resolved against it */
@@ -76,6 +81,8 @@ export interface TestToolCallInput {
   shell?: ShellKind;
   /** Text a tool returned, to see whether the injection notice would be put in front of it */
   outputText?: string;
+  /** The tainted-session fact, to see what the rule would do (taint/taintRule.ts) */
+  taint?: TaintFact;
 }
 
 export type StepOutcome = "passed" | "decided" | "skipped" | "info";
@@ -116,14 +123,16 @@ export interface ToolCallTestResult {
   reason: string;
   /** The tool as the evaluator knows it, and what it was given */
   toolName: string;
-  area?: PolicyArea;
-  level?: PolicyLevel;
+  area?: PolicyArea | "web";
+  level?: WebLevel;
   readOnly?: string;
   protection?: ProtectedKind;
   /** Every rule in effect that matches this call, the deciding one marked */
   matchedRules: MatchedRule[];
   /** The call would reach the reviewer model, which this test does not call */
   wouldAskReviewer: boolean;
+  /** Only with `taint` given: the sink class the call is, when it is one */
+  taintSink?: Sink;
   lint: LintFinding[];
   steps: TestStep[];
   notes: string[];
@@ -279,7 +288,7 @@ const SETTLED_AT: Partial<Record<string, TestStep["id"]>> = {
   "ask-rule": "ask",
   "allow-rule": "allow",
   permissive: "level",
-  yolo: "level",
+  idgaf: "level",
   manual: "level",
   default: "level",
 };
@@ -298,8 +307,8 @@ function decisionOf(policy: ToolPolicy): TestDecision {
 interface Facts {
   matches: MatchedRule[];
   lint: LintFinding[];
-  area?: PolicyArea;
-  level?: PolicyLevel;
+  area?: PolicyArea | "web";
+  level?: WebLevel;
   reviewer: boolean;
   settledAt: TestStep["id"] | "mode";
   protection?: ProtectedKind;
@@ -325,7 +334,7 @@ function buildSteps(facts: Facts, result: ToolCallTestResult): TestStep[] {
   const labels: Record<string, string> = {
     lint: "Command check",
     safety: "Built-in rule check",
-    floor: "Always-on rules",
+    floor: "Locked rules",
     deny: "Never rules",
     protected: "Protected paths",
     ask: "Ask rules",
@@ -380,7 +389,7 @@ function buildSteps(facts: Facts, result: ToolCallTestResult): TestStep[] {
           break;
         case "level":
           detail = facts.level
-            ? `${facts.area ? POLICY_AREA_LABELS[facts.area] : "This call"} is ${facts.level}.`
+            ? `${facts.area ? (facts.area === "web" ? "Web" : POLICY_AREA_LABELS[facts.area]) : "This call"} is ${facts.level}.`
             : "This call belongs to no area.";
           break;
         case "reviewer":
@@ -531,7 +540,7 @@ interface Verdict {
 function verdictOf(
   evaluated: ReturnType<typeof evaluateToolPolicyWithRules>,
   input: TestToolCallInput,
-  facts: { basePolicy: ToolPolicy; tool?: ToolLike; level?: PolicyLevel },
+  facts: { basePolicy: ToolPolicy; tool?: ToolLike; level?: WebLevel },
 ): Verdict {
   let policy = evaluated.policy;
   let source: Verdict["source"] = evaluated.source;
@@ -555,7 +564,7 @@ function verdictOf(
     policy === "allowedWithoutPermission" &&
     !facts.tool?.readonly &&
     !evaluated.readOnly &&
-    facts.level !== "yolo"
+    facts.level !== "idgaf"
   ) {
     policy = "allowedWithPermission";
     source = "plan-mode";
@@ -658,9 +667,11 @@ export function testToolCall(input: TestToolCallInput): ToolCallTestResult {
     trustedDomains:
       input.sources.trustedDomains ??
       input.sources.user?.auto?.environment?.trustedDomains,
+    envNames: input.envNames,
     largeChangeLines: input.sources.user?.auto?.environment?.largeChangeLines,
     cwd,
     shell,
+    ...(input.taint ? { taint: input.taint } : {}),
   });
 
   const callContext = { parsedArgs, cwd, shell };
@@ -694,6 +705,7 @@ export function testToolCall(input: TestToolCallInput): ToolCallTestResult {
     ...(evaluated.protection ? { protection: evaluated.protection } : {}),
     matchedRules: matches,
     wouldAskReviewer: verdict.wouldAskReviewer,
+    ...(evaluated.taintSink ? { taintSink: evaluated.taintSink } : {}),
     lint,
     steps: [],
     notes,
@@ -725,5 +737,5 @@ export function testToolCall(input: TestToolCallInput): ToolCallTestResult {
     result.steps.push(check.step);
   }
   // The tester echoes the call it was given; a credential in it is masked.
-  return maskDeep(result);
+  return maskArgsForDisplay(result);
 }

@@ -91,7 +91,7 @@ export function Toolbox() {
           aria-haspopup="true"
           aria-expanded={open}
           onClick={() => (open ? close() : setOpen(true))}
-          className="hover:bg-list-item-hover focus-visible:ring-ring flex h-5 w-5 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent p-0 text-description focus-visible:ring-2 focus-visible:outline-hidden"
+          className="hover:bg-list-item-hover focus-visible:ring-ring flex h-6 w-6 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent p-0 text-description focus-visible:ring-2 focus-visible:outline-hidden"
         >
           <BriefcaseIcon className="h-3.5 w-3.5" aria-hidden="true" />
         </button>

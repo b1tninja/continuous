@@ -107,7 +107,7 @@ describe("SubagentCard", () => {
 
   it.each([
     ["failed", "Failed", "Bedrock throttled the request"],
-    ["cancelled", "Cancelled", "Stopped by the user"],
+    ["cancelled", "Stopped", "Stopped by the user"],
     ["interrupted", "Interrupted", "The window was reloaded while it ran"],
     ["partial", "Stopped at turn limit", "Stopped after 30 model calls"],
   ] as const)("shows a %s run with its reason", (runStatus, label, error) => {
@@ -160,5 +160,36 @@ describe("SubagentCard", () => {
   it("says a rejected call never started", () => {
     render(<SubagentCard toolCallState={callWith(undefined, "canceled")} />);
     expect(status()).toBe("Not started");
+  });
+
+  it("read-only (the agents panel): no Stop, no Allow or Reject, a link to the card that asks instead", () => {
+    const jump = vi.fn();
+    vi.mocked(answerSubagentApproval).mockClear();
+    render(
+      <SubagentCard
+        readOnly
+        onShowInConversation={jump}
+        toolCallState={callWith({
+          pendingApproval: {
+            id: "p1",
+            toolName: "run_terminal_command",
+            summary: "npm test",
+          },
+        })}
+      />,
+    );
+    expect(screen.getByTestId(`subagent-transcript-${ID}`)).toBeDefined();
+    expect(screen.queryByTestId(`subagent-card-${ID}`)).toBeNull();
+    expect(screen.queryByTestId(`subagent-stop-${ID}`)).toBeNull();
+    expect(screen.queryByTestId(`subagent-accept-${ID}`)).toBeNull();
+    expect(screen.queryByTestId(`subagent-reject-${ID}`)).toBeNull();
+    expect(screen.getByTestId(`subagent-approval-${ID}`).textContent).toContain(
+      "run_terminal_command",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Answer in the conversation" }),
+    );
+    expect(jump).toHaveBeenCalledOnce();
+    expect(answerSubagentApproval).not.toHaveBeenCalled();
   });
 });

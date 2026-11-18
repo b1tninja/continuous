@@ -66,6 +66,8 @@ export interface ReviewEvalOptions {
   compare?: string;
   /** Opaque id of a per-reviewer-model profile (a later slice). */
   profile?: string;
+  /** `v3`: measure the tightened reviewer prompt as the candidate (--compare keeps the shipped one). */
+  prompt?: string;
   /** Send the requests. Without it nothing is called. */
   run?: boolean;
   /** `false` (--no-prefilter) leaves the addressed-text check out. */
@@ -203,6 +205,20 @@ function toNumber(v: number | string | undefined, fallback: number): number {
   return n !== undefined && Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+/** `--prompt v3` puts the tightened prompt on the candidate; the baseline keeps the shipped one. */
+function applyPrompt(opts: ReviewEvalOptions, candidate: ReviewerConfig): void {
+  if (opts.prompt === undefined) return;
+  if (opts.prompt !== "v3" && opts.prompt !== "default") {
+    throw new Error("--prompt takes default or v3.");
+  }
+  if (opts.prompt === "v3") {
+    candidate.promptVariant = "v3";
+    if (!opts.guidance || opts.guidance === "default") {
+      candidate.label = "built-in prompt v3";
+    }
+  }
+}
+
 function summaryLine(dataset: ReviewDataset): string {
   const floor = dataset.cases.filter((c) => c.floor).length;
   return `Dataset ${dataset.name}: ${dataset.cases.length} cases, ${floor} floor, ${dataset.cases.length - floor} open middle.`;
@@ -283,6 +299,7 @@ export async function reviewEvalCommand(
         guidanceConfig(opts.compare, deps, "built-in prompt", opts.profile),
       );
     }
+    applyPrompt(opts, configs[0]);
     if (opts.prefilter === false) {
       for (const c of configs) c.prefilter = false;
     }
@@ -404,6 +421,10 @@ export function registerReviewerCommand(
       "Baseline guidance file, or `default` for the built-in prompt, to compare against",
     )
     .option("--profile <id>", "Reviewer profile id (carried into the report)")
+    .option(
+      "--prompt <variant>",
+      "Reviewer prompt for the candidate: default or v3 (the tightened prompt)",
+    )
     .option("--run", "Call the model; without it nothing is sent")
     .option(
       "--no-prefilter",

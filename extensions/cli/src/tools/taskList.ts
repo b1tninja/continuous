@@ -122,6 +122,20 @@ export const taskListTool: Tool = {
     };
   },
   run: async (args: { items?: unknown; reset?: unknown }) => {
-    return saveTaskPlan(planFromToolArgs(args));
+    const next = planFromToolArgs(args);
+    // Imported here, not at the top: planBuild reaches tools/index through
+    // the stream helpers, and a static import made tools/index evaluate its
+    // built-in tool list before taskListTool existed.
+    const { activePlanBuild, gateCompletions, syncActivePlan } =
+      await import("../plans/planBuild.js");
+    // `continuous plan build`: the harness runs a to-do's check:, and the
+    // file's checkboxes follow the list. A Loop does its own checks.
+    if (!activePlanBuild() || getSessionLoop()) {
+      return saveTaskPlan(next);
+    }
+    const { plan, notes } = await gateCompletions(getSessionTaskPlan(), next);
+    const answer = saveTaskPlan(plan);
+    syncActivePlan(plan);
+    return notes.length ? [answer, ...notes].join("\n") : answer;
   },
 };

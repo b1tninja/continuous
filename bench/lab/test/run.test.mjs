@@ -487,7 +487,10 @@ test("suggest writes a profile with evidence, only under the profiles folder", a
     assert.equal(p.model, SMALL.name);
     assert.ok(p.ranking.length >= 2);
     assert.equal(p.bestTextStyle.style, "codeblock");
-    assert.match(p.row.promptStyle.evidence, /local lab .* valid, 95% CI/);
+    assert.match(
+      p.row.promptStyle.evidence,
+      /local lab .* valid \(effective n; raw [0-9]+\/[0-9]+\), 95% CI/,
+    );
     assert.ok(
       ["all", "most", "none", "unmeasured"].includes(p.row.nativeToolCalls),
     );

@@ -1,5 +1,7 @@
 import { Tool, ToolCallState } from "core";
+import { maskArgsForDisplay } from "core/tools/permissions/displayMask";
 import Mustache from "mustache";
+import { useMemo } from "react";
 import { DecisionChip } from "./DecisionChip";
 import { getStatusIntro } from "./utils";
 
@@ -12,13 +14,19 @@ export function ToolCallStatusMessage({
   tool,
   toolCallState,
 }: ToolCallStatusMessageProps) {
+  // The title is built from the arguments: a URL or a name in them can carry a
+  // credential, so it is rendered from the masked copy
+  const shownArgs = useMemo(
+    () => maskArgsForDisplay(toolCallState.parsedArgs),
+    [toolCallState.parsedArgs],
+  );
   if (!tool) return "Agent tool use";
 
   const toolName = tool.displayTitle ?? tool.function.name;
   const defaultToolDescription = `${toolName} tool`;
 
   const futureMessage: string = tool.wouldLikeTo
-    ? Mustache.render(tool.wouldLikeTo, toolCallState.parsedArgs)
+    ? Mustache.render(tool.wouldLikeTo, shownArgs)
     : `use the ${defaultToolDescription}`;
   // TODO go back and replace arg string values and tool names with <code> tags
   // to make them more readable
@@ -32,7 +40,7 @@ export function ToolCallStatusMessage({
     (tool.isInstant && toolCallState.status === "calling")
   ) {
     message = tool.hasAlready
-      ? Mustache.render(tool.hasAlready, toolCallState.parsedArgs)
+      ? Mustache.render(tool.hasAlready, shownArgs)
       : `used the ${defaultToolDescription}`;
   } else {
     switch (toolCallState.status) {
@@ -44,7 +52,7 @@ export function ToolCallStatusMessage({
         break;
       case "calling":
         message = tool.isCurrently
-          ? Mustache.render(tool.isCurrently, toolCallState.parsedArgs)
+          ? Mustache.render(tool.isCurrently, shownArgs)
           : `calling the ${defaultToolDescription}`;
         break;
       default:

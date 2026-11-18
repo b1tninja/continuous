@@ -122,8 +122,8 @@ describe("ask-destructive-commands", () => {
     expect(r.protection).toBe("destructive-command");
   });
 
-  it("is reached past only by YOLO", () => {
-    expect(cmd("git reset --hard", { level: "yolo" }).decision).toBe("allow");
+  it("is reached past only by IDGAF", () => {
+    expect(cmd("git reset --hard", { level: "idgaf" }).decision).toBe("allow");
   });
 });
 

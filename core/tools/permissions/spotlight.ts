@@ -3,12 +3,18 @@
  * text so the model can tell it from the user's and the system's. After
  * Hines et al., "Defending Against Indirect Prompt Injection Attacks With
  * Spotlighting" (arXiv 2403.14720). It lowers the rate of the injections a
- * model would follow; it does not stop an adaptive attacker, and it is not
- * wired into any tool path yet.
+ * model would follow; it does not stop an adaptive attacker.
+ *
+ * Wired into one tool path: `fetch_url_content` wraps the page text
+ * (`core/tools/implementations/fetchUrlContent.ts`) when
+ * `experimental.spotlightUntrusted` is true or CONTINUOUS_SPOTLIGHT_UNTRUSTED=1
+ * is set. Both are off by default. No other tool result is wrapped.
  *
  * Pure: the only environment it touches is the random source, which a caller
  * can replace. No Node imports, so the webview may import it.
  */
+
+import { HIDDEN_CHARACTERS } from "../../util/hiddenCharacters";
 
 export interface SpotlightOptions {
   /** 16 or more random bytes. Defaults to `crypto.getRandomValues`. */
@@ -37,8 +43,6 @@ export interface Spotlight {
   wrap(text: string, options?: WrapOptions): string;
 }
 
-const ZERO_WIDTH = /[­​-‏⁠-⁤﻿‪-‮⁦-⁩\u{E0000}-\u{E007F}]/gu;
-
 /** Datamark character: U+02C6, as in the paper; rare in code and prose. */
 const DATAMARK = "ˆ";
 
@@ -60,7 +64,7 @@ function cleanSource(source: string | undefined): string {
   // The label can come from a URL or a server name, so it is attacker input
   // too: no quotes, brackets, angle brackets, control or invisible characters.
   const s = source
-    .replace(ZERO_WIDTH, "")
+    .replace(HIDDEN_CHARACTERS, "")
     .replace(/[^\p{L}\p{N} ._:/@#=+-]/gu, "_")
     .slice(0, 80);
   return s || "unknown";
@@ -74,7 +78,7 @@ function cleanSource(source: string | undefined): string {
  * passes through untouched.
  */
 function redactToken(text: string, token: string): string {
-  const view = text.normalize("NFKC").replace(ZERO_WIDTH, "");
+  const view = text.normalize("NFKC").replace(HIDDEN_CHARACTERS, "");
   if (!view.toLowerCase().includes(token)) return text;
   return view.replace(new RegExp(token, "gi"), "[boundary-token-removed]");
 }

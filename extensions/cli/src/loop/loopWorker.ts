@@ -1,7 +1,9 @@
 import type { LoopReminder, LoopState, TaskPlan, Usage } from "core/index.js";
+import type { AuditAgent } from "core/tools/permissions/audit/record.js";
 import type { PolicyLevels } from "core/tools/permissions/policy.js";
 import type { ParallelRunResult } from "core/util/loopMode.js";
 
+import { setCliAuditAgent } from "../audit/cliAudit.js";
 import { captureWorktreeDiff } from "../commands/review/worktree.js";
 import {
   loadPolicyFile,
@@ -56,6 +58,12 @@ export interface LoopWorkerPolicy {
   ask?: string[];
   exclude?: string[];
   levels?: PolicyLevels;
+  /**
+   * Whether the parent runs headless (`-p`, `serve`). A worker is always
+   * started headless, since nobody types into it; this says which default
+   * lists it takes. Absent from an older parent: the headless ones, as before.
+   */
+  parentHeadless?: boolean;
 }
 
 /** Overrides for the worker's tool service. Auto is never the mode. */
@@ -64,12 +72,17 @@ export function loopWorkerPermissionOverrides(policy?: LoopWorkerPolicy): {
   ask?: string[];
   exclude?: string[];
   mode: "normal" | "plan";
+  interactiveDefaults?: boolean;
 } {
   return {
     allow: policy?.allow,
     ask: policy?.ask,
     exclude: policy?.exclude,
     mode: policy?.mode === "plan" ? "plan" : "normal",
+    // A worker of a terminal-UI parent takes the parent's default lists, so
+    // Bash and unlisted tools ask there too; inside the loop an ask is held
+    // as a question for the parent's person and refused for now, never run.
+    ...(policy?.parentHeadless === false ? { interactiveDefaults: true } : {}),
   };
 }
 
@@ -108,6 +121,11 @@ export interface LoopWorkerInput {
    * session begins there, so the budget includes tokens already spent.
    */
   baselineUsage?: Usage;
+  /**
+   * Who the worker is in the agent map and the audit record: the parent
+   * names it, so both use one id and one mode (workerIdentity.ts).
+   */
+  agent?: AuditAgent;
 }
 
 export interface LoopWorkerOutput {
@@ -153,6 +171,7 @@ export async function runLoopItemHere(
     throw new Error("The worker's loop does not name the item to run.");
   }
   process.chdir(input.worktree);
+  setCliAuditAgent(input.agent);
   applyLoopWorkerPolicy(input.options.policy);
   await initializeServices({
     options: {
@@ -165,7 +184,9 @@ export async function runLoopItemHere(
       input.options.policy,
     ),
   });
-  if (input.model) await applyModelNamed(input.model);
+  if (input.model) {
+    await applyModelNamed(input.model, { reason: "use", use: "loop" });
+  }
   const modelState = await getService<ModelServiceState>(SERVICE_NAMES.MODEL);
   if (!modelState.model || !modelState.llmApi) {
     throw new Error("The worker could not initialize its model.");

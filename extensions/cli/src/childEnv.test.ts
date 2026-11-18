@@ -9,7 +9,6 @@ import {
   isStartupOnlyEnvKey,
   mcpStdioEnv,
   readDotEnvFile,
-  resolveApiBase,
   shellChildEnv,
 } from "./childEnv.js";
 
@@ -37,7 +36,6 @@ describe("isStartupOnlyEnvKey", () => {
   it("leaves ordinary names alone", () => {
     expect(isStartupOnlyEnvKey("HOME")).toBe(false);
     expect(isStartupOnlyEnvKey("ANTHROPIC_API_KEY")).toBe(false);
-    expect(isStartupOnlyEnvKey("CONTINUE_API_BASE")).toBe(false);
   });
 });
 
@@ -119,30 +117,12 @@ describe("mcpStdioEnv", () => {
 });
 
 describe("global env file helpers", () => {
-  it("prefers the process environment, then the file, then the default", () => {
-    expect(
-      resolveApiBase(
-        { CONTINUE_API_BASE: "https://from-env.example/" },
-        { CONTINUE_API_BASE: "https://from-file.example/" },
-      ),
-    ).toBe("https://from-env.example/");
-    expect(
-      resolveApiBase({}, { CONTINUE_API_BASE: "https://from-file.example/" }),
-    ).toBe("https://from-file.example/");
-    expect(resolveApiBase({}, {})).toBe("https://api.continue.dev/");
-  });
-
   it("parses a file and treats a missing file as empty", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cn-dotenv-"));
     try {
       const file = path.join(dir, ".env");
-      fs.writeFileSync(
-        file,
-        'export CONTINUE_API_BASE="https://files.example/"\n',
-      );
-      expect(readDotEnvFile(file).CONTINUE_API_BASE).toBe(
-        "https://files.example/",
-      );
+      fs.writeFileSync(file, 'export SOME_SETTING="https://files.example/"\n');
+      expect(readDotEnvFile(file).SOME_SETTING).toBe("https://files.example/");
       expect(readDotEnvFile(path.join(dir, "missing.env"))).toEqual({});
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

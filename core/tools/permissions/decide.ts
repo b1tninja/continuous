@@ -53,8 +53,10 @@ export type DecisionSource =
   | "protected-path"
   | "floor"
   | "safety-floor"
+  | "tainted-session"
+  | "secret-egress"
   | "permissive"
-  | "yolo"
+  | "idgaf"
   | "manual"
   | "tool-setting"
   | "default";

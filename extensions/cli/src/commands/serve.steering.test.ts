@@ -67,12 +67,8 @@ vi.mock("../hooks/promptHook.js", () => ({
   describePromptBlocked: (reason: string) => `Blocked: ${reason}`,
 }));
 
-vi.mock("../tools/reportFailure.js", () => ({
-  reportFailureTool: { run: vi.fn() },
-}));
-
 vi.mock("../util/exit.js", () => ({
-  updateAgentMetadata: vi.fn(),
+  gracefulExit: vi.fn(),
 }));
 
 vi.mock("../compaction.js", () => ({

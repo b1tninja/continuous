@@ -1,11 +1,17 @@
 {
-  "version": 1,
+  "version": 3,
   "surface": {
     "LAB_CONTRACT_VERSION": {
-      "value": 1
+      "value": 3
     },
     "PROBE_OUTCOMES": {
       "value": ["structured", "leak", "refused", "error"]
+    },
+    "TEMPERATURE_INHERITED": {
+      "value": "inherited"
+    },
+    "SERVER_PARSER_SOURCES": {
+      "value": ["reported", "declared"]
     },
     "Z95": {
       "value": 1.959963984540054
@@ -16,10 +22,16 @@
     "formatRate": {
       "function": 1
     },
+    "serverIdentityLabel": {
+      "function": 1
+    },
     "slug": {
       "function": 1
     },
     "validateProbeResult": {
+      "function": 1
+    },
+    "validateServerIdentity": {
       "function": 1
     },
     "wilson": {

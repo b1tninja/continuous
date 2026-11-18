@@ -1,6 +1,8 @@
 import type { ILLM } from "../../..";
 import { parseReviewerReply, ReviewResult } from "./parse";
 import { buildReviewMessages, newNonce, ReviewPromptInput } from "./prompt";
+import { promptText, type ReviewerPromptVariant } from "./promptV3";
+import { tightenAllow } from "./tighten";
 
 export const DEFAULT_REVIEW_TIMEOUT_MS = 15_000;
 
@@ -13,6 +15,8 @@ export interface ReviewOptions {
   nonce?: string;
   /** `modeModels.reviewer.reasoningEffort`: thinking on or off, and its budget. */
   reasoning?: ReviewerReasoning;
+  /** `v3` selects the tightened prompt; absent or `default` is the shipped one. */
+  promptVariant?: ReviewerPromptVariant;
 }
 
 /** How much the reviewer may think before it answers. */
@@ -77,6 +81,7 @@ export async function reviewToolCall(
   const messages = buildReviewMessages({
     ...input,
     nonce: opts.nonce ?? newNonce(),
+    systemPrompt: promptText(opts.promptVariant),
   });
 
   const controller = new AbortController();
@@ -99,7 +104,15 @@ export async function reviewToolCall(
     if (!text.trim()) {
       return unavailable("The reviewer model returned nothing.", opts.headless);
     }
-    return parseReviewerReply(text);
+    const parsed = parseReviewerReply(text, {
+      allowNeedsNone: opts.promptVariant === "v3",
+    });
+    // Fixed rules can only turn an allow into an ask
+    return tightenAllow(parsed, {
+      toolName: input.toolName,
+      args: input.args,
+      workspaceDirs: input.environment.workspaceDirs,
+    });
   } catch (e) {
     const why = timedOut
       ? "The reviewer model did not answer in time."

@@ -9,7 +9,6 @@ describe("project and global env files", () => {
   const original = {
     CONTINUE_GLOBAL_DIR: process.env.CONTINUE_GLOBAL_DIR,
     CONTINUOUS_GLOBAL_DIR: process.env.CONTINUOUS_GLOBAL_DIR,
-    CONTINUE_API_BASE: process.env.CONTINUE_API_BASE,
     BASH_ENV: process.env.BASH_ENV,
     NODE_OPTIONS: process.env.NODE_OPTIONS,
     FROM_PROJECT: process.env.FROM_PROJECT,
@@ -17,8 +16,14 @@ describe("project and global env files", () => {
     GLOBAL_ONLY_SECRET: process.env.GLOBAL_ONLY_SECRET,
   };
 
+  let root: string | undefined;
+
   afterEach(() => {
+    // Leave the folder before removing it: Windows will not remove the
+    // current directory of a process.
     process.chdir(originalCwd);
+    if (root) fs.rmSync(root, { recursive: true, force: true });
+    root = undefined;
     for (const [key, value] of Object.entries(original)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
@@ -26,7 +31,7 @@ describe("project and global env files", () => {
   });
 
   it("does not load a working-directory .env, and still reads the global file", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "cn-proj-env-"));
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "cn-proj-env-"));
     const project = path.join(root, "project");
     const globalDir = path.join(root, "global");
     fs.mkdirSync(project);
@@ -37,7 +42,6 @@ describe("project and global env files", () => {
         "FROM_PROJECT=injected",
         "BASH_ENV=./setup.sh",
         "NODE_OPTIONS=--require ./hook.js",
-        "CONTINUE_API_BASE=https://project.example/",
       ].join("\n"),
     );
     fs.writeFileSync(
@@ -46,12 +50,10 @@ describe("project and global env files", () => {
         "FROM_GLOBAL=from-global-file",
         "BASH_ENV=./global-setup.sh",
         "NODE_OPTIONS=--require ./global-hook.js",
-        "CONTINUE_API_BASE=https://global.example/",
         "GLOBAL_ONLY_SECRET=from-global-file",
       ].join("\n"),
     );
 
-    delete process.env.CONTINUE_API_BASE;
     delete process.env.BASH_ENV;
     delete process.env.NODE_OPTIONS;
     delete process.env.FROM_PROJECT;
@@ -70,15 +72,9 @@ describe("project and global env files", () => {
     expect(process.env.FROM_GLOBAL).toBeUndefined();
     expect(process.env.BASH_ENV).toBeUndefined();
     expect(process.env.NODE_OPTIONS).toBeUndefined();
-    expect(process.env.CONTINUE_API_BASE).toBeUndefined();
-    expect(env.apiBase).toBe("https://global.example/");
     expect(env.continueHome).toBe(globalDir);
 
-    const client = new CLIPlatformClient(null, {
-      syncSecrets: async () => {
-        throw new Error("global file should have supplied the secret");
-      },
-    } as never);
+    const client = new CLIPlatformClient();
     const [secret] = await client.resolveFQSNs([
       { packageSlugs: [], secretName: "GLOBAL_ONLY_SECRET" },
     ]);
@@ -91,7 +87,5 @@ describe("project and global env files", () => {
     expect(process.env.FROM_PROJECT).toBeUndefined();
     expect(process.env.BASH_ENV).toBeUndefined();
     expect(process.env.NODE_OPTIONS).toBeUndefined();
-
-    fs.rmSync(root, { recursive: true, force: true });
   });
 });

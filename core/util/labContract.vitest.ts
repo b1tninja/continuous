@@ -63,6 +63,15 @@ describe("lab contract golden vectors", () => {
     }
   });
 
+  it("validateServerIdentity and serverIdentityLabel", () => {
+    for (const v of golden.validateServerIdentity) {
+      expect(contract.validateServerIdentity(v.input)).toEqual(v.problems);
+    }
+    for (const v of golden.serverIdentityLabel) {
+      expect(contract.serverIdentityLabel(v.input)).toBe(v.output);
+    }
+  });
+
   it("is pure: the module imports nothing", () => {
     const src = fs.readFileSync(path.join(__dirname, "labContract.ts"), "utf8");
     expect(src).not.toMatch(/^\s*(import|export\s.*\sfrom)\s/m);

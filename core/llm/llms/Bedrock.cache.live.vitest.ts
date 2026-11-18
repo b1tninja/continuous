@@ -2,7 +2,7 @@ import { describe, it } from "vitest";
 import Bedrock from "./Bedrock";
 
 /**
- * Live Bedrock measurement of prompt caching. Opt-in: set RUN_BEDROCK_LIVE=1
+ * Live Bedrock measurement of prompt caching. Opt-in: set RUN_LIVE_PROVIDER_TESTS=1 RUN_BEDROCK_LIVE=1
  * and have a Bedrock credential in the environment. Costs a few cents on Haiku
  * 4.5. Prints one "LIVE" line per request: tokens not cached, read from the
  * cache, and written (with the 5-minute / 1-hour split).
@@ -10,7 +10,17 @@ import Bedrock from "./Bedrock";
  * Knobs: LIVE_MODEL, LIVE_TTL (5m|1h), LIVE_TURNS, and LIVE_WAIT_AFTER_TURN
  * with LIVE_WAIT_S to pause between two turns (to see an entry expire).
  */
-const live = process.env.RUN_BEDROCK_LIVE === "1" ? describe : describe.skip;
+// Paid calls: RUN_LIVE_PROVIDER_TESTS=1 is the consent, RUN_BEDROCK_LIVE=1 selects Bedrock.
+// AWS credentials come from the default chain, so there is no key to check here.
+const live =
+  process.env.RUN_LIVE_PROVIDER_TESTS === "1" &&
+  process.env.RUN_BEDROCK_LIVE === "1"
+    ? describe
+    : (name: string, fn: () => void) =>
+        describe.skip(
+          `${name} (skipped: set RUN_LIVE_PROVIDER_TESTS=1 and RUN_BEDROCK_LIVE=1)`,
+          fn,
+        );
 
 const WORDS =
   "alpha beta gamma delta epsilon zeta theta iota kappa lambda sigma omega river stone cloud ember harbor lantern meadow orchard quartz saddle timber velvet willow yarrow zephyr bridge candle dragon engine forest garden hollow island jungle kettle ladder marble nectar oyster pillar quiver ribbon silver tunnel valley window anchor basket copper dagger falcon glacier hammer ivory jasmine knight lagoon mirror needle oasis pebble rocket spirit thunder umbrella voyage".split(

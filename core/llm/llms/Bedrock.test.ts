@@ -151,6 +151,28 @@ describe("Bedrock", () => {
       });
     });
 
+    it("passes the proxy/CA request handler to the credential chain only when configured", async () => {
+      const saved = { ...process.env };
+      for (const k of ["HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy"]) {
+        delete process.env[k];
+      }
+      try {
+        const proxied = await new TestBedrock({
+          ...base,
+          requestOptions: { proxy: "http://127.0.0.1:9", useSystemCa: false },
+        } as any)["_credentialChainInit"]("p");
+        expect((proxied as any).clientConfig.requestHandler).toBeDefined();
+
+        const plain = await new TestBedrock({
+          ...base,
+          requestOptions: { useSystemCa: false },
+        } as any)["_credentialChainInit"]("p");
+        expect((plain as any).clientConfig).toBeUndefined();
+      } finally {
+        process.env = saved;
+      }
+    });
+
     it("selects bearer auth for an API key and never asks for IAM credentials", async () => {
       // Without authSchemePreference the AWS SDK may choose SigV4 and fail with "Could not
       // load credentials" on machines that only have a Bedrock API key.
@@ -491,6 +513,59 @@ describe("Bedrock", () => {
       ]);
       const out = await collect();
       expect(out.at(-1).usage.response.stopReason).toBe("max_tokens");
+    });
+
+    // Bedrock sends a toolUse block's id only with its start; the fragments
+    // carry the contentBlockIndex. Without the id, the GUI attached each
+    // fragment to whichever call it saw last, mixing parallel calls' input.
+    it("stamps each tool input fragment with its own call's id, by block index", async () => {
+      const { collect } = streaming("us.anthropic.claude-opus-5-5", [
+        {
+          contentBlockStart: {
+            contentBlockIndex: 0,
+            start: { toolUse: { toolUseId: "call_a", name: "read_file" } },
+          },
+        },
+        {
+          contentBlockStart: {
+            contentBlockIndex: 1,
+            start: { toolUse: { toolUseId: "call_b", name: "ls" } },
+          },
+        },
+        {
+          contentBlockDelta: {
+            contentBlockIndex: 1,
+            delta: { toolUse: { input: '{"dirPath":' } },
+          },
+        },
+        {
+          contentBlockDelta: {
+            contentBlockIndex: 0,
+            delta: { toolUse: { input: '{"filepath":"a.ts"}' } },
+          },
+        },
+        {
+          contentBlockDelta: {
+            contentBlockIndex: 1,
+            delta: { toolUse: { input: '"src"}' } },
+          },
+        },
+        { contentBlockStop: { contentBlockIndex: 0 } },
+        { contentBlockStop: { contentBlockIndex: 1 } },
+        { messageStop: { stopReason: "tool_use" } },
+      ]);
+      const out = await collect();
+      const byId: Record<string, string> = {};
+      for (const m of out) {
+        for (const tc of m.toolCalls ?? []) {
+          expect(tc.id).toBeTruthy();
+          byId[tc.id] = (byId[tc.id] ?? "") + (tc.function?.arguments ?? "");
+        }
+      }
+      expect(byId).toEqual({
+        call_a: '{"filepath":"a.ts"}',
+        call_b: '{"dirPath":"src"}',
+      });
     });
 
     it("drops DeepSeek V3.2's leaked tool-call marker, even split across deltas", async () => {
@@ -1386,10 +1461,14 @@ describe("Bedrock", () => {
       ]);
     });
 
-    it("should handle thinking messages correctly", () => {
+    it("sends Claude's signed thinking back with its signature", () => {
       const messages: ChatMessage[] = [
         { role: "user", content: "Think about this" } as UserChatMessage,
-        { role: "thinking", content: "I am thinking about the solution" },
+        {
+          role: "thinking",
+          content: "I am thinking about the solution",
+          signature: "sig-abc",
+        },
         { role: "assistant", content: "Here's my answer" },
       ];
 
@@ -1405,7 +1484,7 @@ describe("Bedrock", () => {
               reasoningContent: {
                 reasoningText: {
                   text: "I am thinking about the solution",
-                  signature: undefined,
+                  signature: "sig-abc",
                 },
               },
             },
@@ -1413,6 +1492,92 @@ describe("Bedrock", () => {
           ],
         },
       ]);
+    });
+
+    // Bedrock refused the whole request: "messages.249.content.0.thinking.
+    // signature: Field required" (2026-11-14). A reply stopped before its
+    // signature arrived, or thinking from a model that does not sign.
+    it("leaves out Claude thinking without a signature, which fails the whole request", () => {
+      const messages: ChatMessage[] = [
+        { role: "user", content: "Think about this" } as UserChatMessage,
+        { role: "thinking", content: "I am thinking about the solution" },
+        { role: "assistant", content: "Here's my answer" },
+      ];
+      const converted = bedrock["_convertMessages"](messages, new Set());
+      expect(converted).toEqual([
+        { role: "user", content: [{ text: "Think about this" }] },
+        { role: "assistant", content: [{ text: "Here's my answer" }] },
+      ]);
+    });
+
+    it("keeps the signed block when an unsigned one is beside it", () => {
+      const messages: ChatMessage[] = [
+        { role: "user", content: "Think about this" } as UserChatMessage,
+        { role: "thinking", content: "signed", signature: "sig-1" },
+        { role: "thinking", content: "cut off" },
+        { role: "assistant", content: "Here's my answer" },
+      ];
+      const converted = bedrock["_convertMessages"](messages, new Set());
+      expect(converted[1].content).toEqual([
+        {
+          reasoningContent: {
+            reasoningText: { text: "signed", signature: "sig-1" },
+          },
+        },
+        { text: "Here's my answer" },
+      ]);
+    });
+
+    it("in a tool-use turn, leaves out the unsigned thinking and keeps the call", () => {
+      const messages: ChatMessage[] = [
+        { role: "user", content: "Weather in Paris?" } as UserChatMessage,
+        { role: "thinking", content: "I should call the tool." },
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: "tooluse_1",
+              type: "function",
+              function: { name: "get_weather", arguments: '{"city":"Paris"}' },
+            },
+          ],
+        },
+        { role: "tool", toolCallId: "tooluse_1", content: "Sunny" },
+      ];
+      const converted = bedrock["_convertMessages"](
+        messages,
+        new Set(["get_weather"]),
+      );
+      expect(converted[1]).toEqual({
+        role: "assistant",
+        content: [
+          {
+            toolUse: {
+              toolUseId: "tooluse_1",
+              name: "get_weather",
+              input: { city: "Paris" },
+            },
+          },
+        ],
+      });
+    });
+
+    it("another family's unsigned reasoning still goes back (it never signs)", () => {
+      const messages: ChatMessage[] = [
+        { role: "user", content: "Think about this" } as UserChatMessage,
+        { role: "thinking", content: "reasoning" },
+        { role: "assistant", content: "Answer" },
+      ];
+      const converted = bedrock["_convertMessages"](
+        messages,
+        new Set(),
+        undefined,
+        "openai.gpt-oss-120b-1:0",
+      );
+      expect(converted[1].content?.[0]).toEqual({
+        reasoningContent: { reasoningText: { text: "reasoning" } },
+      });
     });
 
     it("should handle redacted thinking messages", () => {

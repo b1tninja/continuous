@@ -1,0 +1,6 @@
+```sh
+npm i chrome-devtools-mcp@latest -g
+chrome-devtools navigate_page 1 --url "https://developers.chrome.com"
+chrome-devtools take_screenshot 1 --filePath screenshot.png
+chrome-devtools stop
+```

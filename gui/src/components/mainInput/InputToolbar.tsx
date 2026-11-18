@@ -1,5 +1,5 @@
 import { InputModifiers } from "core";
-import { memo, useContext } from "react";
+import { memo, useContext, useRef } from "react";
 import { IdeMessengerContext } from "../../context/IdeMessenger";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import { selectUseActiveFile } from "../../redux/selectors";
@@ -9,9 +9,15 @@ import { ToolTip } from "../gui/Tooltip";
 import ModelSelect from "../modelSelection/ModelSelect";
 import { Button } from "../ui";
 import { useFontSize } from "../ui/font";
-import ContextStatus from "./ContextStatus";
+import { CacheTipsButton } from "./CacheTipsButton";
+import { ContextMeter } from "./ContextMeter";
+import { ModelRetirementChip } from "./ModelRetirementChip";
+import { ModelToolChip } from "./ModelToolChip";
 import HoverItem, { HoverButton } from "./InputToolbar/HoverItem";
-import { OverflowMenu } from "./InputToolbar/OverflowMenu";
+import { ReasoningToggle } from "./InputToolbar/ReasoningToggle";
+import { ToolbarWidthContext, useWidthTier } from "./InputToolbar/widthTier";
+import { PromptCacheButton } from "./PromptCacheButton";
+import { UsageIndicator } from "./UsageIndicator";
 
 export interface ToolbarOptions {
   hideUseCodebase?: boolean;
@@ -43,73 +49,96 @@ function InputToolbar(props: InputToolbarProps) {
   const smallFont = useFontSize(-2);
   const tinyFont = useFontSize(-3);
 
+  // The row's own width picks what each control shows; nothing in the status
+  // group is ever moved into a menu. See plans/research/status-row-layout.md.
+  const rowRef = useRef<HTMLDivElement>(null);
+  const tier = useWidthTier(rowRef);
+
   return (
-    <>
+    <ToolbarWidthContext.Provider value={tier}>
       <div
+        ref={rowRef}
         onClick={props.onClick}
         // Hidden controls must not be Tab stops
         inert={props.hidden}
-        className={`find-widget-skip flex flex-row items-center justify-between gap-1 bg-vsc-input-background pt-1 select-none ${props.hidden ? "pointer-events-none h-0 cursor-default opacity-0" : "pointer-events-auto mt-2 cursor-text opacity-100"}`}
+        data-testid="input-toolbar"
+        data-width-tier={tier}
+        // Wraps rather than hides: when even the shortest status does not
+        // fit beside a truncated model name, it moves to a second line.
+        className={`find-widget-skip flex flex-row flex-wrap items-center justify-between gap-x-1 bg-vsc-input-background pt-1 select-none ${props.hidden ? "pointer-events-none h-0 cursor-default opacity-0" : "pointer-events-auto mt-2 cursor-text opacity-100"}`}
         style={{
           fontSize: smallFont,
         }}
       >
-        <div className="flex max-w-[45%] min-w-0 flex-row items-center">
+        <div
+          className={`flex min-w-12 flex-1 basis-12 flex-row items-center ${tier === "wide" ? "max-w-[45%]" : ""}`}
+        >
           <ToolTip place="top" content="Select Model">
             <HoverItem className="min-w-0 !p-0">
               <ModelSelect />
             </HoverItem>
           </ToolTip>
+          {!isInEdit && <ModelToolChip />}
+          {!isInEdit && <ModelRetirementChip />}
         </div>
 
         <div
-          className="flex items-center gap-2 whitespace-nowrap text-description"
+          data-testid="input-status-group"
+          // Never shrinks into a menu: on its own line in a very narrow
+          // panel it wraps its items instead.
+          className={`flex max-w-full flex-wrap items-center justify-end whitespace-nowrap text-description ${tier === "narrow" ? "gap-0.5" : "gap-1.5"}`}
           style={{
             fontSize: tinyFont,
           }}
         >
-          {!isInEdit && <ContextStatus />}
-          {!props.toolbarOptions?.hideUseCodebase && !isInEdit && (
-            <div className="hidden transition-colors duration-200 hover:underline md:flex">
-              <HoverButton
-                data-testid="active-file-button"
-                aria-label={`${getMetaKeyLabel()}⏎ ${
-                  useActiveFile ? "No active file" : "Active file"
-                }`}
-                className={`px-1 text-2xs ${
-                  props.activeKey === "Meta" ||
-                  props.activeKey === "Control" ||
-                  props.activeKey === "Alt"
-                    ? "underline"
-                    : ""
-                }`}
-                onClick={() =>
-                  props.onEnter?.({
-                    useCodebase: false,
-                    noContext: !useActiveFile,
-                  })
-                }
-              >
-                <ToolTip
-                  place="top-end"
-                  content={`${
-                    useActiveFile
-                      ? "Send Without Active File"
-                      : "Send With Active File"
-                  } (${getMetaKeyLabel()}⏎)`}
+          {!isInEdit && <ContextMeter />}
+          <UsageIndicator />
+          <ReasoningToggle />
+          <PromptCacheButton />
+          <CacheTipsButton />
+          {!props.toolbarOptions?.hideUseCodebase &&
+            !isInEdit &&
+            tier === "wide" && (
+              <div className="flex transition-colors duration-200 hover:underline">
+                <HoverButton
+                  data-testid="active-file-button"
+                  aria-label={`${getMetaKeyLabel()}⏎ ${
+                    useActiveFile ? "No active file" : "Active file"
+                  }`}
+                  className={`px-1 text-2xs ${
+                    props.activeKey === "Meta" ||
+                    props.activeKey === "Control" ||
+                    props.activeKey === "Alt"
+                      ? "underline"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    props.onEnter?.({
+                      useCodebase: false,
+                      noContext: !useActiveFile,
+                    })
+                  }
                 >
-                  <span>
-                    {getMetaKeyLabel()}⏎{" "}
-                    {useActiveFile ? "No active file" : "Active file"}
-                  </span>
-                </ToolTip>
-              </HoverButton>
-            </div>
-          )}
+                  <ToolTip
+                    place="top-end"
+                    content={`${
+                      useActiveFile
+                        ? "Send Without Active File"
+                        : "Send With Active File"
+                    } (${getMetaKeyLabel()}⏎)`}
+                  >
+                    <span>
+                      {getMetaKeyLabel()}⏎{" "}
+                      {useActiveFile ? "No active file" : "Active file"}
+                    </span>
+                  </ToolTip>
+                </HoverButton>
+              </div>
+            )}
           {isInEdit && (
             <HoverButton
               aria-label="Esc to exit Edit"
-              className="hidden px-1 text-2xs hover:underline sm:inline-flex"
+              className={`px-1 text-2xs hover:underline ${tier === "narrow" ? "hidden" : "inline-flex"}`}
               onClick={async () => {
                 void dispatch(exitEdit({}));
                 ideMessenger.post("focusEditor", undefined);
@@ -120,7 +149,6 @@ function InputToolbar(props: InputToolbarProps) {
               </span>
             </HoverButton>
           )}
-          <OverflowMenu />
           <ToolTip place="top" content="Send (⏎)">
             <Button
               variant={props.isMainInput ? "primary" : "secondary"}
@@ -138,15 +166,21 @@ function InputToolbar(props: InputToolbarProps) {
               }}
               disabled={isEnterDisabled}
             >
-              <span className="hidden md:inline">
-                ⏎ {props.toolbarOptions?.enterText ?? "Enter"}
-              </span>
-              <span className="md:hidden">⏎</span>
+              {tier === "wide" ? (
+                <span>⏎ {props.toolbarOptions?.enterText ?? "Enter"}</span>
+              ) : (
+                <>
+                  <span aria-hidden="true">⏎</span>
+                  <span className="sr-only">
+                    {props.toolbarOptions?.enterText ?? "Enter"}
+                  </span>
+                </>
+              )}
             </Button>
           </ToolTip>
         </div>
       </div>
-    </>
+    </ToolbarWidthContext.Provider>
   );
 }
 

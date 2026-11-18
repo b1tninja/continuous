@@ -317,12 +317,23 @@ describe("tool dialect presets", () => {
     ).toEqual(["kimi-k2-thinking", "nova"]);
   });
 
+  it("marks Nemotron-H as a prompted path and Nano v2 as toolcall-json", () => {
+    const h = resolveToolDialectPreset("nvidia/Nemotron-H-47B-Reasoning-128K");
+    expect(h?.textDialect).toBe("none");
+    expect(h?.promptStyle.evidence).toMatch(/prompted path, not parser/);
+    expect(
+      resolveToolDialectPreset("nvidia/Nemotron-H-4B-Instruct-128K")?.id,
+    ).toBe("nemotron-h");
+    const v2 = resolveToolDialectPreset("nvidia/NVIDIA-Nemotron-Nano-12B-v2");
+    expect(v2?.textDialect).toBe("toolcall-json");
+  });
+
   it("tells the Nemotron generations apart", () => {
     const id = (name: string) => resolveToolDialectPreset(name)?.id;
     expect(id("nvidia/Llama-3_3-Nemotron-Super-49B-v1_5")).toBe(
       "llama-nemotron",
     );
-    expect(id("nvidia/NVIDIA-Nemotron-Nano-9B-v2")).toBe("nemotron-h");
+    expect(id("nvidia/NVIDIA-Nemotron-Nano-9B-v2")).toBe("nemotron-nano-v2");
     expect(id("nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16")).toBe("nemotron-3");
     expect(id("nvidia/Nemotron-H-8B-Reasoning-128K")).toBe("nemotron-h");
   });
@@ -402,7 +413,7 @@ describe("tool dialect presets", () => {
     for (const p of TOOL_DIALECT_PRESETS) {
       if (p.recoverWith) expect(built, p.id).toContain(p.recoverWith);
     }
-    for (const id of ["nemotron-h", "llama-nemotron"]) {
+    for (const id of ["nemotron-h", "nemotron-nano-v2", "llama-nemotron"]) {
       expect(
         TOOL_DIALECT_PRESETS.find((p) => p.id === id)?.recoverWith,
         id,
@@ -603,5 +614,29 @@ describe("Bedrock tool support from the presets", () => {
         );
       }
     });
+  });
+});
+
+describe("Gemma presets never carry llama-json (RQ7)", () => {
+  it.each([
+    "google.gemma-3-27b-it",
+    "gemma3:27b",
+    "gemma-3n-e4b",
+    "google/gemma-4-31B-it",
+  ])("%s resolves to no llama-json dialect or recovery", (id) => {
+    const p = resolveToolDialectPreset(id);
+    expect(p?.textDialect).not.toBe("llama-json");
+    expect(p?.recoverWith).not.toBe("llama-json");
+    expect(p?.promptStyle.style).not.toBe("llama-json");
+    expect(toolDialectHint(id).dialect).not.toBe("llama-json");
+    expect(presetBedrockTools(id, "llama-json")).not.toBe(true);
+  });
+
+  it("no preset that matches a Gemma id is a Llama row", () => {
+    for (const p of TOOL_DIALECT_PRESETS) {
+      if (p.match.some((re) => re.test("gemma-3-27b-it"))) {
+        expect(p.id).toMatch(/^gemma/);
+      }
+    }
   });
 });

@@ -1,3 +1,5 @@
+import { modernizeLevelText } from "core/tools/permissions/levelText";
+import { maskCommandForDisplay } from "core/tools/permissions/displayMask";
 import type { ToolCallDecision } from "core";
 
 /** The short words on the chip, by who decided. */
@@ -11,8 +13,10 @@ export function decisionLabel(d: ToolCallDecision): string {
         return "Allowed by Auto";
       case "permissive":
         return "Allowed by Permissive";
+      // "yolo": a decision saved by 2.14.x
       case "yolo":
-        return "Allowed by YOLO";
+      case "idgaf":
+        return "Allowed by IDGAF";
       case "once":
         return "Allowed once by you";
       default:
@@ -32,7 +36,7 @@ export function decisionLabel(d: ToolCallDecision): string {
 }
 
 /**
- * Why a tool call ran without asking, or was refused: a rule, a switch, YOLO,
+ * Why a tool call ran without asking, or was refused: a rule, a switch, IDGAF,
  * or the Auto reviewer's reason. The full sentence is in the tooltip.
  */
 export function DecisionChip({
@@ -42,9 +46,14 @@ export function DecisionChip({
 }) {
   if (!decision) return null;
   const blocked = decision.outcome === "blocked";
-  const detail = [decision.reason, decision.rule && `Rule: ${decision.rule}`]
-    .filter(Boolean)
-    .join("\n");
+  // The reason of a decision saved by 2.14.x may say YOLO
+  const detail = modernizeLevelText(
+    maskCommandForDisplay(
+      [decision.reason, decision.rule && `Rule: ${decision.rule}`]
+        .filter(Boolean)
+        .join("\n"),
+    ),
+  );
   return (
     <span
       data-testid="decision-chip"

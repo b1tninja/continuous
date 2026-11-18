@@ -1,3 +1,4 @@
+import { keyIsPathBySchema, propertySchema } from "./mcpPathSchema";
 import { fileToolTarget } from "./protectedCall";
 
 /**
@@ -9,10 +10,11 @@ import { fileToolTarget } from "./protectedCall";
  *   part before the first wildcard.
  * - An MCP tool: every string argument whose name says it is a path (`path`,
  *   `file_path`, `directory`, `uri`, `destination`...) and the strings in an
- *   array under such a name. The tool's own `readonly` hint does not matter:
- *   a read is as much a leak as a write is a change. Arguments with other
- *   names are not read, so a tool whose path hides under another name is not
- *   covered.
+ *   array under such a name, and any string the tool's own JSON schema
+ *   calls a path (`format: uri`, a path in its description). The tool's own
+ *   `readonly` hint does not matter: a read is as much a leak as a write is
+ *   a change. An argument with another name and no such schema evidence is
+ *   not read.
  */
 
 const GLOB_CHARS = /[*?[\]{}!()]/;
@@ -40,20 +42,32 @@ function pathLike(value: string): boolean {
   return !/^[a-z][a-z0-9+.-]+:\/\//i.test(value) || /^file:/i.test(value);
 }
 
-function mcpPaths(args: Record<string, unknown>): string[] {
+function pushIfPath(out: string[], v: unknown) {
+  if (typeof v === "string" && pathLike(v)) out.push(v);
+}
+
+/**
+ * The path arguments of an MCP call: a string under a path-like name or one
+ * the tool's schema calls a path (mcpPathSchema.ts), and the strings of an
+ * array under such a name.
+ */
+function mcpPaths(
+  args: Record<string, unknown>,
+  schema?: Record<string, unknown>,
+): string[] {
   const out: string[] = [];
-  const stack: [unknown, number][] = [[args, 0]];
+  const stack: [unknown, unknown, number][] = [[args, schema, 0]];
   while (stack.length > 0 && out.length < 64) {
-    const [value, depth] = stack.pop()!;
+    const [value, node, depth] = stack.pop()!;
     if (!value || typeof value !== "object" || depth > 4) continue;
     for (const [key, v] of Object.entries(value)) {
-      const named = PATH_KEY.test(key);
-      if (named && typeof v === "string" && pathLike(v)) out.push(v);
+      const named = PATH_KEY.test(key) || keyIsPathBySchema(node, key);
+      if (named && typeof v === "string") pushIfPath(out, v);
       else if (named && Array.isArray(v)) {
-        for (const item of v) {
-          if (typeof item === "string" && pathLike(item)) out.push(item);
-        }
-      } else if (v && typeof v === "object") stack.push([v, depth + 1]);
+        for (const item of v) pushIfPath(out, item);
+      } else if (v && typeof v === "object") {
+        stack.push([v, propertySchema(node, key), depth + 1]);
+      }
     }
   }
   return out;
@@ -71,8 +85,9 @@ export function deputyTargets(
   toolName: string,
   parsedArgs: Record<string, unknown>,
   isMcp: boolean,
+  schema?: Record<string, unknown>,
 ): DeputyTargets | undefined {
-  if (isMcp) return { paths: mcpPaths(parsedArgs), single: false };
+  if (isMcp) return { paths: mcpPaths(parsedArgs, schema), single: false };
   const target = fileToolTarget(toolName, parsedArgs);
   if (target) {
     return target.path

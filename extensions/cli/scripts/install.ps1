@@ -1,28 +1,52 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Continue CLI Installer for Windows
+    Continuous CLI Installer for Windows
 .DESCRIPTION
-    Installs Node.js (if needed) and the Continue CLI globally
+    Installs Node.js 22 (if needed) and the Continuous CLI (@b1tninja/continuous-cli)
+    globally from the GitHub release tarball. It provides the commands `continuous`
+    and `cn`. Re-running upgrades in place. No telemetry.
+.PARAMETER Version
+    Install this release, e.g. 2.14.0 (default: the latest release).
+    The environment variable CONTINUOUS_CLI_VERSION does the same.
+.PARAMETER Url
+    Install this exact tarball URL (overrides Version and the lookup).
+    The environment variable CONTINUOUS_CLI_URL does the same.
 .EXAMPLE
-    irm https://continue.dev/install.ps1 | iex
+    # Read it before you run it:
+    irm https://raw.githubusercontent.com/b1tninja/continuous/main/extensions/cli/scripts/install.ps1 -OutFile install.ps1
+    notepad install.ps1
+    .\install.ps1
+.EXAMPLE
+    # In one step, once you have inspected it:
+    irm https://raw.githubusercontent.com/b1tninja/continuous/main/extensions/cli/scripts/install.ps1 | iex
+.EXAMPLE
+    # Pin a version when piping (a piped script cannot take parameters):
+    $env:CONTINUOUS_CLI_VERSION = "2.14.0"; irm https://raw.githubusercontent.com/b1tninja/continuous/main/extensions/cli/scripts/install.ps1 | iex
 .NOTES
     Supports Windows 10/11, Windows Server 2016+
-    Requires internet connectivity
+    Hosts contacted: api.github.com and github.com (the release), the npm registry
+    for dependencies, and, only if Node.js 22 is missing, winget or the fnm release.
 #>
 
 [CmdletBinding()]
 param(
     [switch]$Force,
-    [int]$Timeout = 60
+    [int]$Timeout = 60,
+    [string]$Version = $env:CONTINUOUS_CLI_VERSION,
+    [string]$Url = $env:CONTINUOUS_CLI_URL
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'  # Faster downloads
 
-$script:RequiredNodeVersion = [version]"20.20.1"
-$script:PackageName = "@continuedev/cli"
-$script:CliCommand = "cn"
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch {}
+
+$script:RequiredNodeVersion = [version]"22.0.0"
+$script:NodeInstallVersion = "22"
+$script:Repo = "b1tninja/continuous"
+$script:PackageName = "@b1tninja/continuous-cli"
+$script:CliCommands = @("continuous", "cn")
 $script:FnmInstalled = $false
 $script:FnmPath = "$env:LOCALAPPDATA\fnm"
 
@@ -33,9 +57,10 @@ function Write-Err { param($Message) Write-Host "==> Error: " -ForegroundColor R
 
 function Test-InternetConnection {
     try {
-        $request = [System.Net.WebRequest]::Create("https://registry.npmjs.org")
+        $request = [System.Net.WebRequest]::Create("https://api.github.com")
         $request.Timeout = 5000
         $request.Method = "HEAD"
+        $request.UserAgent = "continuous-cli-installer"
         $response = $request.GetResponse()
         $response.Close()
         return $true
@@ -48,10 +73,12 @@ function Invoke-SafeWebRequest {
     param(
         [Parameter(Mandatory)]
         [string]$Uri,
-        [string]$OutFile
+        [string]$OutFile,
+        [switch]$Quiet
     )
 
     $webClient = New-Object System.Net.WebClient
+    $webClient.Headers.Add("User-Agent", "continuous-cli-installer")
     try {
         if ($OutFile) {
             $webClient.DownloadFile($Uri, $OutFile)
@@ -59,7 +86,7 @@ function Invoke-SafeWebRequest {
             return $webClient.DownloadString($Uri)
         }
     } catch [System.Net.WebException] {
-        Write-Err "Failed to download from $Uri`: $($_.Exception.Message)"
+        if (-not $Quiet) { Write-Err "Failed to download from $Uri`: $($_.Exception.Message)" }
         throw
     } finally {
         $webClient.Dispose()
@@ -194,7 +221,7 @@ function Install-Node {
         exit 1
     }
 
-    Write-Info "Installing Node.js v$RequiredNodeVersion..."
+    Write-Info "Installing Node.js v$($script:NodeInstallVersion)..."
 
     try {
         # Initialize fnm for current session
@@ -205,17 +232,17 @@ function Install-Node {
         $fnmEnvOutput | Out-String | Invoke-Expression
 
         # Install Node.js
-        $installOutput = fnm install $RequiredNodeVersion.ToString() 2>&1
+        $installOutput = fnm install $script:NodeInstallVersion 2>&1
         if ($LASTEXITCODE -ne 0) {
             throw "fnm install failed: $installOutput"
         }
 
-        fnm use $RequiredNodeVersion.ToString()
+        fnm use $script:NodeInstallVersion
         if ($LASTEXITCODE -ne 0) {
             throw "fnm use failed"
         }
 
-        fnm default $RequiredNodeVersion.ToString()
+        fnm default $script:NodeInstallVersion
 
         # Re-initialize to pick up the new node
         fnm env --use-on-cd | Out-String | Invoke-Expression
@@ -256,19 +283,52 @@ function Add-ToProfile {
     }
 }
 
-function Install-Cli {
-    Write-Info "Installing $PackageName..."
+function Get-TarballUrl {
+    if ($Url) {
+        Write-Info "Using CONTINUOUS_CLI_URL: $Url"
+        return $Url
+    }
 
+    if ($Version) {
+        $v = $Version -replace '^v', '' -replace '-vscode$', ''
+        if ($v -notmatch '^[0-9A-Za-z.+-]+$') {
+            Write-Err "Version must look like 2.14.0, got: $Version"
+            exit 1
+        }
+        Write-Info "Using CONTINUOUS_CLI_VERSION $v"
+        return "https://github.com/$($script:Repo)/releases/download/v$v-vscode/continuous-cli-$v.tgz"
+    }
+
+    Write-Info "Looking up the latest release of $($script:Repo)..."
+    try {
+        $json = Invoke-SafeWebRequest -Uri "https://api.github.com/repos/$($script:Repo)/releases/latest" -Quiet
+        $release = $json | ConvertFrom-Json
+    } catch {
+        Write-Err "Could not reach api.github.com to find the latest release. Check your network and try again, or skip the lookup: `$env:CONTINUOUS_CLI_VERSION = '<x.y.z>' or `$env:CONTINUOUS_CLI_URL = '<tarball url>'."
+        exit 1
+    }
+    $asset = $release.assets | Where-Object { $_.name -like 'continuous-cli-*.tgz' } | Select-Object -First 1
+    if (-not $asset) {
+        Write-Err "The latest release has no continuous-cli-*.tgz asset. Pick a release that has one: set CONTINUOUS_CLI_VERSION. See https://github.com/$($script:Repo)/releases"
+        exit 1
+    }
+    return $asset.browser_download_url
+}
+
+function Install-Cli {
     if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
         Write-Err "npm not found. Please restart PowerShell and try again."
         exit 1
     }
 
+    $tarballUrl = Get-TarballUrl
+    Write-Info "Release tarball: $tarballUrl"
+
     # Check npm global directory permissions
     $npmPrefix = npm config get prefix 2>$null
     if ($npmPrefix -and (Test-Path $npmPrefix)) {
         try {
-            $testFile = Join-Path $npmPrefix "_continue_test_write"
+            $testFile = Join-Path $npmPrefix "_continuous_test_write"
             [IO.File]::WriteAllText($testFile, "test")
             Remove-Item $testFile -Force
         } catch {
@@ -279,7 +339,7 @@ function Install-Cli {
             }
             npm config set prefix $userNpmDir
             $env:PATH = "$userNpmDir;$env:PATH"
-            
+
             # Persist npm global bin to user PATH
             $userPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
             if ($userPath -notlike "*$userNpmDir*") {
@@ -289,13 +349,52 @@ function Install-Cli {
         }
     }
 
-    $npmOutput = npm install -g $PackageName 2>&1
-    $npmExitCode = $LASTEXITCODE
+    $workDir = Join-Path ([IO.Path]::GetTempPath()) ("continuous-cli-" + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+    try {
+        $fileName = ([Uri]$tarballUrl).Segments[-1]
+        $tgz = Join-Path $workDir $fileName
+        try {
+            Invoke-SafeWebRequest -Uri $tarballUrl -OutFile $tgz
+        } catch {
+            Write-Err "Could not download $tarballUrl. Check the version and your network."
+            exit 1
+        }
 
-    if ($npmExitCode -ne 0) {
-        Write-Host $npmOutput -ForegroundColor Red
-        Write-Err "Failed to install $PackageName (exit code: $npmExitCode)"
-        exit 1
+        # The release publishes SHA256SUMS.txt next to the tarball. It comes from the same
+        # place as the tarball, so it detects a corrupt download but is not a signature.
+        $releaseDir = $tarballUrl.Substring(0, $tarballUrl.LastIndexOf('/'))
+        $actual = (Get-FileHash $tgz -Algorithm SHA256).Hash.ToLowerInvariant()
+        $expected = $null
+        try {
+            $sums = Invoke-SafeWebRequest -Uri "$releaseDir/SHA256SUMS.txt" -Quiet
+            foreach ($line in ($sums -split "`n")) {
+                $parts = $line.Trim() -split '\s+', 2
+                if ($parts.Count -eq 2 -and ($parts[1].TrimStart('*') -eq $fileName)) { $expected = $parts[0].ToLowerInvariant(); break }
+            }
+        } catch {}
+        if ($expected) {
+            if ($actual -ne $expected) {
+                Write-Err "Checksum mismatch for ${fileName}: expected $expected, got $actual. Not installing."
+                exit 1
+            }
+            Write-Success "SHA-256 matches the release's SHA256SUMS.txt: $actual"
+        } else {
+            Write-Warn "No SHA256SUMS.txt entry found for this tarball; compare the checksum yourself"
+            Write-Info "SHA-256 of ${fileName}: $actual"
+            Write-Info "Release: $releaseDir"
+        }
+
+        Write-Info "Installing $PackageName (npm install -g)..."
+        $npmOutput = npm install -g $tgz 2>&1
+        $npmExitCode = $LASTEXITCODE
+        if ($npmExitCode -ne 0) {
+            Write-Host $npmOutput -ForegroundColor Red
+            Write-Err "Failed to install $PackageName (exit code: $npmExitCode)"
+            exit 1
+        }
+    } finally {
+        Remove-Item -Path $workDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     # Verify the CLI was installed
@@ -304,31 +403,41 @@ function Install-Cli {
         $env:PATH = "$npmBinPath;$env:PATH"
     }
 
+    $missing = @($CliCommands | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) })
+    if ($missing.Count -gt 0) {
+        Write-Warn "Not found in PATH after installation: $($missing -join ', ')"
+        Write-Warn "You may need to restart PowerShell"
+    } else {
+        foreach ($c in $CliCommands) {
+            Write-Info "$c --version: $(& $c --version 2>&1 | Select-Object -First 1)"
+        }
+    }
+
     Write-Success "$PackageName installed!"
 }
 
 function Show-Complete {
     Write-Host ""
-    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
-    Write-Success "Continue CLI installation complete!"
-    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
+    Write-Host "----------------------------------------------------------------------" -ForegroundColor Cyan
+    Write-Success "Continuous CLI installation complete!"
+    Write-Host "----------------------------------------------------------------------" -ForegroundColor Cyan
     Write-Host ""
 
-    # Check if CLI is available
-    if (Get-Command $CliCommand -ErrorAction SilentlyContinue) {
-        Write-Success "Ready! Run: $CliCommand --help"
+    if (Get-Command continuous -ErrorAction SilentlyContinue) {
+        Write-Success "Ready! Run: continuous --help   (or the short alias: cn --help)"
     } else {
         Write-Host "Restart PowerShell, then run: " -NoNewline
-        Write-Host "$CliCommand --help" -ForegroundColor White
+        Write-Host "continuous --help" -ForegroundColor White
     }
+    Write-Host "Uninstall with: npm uninstall -g $PackageName"
     Write-Host ""
 }
 
 function Main {
     Write-Host ""
-    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
-    Write-Host "           Continue CLI Installer" -ForegroundColor White
-    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
+    Write-Host "----------------------------------------------------------------------" -ForegroundColor Cyan
+    Write-Host "           Continuous CLI Installer" -ForegroundColor White
+    Write-Host "----------------------------------------------------------------------" -ForegroundColor Cyan
     Write-Host ""
 
     # Detect architecture properly
@@ -342,7 +451,7 @@ function Main {
     # Check internet connectivity
     Write-Info "Checking internet connectivity..."
     if (-not (Test-InternetConnection)) {
-        Write-Err "Cannot reach npm registry. Please check your internet connection and try again."
+        Write-Err "Cannot reach api.github.com. Please check your internet connection and try again."
         exit 1
     }
 

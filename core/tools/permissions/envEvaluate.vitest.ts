@@ -3,9 +3,16 @@ import { describe, expect, it } from "vitest";
 import type { ShellKind } from "../../util/shell";
 import { commandCandidates } from "./candidates";
 import { hiddenCommandName } from "./commandName";
-import { evaluateToolPolicyWithRules } from "./evaluate";
+import { evaluateToolPolicyWithRules as evaluateAndRun } from "./evaluate";
+import { wouldDecide } from "./idgafView.testutil";
 import { maskAssignmentValues } from "./envMask";
 import { DEFAULT_POLICY_LEVELS } from "./policy";
+
+// At IDGAF every call runs; these tests read what the guard would have
+// decided (wouldDecide), which IDGAF records instead of acting on.
+const evaluateToolPolicyWithRules = (
+  input: Parameters<typeof evaluateAndRun>[0],
+) => wouldDecide(evaluateAndRun(input));
 
 /**
  * An assignment in front of a command (`NAME=value cmd`, `env NAME=value cmd`,
@@ -33,7 +40,7 @@ const allAreas = (level: Exclude<Level, "default">) => ({
   edits: level,
 });
 
-type Level = "default" | "automatic" | "permissive" | "yolo";
+type Level = "default" | "automatic" | "permissive" | "idgaf";
 
 function run(
   command: string,
@@ -53,7 +60,7 @@ function run(
   });
 }
 
-const LEVELS: Level[] = ["default", "automatic", "permissive", "yolo"];
+const LEVELS: Level[] = ["default", "automatic", "permissive", "idgaf"];
 
 describe("what each kind of name does at each level", () => {
   it.each([
@@ -67,7 +74,7 @@ describe("what each kind of name does at each level", () => {
     "PYTHONPATH=/tmp/x python a.py",
     "env -i PATH=/tmp git status",
     "IFS=/ git status",
-  ])("%s asks at every level, YOLO included", (command) => {
+  ])("%s asks at every level (at IDGAF: runs, ask recorded)", (command) => {
     for (const level of LEVELS) {
       const r = run(command, "bash", level);
       expect(r.policy, `${level}: ${command}`).toBe(ASK);
@@ -80,9 +87,10 @@ describe("what each kind of name does at each level", () => {
     "AWS_ENDPOINT_URL=http://h:1 aws s3 ls",
     "API_KEY=abc node a.js",
     "TMPDIR=/tmp/x node a.js",
-  ])("%s asks below YOLO and runs at YOLO", (command) => {
+  ])("%s asks below IDGAF; IDGAF runs it and records the ask", (command) => {
     expect(run(command, "bash", "permissive").policy).toBe(ASK);
-    expect(run(command, "bash", "yolo").policy).toBe(RUN);
+    // wouldDecide: checked to have run, and read as what was recorded
+    expect(run(command, "bash", "idgaf").policy).toBe(ASK);
   });
 
   it.each([
@@ -95,9 +103,9 @@ describe("what each kind of name does at each level", () => {
     "env FOO=bar npm test",
     "env -u X FOO=bar npm test",
     "FOO=bar",
-  ])("%s is not asked about at Permissive or YOLO", (command) => {
+  ])("%s is not asked about at Permissive or IDGAF", (command) => {
     expect(run(command, "bash", "permissive").policy).toBe(RUN);
-    expect(run(command, "bash", "yolo").policy).toBe(RUN);
+    expect(run(command, "bash", "idgaf").policy).toBe(RUN);
   });
 
   it("a value that runs code asks at every level, for any name", () => {
@@ -119,8 +127,8 @@ describe("what each kind of name does at each level", () => {
     ["cmd", 'set "COMSPEC=C:/x.exe" & dir'],
     ["cmd", "setx PATH C:/x"],
     ["cmd", 'cmd /c "set GIT_DIR=x&&git status"'],
-  ] as [ShellKind, string][])("%s: %s asks at YOLO", (shell, command) => {
-    expect(run(command, shell, "yolo").policy).toBe(ASK);
+  ] as [ShellKind, string][])("%s: %s asks at IDGAF", (shell, command) => {
+    expect(run(command, shell, "idgaf").policy).toBe(ASK);
   });
 
   it.each([
@@ -129,14 +137,14 @@ describe("what each kind of name does at each level", () => {
     ["cmd", "set CI=1&& npm test"],
     ["cmd", "set FOO=bar&& git status"],
   ] as [ShellKind, string][])(
-    "%s: %s does not ask at YOLO",
+    "%s: %s does not ask at IDGAF",
     (shell, command) => {
-      expect(run(command, shell, "yolo").policy).toBe(RUN);
+      expect(run(command, shell, "idgaf").policy).toBe(RUN);
     },
   );
 
   it("the reason names the variable and not its value", () => {
-    const r = run("LD_PRELOAD=/tmp/hunter2.so ls", "bash", "yolo");
+    const r = run("LD_PRELOAD=/tmp/hunter2.so ls", "bash", "idgaf");
     expect(r.reason).toContain("LD_PRELOAD");
     expect(r.reason).not.toContain("hunter2");
   });
@@ -153,13 +161,14 @@ describe("what each kind of name does at each level", () => {
   });
 
   it("only the person's own lists change the names", () => {
-    const base = run("PATH=/usr/bin git status", "bash", "yolo");
+    const base = run("PATH=/usr/bin git status", "bash", "idgaf");
     expect(base.policy).toBe(ASK);
-    const allowed = run("PATH=/usr/bin git status", "bash", "yolo", {
+    // PATH is dangerous by default: an allow entry cannot lower it
+    const allowed = run("PATH=/usr/bin git status", "bash", "idgaf", {
       envNames: { allow: ["PATH"] },
     });
-    expect(allowed.policy).toBe(RUN);
-    const asked = run("FOO=bar npm test", "bash", "yolo", {
+    expect(allowed.policy).toBe(ASK);
+    const asked = run("FOO=bar npm test", "bash", "idgaf", {
       envNames: { ask: ["FOO"] },
     });
     expect(asked.policy).toBe(ASK);
@@ -221,14 +230,14 @@ describe("an assignment never lets a command past a rule", () => {
       "export FOO=1; git push",
     ]) {
       expect(run(c, "bash", "permissive", { permissions }).policy, c).toBe(OFF);
-      // at YOLO only a floor rule binds
+      // at IDGAF only a floor rule binds
       const floor = {
         approval: {
-          levels: allAreas("yolo"),
+          levels: allAreas("idgaf"),
           floor: ["runTerminalCommand(git push*)"],
         },
       };
-      expect(run(c, "bash", "yolo", floor).policy, c).toBe(OFF);
+      expect(run(c, "bash", "idgaf", floor).policy, c).toBe(OFF);
     }
   });
 
@@ -246,7 +255,7 @@ describe("an assignment never lets a command past a rule", () => {
     expect(hiddenCommandName("$env:FOO = 'x'; git status", "powershell")).toBe(
       undefined,
     );
-    expect(run("FOO=bar $cmd", "bash", "yolo").policy).toBe(ASK);
+    expect(run("FOO=bar $cmd", "bash", "idgaf").policy).toBe(ASK);
   });
 
   it.each([
@@ -258,7 +267,7 @@ describe("an assignment never lets a command past a rule", () => {
     ["cmd", "set FOO=bar&& rd /s /q C:/src"],
     ["cmd", 'cmd /c "set A=b&&git reset --hard"'],
   ] as [ShellKind, string][])(
-    "%s: %s still asks below YOLO",
+    "%s: %s still asks below IDGAF",
     (shell, command) => {
       expect(run(command, shell, "default").policy).toBe(ASK);
       expect(run(command, shell, "permissive").policy).toBe(ASK);
@@ -275,23 +284,23 @@ describe("an assignment never lets a command past a rule", () => {
 });
 
 describe("the run-time write target after an assignment (ROADMAP B31)", () => {
-  it("TMP=. node x.js > $HOME/x asks at YOLO", () => {
-    const r = run("TMP=. node x.js > $HOME/x", "bash", "yolo");
+  it("TMP=. node x.js > $HOME/x asks at IDGAF", () => {
+    const r = run("TMP=. node x.js > $HOME/x", "bash", "idgaf");
     expect(r.policy).toBe(ASK);
     expect(r.source).toBe("floor");
   });
 
-  it("$env:TEMP set to another folder asks at YOLO", () => {
+  it("$env:TEMP set to another folder asks at IDGAF", () => {
     const r = run(
       "$env:TEMP='D:/x'; Set-Content $env:TEMP/a.txt hi",
       "powershell",
-      "yolo",
+      "idgaf",
     );
     expect(r.policy).toBe(ASK);
   });
 
   it("a plain assignment before a workspace write does not", () => {
-    expect(run("FOO=1 touch a.txt", "bash", "yolo").policy).toBe(RUN);
+    expect(run("FOO=1 touch a.txt", "bash", "idgaf").policy).toBe(RUN);
   });
 });
 

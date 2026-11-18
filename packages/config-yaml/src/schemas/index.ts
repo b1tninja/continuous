@@ -9,6 +9,7 @@ import {
   partialModelSchema,
   requestOptionsSchema,
 } from "./models.js";
+import { webConfigSchema } from "./web.js";
 
 export const contextSchema = z.object({
   name: z.string().optional(),
@@ -233,8 +234,21 @@ export const toolPermissionsSchema = z.object({
         .object({
           trustedDomains: z.array(z.string()).optional(),
           productionMarkers: z.array(z.string()).optional(),
+          /** Environment variable names that always ask or never ask in a command; only your own config.yaml is read for it. */
+          envNames: z
+            .object({
+              ask: z.array(z.string()).optional(),
+              allow: z.array(z.string()).optional(),
+            })
+            .optional(),
           /** Changed lines above which the built-in large-change check asks (default 300). Read from the personal config only. */
           largeChangeLines: z.number().int().min(1).optional(),
+          /** Deprecated: use `web.limits.maxBytes`. Largest web page, in bytes, the fetch tool and @url read (default 2 MiB). Read from the personal config only. */
+          fetchMaxBytes: z.number().int().min(1).optional(),
+          /** Deprecated: use `web.limits.timeoutSeconds`. Seconds a web fetch may take in all, including the body (default 20). Read from the personal config only. */
+          fetchTimeoutSeconds: z.number().int().min(1).optional(),
+          /** `ask`: after untrusted content enters a session, calls that send data out or change state outside the workspace ask (default `off`). Read from the personal config only. */
+          taintedSessionRule: z.enum(["off", "ask"]).optional(),
         })
         .optional(),
       /** Plain-language guidance added to the reviewer's prompt. */
@@ -244,6 +258,8 @@ export const toolPermissionsSchema = z.object({
           allow: z.array(z.string()).optional(),
         })
         .optional(),
+      /** Which reviewer prompt Auto uses: `v3` is the tightened prompt (category check first, stricter authorisation); default is the shipped one. Read from the personal config only. */
+      reviewerPrompt: z.enum(["default", "v3"]).optional(),
       /** Stop the agent and ask after this many refusals in a row, or in total. */
       limits: z
         .object({
@@ -282,6 +298,20 @@ export const baseConfigYamlSchema = z.object({
   rulesByMode: rulesByModeSchema.optional(),
   toolPermissions: toolPermissionsSchema.optional(),
   terminal: terminalSchema.optional(),
+  /** How web pages are fetched: identity, robots.txt, limits, cache, per-host overrides (schemas/web.ts). */
+  web: webConfigSchema.optional(),
+  /**
+   * Model information updates: OpenRouter's public model list (names, sizes,
+   * prices). `automatic` (default) refreshes it in the background when the
+   * copy is older than `modelCatalogRefreshHours`; `manual` only when asked
+   * (provider setup offers it); `off` never contacts openrouter.ai. `ask` is
+   * the old spelling of `manual`; `never` is `manual` without the offer.
+   */
+  modelCatalog: z
+    .enum(["automatic", "manual", "off", "ask", "never"])
+    .optional(),
+  /** Hours before an automatic refresh replaces the list (default 24). */
+  modelCatalogRefreshHours: z.number().positive().optional(),
   env: envRecord.optional(),
   requestOptions: requestOptionsSchema.optional(),
 });

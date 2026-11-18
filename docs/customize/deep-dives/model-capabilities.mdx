@@ -261,6 +261,16 @@ This matrix shows which models support tool use and image input capabilities. Co
 - **Image Input**: Processing images
 - **Context Window**: Maximum number of tokens the model can process in a single request
 
+## Known server bugs that look like model failures
+
+### vLLM strips whitespace from tool arguments (Qwen3 and Qwen3-Coder)
+
+vLLM's Qwen3 and Qwen3-Coder tool parser removes all leading and trailing whitespace from every string argument. Affected: vLLM v0.24.0 through v0.25.1 and `main` (upstream [issue 48753](https://github.com/vllm-project/vllm/issues/48753), filed 2026-07-15, open when read on 2026-11-11). The issue reports the `qwen3_coder`, `qwen3_xml` and Seed-OSS parsers, streaming and not; the older `qwen3coder` parser of v0.23 and earlier is not affected.
+
+An exact-string edit is the case that breaks: an `old_string` with leading indentation or a trailing newline arrives without it. A multi-line edit can then land in the wrong place or fail with "string not found". Continuous recovers the common cases (it matches the stripped text when that appears once and keeps the file's own indentation and line breaks), and refuses when the stripped text appears in more than one place, but it cannot know what was stripped.
+
+The issue names no workaround: switching to `qwen3_xml` does not help, and it does not say whether other parsers are affected. Until a fixed vLLM is released, use a vLLM release before v0.24.0 for Qwen3 models, or serve them with another server (llama.cpp or Ollama), and check with `node bench/lab/lab.mjs run --run --suite args-whitespace`, which names the server version and parser it measured.
+
 ---
 
 **Is your model missing or incorrect?** Help improve this documentation! You can edit this page on GitHub using the link below.

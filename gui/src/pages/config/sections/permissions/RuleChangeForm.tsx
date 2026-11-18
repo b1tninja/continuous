@@ -19,7 +19,13 @@ import { useRuleChange, type RuleChange } from "./useRuleChange";
 
 /** What the form is for: a new rule, a change to one of yours, or adopting one from elsewhere. */
 export type FormMode =
-  | { kind: "add"; prefix: string; example: string }
+  | {
+      kind: "add";
+      prefix: string;
+      example: string;
+      /** The list the rule starts in (Ask when absent); set by the most-asked list and the inbox */
+      decision?: RuleDecision;
+    }
   | { kind: "edit"; decision: RuleDecision; rule: string }
   | { kind: "adopt"; decision: RuleDecision; rule: string; from: string }
   | { kind: "remove"; decision: RuleDecision; rule: string };
@@ -67,7 +73,7 @@ export function RuleChangeForm({
   const id = useId();
   const initialRule = mode.kind === "add" ? mode.prefix : mode.rule;
   const [decision, setDecision] = useState<RuleDecision>(
-    mode.kind === "add" ? "ask" : mode.decision,
+    mode.kind === "add" ? (mode.decision ?? "ask") : mode.decision,
   );
   const [rule, setRule] = useState(initialRule);
   const [probe, setProbe] = useState("");

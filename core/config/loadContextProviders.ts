@@ -11,6 +11,7 @@ import FileContextProvider from "../context/providers/FileContextProvider";
 import ProblemsContextProvider from "../context/providers/ProblemsContextProvider";
 import RulesContextProvider from "../context/providers/RulesContextProvider";
 import TerminalContextProvider from "../context/providers/TerminalContextProvider";
+import { webSearchUnavailableReason } from "../context/providers/webSearchBackend";
 
 /*
     Loads context providers based on configuration
@@ -49,7 +50,10 @@ export function loadConfigContextProviders(
       ) {
         errors.push({
           fatal: false,
-          message: `Unknown context provider ${config.provider}`,
+          message:
+            config.provider === "web"
+              ? `The web context provider is not available. ${webSearchUnavailableReason() ?? ""}`.trim()
+              : `Unknown context provider ${config.provider}`,
         });
         continue;
       }

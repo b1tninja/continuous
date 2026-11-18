@@ -9,7 +9,7 @@ const LEVELS: PolicyLevel[] = [
   "cautious",
   "automatic",
   "permissive",
-  "yolo",
+  "idgaf",
 ];
 
 const tool = (changed: boolean) =>
@@ -45,7 +45,7 @@ function run(
 }
 
 describe("an MCP tool whose definition changed since approval", () => {
-  it.each(LEVELS.filter((l) => l !== "yolo"))(
+  it.each(LEVELS.filter((l) => l !== "idgaf"))(
     "asks at %s, even when the tool would run without asking",
     (level) => {
       for (const base of [
@@ -62,8 +62,8 @@ describe("an MCP tool whose definition changed since approval", () => {
     },
   );
 
-  it("is still passed by YOLO, the owner's explicit choice", () => {
-    expect(run("yolo", true, "allowedWithPermission").policy).toBe(
+  it("is still passed by IDGAF, the owner's explicit choice", () => {
+    expect(run("idgaf", true, "allowedWithPermission").policy).toBe(
       "allowedWithoutPermission",
     );
   });
@@ -98,7 +98,7 @@ describe("an MCP tool whose definition changed since approval", () => {
     expect(r.policy).toBe("disabled");
   });
 
-  it("a changed launch definition asks at every level but YOLO and says so", () => {
+  it("a changed launch definition asks at every level but IDGAF and says so", () => {
     const launchTool = {
       group: "docs",
       uri: "mcp://docs-id/search",
@@ -118,7 +118,7 @@ describe("an MCP tool whose definition changed since approval", () => {
         permissions: undefined,
         approval: { levels: { ...DEFAULT_POLICY_LEVELS, tools: level } },
       } as never);
-      if (level === "yolo") {
+      if (level === "idgaf") {
         expect(r.policy).toBe("allowedWithoutPermission");
       } else {
         expect(r.policy).toBe("allowedWithPermission");

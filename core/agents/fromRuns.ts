@@ -24,6 +24,16 @@ const STATE: Record<SubagentRunStatus, AgentState> = {
 /** The main node's id for a session */
 export const mainAgentId = (sessionId: string) => `main-${sessionId}`;
 
+/** A Loop worker's id, for the node and the audit record alike (audit/identity.ts) */
+export const loopWorkerAgentId = (itemId: string) => `worker-${itemId}`;
+
+/**
+ * The mode a Loop worker runs in: Agent mode's tools with the loop's three.
+ * Loop is not a mode, so the node and the audit record both say "agent" and
+ * the kind, `loop-worker`, says it is a worker.
+ */
+export const LOOP_WORKER_MODE = "agent" as const;
+
 export function subagentRunToNode(
   run: SubagentRunState,
   ids: { toolCallId: string; rootId: string; parentId: string },
@@ -76,12 +86,12 @@ export function loopWorkerToNode(
 ): AgentNode {
   const started = Date.parse(run.startedAt);
   return {
-    id: `worker-${run.itemId}`,
+    id: loopWorkerAgentId(run.itemId),
     parentId: ids.parentId,
     rootId: ids.rootId,
     kind: "loop-worker",
     role: `item ${run.itemId}`,
-    mode: "loop",
+    mode: LOOP_WORKER_MODE,
     state: "running",
     ...(ids.model ? { model: ids.model } : {}),
     ...(Number.isFinite(started) ? { startedAt: started } : {}),

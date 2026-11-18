@@ -1,0 +1,22 @@
+{
+  "_comment": "Strata 0.1.54 /metrics shape (engine block copied from core/llm/fixtures/strata-metrics-2026-11-15.trimmed.json), reduced to the one request quoted in plans/research/cache-friendly-context-trimming.md section 1: a 412,266-token prompt for which the client was granted max_tokens 15697 on a 524,288-token window. Fields the note did not record are left out. `_client` is our side of the same request: max_tokens is the window less the 1,000-token counting buffer less our estimate, so the estimate was 524288 - 1000 - 15697 = 507591.",
+  "engine": {
+    "version": "0.1.54",
+    "model": "qwen3.8-flash-next-nvfp4-uncensored",
+    "context": 524288,
+    "max_context": 524288
+  },
+  "requests": [
+    {
+      "finish": "stop",
+      "prompt_tokens": 412266,
+      "prompt_total": 412266
+    }
+  ],
+  "_client": {
+    "context_length": 524288,
+    "counting_safety_buffer": 1000,
+    "granted_max_tokens": 15697,
+    "estimated_prompt_tokens": 507591
+  }
+}

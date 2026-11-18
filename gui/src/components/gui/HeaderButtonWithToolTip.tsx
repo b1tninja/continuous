@@ -38,7 +38,8 @@ const HeaderButtonWithToolTip = React.forwardRef<
         onClick={props.onClick}
         onKeyDown={props.onKeyDown}
         className={props.className}
-        style={props.style}
+        style={{ minWidth: 24, minHeight: 24, ...props.style }}
+        aria-label={typeof props.children === "string" ? undefined : props.text}
         ref={ref}
         tabIndex={props.tabIndex}
       >

@@ -8,6 +8,7 @@ import { resolveInputPath } from "../../util/pathResolver";
 import type { IDE } from "../..";
 import { evaluateToolPolicyWithRules, type EvaluateInput } from "./evaluate";
 import type { PolicyLevel } from "./policy";
+import { needsLink, tryLink } from "./testLinks";
 
 const ASK = "allowedWithPermission";
 const ALLOW = "allowedWithoutPermission";
@@ -119,9 +120,9 @@ describe("the confused-deputy rule in the evaluator", () => {
     }
   });
 
-  it("YOLO is the one level that reaches past it", () => {
+  it("IDGAF is the one level that reaches past it", () => {
     const r = run(readFileTool, "/srv/x", {
-      level: "yolo",
+      level: "idgaf",
       within: false,
       resolved: "/srv/x",
     });
@@ -167,17 +168,8 @@ describe("the jail-makes-a-symlink shape, on the real file system", () => {
   fs.mkdirSync(ws);
   fs.mkdirSync(outside);
   fs.writeFileSync(path.join(outside, "target.txt"), "x");
-  let linked = true;
-  try {
-    // A junction needs no privilege on Windows; elsewhere it is a plain link.
-    fs.symlinkSync(
-      outside,
-      path.join(ws, "link"),
-      process.platform === "win32" ? "junction" : "dir",
-    );
-  } catch {
-    linked = false;
-  }
+  // A junction needs no privilege on Windows; elsewhere it is a plain link.
+  const link = tryLink(outside, path.join(ws, "link"));
   afterAll(() => fs.rmSync(base, { recursive: true, force: true }));
 
   const ide = {
@@ -185,33 +177,35 @@ describe("the jail-makes-a-symlink shape, on the real file system", () => {
     fileExists: async (uri: string) => fs.existsSync(new URL(uri)),
   } as unknown as IDE;
 
-  it.each([
+  it.skipIf(!link.ok).each([
     ["write", createNewFileTool],
     ["read", readFileTool],
-  ] as const)("a %s through the link asks", async (_, tool) => {
-    expect(linked).toBe(true);
-    const resolved = await resolveInputPath(ide, "link/target.txt");
-    expect(resolved?.isWithinWorkspace).toBe(false);
-    const r = evaluateToolPolicyWithRules({
-      tool,
-      toolName: tool.function.name,
-      basePolicy: tool.defaultToolPolicy,
-      parsedArgs: { filepath: "link/target.txt" },
-      processedArgs: { resolvedPath: resolved },
-      permissions: undefined,
-      cwd: ws,
-      shell: "bash",
-      approval: {
-        levels: {
-          context: "permissive",
-          tools: "permissive",
-          edits: "permissive",
-          plan: "permissive",
-          questions: "permissive",
+  ] as const)(
+    needsLink("a %s through the link asks", link),
+    async (_, tool) => {
+      const resolved = await resolveInputPath(ide, "link/target.txt");
+      expect(resolved?.isWithinWorkspace).toBe(false);
+      const r = evaluateToolPolicyWithRules({
+        tool,
+        toolName: tool.function.name,
+        basePolicy: tool.defaultToolPolicy,
+        parsedArgs: { filepath: "link/target.txt" },
+        processedArgs: { resolvedPath: resolved },
+        permissions: undefined,
+        cwd: ws,
+        shell: "bash",
+        approval: {
+          levels: {
+            context: "permissive",
+            tools: "permissive",
+            edits: "permissive",
+            plan: "permissive",
+            questions: "permissive",
+          },
         },
-      },
-    } as EvaluateInput);
-    expect(r.policy).toBe(ASK);
-    expect(r.protection).toBe("file-deputy");
-  });
+      } as EvaluateInput);
+      expect(r.policy).toBe(ASK);
+      expect(r.protection).toBe("file-deputy");
+    },
+  );
 });

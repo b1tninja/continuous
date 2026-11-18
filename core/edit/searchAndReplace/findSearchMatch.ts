@@ -325,9 +325,7 @@ export function findSearchMatch(
   fileContent: string,
   searchContent: string,
 ): SearchMatchResult | null {
-  const trimmedSearchContent = searchContent.trim();
-
-  if (trimmedSearchContent === "") {
+  if (searchContent === "") {
     // Empty search content matches the beginning of the file
     return { startIndex: 0, endIndex: 0, strategyName: "emptySearch" };
   }
@@ -358,7 +356,7 @@ export function findSearchMatches(
   const matches: SearchMatchResult[] = [];
 
   // Special case: empty search string always matches at position 0
-  if (searchContent.trim() === "") {
+  if (searchContent === "") {
     return [{ startIndex: 0, endIndex: 0, strategyName: "emptySearch" }];
   }
 

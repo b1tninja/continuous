@@ -31,9 +31,10 @@ describe("fetch_url redirect guard", () => {
         ? redirect("http://169.254.169.254/latest")
         : page(),
     );
-    await expect(run("http://public.test/", fetch)).rejects.toThrow(
-      /non-public/,
-    );
+    // A typed result, not a thrown error (WB41)
+    const [item] = await run("http://public.test/", fetch);
+    expect(item.status).toBe("refused");
+    expect(item.content).toMatch(/non-public.*Do not retry it unchanged\.$/s);
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
@@ -42,9 +43,9 @@ describe("fetch_url redirect guard", () => {
     const fetch = vi.fn(async (u: URL) =>
       u.hostname === "public.test" ? redirect("http://inside.test/") : page(),
     );
-    await expect(run("http://public.test/", fetch)).rejects.toThrow(
-      /non-public/,
-    );
+    const [item] = await run("http://public.test/", fetch);
+    expect(item.status).toBe("refused");
+    expect(item.content).toMatch(/non-public/);
   });
 
   it("connects with the addresses it checked", async () => {
@@ -131,19 +132,19 @@ describe("fetch_url policy", () => {
         permissions: { allow: ["fetchUrl"] },
         approval: { levels: POLICY_PRESETS.handsOff.levels },
       });
-    expect(decide("http://169.254.169.254/").policy).toBe(
-      "allowedWithPermission",
-    );
+    expect(decide("http://10.0.0.1/").policy).toBe("allowedWithPermission");
     expect(
       evaluateToolPolicyWithRules({
         tool: fetchUrlContentTool,
         toolName: "fetch_url_content",
         basePolicy: "allowedWithPermission",
-        parsedArgs: { url: "http://169.254.169.254/" },
+        parsedArgs: { url: "http://10.0.0.1/" },
         permissions: undefined,
         approval: { levels: POLICY_PRESETS.handsOff.levels },
       }).policy,
     ).toBe("allowedWithPermission");
+    // The cloud metadata address is not asked: it is refused at every level (WB45)
+    expect(decide("http://169.254.169.254/").policy).toBe("disabled");
     expect(decide("http://[::ffff:127.0.0.1]/").policy).toBe(
       "allowedWithPermission",
     );

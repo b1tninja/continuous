@@ -1,3 +1,4 @@
+import { maskCommandForDisplay } from "core/tools/permissions/displayMask.js";
 import { Box, Text } from "ink";
 import React from "react";
 
@@ -29,7 +30,9 @@ export const ToolPreview: React.FC<ToolPreviewProps> = ({
             return (
               <Box key={index} paddingLeft={preview.paddingLeft ?? 0}>
                 {index === 0 && <Text color="dim">⎿ </Text>}
-                <Text color={preview.color ?? "dim"}>{preview.content}</Text>
+                <Text color={preview.color ?? "dim"}>
+                  {maskCommandForDisplay(preview.content)}
+                </Text>
               </Box>
             );
           } else if (preview.type === "checklist") {

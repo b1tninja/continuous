@@ -1,4 +1,4 @@
-import type { AssistantConfig } from "@continuedev/sdk";
+import type { AssistantUnrolled as AssistantConfig } from "@continuedev/config-yaml";
 import { describe, expect, it } from "vitest";
 
 import { getAllSlashCommands } from "./commands.js";

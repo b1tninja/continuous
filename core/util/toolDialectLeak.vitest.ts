@@ -7,6 +7,7 @@ import {
   leakHintText,
   leakNoticeText,
   providerRecoversText,
+  stripThinkBlocks,
 } from "./toolDialectLeak";
 
 const corpus = new Map(loadCorpus().map((f) => [f.id, f]));
@@ -128,7 +129,7 @@ describe("detectToolDialectLeak", () => {
     expect(providerRecoversText("ollama")).toBe(false);
     expect(providerRecoversText("ollama", "cli")).toBe(true);
     expect(leakNoticeText("qwen-xml")).toBe(
-      "This model typed a tool request as plain text, so it did not run. Let Continue read that format for this model?",
+      "This model typed a tool request as plain text, so it did not run. Let Continuous read that format for this model?",
     );
     expect(leakHintText("m", "qwen-xml")).toContain("toolDialect: qwen-xml");
   });
@@ -151,6 +152,44 @@ const DECLINED_CALL = new Set([
   "trailing-comma",
   "truncated-list",
 ]);
+
+describe("detectToolDialectLeak never suggests llama-json for Gemma (RQ7)", () => {
+  const content = text("gemma3-has-no-tool-section");
+  const knownTools = ["get_weather"];
+
+  it("suggests a dialect for another model, and nothing for a Gemma 3 model that writes the same markup", () => {
+    const qwen = text("qwen3-coder-canonical");
+    const tools = corpus.get("qwen3-coder-canonical")!.tools.map((t) => t.name);
+    expect(
+      detectToolDialectLeak({ content: qwen, knownTools: tools })?.dialect,
+    ).toBe("qwen-xml");
+    expect(
+      detectToolDialectLeak({
+        content: qwen,
+        knownTools: tools,
+        model: "qwen.qwen3-coder-30b-a3b-v1:0",
+      })?.dialect,
+    ).toBe("qwen-xml");
+    expect(
+      detectToolDialectLeak({
+        content: qwen,
+        knownTools: tools,
+        model: "google.gemma-3-27b-it",
+      }),
+    ).toBeUndefined();
+  });
+
+  it.each([
+    "google.gemma-3-27b-it",
+    "gemma3:27b",
+    "gemma-3-27b",
+    "google/gemma-4-31B-it",
+  ])("makes no suggestion for %s", (model) => {
+    expect(
+      detectToolDialectLeak({ content, knownTools, model }),
+    ).toBeUndefined();
+  });
+});
 
 describe("isLeakedToolCall", () => {
   const tools = (id: string) => corpus.get(id)!.tools.map((t) => t.name);
@@ -210,6 +249,47 @@ describe("isLeakedToolCall", () => {
       }
       expect(leak(f.id), f.id).toBe(true);
     }
+  });
+
+  it("a call written only inside a think block is not a leaked call", () => {
+    const id = "qwen3-coder-call-inside-think-vllm-39056";
+    expect(leak(id)).toBe(false);
+  });
+
+  it("a call after a think block, or after a prefilled opener, is still a leak", () => {
+    const call = text("qwen3-coder-canonical");
+    const knownTools = tools("qwen3-coder-canonical");
+    for (const content of [
+      `<think>
+plan
+</think>
+${call}`,
+      `plan
+</think>
+${call}`,
+      `<think>
+plan
+</think>
+<think>more</think>${call}`,
+    ]) {
+      expect(isLeakedToolCall({ content, knownTools }), content).toBe(true);
+    }
+    // a think block left open swallows the rest of the reply
+    expect(
+      isLeakedToolCall({
+        content: `<think>
+plan
+${call}`,
+        knownTools,
+      }),
+    ).toBe(false);
+  });
+
+  it("stripThinkBlocks is linear on a reply of 1 MiB", () => {
+    const big = "<think>x</think>".repeat(65536);
+    const t0 = Date.now();
+    expect(stripThinkBlocks(big)).toBe("");
+    expect(Date.now() - t0).toBeLessThan(2000);
   });
 
   it("counts a Llama 4 list that was cut off or ends in a trailing comma, and not a quoted one (Q24c)", () => {

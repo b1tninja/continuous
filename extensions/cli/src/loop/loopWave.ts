@@ -1,12 +1,13 @@
 import { execSync, fork } from "child_process";
-import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 import type { LoopReminder, LoopState, TaskItem, Usage } from "core/index.js";
+import type { AuditAgent } from "core/tools/permissions/audit/record.js";
 import {
   finishParallelRun,
   itemCheck,
   loopBudgetStop,
+  loopElapsedMs,
   loopTokensFromUsage,
   runItemInline,
   startParallelRun,
@@ -14,13 +15,14 @@ import {
 } from "core/util/loopMode.js";
 
 import { emitAgent, ensureMainAgent, tokensOf } from "../agents/feed.js";
+import { cliAuditSession } from "../audit/cliAudit.js";
 import {
   cleanupWorktree,
   createWorktree,
 } from "../commands/review/worktree.js";
 import {
+  effectiveLevels,
   getCommandPermissionFlags,
-  getPolicyLevels,
 } from "../permissions/policyLevels.js";
 import type { PermissionMode } from "../permissions/types.js";
 import {
@@ -53,6 +55,7 @@ import {
   type LoopWorkerMessage,
   type LoopWorkerOutput,
 } from "./loopWorker.js";
+import { nextWorkerAgent } from "./workerIdentity.js";
 
 /**
  * A parallel wave in the CLI (L4): core's `run_parallel` action names items
@@ -65,8 +68,38 @@ import {
  * the wave is done (decideNext). Design: plans/loop-mode.md.
  */
 
-/** How long one worker may run before it is stopped and counts as an attempt. */
+/** The longest one worker may run before it is stopped and counts as an attempt. */
 export const LOOP_WORKER_TIMEOUT_MS = 30 * 60 * 1000;
+
+/** A worker is never given less than this, so a nearly spent budget still gets a start. */
+const LOOP_WORKER_MIN_TIMEOUT_MS = 1000;
+
+/**
+ * How long this worker may run: the fixed ceiling, or less when the item's
+ * own time limit (what its earlier runs left of it) or the loop's time budget
+ * (waiting on the person not counted) runs out sooner. The budgets stop the
+ * loop or the item on their own; this keeps a worker from outliving them.
+ */
+export function workerTimeoutMs(
+  input: Pick<LoopWorkerInput, "loop" | "plan">,
+  now: Date = new Date(),
+): number {
+  const { loop, plan } = input;
+  let timeout = LOOP_WORKER_TIMEOUT_MS;
+  const itemId = loop.current?.itemId ?? loop.parallel?.[0]?.itemId;
+  const minutes = plan.items.find((t) => t.id === itemId)?.budget?.minutes;
+  if (itemId && minutes && minutes > 0) {
+    const spent = loop.items.find((i) => i.id === itemId)?.usage?.ms ?? 0;
+    timeout = Math.min(timeout, minutes * 60_000 - spent);
+  }
+  if (loop.budget.maxWallMs > 0) {
+    timeout = Math.min(
+      timeout,
+      loop.budget.maxWallMs - loopElapsedMs(loop, now),
+    );
+  }
+  return Math.max(LOOP_WORKER_MIN_TIMEOUT_MS, timeout);
+}
 
 export interface LoopWorktreeOps {
   /** A worktree for the item, with the main checkout's uncommitted changes */
@@ -88,10 +121,11 @@ const gitErrorText = (e: unknown): string => {
 };
 
 /**
- * The worktree helper `cn review` uses, until the core helper (L4 P2)
- * lands: a detached worktree in the temp directory with the uncommitted
- * changes and a baseline commit, and a plain `git apply` to the main
- * checkout, checked first so a refusal changes nothing.
+ * The worktree helper `cn review` uses. The core helper
+ * (`core/util/worktree.ts`, L4 P2) exists and the IDE uses it, but the CLI
+ * has not moved to it: a detached worktree in the temp directory with the
+ * uncommitted changes and a baseline commit, and a plain `git apply` to the
+ * main checkout, checked first so a refusal changes nothing.
  */
 const defaultWorktrees: LoopWorktreeOps = {
   create: (itemId) => createWorktree(Number.parseInt(itemId, 10) || 0),
@@ -141,14 +175,15 @@ const defaultRunWorker: LoopWorkerRunner = (input, signal) =>
       signal.removeEventListener("abort", onAbort);
       resolve(output);
     };
+    const timeoutMs = workerTimeoutMs(input);
     const timer = setTimeout(() => {
       child.kill("SIGTERM");
       settle(
         emptyOutput(
-          `The worker ran for ${LOOP_WORKER_TIMEOUT_MS / 60000} minutes and was stopped.`,
+          `The worker ran for ${Math.max(1, Math.round(timeoutMs / 60000))} minutes and was stopped.`,
         ),
       );
-    }, LOOP_WORKER_TIMEOUT_MS);
+    }, timeoutMs);
     const onAbort = () => {
       child.kill("SIGTERM");
       settle(emptyOutput("The worker was stopped."));
@@ -210,9 +245,10 @@ function spawnWorkerAgent(
   itemId: string,
   worktree: string,
   model: string | undefined,
+  agent: AuditAgent,
 ): void {
   const parent = ensureMainAgent();
-  const id = `worker-${randomUUID()}`;
+  const id = agent.id;
   workerAgents.set(itemId, id);
   emitAgent({
     type: "spawned",
@@ -220,8 +256,8 @@ function spawnWorkerAgent(
     parentId: parent,
     rootId: parent,
     kind: "loop-worker",
-    role: `item ${itemId}`,
-    mode: "loop",
+    role: agent.role ?? `item ${itemId}`,
+    mode: agent.mode,
     model,
     workspace: { kind: "worktree", name: path.basename(worktree) },
     at: Date.now(),
@@ -251,20 +287,31 @@ function abortWave(): void {
   for (const controller of controllers.values()) controller.abort();
 }
 
-function workerOptions(): LoopWorkerInput["options"] {
+/**
+ * The parent's permission choices for a worker. The levels are the ones in
+ * force (`--auto` raises the tool areas to IDGAF): the worker never runs in
+ * auto mode, so without them a worker of an `--auto` parent asked, and was
+ * held, where its parent would have run the call.
+ */
+export function workerOptions(): LoopWorkerInput["options"] {
   let mode: PermissionMode = "normal";
+  // Unknown counts as interactive: the stricter default lists, whose asks
+  // the worker holds as questions rather than running
+  let parentHeadless = false;
   try {
     const permissions = getServiceSync<ToolPermissionServiceState>(
       SERVICE_NAMES.TOOL_PERMISSIONS,
     );
     mode = permissions.value?.currentMode ?? "normal";
+    parentHeadless = permissions.value?.isHeadless ?? false;
   } catch {
     // The worker still loads the settings file.
   }
   const policy = {
     mode,
+    parentHeadless,
     ...getCommandPermissionFlags(),
-    levels: getPolicyLevels(),
+    levels: effectiveLevels(mode),
   };
   try {
     const config = getServiceSync<ConfigServiceState>(SERVICE_NAMES.CONFIG);
@@ -330,6 +377,7 @@ export async function startWave(
         plan,
         prompt: prepared.prompt,
         baselineUsage,
+        agent: nextWorkerAgent(cliAuditSession(), itemId),
         // The worker's loop names this item as its run; the others of the
         // wave show as running beside it
         loop: {
@@ -349,7 +397,12 @@ export async function startWave(
   for (const entry of started) {
     const controller = new AbortController();
     controllers.set(entry.item.id, controller);
-    spawnWorkerAgent(entry.item.id, entry.worktree, entry.input.model);
+    spawnWorkerAgent(
+      entry.item.id,
+      entry.worktree,
+      entry.input.model,
+      entry.input.agent!,
+    );
     void runOne(entry, controller.signal).finally(() => {
       controllers.delete(entry.item.id);
       if (controllers.size === 0) setWaveAbort(undefined);
@@ -378,7 +431,7 @@ function stopWaveIfOverBudget(): void {
     sessionTokens: sessionTokens(),
   });
   if (!stop) return;
-  commitLoop(stopLoop(loop, stop.reason, stop.detail));
+  commitLoop(stopLoop(loop, stop.reason, stop.detail, stop.budget));
   for (const id of workerAgents.values()) {
     emitAgent({ type: "ended", id, state: "over-budget", at: Date.now() });
   }

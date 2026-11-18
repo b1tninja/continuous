@@ -3,15 +3,12 @@ import { setProjectConfigTrustedForRun } from "core/config/projectTrust.js";
 import { HookService } from "../hooks/HookService.js";
 import { setTrustProjectHooksForRun } from "../hooks/hookTrust.js";
 import { initializeWithOnboarding } from "../onboarding.js";
-import {
-  setBetaSubagentToolEnabled,
-  setBetaUploadArtifactToolEnabled,
-} from "../tools/toolsConfig.js";
+import { auditTrust } from "../permissions/policyAudit.js";
+import { setCliUnattended } from "../tools/roleGate.js";
+import { setBetaSubagentToolEnabled } from "../tools/toolsConfig.js";
 import { logger } from "../util/logger.js";
 
 import { AgentFileService } from "./AgentFileService.js";
-import { ApiClientService } from "./ApiClientService.js";
-import { ArtifactUploadService } from "./ArtifactUploadService.js";
 import { AuthService } from "./AuthService.js";
 import { backgroundJobService } from "./BackgroundJobService.js";
 import { ChatHistoryService } from "./ChatHistoryService.js";
@@ -19,11 +16,11 @@ import { ConfigService } from "./ConfigService.js";
 import { FileIndexService } from "./FileIndexService.js";
 import { GitAiIntegrationService } from "./GitAiIntegrationService.js";
 import { MCPService } from "./MCPService.js";
-import { ModelService } from "./ModelService.js";
+import { ModelService, type ModelSwitchWhy } from "./ModelService.js";
 import { quizService } from "./QuizService.js";
 import { ResourceMonitoringService } from "./ResourceMonitoringService.js";
+import { SafeModeHookService } from "./SafeModeHookService.js";
 import { serviceContainer } from "./ServiceContainer.js";
-import { StorageSyncService } from "./StorageSyncService.js";
 import { SystemMessageService } from "./SystemMessageService.js";
 import {
   InitializeToolServiceOverrides,
@@ -31,7 +28,7 @@ import {
 } from "./ToolPermissionService.js";
 import {
   AgentFileServiceState,
-  ApiClientServiceState,
+  ModelServiceState,
   AuthServiceState,
   ConfigServiceState,
   MCPServiceState,
@@ -44,19 +41,34 @@ import { UpdateService } from "./UpdateService.js";
 const authService = new AuthService();
 const configService = new ConfigService();
 const modelService = new ModelService();
-const apiClientService = new ApiClientService();
 const mcpService = new MCPService();
 const fileIndexService = new FileIndexService();
 const resourceMonitoringService = new ResourceMonitoringService();
 const chatHistoryService = new ChatHistoryService();
 const updateService = new UpdateService();
-const storageSyncService = new StorageSyncService();
 const agentFileService = new AgentFileService();
 const toolPermissionService = new ToolPermissionService();
 const systemMessageService = new SystemMessageService();
-const artifactUploadService = new ArtifactUploadService();
 const gitAiIntegrationService = new GitAiIntegrationService();
-const hookService = new HookService();
+// Reads no settings file under --safe (see safeMode.ts)
+const hookService: HookService = new SafeModeHookService();
+
+/** SessionStart hooks, once the hook service is ready. Never throws. */
+async function fireSessionStartOnce(options: object): Promise<void> {
+  const { resume, fork } = options as { resume?: boolean; fork?: string };
+  try {
+    const { runSessionStartHooks } = await import("../hooks/lifecycleHooks.js");
+    const modelState = serviceContainer.getSync<ModelServiceState>(
+      SERVICE_NAMES.MODEL,
+    )?.value;
+    await runSessionStartHooks(
+      resume || fork ? "resume" : "startup",
+      modelState?.model?.model,
+    );
+  } catch (error) {
+    logger.debug("SessionStart hooks failed (ignored)", error as any);
+  }
+}
 
 /**
  * Initialize all services and register them with the service container
@@ -68,18 +80,27 @@ export async function initializeServices(initOptions: ServiceInitOptions = {}) {
   const commandOptions = initOptions.options || {};
 
   // Configure beta tools based on command options
-  if (commandOptions.betaUploadArtifactTool) {
-    setBetaUploadArtifactToolEnabled(true);
-  }
   if (commandOptions.betaSubagentTool) {
     setBetaSubagentToolEnabled(true);
   }
   // The flag is the only way to trust project hooks without recording it.
   // It is read before the hook service loads its settings.
   setTrustProjectHooksForRun(!!commandOptions.trustProjectHooks);
+  if (commandOptions.trustProjectHooks) {
+    auditTrust("hook-trust", "grant", process.cwd(), {
+      source: "flag",
+      confirmed: "flag",
+    });
+  }
   // Same for providers, models and other files the project ships. It does not
   // grant hook trust, and hook trust does not grant this.
   setProjectConfigTrustedForRun(!!commandOptions.trustProjectConfig);
+  if (commandOptions.trustProjectConfig) {
+    auditTrust("project-trust", "grant", process.cwd(), {
+      source: "flag",
+      confirmed: "flag",
+    });
+  }
   // Handle onboarding for TUI mode (headless: false) unless explicitly skipped
   if (!initOptions.headless && !initOptions.skipOnboarding) {
     await initializeWithOnboarding(null, commandOptions.config);
@@ -111,31 +132,15 @@ export async function initializeServices(initOptions: ServiceInitOptions = {}) {
   );
 
   serviceContainer.register(
-    SERVICE_NAMES.API_CLIENT,
+    SERVICE_NAMES.AGENT_FILE,
     async () => {
       const authState = await serviceContainer.get<AuthServiceState>(
         SERVICE_NAMES.AUTH,
       );
-      return apiClientService.initialize(authState.authConfig);
-    },
-    [SERVICE_NAMES.AUTH], // Depends on auth
-  );
 
-  serviceContainer.register(
-    SERVICE_NAMES.AGENT_FILE,
-    async () => {
-      const [authState, apiClientState] = await Promise.all([
-        serviceContainer.get<AuthServiceState>(SERVICE_NAMES.AUTH),
-        serviceContainer.get<ApiClientServiceState>(SERVICE_NAMES.API_CLIENT),
-      ]);
-
-      return await agentFileService.initialize(
-        commandOptions.agent,
-        authState,
-        apiClientState,
-      );
+      return await agentFileService.initialize(commandOptions.agent, authState);
     },
-    [SERVICE_NAMES.AUTH, SERVICE_NAMES.API_CLIENT],
+    [SERVICE_NAMES.AUTH],
   );
 
   serviceContainer.register(
@@ -156,6 +161,7 @@ export async function initializeServices(initOptions: ServiceInitOptions = {}) {
           ask: overrides.ask,
           exclude: overrides.exclude,
           isHeadless: initOptions.headless,
+          interactiveDefaults: overrides.interactiveDefaults,
         };
         // Only set the boolean flag that corresponds to the mode
         if (overrides.mode) {
@@ -202,15 +208,10 @@ export async function initializeServices(initOptions: ServiceInitOptions = {}) {
   serviceContainer.register(
     SERVICE_NAMES.CONFIG,
     async () => {
-      const [authState, apiClientState, agentFileState] = await Promise.all([
+      const [authState, agentFileState] = await Promise.all([
         serviceContainer.get<AuthServiceState>(SERVICE_NAMES.AUTH),
-        serviceContainer.get<ApiClientServiceState>(SERVICE_NAMES.API_CLIENT),
         serviceContainer.get<AgentFileServiceState>(SERVICE_NAMES.AGENT_FILE),
       ]);
-
-      if (!apiClientState.apiClient) {
-        throw new Error("API client not available");
-      }
 
       // Use current config path from ConfigService state if available (for reloads),
       // otherwise use initial options.config (for first initialization)
@@ -225,13 +226,12 @@ export async function initializeServices(initOptions: ServiceInitOptions = {}) {
       return await configService.initialize({
         authConfig: authState.authConfig,
         configPath,
-        apiClient: apiClientState.apiClient,
         agentFileState,
         injectedConfigOptions: commandOptions,
         isHeadless: initOptions.headless,
       });
     },
-    [SERVICE_NAMES.AUTH, SERVICE_NAMES.API_CLIENT, SERVICE_NAMES.AGENT_FILE], // Dependencies
+    [SERVICE_NAMES.AUTH, SERVICE_NAMES.AGENT_FILE], // Dependencies
   );
 
   serviceContainer.register(
@@ -266,6 +266,9 @@ export async function initializeServices(initOptions: ServiceInitOptions = {}) {
       if (!configState.config) {
         throw new Error("Config not available for MCP service");
       }
+      // A headless run (and a Loop worker) is unattended (TR1, TR25)
+      mcpService.isUnattended = () => !!initOptions.headless;
+      setCliUnattended(!!initOptions.headless);
       return mcpService.initialize(
         configState.config,
         !!initOptions.options?.agent,
@@ -284,18 +287,6 @@ export async function initializeServices(initOptions: ServiceInitOptions = {}) {
   serviceContainer.register(
     SERVICE_NAMES.RESOURCE_MONITORING,
     () => resourceMonitoringService.initialize(),
-    [],
-  );
-
-  serviceContainer.register(
-    SERVICE_NAMES.STORAGE_SYNC,
-    () => storageSyncService.initialize(),
-    [],
-  );
-
-  serviceContainer.register(
-    SERVICE_NAMES.ARTIFACT_UPLOAD,
-    () => artifactUploadService.initialize(),
     [],
   );
 
@@ -326,6 +317,7 @@ export async function initializeServices(initOptions: ServiceInitOptions = {}) {
   // Eagerly initialize all services to ensure they're ready when needed
   // This avoids race conditions and "service not ready" errors
   await serviceContainer.initializeAll();
+  await fireSessionStartOnce(commandOptions);
 
   logger.debug("Service registry initialized");
 }
@@ -374,17 +366,14 @@ export const services = {
   auth: authService,
   config: configService,
   model: modelService,
-  apiClient: apiClientService,
   mcp: mcpService,
   fileIndex: fileIndexService,
   resourceMonitoring: resourceMonitoringService,
   systemMessage: systemMessageService,
   chatHistory: chatHistoryService,
   updateService: updateService,
-  storageSync: storageSyncService,
   agentFile: agentFileService,
   toolPermissions: toolPermissionService,
-  artifactUpload: artifactUploadService,
   gitAiIntegration: gitAiIntegrationService,
   backgroundJobs: backgroundJobService,
   quiz: quizService,
@@ -423,12 +412,19 @@ function currentModelName(): string | undefined {
   return model?.name;
 }
 
-/** Switch to a chat model by its name, when it exists and is not current. */
-export async function applyModelNamed(name: string): Promise<void> {
+/**
+ * Switch to a chat model by its name, when it exists and is not current.
+ * `why` is what the record of the model in use says (M7): by default, coming
+ * back from a Loop item's own model.
+ */
+export async function applyModelNamed(
+  name: string,
+  why: ModelSwitchWhy = { reason: "restore" },
+): Promise<void> {
   try {
     const index = modelService.getModelIndexByName(name);
     if (index === -1 || index === modelService.getCurrentModelIndex()) return;
-    await modelService.switchModel(index);
+    await modelService.switchModel(index, undefined, why);
     serviceContainer.set(SERVICE_NAMES.MODEL, modelService.getState());
   } catch (error) {
     logger.error("Could not switch back to the model", { name, error });

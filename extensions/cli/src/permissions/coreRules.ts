@@ -1,7 +1,10 @@
 import type { AssistantUnrolled, ModelConfig } from "@continuedev/config-yaml";
 import type { ToolPolicy } from "@continuedev/terminal-security";
 import type { ChatHistoryItem } from "core/index.js";
-import type { ApprovalSettings } from "core/tools/permissions/approval.js";
+import {
+  levelOfCall,
+  type ApprovalSettings,
+} from "core/tools/permissions/approval.js";
 import {
   autoReviewToolCall,
   type AutoReviewDeps,
@@ -12,19 +15,36 @@ import { AutoReviewSessions } from "core/tools/permissions/auto/state.js";
 import type { DecisionSource } from "core/tools/permissions/decide.js";
 import {
   evaluateToolPolicyWithRules,
+  type IdgafOverride,
   type ToolPolicyResult,
 } from "core/tools/permissions/evaluate.js";
 import { mcpRuleName } from "core/tools/permissions/names.js";
+import type { PolicyLevels } from "core/tools/permissions/policy.js";
 import { readUserTrustedDomains } from "core/tools/permissions/readRuleSources.js";
 import { processedPathArgs } from "core/tools/permissions/realPath.js";
 import type { ToolPermissions as CoreToolPermissions } from "core/tools/permissions/rules.js";
+import { taintInput } from "core/tools/permissions/taint/taintWiring.js";
+import { readUserEnvNames } from "core/tools/permissions/userEnvNames.js";
+import { readUserReviewerPrompt } from "core/tools/permissions/userReviewerPrompt.js";
+import { webGrantsFor } from "core/tools/permissions/webGrants.js";
+import {
+  webCallContext,
+  type WebCallContext,
+} from "core/tools/permissions/webPolicy.js";
+import { deputyWorkspace } from "core/tools/permissions/workspaceRoots.js";
 import { resolveShell } from "core/util/shell.js";
 import { readUserGuidance } from "core/util/userGuidance.js";
+import { getWebConfig } from "core/util/webConfig.js";
 
 import { createLlmApi } from "../config.js";
 import { logger } from "../util/logger.js";
 
-import type { PermissionPolicy } from "./types.js";
+import { getPolicyExtras } from "./policyLevels.js";
+import type {
+  PermissionCheckResult,
+  PermissionMode,
+  PermissionPolicy,
+} from "./types.js";
 
 /**
  * The `toolPermissions` rules of config.yaml and the Auto reviewer, applied in
@@ -119,7 +139,27 @@ export function isAutoReviewEnabled(): boolean {
 }
 
 const sessions = new AutoReviewSessions();
-const SESSION_ID = "cli";
+/** One CLI process is one session for the reviewer and the tainted-session rule */
+export const CLI_SESSION_ID = "cli";
+const SESSION_ID = CLI_SESSION_ID;
+
+/**
+ * The Web area's facts for this process's session (WB45): `web.enabled` as
+ * resolved, the session's grants and blocks, and the URLs the person wrote.
+ */
+export function cliWebContext(
+  history?: ChatHistoryItem[],
+  hostAllow?: readonly string[],
+): WebCallContext {
+  return webCallContext({
+    config: getWebConfig(),
+    grants: webGrantsFor(SESSION_ID),
+    ...(hostAllow?.length ? { hostAllow } : {}),
+    ...(history
+      ? { userMessages: buildReviewHistory(history).userMessages }
+      : {}),
+  });
+}
 
 type ChatLike = NonNullable<AutoReviewDeps["reviewer"]>;
 
@@ -212,6 +252,14 @@ export interface CoreVerdict {
   rule?: string;
   /** The reviewer's model, latency and usage, when it decided */
   reviewer?: AutoReviewReply["reviewer"];
+  /** IDGAF ran the call past this objection (core's idgafOverride) */
+  idgafOverride?: IdgafOverride;
+  /**
+   * The ask came from the tool's own check (a Fetch URL carrying a long
+   * encoded value), for a tool whose own asks bind (`ownAskReason`). It is
+   * kept at the default levels, as the IDE keeps it.
+   */
+  ownCheck?: true;
 }
 
 export interface CoreRulesInput {
@@ -223,7 +271,18 @@ export interface CoreRulesInput {
   evaluateToolCallPolicy?: (
     base: ToolPolicy,
     args: Record<string, unknown>,
+    processedArgs?: Record<string, unknown>,
   ) => ToolPolicy;
+  /**
+   * What the tool's preprocess worked out (Fetch: whether the host is
+   * non-public), handed to core the way the IDE hands it `preprocessArgs`.
+   */
+  processedArgs?: Record<string, unknown>;
+  /**
+   * Set for a tool whose own asks stand at the default levels
+   * (Tool.ownAskReason): why its check asks for these arguments.
+   */
+  ownAskReason?: (args: Record<string, unknown>) => string | undefined;
   assistantPermissions: CoreToolPermissions | undefined;
   reviewer?: ChatLike | null;
   autoReview?: boolean;
@@ -234,6 +293,8 @@ export interface CoreRulesInput {
    * Floor rules use that form either way.
    */
   mcp?: { serverName: string; toolName: string };
+  /** The MCP tool's JSON schema: a string it calls a path is judged as one */
+  mcpSchema?: Record<string, unknown>;
   /** The MCP tool's definition or launch changed since it was approved: it asks again */
   mcpDefinitionChange?: {
     kind: "changed" | "added" | "launch";
@@ -242,6 +303,16 @@ export interface CoreRulesInput {
   isHeadless: boolean;
   history?: ChatHistoryItem[];
   cwd?: string;
+  /** The Web area's facts: web.enabled, the session's grants, the person's URLs (WB45) */
+  web?: WebCallContext;
+}
+
+/** The MCP tool's declared schema, where the engine reads it (`function.parameters`). */
+function schemaOf(
+  name: string,
+  parameters: Record<string, unknown> | undefined,
+) {
+  return parameters ? { function: { name, parameters } } : {};
 }
 
 function pathArgsFor(
@@ -253,6 +324,17 @@ function pathArgsFor(
   return isMcp
     ? undefined
     : processedPathArgs(toolName, parsedArgs, cwd ?? process.cwd());
+}
+
+/** Whether the engine has anything to say: rules, levels, the reviewer, or a tainted session. */
+function engineApplies(
+  input: CoreRulesInput,
+  useReviewer: boolean,
+  tainted: boolean,
+): boolean {
+  return (
+    !!input.assistantPermissions || useReviewer || !!input.approval || tainted
+  );
 }
 
 /**
@@ -271,7 +353,12 @@ export async function evaluateWithCoreRules(
     isHeadless,
   } = input;
   const useReviewer = !!input.autoReview;
-  if (!permissions && !useReviewer && !input.approval) return undefined;
+  // The tainted-session rule needs the engine even without rules or levels
+  const taint = taintInput(SESSION_ID, undefined);
+  // B92: a secret read makes every later network call the engine's, rule or not
+  if (!engineApplies(input, useReviewer, !!taint.taint || !!taint.secretRead)) {
+    return undefined;
+  }
   const call = toCoreCall(cliToolName, args);
   const mcp = input.mcp ?? call?.mcp;
   if (!call && !mcp) return undefined;
@@ -281,10 +368,13 @@ export async function evaluateWithCoreRules(
         group: mcp.serverName,
         originalFunctionName: mcp.toolName,
         uri: `mcp:${mcp.serverName}`,
+        ...schemaOf(mcp.toolName, input.mcpSchema),
         evaluateToolCallPolicy: input.evaluateToolCallPolicy as never,
         ...(input.mcpDefinitionChange
           ? { mcpDefinitionChange: input.mcpDefinitionChange }
           : {}),
+        // B92: a server the person marked trusted in their own permissions.yaml
+        ...(mcpServerTrusted(mcp.serverName) ? { mcpServerTrusted: true } : {}),
       }
     : {
         group: "Built-In",
@@ -296,7 +386,10 @@ export async function evaluateWithCoreRules(
   const basePolicy = toToolPolicy(cliPermission);
   // The CLI has no IDE to resolve a path, so the real path (links followed)
   // and whether it is inside the working folder are worked out here.
-  const processedArgs = pathArgsFor(!!mcp, toolName, parsedArgs, input.cwd);
+  const processedArgs = mergeArgs(
+    input.processedArgs,
+    pathArgsFor(!!mcp, toolName, parsedArgs, input.cwd),
+  );
 
   if (useReviewer) {
     const reply: AutoReviewReply = await autoReviewToolCall(
@@ -307,7 +400,9 @@ export async function evaluateWithCoreRules(
         shell: resolveShell().kind,
         reviewer: input.reviewer ?? null,
         guidance: readUserGuidance(),
+        reviewerPrompt: readUserReviewerPrompt(),
         trustedDomains: readUserTrustedDomains(),
+        envNames: readUserEnvNames(),
         environment: {
           workspaceDirs: [input.cwd ?? process.cwd()],
           os: process.platform,
@@ -358,11 +453,43 @@ export async function evaluateWithCoreRules(
     ...(processedArgs ? { processedArgs } : {}),
     permissions,
     approval: input.approval,
+    ...(input.web ? { web: input.web } : {}),
     trustedDomains: readUserTrustedDomains(),
+    envNames: readUserEnvNames(),
     cwd: input.cwd ?? process.cwd(),
+    ...deputyWorkspace([input.cwd ?? process.cwd()]),
     // The shell the CLI runs commands in: its login shell, PowerShell on Windows
     shell: resolveShell().kind,
+    ...taint,
   });
+  return rulesVerdict(input, basePolicy, result, processedArgs);
+}
+
+/** Marked `trusted` under `mcpServers` in the person's own permissions.yaml. */
+function mcpServerTrusted(server: string): boolean {
+  try {
+    return getPolicyExtras().mcpServers?.[server] === "trusted";
+  } catch {
+    return false;
+  }
+}
+
+/** The tool's preprocess result and the path facts, as one `processedArgs`. */
+function mergeArgs(
+  fromTool: Record<string, unknown> | undefined,
+  paths: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  return fromTool || paths ? { ...fromTool, ...paths } : undefined;
+}
+
+/** Core's rules result as the CLI's verdict. */
+function rulesVerdict(
+  input: CoreRulesInput,
+  basePolicy: ToolPolicy,
+  result: ToolPolicyResult,
+  processedArgs: Record<string, unknown> | undefined,
+): CoreVerdict {
+  const ownAsk = ownCheckAsked(input, basePolicy, result, processedArgs);
   return {
     decision:
       result.policy === "disabled"
@@ -370,10 +497,93 @@ export async function evaluateWithCoreRules(
         : result.policy === "allowedWithPermission"
           ? "ask"
           : "allow",
-    reason: result.reason,
     by: "rules",
     source: result.source,
     ...(result.rule ? { rule: result.rule } : {}),
+    ...(result.idgafOverride ? { idgafOverride: result.idgafOverride } : {}),
+    ...(ownAsk
+      ? {
+          reason: result.reason ?? input.ownAskReason?.(input.args),
+          ownCheck: true as const,
+        }
+      : { reason: result.reason }),
+  };
+}
+
+/**
+ * The tool's own check turned the CLI's allow into an ask, and nothing else
+ * decided (no rule, protection or level): the ask the IDE shows at the
+ * default levels and the CLI used to drop (WB26).
+ */
+function ownCheckAsked(
+  input: CoreRulesInput,
+  basePolicy: ToolPolicy,
+  result: ToolPolicyResult,
+  processedArgs: Record<string, unknown> | undefined,
+): boolean {
+  if (!input.ownAskReason || basePolicy !== "allowedWithoutPermission") {
+    return false;
+  }
+  if (
+    result.policy !== "allowedWithPermission" ||
+    result.source !== undefined
+  ) {
+    return false;
+  }
+  return (
+    input.evaluateToolCallPolicy?.(basePolicy, input.args, processedArgs) ===
+    "allowedWithPermission"
+  );
+}
+
+/**
+ * IDGAF on the call's area: the CLI's own `ask` and `exclude` (permissions.yaml,
+ * `--ask`, `--exclude`, the catch-all `*`, a headless subagent's asks) do not
+ * stop it, the same as core's rules and guards do not (core's
+ * idgafRunsEverything, the one place IDGAF overrides a decision). Plan mode is
+ * a mode with its own role, not a level, and keeps its own policies.
+ */
+export function runsAtIdgaf(
+  levels: PolicyLevels,
+  mode: PermissionMode | undefined,
+  call: {
+    name: string;
+    arguments?: Record<string, unknown>;
+    readonly?: boolean;
+  },
+): boolean {
+  if (mode === "plan") return false;
+  const args = call.arguments ?? {};
+  const core = toCoreCall(call.name, args);
+  const found = levelOfCall(
+    { levels },
+    core?.toolName ?? call.name,
+    { readonly: !!call.readonly },
+    {
+      parsedArgs: core?.parsedArgs ?? args,
+      cwd: process.cwd(),
+      shell: resolveShell().kind,
+    },
+  );
+  return found?.level === "idgaf";
+}
+
+/**
+ * The CLI's own result for a call that runs at IDGAF: allowed, keeping what it
+ * would have been (`idgafLifted`) for the audit trail. A structural limit stays.
+ */
+export function liftAtIdgaf(
+  result: PermissionCheckResult,
+  runs: boolean,
+): PermissionCheckResult & {
+  idgafLifted?: Exclude<PermissionPolicy, "allow">;
+} {
+  if (!runs || result.permission === "allow") return result;
+  if (result.matchedPolicy?.structural) return result;
+  return {
+    ...result,
+    permission: "allow",
+    idgafLifted: result.permission as Exclude<PermissionPolicy, "allow">,
   };
 }
 
@@ -393,9 +603,12 @@ export function keepCoreVerdict(
   if (!verdict) return undefined;
   if (
     verdict.decision === "deny" ||
+    verdict.ownCheck ||
     verdict.source === "floor" ||
     verdict.source === "protected-path" ||
-    verdict.source === "safety-floor"
+    verdict.source === "safety-floor" ||
+    verdict.source === "tainted-session" ||
+    verdict.source === "secret-egress"
   ) {
     return verdict;
   }

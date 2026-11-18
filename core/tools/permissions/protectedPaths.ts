@@ -108,8 +108,14 @@ export function stripWindowsPathAliases(p: string): string {
     .join("/");
 }
 
-/** An 8.3 short name (`GITHUB~1`) inside a path. A bare `HEAD~1` has no slash. */
-const WINDOWS_SHORT_NAME = /^[A-Za-z0-9_$]{1,6}~[0-9](?:\.[A-Za-z0-9]{1,3})?$/;
+/**
+ * An 8.3 short name (`GITHUB~1`) inside a path. A bare `HEAD~1` has no slash.
+ * A short name keeps a `-` and the other punctuation 8.3 allows
+ * (`.git-credentials` is `GIT-CR~1`, `.vault-token` is `VAULT-~1`), and the
+ * number grows past one digit when many names share a prefix (`GIT-C~10`).
+ */
+const WINDOWS_SHORT_NAME =
+  /^[A-Za-z0-9_$!#%&'()@^`{}-]{1,6}~[0-9]{1,6}(?:\.[A-Za-z0-9_$!#%&'()@^`{}-]{1,3})?$/;
 
 export function hasWindowsShortName(p: string): boolean {
   if (!p.includes("/")) return false;
@@ -225,9 +231,49 @@ export const CONFIG_BASENAMES = new Set([
   "config.fish",
 ]);
 
+/**
+ * The PowerShell profile folders under Documents (D-012): Windows PowerShell
+ * 5.1 reads `WindowsPowerShell`, PowerShell 7 reads `PowerShell`.
+ */
+export const POWERSHELL_PROFILE_DIRS = new Set([
+  "windowspowershell",
+  "powershell",
+]);
+
+/** `profile.ps1`, `Microsoft.PowerShell_profile.ps1`, `Microsoft.VSCode_profile.ps1` */
+const POWERSHELL_PROFILE_FILE = /^(?:[a-z0-9.]+_)?profile\.ps1$/;
+
+/** `$PROFILE` and its members (`$PROFILE.CurrentUserAllHosts`): a profile path built when it runs. */
+export const POWERSHELL_PROFILE_VARIABLE =
+  /^\$\{?profile\}?(?:\.(?:currentusercurrenthost|currentuserallhosts|allusersallhosts|alluserscurrenthost))?$/i;
+
+/** A OneDrive folder: `OneDrive`, `OneDrive - Contoso`. */
+const isOneDrive = (seg: string) => /^onedrive(?:$|[ -])/.test(seg);
+
+/**
+ * D-012: a PowerShell profile file. `Documents/WindowsPowerShell/*profile.ps1`
+ * and `Documents/PowerShell/*profile.ps1`, where Documents is the home
+ * folder's or a OneDrive-redirected one (`~/OneDrive/Documents`, or a
+ * `OneDrive - <name>` folder wherever it sits). Normalized paths only.
+ */
+export function isPowerShellProfilePath(p: string): boolean {
+  const segs = p.split("/").filter((s) => s !== "" && s !== ".");
+  const low = segs.map((s) => s.toLowerCase());
+  const n = low.length;
+  if (n < 3 || !POWERSHELL_PROFILE_FILE.test(low[n - 1])) return false;
+  if (!POWERSHELL_PROFILE_DIRS.has(low[n - 2]) || low[n - 3] !== "documents") {
+    return false;
+  }
+  const before = low.slice(0, n - 3);
+  if (before.some(isOneDrive)) return true;
+  const rest = homeRelative([...segs.slice(0, n - 3), "x"]);
+  return rest !== undefined && rest.length === 1;
+}
+
 export function isConfigPath(p: string): boolean {
   const segs = p.split("/").filter((s) => s !== "" && s !== ".");
   const low = segs.map((s) => s.toLowerCase());
+  if (isPowerShellProfilePath(p)) return true;
   if (low.some((s) => CONFIG_DIRS.has(s))) return true;
   for (let i = 0; i + 1 < low.length; i++) {
     for (const [a, b] of CONFIG_DIR_PAIRS) {

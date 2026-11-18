@@ -83,7 +83,15 @@ function coerce(
   if (types.length === 0 || types.includes("string")) {
     return { value, repaired: false };
   }
-  const coerced = coerceString(value.trim(), type);
+  const text = value.trim();
+  // Qwen3.5 and Nemotron 3 Ultra templates write a Python bool (Jinja `string`
+  // of True/False). Accepted for a boolean-typed parameter only; `None` is not
+  // (no template evidence that a null is rendered, and it would be a guess).
+  const python =
+    types.includes("boolean") && (text === "True" || text === "False")
+      ? text === "True"
+      : undefined;
+  const coerced = python ?? coerceString(text, type);
   return coerced === undefined ? undefined : { value: coerced, repaired: true };
 }
 

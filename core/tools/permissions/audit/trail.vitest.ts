@@ -92,6 +92,16 @@ describe("decisions and outcomes", () => {
     expect(row.policy).toBe("allow");
   });
 
+  it("records an answer over an unauthenticated connection as the system, not the person", () => {
+    const trail = trailAt();
+    recordPolicyDecision(trail, ctx("c1"), "allowedWithPermission", {
+      policy: "allowedWithPermission",
+    });
+    trail.answer("c1", true, "system");
+    const [row] = rows();
+    expect(row.decisions.map((d) => d.by)).toEqual(["rules", "system"]);
+  });
+
   it("records a refusal by the person as a deny and a call that did not run", () => {
     const trail = trailAt();
     recordPolicyDecision(trail, ctx("c1"), "allowedWithPermission", {
@@ -171,7 +181,7 @@ describe("decisions and outcomes", () => {
     expect(rows()).toEqual([]);
   });
 
-  it("skips a call with no id", () => {
+  it("records a call with no id under a marked, made-up id", () => {
     const trail = trailAt();
     recordPolicyDecision(
       trail,
@@ -179,7 +189,11 @@ describe("decisions and outcomes", () => {
       "allowedWithoutPermission",
       { policy: "allowedWithoutPermission" },
     );
-    expect(listAuditFiles(dir)).toEqual([]);
+    const files = listAuditFiles(dir);
+    expect(files).toHaveLength(1);
+    const [rec] = readAuditFile(files[0].file) as any[];
+    expect(rec.synthetic).toBe(true);
+    expect(rec.callId).toMatch(/^nocall-/);
   });
 
   it("is a no-op when disabled", () => {

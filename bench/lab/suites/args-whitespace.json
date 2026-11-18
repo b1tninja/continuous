@@ -1,0 +1,233 @@
+{
+  "suite": "args-whitespace",
+  "kind": "args-whitespace",
+  "description": "Whitespace fidelity of string tool arguments (vLLM issue 48753: the Qwen3 and Qwen3-Coder tool parser strips leading and trailing whitespace). Each probe asks the model to call an edit tool with an exact old_string; the whitespace report compares the argument as received with the expected string and names the first differing byte. Native tools only.",
+  "system": "You are a coding agent working in a repository. When a task needs a tool, call the tool; do not describe the call in prose.",
+  "defaults": {
+    "temperature": 0,
+    "numPredict": 400,
+    "stream": false
+  },
+  "estOutTokens": 60,
+  "tools": {
+    "edit_file": {
+      "name": "edit_file",
+      "description": "Replace an exact string in a file. old_string must match the file byte for byte, whitespace included.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Workspace-relative path"
+          },
+          "old_string": {
+            "type": "string",
+            "description": "The exact text to replace"
+          },
+          "new_string": {
+            "type": "string",
+            "description": "The replacement text"
+          }
+        },
+        "required": ["path", "old_string", "new_string"]
+      }
+    }
+  },
+  "probes": [
+    {
+      "id": "leading-spaces",
+      "group": "leading",
+      "checks": ["old_string"],
+      "tools": ["edit_file"],
+      "user": "Call edit_file on src/app.txt. old_string must be exactly the text of this JSON string literal, decoded: \"    return x;\"\nKeep every space, tab, carriage return and newline; do not trim, add or remove any. new_string must be exactly \"X\".",
+      "expect": {
+        "tool": "edit_file",
+        "args": {
+          "path": "src/app.txt",
+          "old_string": "    return x;",
+          "new_string": "X"
+        }
+      }
+    },
+    {
+      "id": "trailing-spaces",
+      "group": "trailing",
+      "checks": ["old_string"],
+      "tools": ["edit_file"],
+      "user": "Call edit_file on src/app.txt. old_string must be exactly the text of this JSON string literal, decoded: \"return x;   \"\nKeep every space, tab, carriage return and newline; do not trim, add or remove any. new_string must be exactly \"X\".",
+      "expect": {
+        "tool": "edit_file",
+        "args": {
+          "path": "src/app.txt",
+          "old_string": "return x;   ",
+          "new_string": "X"
+        }
+      }
+    },
+    {
+      "id": "leading-tab",
+      "group": "leading",
+      "checks": ["old_string"],
+      "tools": ["edit_file"],
+      "user": "Call edit_file on src/app.txt. old_string must be exactly the text of this JSON string literal, decoded: \"\\treturn x;\"\nKeep every space, tab, carriage return and newline; do not trim, add or remove any. new_string must be exactly \"X\".",
+      "expect": {
+        "tool": "edit_file",
+        "args": {
+          "path": "src/app.txt",
+          "old_string": "\treturn x;",
+          "new_string": "X"
+        }
+      }
+    },
+    {
+      "id": "trailing-tab",
+      "group": "trailing",
+      "checks": ["old_string"],
+      "tools": ["edit_file"],
+      "user": "Call edit_file on src/app.txt. old_string must be exactly the text of this JSON string literal, decoded: \"return x;\\t\"\nKeep every space, tab, carriage return and newline; do not trim, add or remove any. new_string must be exactly \"X\".",
+      "expect": {
+        "tool": "edit_file",
+        "args": {
+          "path": "src/app.txt",
+          "old_string": "return x;\t",
+          "new_string": "X"
+        }
+      }
+    },
+    {
+      "id": "trailing-newline",
+      "group": "trailing",
+      "checks": ["old_string"],
+      "tools": ["edit_file"],
+      "user": "Call edit_file on src/app.txt. old_string must be exactly the text of this JSON string literal, decoded: \"def f():\\n    return 1\\n\"\nKeep every space, tab, carriage return and newline; do not trim, add or remove any. new_string must be exactly \"X\".",
+      "expect": {
+        "tool": "edit_file",
+        "args": {
+          "path": "src/app.txt",
+          "old_string": "def f():\n    return 1\n",
+          "new_string": "X"
+        }
+      }
+    },
+    {
+      "id": "leading-newline",
+      "group": "leading",
+      "checks": ["old_string"],
+      "tools": ["edit_file"],
+      "user": "Call edit_file on src/app.txt. old_string must be exactly the text of this JSON string literal, decoded: \"\\nfoo()\"\nKeep every space, tab, carriage return and newline; do not trim, add or remove any. new_string must be exactly \"X\".",
+      "expect": {
+        "tool": "edit_file",
+        "args": {
+          "path": "src/app.txt",
+          "old_string": "\nfoo()",
+          "new_string": "X"
+        }
+      }
+    },
+    {
+      "id": "crlf-multiline",
+      "group": "line-endings",
+      "checks": ["old_string"],
+      "tools": ["edit_file"],
+      "user": "Call edit_file on src/app.txt. old_string must be exactly the text of this JSON string literal, decoded: \"a = 1\\r\\nb = 2\\r\\n\"\nKeep every space, tab, carriage return and newline; do not trim, add or remove any. new_string must be exactly \"X\".",
+      "expect": {
+        "tool": "edit_file",
+        "args": {
+          "path": "src/app.txt",
+          "old_string": "a = 1\r\nb = 2\r\n",
+          "new_string": "X"
+        }
+      }
+    },
+    {
+      "id": "indent-only",
+      "group": "whitespace-only",
+      "checks": ["old_string"],
+      "tools": ["edit_file"],
+      "user": "Call edit_file on src/app.txt. old_string must be exactly the text of this JSON string literal, decoded: \"    \"\nKeep every space, tab, carriage return and newline; do not trim, add or remove any. new_string must be exactly \"X\".",
+      "expect": {
+        "tool": "edit_file",
+        "args": {
+          "path": "src/app.txt",
+          "old_string": "    ",
+          "new_string": "X"
+        }
+      }
+    },
+    {
+      "id": "newline-only",
+      "group": "whitespace-only",
+      "checks": ["old_string"],
+      "tools": ["edit_file"],
+      "user": "Call edit_file on src/app.txt. old_string must be exactly the text of this JSON string literal, decoded: \"\\n\"\nKeep every space, tab, carriage return and newline; do not trim, add or remove any. new_string must be exactly \"X\".",
+      "expect": {
+        "tool": "edit_file",
+        "args": {
+          "path": "src/app.txt",
+          "old_string": "\n",
+          "new_string": "X"
+        }
+      }
+    },
+    {
+      "id": "multiline-indented",
+      "group": "multi-line",
+      "checks": ["old_string"],
+      "tools": ["edit_file"],
+      "user": "Call edit_file on src/app.txt. old_string must be exactly the text of this JSON string literal, decoded: \"    if x:\\n        y()\\n    z()\\n\"\nKeep every space, tab, carriage return and newline; do not trim, add or remove any. new_string must be exactly \"X\".",
+      "expect": {
+        "tool": "edit_file",
+        "args": {
+          "path": "src/app.txt",
+          "old_string": "    if x:\n        y()\n    z()\n",
+          "new_string": "X"
+        }
+      }
+    },
+    {
+      "id": "trailing-blank-lines",
+      "group": "trailing",
+      "checks": ["old_string"],
+      "tools": ["edit_file"],
+      "user": "Call edit_file on src/app.txt. old_string must be exactly the text of this JSON string literal, decoded: \"end\\n\\n\"\nKeep every space, tab, carriage return and newline; do not trim, add or remove any. new_string must be exactly \"X\".",
+      "expect": {
+        "tool": "edit_file",
+        "args": {
+          "path": "src/app.txt",
+          "old_string": "end\n\n",
+          "new_string": "X"
+        }
+      }
+    },
+    {
+      "id": "both-sides",
+      "group": "both",
+      "checks": ["old_string"],
+      "tools": ["edit_file"],
+      "user": "Call edit_file on src/app.txt. old_string must be exactly the text of this JSON string literal, decoded: \"  \\tmid\\t  \\n\"\nKeep every space, tab, carriage return and newline; do not trim, add or remove any. new_string must be exactly \"X\".",
+      "expect": {
+        "tool": "edit_file",
+        "args": {
+          "path": "src/app.txt",
+          "old_string": "  \tmid\t  \n",
+          "new_string": "X"
+        }
+      }
+    },
+    {
+      "id": "no-whitespace-control",
+      "group": "control",
+      "checks": ["old_string"],
+      "tools": ["edit_file"],
+      "user": "Call edit_file on src/app.txt. old_string must be exactly the text of this JSON string literal, decoded: \"return x;\"\nKeep every space, tab, carriage return and newline; do not trim, add or remove any. new_string must be exactly \"X\".",
+      "expect": {
+        "tool": "edit_file",
+        "args": {
+          "path": "src/app.txt",
+          "old_string": "return x;",
+          "new_string": "X"
+        }
+      }
+    }
+  ]
+}

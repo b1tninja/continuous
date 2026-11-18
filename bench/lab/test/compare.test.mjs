@@ -103,8 +103,11 @@ test("compare: enough pairs, a clear gap is significant and the flips are listed
   const md = formatCompare(r, ["llama.jsonl", "ollama.jsonl"]);
   assert.match(md, /Cases that flipped \(10\)/);
   assert.match(md, /McNemar exact/);
-  assert.match(md, /paired bootstrap/);
-  assert.match(md, /40\/50 = 80%/);
+  assert.match(md, /bootstrap/);
+  // the 50 pairs are 5 prompts x 10 passes that agree: effective n is 5
+  assert.match(md, /raw 40\/50, 5 prompts/);
+  assert.match(md, /Effective n: 5\.0/);
+  assert.match(r.verdict, /CAUTION: 50 raw pairs come from 5 distinct prompt/);
 });
 
 test("compare: an equal split of discordant pairs is not a difference", () => {

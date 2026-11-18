@@ -6,6 +6,7 @@ import { protectedPathHit } from "../tools/permissions/protected";
 import {
   inferResolvedUriFromRelativePath,
   resolveRelativePathInDir,
+  type ResolveOptions,
   uniqueOpenFileInWorkspace,
 } from "./ideUtils";
 
@@ -49,6 +50,7 @@ export async function resolveCheckpointTargets(
   toolName: string,
   args: any,
   ide: IDE,
+  options?: ResolveOptions,
 ): Promise<string[]> {
   try {
     if (!CHECKPOINT_TOOL_NAMES.includes(toolName)) {
@@ -59,13 +61,25 @@ export async function resolveCheckpointTargets(
       return [];
     }
     if (toolName === BuiltInToolNames.CreateNewFile) {
-      return [await inferResolvedUriFromRelativePath(filepath, ide)];
+      return [
+        await inferResolvedUriFromRelativePath(
+          filepath,
+          ide,
+          undefined,
+          options,
+        ),
+      ];
     }
     // Mirrors how the edit tools resolve their target
     if (filepath.startsWith("./")) {
       filepath = filepath.slice(2);
     }
-    const resolved = await resolveRelativePathInDir(filepath, ide);
+    const resolved = await resolveRelativePathInDir(
+      filepath,
+      ide,
+      undefined,
+      options,
+    );
     if (resolved) {
       return [resolved];
     }

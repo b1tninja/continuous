@@ -123,3 +123,97 @@ describe("buildChatRequestBody and toolDialect", () => {
     expect(body).not.toHaveProperty("x_continue_recover_text_tool_calls");
   });
 });
+
+describe("buildChatRequestBody normalises the history (core/llm/normalizeTurns.ts)", () => {
+  const thinkingItem = (content: string): ChatHistoryItem =>
+    ({ message: { role: "thinking", content }, contextItems: [] }) as any;
+  const assistantItem = (content: string): ChatHistoryItem =>
+    ({ message: { role: "assistant", content }, contextItems: [] }) as any;
+
+  it("sends reasoning as nothing, not as a second assistant turn", () => {
+    const body: any = buildChatRequestBody({
+      model: model("openai"),
+      chatHistory: [
+        user("q"),
+        thinkingItem("let me think"),
+        assistantItem("answer"),
+        user("next"),
+      ],
+      systemMessage: "sys",
+    });
+    expect(body.messages.map((m: any) => m.role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+      "user",
+    ]);
+    expect(JSON.stringify(body.messages)).not.toContain("let me think");
+  });
+
+  it("drops reasoning left without an answer by an abort", () => {
+    const body: any = buildChatRequestBody({
+      model: model("openai"),
+      chatHistory: [user("q"), thinkingItem("half a thought"), user("again")],
+      systemMessage: "sys",
+    });
+    expect(body.messages.map((m: any) => m.role)).toEqual([
+      "system",
+      "user",
+      "user",
+    ]);
+  });
+
+  it("after an abort (user, user): sent as is, or merged for a strict template", () => {
+    const history = [user("q"), user("q again")];
+    const loose: any = buildChatRequestBody({
+      model: model("openai"),
+      chatHistory: history,
+      systemMessage: "sys",
+    });
+    expect(loose.messages.map((m: any) => m.content)).toEqual([
+      "sys",
+      expect.stringContaining("q"),
+      "q again",
+    ]);
+    const strict: any = buildChatRequestBody({
+      model: model("vllm"),
+      chatHistory: history,
+      systemMessage: "sys",
+    });
+    expect(strict.messages.map((m: any) => m.role)).toEqual(["system", "user"]);
+    expect(strict.messages[1].content).toContain("q\n\nq again");
+  });
+
+  it("answers a tool call whose state has no result", () => {
+    const turn = toolTurn("c1") as any;
+    turn.message.toolCalls.push({
+      id: "c2",
+      type: "function",
+      function: { name: "Read", arguments: "{}" },
+    });
+    const body: any = buildChatRequestBody({
+      model: model("anthropic"),
+      chatHistory: [user("q"), turn, user("next")],
+      systemMessage: "sys",
+    });
+    const results = body.messages.filter((m: any) => m.role === "tool");
+    expect(results.map((m: any) => m.tool_call_id)).toEqual(["c1", "c2"]);
+  });
+
+  it("pins the right message when reasoning comes before the pinned item", () => {
+    const body: any = buildChatRequestBody({
+      model: model("anthropic"),
+      chatHistory: [
+        user("q"),
+        thinkingItem("t"),
+        assistantItem("a"),
+        user("pinned", true),
+      ],
+      systemMessage: "sys",
+    });
+    const pinnedAt = body.messages.findIndex(
+      (m: any) => m.x_continue_cache_pin === true,
+    );
+    expect(body.messages[pinnedAt].content).toBe("pinned");
+  });
+});

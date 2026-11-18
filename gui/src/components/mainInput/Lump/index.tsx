@@ -1,5 +1,3 @@
-import { RecentlyBlocked } from "../../RecentlyBlocked";
-import { YoloBanner } from "../../PolicyControls";
 import { Toolbox } from "../Toolbox/Toolbox";
 import {
   isInlineToolbarKind,
@@ -18,9 +16,7 @@ export function Lump() {
   const inline = isInlineToolbarKind(useLumpToolbarKind());
 
   return (
-    <div className="mx-1.5 rounded-t-default bg-input">
-      <RecentlyBlocked />
-      <YoloBanner />
+    <div className="relative mx-1.5 rounded-t-default bg-input">
       <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 px-1 py-0.5 xs:px-2">
         <SessionControls />
         <div

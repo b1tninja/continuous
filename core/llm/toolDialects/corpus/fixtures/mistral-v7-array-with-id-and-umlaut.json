@@ -1,0 +1,212 @@
+{
+  "schemaVersion": 1,
+  "id": "mistral-v7-array-with-id-and-umlaut",
+  "family": "mistral",
+  "dialect": "mistral",
+  "kind": "positive",
+  "failureMode": "none",
+  "flag": "synthesised",
+  "provenance": {
+    "source": "synthesised, built from template, not recorded from a model: https://github.com/mistralai/mistral-common/blob/main/src/mistral_common/tokens/tokenizers/instruct.py (InstructTokenizerV3._encode_tool_calls_in_assistant_message, inherited unchanged by V7); no Hugging Face template exists for these models",
+    "license": "apache-2.0",
+    "retrieved": "2026-11-11",
+    "note": "built from template, not recorded from a model. mistral-common writes the control token [TOOL_CALLS] then json.dumps(list, ensure_ascii=False): the default separators put a space after `,` and `:`, and there is NO space between the token and `[` (the Mistral-7B-v0.3 HF template has one). V7 differs from V3 only in system-prompt handling; V11 switches to [TOOL_CALLS]name[CALL_ID]id[ARGS]{...}, V13 and V15 drop the id."
+  },
+  "policy": "must",
+  "tools": [
+    {
+      "name": "get_weather",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        },
+        "required": ["city"]
+      }
+    }
+  ],
+  "text": "[TOOL_CALLS][{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Zürich\"}, \"id\": \"AbCdEf123\"}]",
+  "markers": ["[TOOL_CALLS]"],
+  "streams": [
+    {
+      "label": "whole",
+      "encoding": "utf8",
+      "chunks": [
+        "[TOOL_CALLS][{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Zürich\"}, \"id\": \"AbCdEf123\"}]"
+      ],
+      "splitInside": null
+    },
+    {
+      "label": "char",
+      "encoding": "utf8",
+      "chunks": [
+        "[",
+        "T",
+        "O",
+        "O",
+        "L",
+        "_",
+        "C",
+        "A",
+        "L",
+        "L",
+        "S",
+        "]",
+        "[",
+        "{",
+        "\"",
+        "n",
+        "a",
+        "m",
+        "e",
+        "\"",
+        ":",
+        " ",
+        "\"",
+        "g",
+        "e",
+        "t",
+        "_",
+        "w",
+        "e",
+        "a",
+        "t",
+        "h",
+        "e",
+        "r",
+        "\"",
+        ",",
+        " ",
+        "\"",
+        "a",
+        "r",
+        "g",
+        "u",
+        "m",
+        "e",
+        "n",
+        "t",
+        "s",
+        "\"",
+        ":",
+        " ",
+        "{",
+        "\"",
+        "c",
+        "i",
+        "t",
+        "y",
+        "\"",
+        ":",
+        " ",
+        "\"",
+        "Z",
+        "ü",
+        "r",
+        "i",
+        "c",
+        "h",
+        "\"",
+        "}",
+        ",",
+        " ",
+        "\"",
+        "i",
+        "d",
+        "\"",
+        ":",
+        " ",
+        "\"",
+        "A",
+        "b",
+        "C",
+        "d",
+        "E",
+        "f",
+        "1",
+        "2",
+        "3",
+        "\"",
+        "}",
+        "]"
+      ],
+      "splitInside": null
+    },
+    {
+      "label": "inside-marker",
+      "encoding": "utf8",
+      "chunks": [
+        "[TOOL_",
+        "CALLS][{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Zürich\"}, \"id\": \"AbCdEf123\"}]"
+      ],
+      "splitInside": "[TOOL_CALLS]"
+    },
+    {
+      "label": "around-markers",
+      "encoding": "utf8",
+      "chunks": [
+        "[TOOL_CALLS]",
+        "[{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Zürich\"}, \"id\": \"AbCdEf123\"}]"
+      ],
+      "splitInside": null
+    },
+    {
+      "label": "random-1-5",
+      "encoding": "utf8",
+      "chunks": [
+        "[T",
+        "OOL_",
+        "CA",
+        "LL",
+        "S]",
+        "[{\"n",
+        "am",
+        "e\": ",
+        "\"get",
+        "_wea",
+        "ther\"",
+        ", \"a",
+        "rgum",
+        "e",
+        "nts\":",
+        " {\"c",
+        "i",
+        "ty\":",
+        " \"Zü",
+        "r",
+        "ic",
+        "h",
+        "\"},",
+        " \"id",
+        "\": \"",
+        "Ab",
+        "CdEf1",
+        "23\"}",
+        "]"
+      ],
+      "splitInside": null
+    },
+    {
+      "label": "inside-multibyte-char",
+      "encoding": "base64",
+      "chunks": [
+        "W1RPT0xfQ0FMTFNdW3sibmFtZSI6ICJnZXRfd2VhdGhlciIsICJhcmd1bWVudHMiOiB7ImNpdHkiOiAiWsM=",
+        "vHJpY2gifSwgImlkIjogIkFiQ2RFZjEyMyJ9XQ=="
+      ],
+      "splitInside": "utf8-codepoint"
+    }
+  ],
+  "expected": {
+    "calls": [
+      {
+        "name": "get_weather",
+        "arguments": {
+          "city": "Zürich"
+        }
+      }
+    ],
+    "text": ""
+  }
+}

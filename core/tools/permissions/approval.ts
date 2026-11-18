@@ -7,6 +7,7 @@ import {
   type PolicyArea,
   type PolicyLevel,
   type PolicyLevels,
+  type WebLevel,
 } from "./policy";
 import type { ShellKind } from "../../util/shell";
 import type { ProtectedKind } from "./protected";
@@ -24,15 +25,47 @@ import type { ProtectedKind } from "./protected";
  *   model, which the caller asks (core's `tools/autoReview`).
  * - permissive: a call the rules left open runs. A deny rule, an ask rule, a
  *   protected path and the safety floor still win.
- * - yolo: every call runs, whatever a rule, a protected path or the safety
+ * - idgaf: every call runs, whatever a rule, a protected path or the safety
  *   floor says. Only a tool switched off stays off.
  */
 export interface ApprovalSettings {
   levels: PolicyLevels;
   /** Built-in rules by id; absent means on (see BUILTIN_RULES) */
   builtin?: Partial<Record<BuiltinRuleId, boolean>>;
-  /** Deny rules that bind at every level, YOLO included */
+  /** Deny rules that bind at every level below IDGAF (IDGAF runs past them and records it) */
   floor?: string[];
+  /**
+   * The safety-check shield. Absent follows the mode (off at IDGAF). An
+   * explicit value is the person's choice at every level.
+   */
+  safetyChecks?: boolean;
+}
+
+/**
+ * The web tools by the names a call carries (core/tools/permissions/webPolicy.ts
+ * has the same list; kept here so this module does not import that one).
+ */
+const WEB_TOOL_NAMES = new Set<string>([
+  "fetch_url_content",
+  "search_web",
+  "read_web_content",
+  "Fetch",
+  "SearchWeb",
+  "ReadWebContent",
+]);
+
+/** The area's name in a reason. */
+export function areaLabelOf(area: LevelOfCall["area"]): string {
+  switch (area) {
+    case "context":
+      return "Context use";
+    case "edits":
+      return "File edits";
+    case "web":
+      return "Web";
+    default:
+      return "Tool use";
+  }
 }
 
 /** Protected-path kinds whose built-in rule the person switched off. */
@@ -49,9 +82,9 @@ export function skippedProtections(
 
 /** What a level decided, for the decision chip. */
 export interface Loosening {
-  source: "permissive" | "yolo";
+  source: "permissive" | "idgaf";
   reason: string;
-  /** Allows the call whatever else applies (YOLO). */
+  /** Allows the call whatever else applies (IDGAF). */
   absolute?: boolean;
 }
 
@@ -65,8 +98,10 @@ type ToolLike = Pick<
 >;
 
 export interface LevelOfCall {
-  area: "context" | "tools" | "edits";
-  level: PolicyLevel;
+  /** `web` only when `levels.web` is set; unset, a web call is Tool use's (it follows it) */
+  area: "context" | "tools" | "edits" | "web";
+  /** Off and Listed exist on Web only */
+  level: PolicyLevel | Exclude<WebLevel, PolicyLevel>;
   /** A command that only reads, as the parser vouched for it */
   readOnly?: string;
 }
@@ -91,6 +126,10 @@ export function levelOfCall(
   call?: CallContext,
 ): LevelOfCall | undefined {
   if (!approval) return undefined;
+  // The Web area, once the person set it (webPolicy.ts); unset, it follows Tool use
+  if (approval.levels.web && WEB_TOOL_NAMES.has(toolName)) {
+    return { area: "web", level: approval.levels.web };
+  }
   const area = areaOfTool(toolName, tool, call);
   if (!area) return undefined;
   const level = approval.levels[area as PolicyArea];
@@ -139,7 +178,7 @@ export interface LooseningInput {
 /**
  * Whether the level for this call's area allows it without asking. The caller
  * applies the result only to a call that is still open (no rule matched, not
- * protected, not refused), except for YOLO, which is absolute.
+ * protected, not refused), except for IDGAF, which is absolute.
  */
 export function approvalLoosening(
   input: LooseningInput,
@@ -153,10 +192,10 @@ export function approvalLoosening(
   if (!found) return undefined;
   const what = found.readOnly ? ` (the command ${found.readOnly})` : "";
 
-  if (found.level === "yolo") {
+  if (found.level === "idgaf") {
     return {
-      source: "yolo",
-      reason: `Allowed: ${found.area === "context" ? "Context use" : found.area === "edits" ? "File edits" : "Tool use"} is set to YOLO${what}.`,
+      source: "idgaf",
+      reason: `Allowed: ${areaLabelOf(found.area)} is set to IDGAF${what}.`,
       absolute: true,
     };
   }
@@ -175,7 +214,7 @@ export function approvalLoosening(
     }
     return {
       source: "permissive",
-      reason: `Allowed: ${found.area === "context" ? "Context use" : found.area === "edits" ? "File edits" : "Tool use"} is Permissive and no rule stops it${what}.`,
+      reason: `Allowed: ${areaLabelOf(found.area)} is Permissive and no rule stops it${what}.`,
     };
   }
   return undefined;

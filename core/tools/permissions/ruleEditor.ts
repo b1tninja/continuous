@@ -21,6 +21,7 @@ import { readUserConfigFile } from "./readRuleSources";
 import type { RuleDecision, ToolPermissions } from "./rules";
 import { testToolCall, type TestDecision } from "./testToolCall";
 import { canonicalRuleName } from "./names";
+import { readUserEnvNames } from "./userEnvNames";
 import { refusalFor } from "./ruleRefusal";
 
 /**
@@ -248,6 +249,7 @@ function verdictOf(
       tool,
       ...(field ? { [field]: value } : {}),
       sources,
+      envNames: readUserEnvNames(),
       ...(cwd ? { cwd } : {}),
     } as never);
     const deciding = r.matchedRules.find((m) => m.deciding);
@@ -385,7 +387,7 @@ function adoptSourceOf(
   return undefined;
 }
 
-/** Why an Always rule is refused (an always-on rule, protected path or built-in rule holds the calls), or undefined. */
+/** Why an Always rule is refused (a locked rule, protected path or built-in rule holds the calls), or undefined. */
 function refusalOf(
   edit: ToolRuleEdit,
   sources: RuleSourcesInput,

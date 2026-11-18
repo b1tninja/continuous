@@ -444,6 +444,11 @@ export const LoopInbox: React.FC<{
           A new plan waits for you: {loop.replanReason}
         </Text>
       )}
+      {(loop.autoDecisions ?? []).slice(-3).map((d, i) => (
+        <Text key={`${d.at}-${i}`} color="dim">
+          {d.text} ({d.source})
+        </Text>
+      ))}
 
       {plan && (
         <Box flexDirection="column" marginTop={1}>

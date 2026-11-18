@@ -1,0 +1,89 @@
+---
+title: "Run limits"
+description: "Stop a headless run or cn serve at a dollar, request or time limit."
+---
+
+A plain headless run (`continuous -p`) or `continuous serve` can be given three limits. They are checked **before** each model request where that is possible, and again with the real usage after it. When a limit ends the run, the exit code, the final message and the audit trail all say which one.
+
+```bash
+continuous -p --max-budget-usd 2 --max-turns 40 --max-duration 15 "fix the failing tests"
+```
+
+| Flag                      | Meaning                                                                                                                                                           |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--max-budget-usd <n>`    | Stop before a model request that would take this run's spend past `n` US dollars, and after a request whose real usage reached it.                                |
+| `--max-turns <n>`         | Stop after `n` model requests. A turn here is one request to the model, so a reply followed by tool calls and another reply is two turns.                         |
+| `--max-duration <minutes>` | Stop once the run has gone on this many minutes (fractions allowed).                                                                                             |
+| `--budget-allow-unpriced` | Allow `--max-budget-usd` on a model that has no price. The dollar cap is then **not** enforced; turns and duration still are.                                     |
+
+The flags apply to `-p` runs and to `serve`. In `serve` they cover the whole server process: when a limit is reached the server stops with the limit's exit code. The interactive chat refuses them rather than pretend to enforce them.
+
+When a limit is reached while `serve` holds a loop, the loop is marked stopped before the process exits, with the reason "A run limit was reached: ..." followed by the limit's message, so a later resume says why it ended. A running item or wave of workers is stopped first and its items go back to pending.
+
+## Semantics
+
+These are this project's own definitions. `--max-turns` and `--max-budget-usd` are also flags of Claude Code's `-p` mode, whose [CLI reference](https://code.claude.com/docs/en/cli-reference) describes `--max-turns` as limiting "the number of agentic turns" and `--max-budget-usd` as stopping the run "once estimated spend on API calls reaches this amount", counting only the current run when a session is resumed, and warns that "spend can pass the cap". Ours follow the same ideas with these differences:
+
+- **Before the call.** Before each request the run estimates its cost: the counted input tokens priced as plain input (no cache discount, so the estimate errs high), plus an output of the largest reply seen so far in the run, or 1024 tokens before the first reply. If spend so far plus the estimate would pass the cap, the request is **not sent**. The run can therefore stop below the cap. It can pass the cap only by the error of one request's estimate: a reply longer than assumed or a prompt the tokenizer undercounted.
+- **After the call.** The provider's real usage is counted. If spend has reached the cap, the run stops before that reply's tool calls run.
+- **What is counted.** USD at list price from the table the chat's cost display uses, for this run only. Spend restored by `--resume` or `--fork` does not count. Compaction requests are counted in the spend but are never refused.
+- **Turns.** A request is refused when `n` have already been sent. A run that finishes on its last allowed request is not stopped.
+- **Duration.** Checked before and after each request. A request already in flight is allowed to finish, and a long tool call is not interrupted, so a run can pass the limit by one request or one tool call.
+
+## Unpriced models
+
+A dollar cap cannot be held on a model the cost table has no price for: its spend would read as unknown. `--max-budget-usd` on such a model is refused at startup with an error naming the model, unless `--budget-allow-unpriced` is given. The same rule applies to the shadow reviewer.
+
+### OpenRouter models
+
+OpenRouter publishes per-token prices for its models. Continuous keeps a dated copy in `model-catalog/openrouter.json` in your global folder: with model information updates on `automatic` (the default) it is refreshed in the background when older than 24 hours, and `continuous models refresh` downloads it at any time (a plain GET to openrouter.ai with no key; see [model information](/customize/model-providers/top-level/openrouter#model-information-and-prices) for `modelCatalog: manual | off` and `CONTINUOUS_MODEL_INFO_UPDATES`). With a copy, `--max-budget-usd` is held on those models without `--budget-allow-unpriced`. The prices are estimates from that copy, and the run says so at the end ("prices from openrouter.ai as of 2026-11-12"). A run never waits for the background refresh: it starts with the copy it finds. The prices are estimates from that copy, and the run says so at the end ("prices from openrouter.ai as of 2026-11-12").
+
+- A copy older than 30 days still works, with the warning "prices may be out of date: run `continuous models refresh`".
+- A copy older than 90 days is never used for a dollar cap: the model counts as unpriced and the error says how old the copy is.
+- With no copy, the error says to run `continuous models refresh`.
+- With model information updates `off`, the copy is not used: OpenRouter models count as unpriced unless the bundled data prices them.
+- `continuous models list [--json]` shows the downloaded models with their prices and never touches the network.
+
+### Models only the community catalogue prices
+
+When neither a price you entered, a provider list nor the price tables have a price for a model, Continuous can price it from the community catalogue [models.dev](https://models.dev), downloaded only while such a model is selected and never when model information updates are `off` (see [PRIVACY.md](https://github.com/b1tninja/continuous/blob/main/PRIVACY.md)). Those figures are labelled "community catalogue (models.dev), &lt;date&gt; — estimate".
+
+- `--max-budget-usd` is **not** held on a community price: the run is refused at startup with an error naming the catalogue and its date.
+- With `--budget-allow-unpriced` the cap **is** held on the community estimate, and the run says so at the end ("prices from the community catalogue (models.dev) as of 2026-11-10").
+- The shadow reviewer's budget is never held on a community price.
+
+## Exit codes and the final message
+
+| Code | Reason                           |
+| ---- | -------------------------------- |
+| 20   | `--max-budget-usd` (budget)      |
+| 21   | `--max-turns` (turns)            |
+| 22   | `--max-duration` (duration)      |
+
+Codes 1 (error) and 3 (secrets found) keep their meanings. The final message goes to stderr, for example:
+
+```text
+Stopped before request 4: $1.7120 spent, and this request is estimated at $0.4410 (140213 input tokens, the largest reply so far), which would pass the --max-budget-usd cap of $2. (exit 20)
+```
+
+With `--format json` it is one JSON object on stderr: `status: "stopped"`, `reason`, `phase` (`before-call` or `after-call`), `message`, `exitCode`, and `spentUsd` when known. Whatever the model had answered before the stop is printed to stdout as usual.
+
+The stop is also written to the audit trail (`continuous audit`) as a `run-limit` outcome with the reason and phase.
+
+## Settings
+
+The same limits can be set in your **user** settings file, `settings.json` in the global directory (`~/.continuous` by default):
+
+```json
+{
+  "runLimits": {
+    "maxBudgetUsd": 5,
+    "maxTurns": 100,
+    "maxDurationMinutes": 30
+  }
+}
+```
+
+Only that file is read. A project's settings files cannot set limits, so a repository cannot change yours.
+
+A flag can only **tighten** a configured cap: the smaller value wins. A flag that asks for more than the setting allows is ignored with a warning. To run past a configured cap, change the setting.

@@ -44,7 +44,7 @@ export async function probeAuthRequirement(
         params: {
           protocolVersion: "2025-03-26",
           capabilities: {},
-          clientInfo: { name: "continue-client", version: "1.0.0" },
+          clientInfo: { name: "continuous-client", version: "1.0.0" },
         },
       }),
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),

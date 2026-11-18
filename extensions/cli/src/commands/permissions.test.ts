@@ -140,9 +140,11 @@ describe("continuous permissions test", () => {
   it("applies the floor and protected paths", () => {
     expect(run("test", ["Bash", "rm", "-rf", "/tmp/x"]).text).toMatch(/DENY/);
     const floor = run("test", ["Bash", "rm", "-rf", "/build"], {
-      level: ["tools=yolo"],
+      level: ["tools=idgaf"],
     });
-    expect(floor.text).toContain("DENY (floor)");
+    // IDGAF runs it, and says what the floor would have done
+    expect(floor.text).toContain("ALLOW (idgaf)");
+    expect(floor.text).toContain("would have been refused");
     const env = run("test", ["readFile", ".env"]);
     expect(env.text).toContain("ASK (protected-path)");
   });

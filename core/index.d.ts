@@ -12,6 +12,7 @@ import { TextResourceContents } from "@modelcontextprotocol/sdk/types.js";
 import Parser from "web-tree-sitter";
 import { CodebaseIndexer } from "./indexing/CodebaseIndexer";
 import { LLMConfigurationStatuses } from "./llm/constants";
+import type { PriceSource } from "./llm/utils/calculateRequestCost";
 import type {
   SubagentRunStatus,
   SubagentToolCallSummary,
@@ -303,6 +304,21 @@ export interface ModelUsage {
   cost: number;
   /** How many of `requests` could be priced. Fewer than `requests` means `cost` is partial. */
   pricedRequests: number;
+  /**
+   * Set when some of `cost` came from a downloaded price list: where it came
+   * from and the date of the oldest list used. The figure is an estimate.
+   */
+  priceEstimate?: { source: string; fetchedAt: string };
+  /**
+   * Where the latest priced request's prices came from and as of when, for
+   * the "price source and date" line next to the cost.
+   */
+  priceSource?: PriceSource;
+  /**
+   * The latest non-standard service tier a provider reported serving
+   * (`flex`, `priority`, ...). The cost is then the standard-tier price.
+   */
+  servedTier?: string;
 }
 
 export interface SessionUsage extends Usage {
@@ -343,6 +359,32 @@ export interface SessionPromptCache {
   escalated?: boolean;
   escalatedBy?: "gap" | "requests";
 }
+
+/**
+ * What the webview sends instead of the whole session (`history/saveDelta`,
+ * STOR6): the history items and session fields changed since its last save.
+ */
+export interface SessionDelta {
+  sessionId: string;
+  /** The revision the webview's last save was answered with. */
+  baseRev: string;
+  /** The history's length now; shorter than before means items were cut. */
+  length: number;
+  /** New or changed items. Every index from the old length on must be here. */
+  items: { index: number; item: ChatHistoryItem }[];
+  /** Changed session fields; title and workspace are always sent. */
+  meta: Partial<Omit<Session, "history" | "sessionId">>;
+  /** Session fields that were removed. */
+  unset?: string[];
+}
+
+/**
+ * A save's answer. `rev` is what the next delta is sent against; null when
+ * deltas cannot be used (the session log is off). `needFull` asks for the
+ * whole session (`history/save`).
+ */
+export type SessionSaveResult =
+  { rev: string | null; needFull?: false } | { rev: null; needFull: true };
 
 export interface Session {
   sessionId: string;
@@ -390,6 +432,18 @@ export interface Session {
    * stay Plan and Agent; a plan presented while it is set starts the loop.
    */
   loopRequested?: boolean;
+  /**
+   * Optional: the session this one was forked from, and the last history item
+   * the fork kept (absent when it kept all of them). See core/util/forkSession.ts.
+   */
+  forkedFrom?: { sessionId: string; index?: number };
+  /**
+   * Optional, written by `cn`: the policy areas that were at IDGAF while this
+   * session ran. IDGAF is per session and never restored: `--resume` starts at
+   * the configured levels and says so in one line (ID 5). The IDE keeps
+   * IDGAF across a reload of the same editor session instead (#828).
+   */
+  idgafAreas?: string[];
 }
 
 /** Where one plan item is in Loop mode. The task list shows it too. */
@@ -514,6 +568,24 @@ export interface LoopItemState {
    * LOOP_MAX_REPAIRS_PER_ITEM). To-dos a repair splits it into inherit it.
    */
   repairs?: number;
+  /**
+   * The round whose accepted re-plan added this to-do, for the R chip in the
+   * plan tree. Missing on the to-dos the loop started with and on loops saved
+   * before this field: they show no chip.
+   */
+  addedInRound?: number;
+}
+
+/** A to-do an accepted re-plan took out of the plan (LoopState.replacedItems) */
+export interface LoopReplacedItem {
+  /** The id the to-do had */
+  id: string;
+  /** Its text, when the loop could tell which plan text it had */
+  text?: string;
+  /** The round of the re-plan that took it out */
+  round: number;
+  /** The to-do that took its place; only for a repair that left exactly one */
+  replacedBy?: string;
 }
 
 /**
@@ -538,9 +610,24 @@ export type QuestionType =
   | "design"
   | "detail";
 
+/**
+ * Something the loop decided for the person under the policy they set (a
+ * re-plan it accepted, a question it answered). Always by `system`; `source`
+ * names the setting ("Plan edits: IDGAF", "Questions: Permissive").
+ */
+export interface LoopAutoDecision {
+  kind: "plan" | "question";
+  by: "system";
+  source: string;
+  text: string;
+  at: string;
+}
+
 export interface LoopQuestion {
   /** IDGAF: the agent decided this itself; it never reached the inbox */
   decidedAlone?: boolean;
+  /** Questions is permissive: the answer the system chose, and under which setting */
+  autoAnswer?: { text: string; by: "system"; source: string };
   id: string;
   /** The item it is about; none for a question about the whole plan */
   itemId?: string;
@@ -641,7 +728,7 @@ export interface LoopBudget {
 /**
  * How much the loop does without the person. It follows the approval mode
  * the person picked when the loop starts (Manual: supervised; Auto-approve
- * and Auto: auto; YOLO: unattended) and can be changed while it runs. See
+ * and Auto: auto; IDGAF: unattended) and can be changed while it runs. See
  * LOOP_AUTONOMY in core/util/loopMode.ts.
  */
 export type LoopAutonomy = "supervised" | "auto" | "unattended" | "idgaf";
@@ -869,10 +956,26 @@ export interface LoopState {
   noProgressRounds: number;
   /** Items in a row that ended failed; reset by one that is done */
   consecutiveFailures?: number;
-  /** When every open item started waiting on the person (status waiting) */
+  /**
+   * When the loop started waiting on the person: every open item waits
+   * (status waiting) or a re-plan's card does (status awaiting_plan)
+   */
   waitingSince?: string;
+  /**
+   * Milliseconds the loop spent waiting on the person since `startedAt`,
+   * without the wait in progress. The time budget does not count them
+   * (loopElapsedMs). Absent in loops saved before it existed: 0.
+   */
+  waitedMs?: number;
   /** Why the last re-plan did or did not start the next round by itself */
   replanReason?: string;
+  /**
+   * To-dos accepted re-plans took out of the plan, oldest first, the last 20.
+   * Missing on loops saved before this field: the plan tree shows none.
+   */
+  replacedItems?: LoopReplacedItem[];
+  /** What the loop decided for the person by their policy, oldest first (capped) */
+  autoDecisions?: LoopAutoDecision[];
   /** Tool calls the person allowed from an approval question (grantKey) */
   grants: string[];
   /** A plan-wide answer asked to re-plan now */
@@ -901,6 +1004,15 @@ export interface LoopState {
   stopReason?: LoopStopReason;
   /** One line for the person: what stopped it */
   stopDetail?: string;
+  /** Set beside stopDetail when a budget stopped the loop: which, and how much */
+  stopBudget?: LoopStopBudget;
+}
+
+/** Which loop budget stopped it. Tokens are counted, time is milliseconds. */
+export interface LoopStopBudget {
+  kind: "tokens" | "time";
+  used: number;
+  max: number;
 }
 
 /** A message queued in the chat input; `editorState` is the editor's JSON. */
@@ -995,7 +1107,18 @@ export interface BaseSessionMetadata {
   dateCreated: string;
   workspaceDirectory: string;
   messageCount?: number;
+  /**
+   * Bytes the session takes on disk when it was last saved (STOR8): the
+   * `.json` file, or for a log session the `.jsonl` plus the blobs it
+   * refers to.
+   */
+  fileBytes?: number;
+  /** How the session is stored; absent for entries saved before 2.22.0. */
+  storage?: SessionStorage;
 }
+
+/** `json`: one `<id>.json` rewritten whole; `log`: an append-only `<id>.jsonl` with blobs. */
+export type SessionStorage = "json" | "log";
 
 export interface RangeInFile {
   filepath: string;
@@ -1110,9 +1233,21 @@ export interface Usage {
   promptTokens: number;
   /**
    * How fast the server read the part of the prompt it did not have cached,
-   * in tokens per second (llama.cpp's and Strata's `timings.prompt_per_second`).
+   * in tokens per second (llama.cpp's and Strata's `timings.prompt_per_second`;
+   * on Ollama recomputed without the cached tokens).
    */
   promptTokensPerSecond?: number;
+  /**
+   * The server's own clock for the request, when it sends one: llama.cpp's
+   * and Strata's `timings`, Ollama's durations. Bedrock's single latency
+   * number is `response.latencyMs`.
+   */
+  serverTimings?: ServerTimings;
+  /**
+   * This client's timing of the request (`core/llm/requestTiming.ts`), as it
+   * stood when the usage arrived.
+   */
+  timing?: RequestTiming;
   /**
    * What the provider said about the response itself, apart from token counts.
    * Each field is set only when the provider sends it.
@@ -1124,6 +1259,12 @@ export interface Usage {
     latencyMs?: number;
     /** An ID that identifies this call in the provider's logs and billing. */
     requestId?: string;
+    /**
+     * The service tier that served the request, as the provider names it
+     * (Bedrock `serviceTier.type`: `default`, `priority`, `flex`,
+     * `reserved`). Prices in the tables are standard-tier prices.
+     */
+    serviceTier?: string;
   };
   promptTokensDetails?: {
     cachedTokens?: number;
@@ -1145,6 +1286,105 @@ export interface Usage {
     rejectedPredictionTokens?: number;
     audioTokens?: number;
   };
+}
+
+/**
+ * A server's own timing of one request, in llama.cpp's `timings` names
+ * (camelCased). Each field is set only when the server sends it.
+ */
+export interface ServerTimings {
+  /**
+   * Prompt tokens the server read, not taken from its cache (llama.cpp
+   * `prompt_n`; on Ollama `prompt_eval_count` minus the cached count).
+   */
+  promptN?: number;
+  /** Prompt tokens taken from its cache (`cache_n`, Ollama `prompt_eval_cached_count`). */
+  cacheN?: number;
+  /** Time spent reading the prompt (`prompt_ms`, Ollama `prompt_eval_duration`). */
+  promptMs?: number;
+  /** `promptN` per second of `promptMs`: the read speed over uncached tokens. */
+  promptPerSecond?: number;
+  /** Tokens written (`predicted_n`, Ollama `eval_count`). */
+  predictedN?: number;
+  /** Time spent writing them (`predicted_ms`, Ollama `eval_duration`). */
+  predictedMs?: number;
+  /** The server's decode speed (`predicted_per_second`, Ollama `eval_count / eval_duration`). */
+  predictedPerSecond?: number;
+  /** Speculative draft tokens offered (`draft_n`; llama.cpp and Strata only). */
+  draftN?: number;
+  /** Of those, accepted (`draft_n_accepted`). */
+  draftNAccepted?: number;
+  /** Time spent loading the model (Ollama `load_duration`). */
+  loadMs?: number;
+  /** The whole request on the server's clock (Ollama `total_duration`). */
+  totalMs?: number;
+}
+
+/**
+ * Where a timing number came from: the server's own clock or count, this
+ * client's clock, or an estimate from characters (shown with `~`).
+ */
+export type TimingSource = "server" | "measured" | "estimate";
+
+export interface TimedValue {
+  value: number;
+  source: TimingSource;
+}
+
+/** What a request is doing, as its stream tells. */
+export type RequestPhase =
+  "waiting" | "reading" | "thinking" | "writing" | "tool-call" | "held";
+
+/**
+ * One request's timing, folded from its stream (J15,
+ * plans/research/throughput-latency-display.md section 6.1). Times are
+ * epoch milliseconds on this client's clock.
+ */
+export interface RequestTiming {
+  sentAt: number;
+  headersAt?: number;
+  /** The first chunk that says anything (progress, hold, output, usage). */
+  firstEventAt?: number;
+  /** The first output token: reasoning, text or a tool-call delta. */
+  firstOutputAt?: number;
+  /** The first text or tool-call delta (after any thinking). */
+  firstContentAt?: number;
+  lastOutputAt?: number;
+  endAt?: number;
+  phase: RequestPhase;
+  phaseSince: number;
+  /** Each phase change, in order (a new tool name counts as one). */
+  phases: { phase: RequestPhase; at: number; tool?: string }[];
+  /** The tool whose call is being written, in phase `tool-call`. */
+  toolName?: string;
+  /** Characters of reasoning, text and tool arguments. */
+  outputChars: number;
+  /** Bytes of tool-call arguments. */
+  toolArgBytes?: number;
+  /** The model thought without its text being sent (Anthropic "omitted"). */
+  thinkingHidden?: boolean;
+  /** Time to first token, always measured here. */
+  firstTokenMs?: TimedValue;
+  outputTokens?: TimedValue;
+  /** Tokens per second: live a `~` estimate; at the end server, measured or estimate. */
+  outputRate?: TimedValue;
+  promptTokens?: number;
+  /** The prompt read, only from the server; `rate` only when it timed it. */
+  prefill?: {
+    read: number;
+    cached: number;
+    ms?: number;
+    rate?: number;
+    source: TimingSource;
+  };
+  /** Speculative drafts, only from the server. */
+  drafts?: { offered: number; accepted: number };
+  /** Bedrock `metrics.latencyMs`. */
+  serverLatencyMs?: number;
+  /** Ollama `load_duration`. */
+  loadMs?: number;
+  /** When the last delta arrived, set while no delta has come for STALL_MS. */
+  stalledSince?: number;
 }
 
 /**
@@ -1225,6 +1465,20 @@ export interface ContextItem {
   uri?: ContextItemUri;
   hidden?: boolean;
   status?: string;
+  /**
+   * A command's output in numbers, for the meter beside it, and where its
+   * full output is (run_terminal_command; commandOutputBuffer.ts).
+   */
+  commandOutput?: {
+    id?: string;
+    bytes: number;
+    lines: number;
+    bytesPerSecond: number;
+    runaway?: string;
+    outputPath?: string;
+    /** The same file as a file:// URI, for the editor to open. */
+    outputUri?: string;
+  };
 }
 
 export interface ContextItemWithId extends ContextItem {
@@ -1251,6 +1505,23 @@ export interface PromptLog {
   route?: string;
   prompt: string;
   completion: string;
+  /**
+   * Set when the prompt was dropped in memory for a newer request
+   * (core/util/promptLogs.ts): its UTF-8 size and SHA-256, which feedback
+   * sends in place of the text.
+   */
+  promptBytes?: number;
+  promptSha256?: string;
+  /**
+   * A local Strata server's own record of the request (`/metrics`), read
+   * when the stream's usage gave no cached count: counts only.
+   */
+  serverCache?: {
+    promptTokens: number;
+    reused: number;
+    promptRead?: number;
+    promptMs?: number;
+  };
 }
 
 export type MessageModes = "chat" | "agent" | "plan" | "background";
@@ -1275,7 +1546,7 @@ interface McpUiState {
 
 interface ToolCallDecision {
   outcome: "allowed" | "blocked";
-  /** A rule, the safety check, a switch, YOLO, the Auto reviewer, or the user ("once"). */
+  /** A rule, the safety check, a switch, IDGAF, the Auto reviewer, or the user ("once"). */
   source: string;
   /** One line saying why. */
   reason?: string;
@@ -1299,6 +1570,9 @@ interface ToolCallState {
   processedArgs?: Record<string, any>; // Added in preprocesing step
   /** Why this call is waiting for approval, when a rule or protected path says so. */
   policyNote?: string;
+  /** The rule (as written in config.yaml) and the kind of check that made the call wait. */
+  policyRule?: string;
+  policySource?: string;
   /** Why the call ran or was refused, for the decision chip. Set by the policy check. */
   decision?: ToolCallDecision;
   output?: ContextItem[];
@@ -1326,6 +1600,18 @@ export interface SubagentRunState {
   error?: string;
   /** Notes for the person (a model fallback, a tool it could not have). */
   notices?: string[];
+  /**
+   * Messages to the run: the person's, sent from its record in the agents
+   * panel, and another subagent's (send_message), named by `from`. Delivered
+   * into its conversation, or not (the run ended first).
+   */
+  messages?: {
+    text: string;
+    at: number;
+    delivered: boolean;
+    /** The sending subagent's name; absent for the person */
+    from?: string;
+  }[];
   /** A call of the subagent's waiting for the person's approval. */
   pendingApproval?: {
     id: string;
@@ -1347,6 +1633,30 @@ interface Reasoning {
   text: string;
   startAt: number;
   endAt?: number;
+  /**
+   * What the provider needs back to continue from this reasoning (the CLI
+   * keeps Claude's signed and redacted thinking here, as `reasoning_details`
+   * entries). Absent when there is nothing to send back.
+   */
+  details?: Record<string, unknown>[];
+}
+
+/**
+ * How a turn ended early: Stop, a request that failed for good, or a window
+ * that closed or reloaded while it ran.
+ */
+export type TurnInterruption = "stopped" | "failed" | "reloaded";
+
+/** What "Choose what to keep" took out of one history item. */
+export interface RemovedByUser {
+  /** The whole item is left out: part of an old turn removed from the start. */
+  turn?: boolean;
+  /** Tool calls of this assistant item whose results are sent as a stub. */
+  toolResults?: string[];
+  /** Indexes into `contextItems` sent as a stub. */
+  contextItems?: number[];
+  /** Indexes of image parts of the message sent as a stub. */
+  images?: number[];
 }
 
 export interface ChatHistoryItem {
@@ -1361,6 +1671,25 @@ export interface ChatHistoryItem {
   appliedRules?: RuleMetadata[];
   conversationSummary?: string;
   /**
+   * The session's history length when `conversationSummary` was made. Items
+   * from this index on were added after the compaction. On a model with
+   * preserved thinking's prefix check, reasoning minted before it is not sent
+   * again: it was produced with the summarised turns in front of it.
+   */
+  conversationSummaryHistoryLength?: number;
+  /**
+   * Set on the last item kept from a turn that the person stopped or that
+   * failed, or that a reload cut off. The chat offers Resume for it.
+   */
+  interrupted?: TurnInterruption;
+  /**
+   * Parts of this item the person took out of the context with "Choose what
+   * to keep" (gui SelectiveCompactDialog). Nothing is deleted: the request
+   * sends a one-line stub in their place (core/util/contextRemoval.ts), and
+   * the originals stay in the session.
+   */
+  removedByUser?: RemovedByUser;
+  /**
    * Request-time only, never saved: a prompt cache point goes right after this
    * item (a fork point, such as a Loop item's first message), so a retry, a
    * branch or a subagent that starts from the same context reads the cached
@@ -1373,6 +1702,11 @@ export interface ChatHistoryItem {
 export interface LLMFullCompletionOptions extends BaseCompletionOptions {
   log?: boolean;
   model?: string;
+  /**
+   * Per request, never from config: sent as `strata_prefix` to a local
+   * OpenAI-compatible server (the compaction pre-warm, C106).
+   */
+  strataPrefix?: StrataPrefix;
 }
 
 export type ToastType = "info" | "error" | "warning";
@@ -1419,6 +1753,8 @@ export interface LLMInteractionEnd extends LLMInteractionBase {
   generatedTokens: number;
   thinkingTokens: number;
   usage: Usage | undefined;
+  /** The request's timing at its end (chat requests). */
+  timing?: RequestTiming;
 }
 
 export interface LLMInteractionSuccess extends LLMInteractionEnd {
@@ -1468,6 +1804,36 @@ export interface ILLMInteractionLog {
 export interface ILLMLogger {
   createInteractionLog(): ILLMInteractionLog;
 }
+
+/** The part of a model's `contextManagement` settings the IDE uses. */
+export interface ModelContextManagement {
+  /**
+   * Planned compaction: prepare the summary in the background past the
+   * prepare threshold. Unset: on for a local server, off otherwise.
+   */
+  plannedCompaction?: boolean;
+  /**
+   * Pre-warm the compacted prompt once its summary is ready (C106):
+   * experimental, "off" by default until the Strata live check; "local" on
+   * Strata and llama.cpp servers. "always"
+   * would add cloud providers, which is not built yet (C109), so it acts as
+   * "local" for now.
+   */
+  prewarm?: PrewarmSetting;
+}
+
+/** `contextManagement.prewarm` (decision D6). */
+export type PrewarmSetting = "off" | "local" | "always";
+
+/**
+ * Strata's `strata_prefix` request field: the checkpoint at the end of the
+ * first `messages` messages (or `tokens` tokens, or `chars` characters of
+ * message `message`) is pinned. Only one pin per engine.
+ */
+export type StrataPrefix =
+  | { messages: number }
+  | { tokens: number }
+  | { message: number; chars: number };
 
 export interface LLMOptions {
   model: string;
@@ -1548,6 +1914,9 @@ export interface LLMOptions {
 
   /** Tool overrides for this model */
   toolOverrides?: ToolOverride[];
+
+  /** The model's `contextManagement` settings the IDE reads. */
+  contextManagement?: ModelContextManagement;
 }
 
 type RequireAtLeastOne<T, Keys extends keyof T = keyof T> = Pick<
@@ -1663,6 +2032,8 @@ export interface IdeSettings {
   userToken: string;
   continueTestEnvironment: "none" | "production" | "staging" | "local";
   pauseCodebaseIndexOnStart: boolean;
+  /** Keep each request's full prompt in the size-capped debug prompt log. Off by default. */
+  debugPromptLog?: boolean;
 }
 
 export interface FileStats {
@@ -1938,6 +2309,13 @@ export interface CacheBehavior {
    * caching on. A choice in the chat toolbar overrides it.
    */
   ttl?: "auto" | "5m" | "1h";
+  /**
+   * Lifetime of a subagent run's cache entries. Default "5m". "1h", or
+   * "auto" (5 minutes, then 1 hour from the run's fifth request), is the
+   * opt-in; "inherit" follows the chat toolbar and `ttl`. Does not turn
+   * caching on. CONTINUOUS_FORCE_CACHE_5M=1 overrides it.
+   */
+  subagentTtl?: "5m" | "1h" | "auto" | "inherit";
 }
 
 export interface ClientCertificateOptions {
@@ -1991,6 +2369,24 @@ export interface ToolExtras {
    * folders; the exact edit tools run only with this set.
    */
   workspaceDirs?: string[];
+  /**
+   * Set when File edits is IDGAF, which says nothing asks: the file
+   * tools may then name a path outside the workspace folders. The permission
+   * layer has already decided the call; this only lets the tool resolve the
+   * path instead of treating it as not a target.
+   */
+  allowOutsideWorkspace?: boolean;
+  /**
+   * What run_terminal_command does when a command's output looks like a
+   * runaway, from the Tools policy level ("stop" or "keep-running").
+   */
+  runawayAction?: "stop" | "keep-running";
+  /**
+   * The session the call belongs to (a subagent's run has its own), so a
+   * tool can find that session's pages in the web content store
+   * (core/util/web/contentStore.ts). Unset when the caller has no session.
+   */
+  sessionId?: string;
 }
 
 export interface McpToolMeta {
@@ -2018,6 +2414,14 @@ export interface Tool {
   faviconUrl?: string;
   group: string;
   originalFunctionName?: string;
+  /** An MCP tool from a server the open folder brought, not the person's own config */
+  mcpFromWorkspace?: boolean;
+  /**
+   * An MCP tool from a server the person marked `trusted` under `mcpServers`
+   * in their own permissions.yaml (never one the open folder brought). Its
+   * calls are not a network call for the secret-read plus network pair (B92).
+   */
+  mcpServerTrusted?: boolean;
   systemMessageDescription?: {
     prefix: string;
     exampleArgs?: Array<[string, string | number]>;
@@ -2028,6 +2432,8 @@ export interface Tool {
     args: Record<string, unknown>,
     extras: {
       ide: IDE;
+      /** As for ToolExtras: File edits is IDGAF */
+      allowOutsideWorkspace?: boolean;
     },
   ) => Promise<Record<string, unknown>>;
   evaluateToolCallPolicy?: (
@@ -2038,13 +2444,20 @@ export interface Tool {
   mcpMeta?: McpToolMeta;
   /**
    * An MCP tool whose definition changed, or that appeared, after the person
-   * approved its server. It asks again at every level but YOLO until a call to
+   * approved its server. It asks again at every level but IDGAF until a call to
    * it is approved. `summary` says what changed.
    */
   mcpDefinitionChange?: {
     kind: "changed" | "added" | "launch";
     summary: string;
   };
+  /**
+   * An MCP tool the person has not approved (TR4): its server was never
+   * approved, or the tool appeared or changed since. It is not offered to the
+   * model until it is approved (Settings > Tools); at IDGAF it is offered and
+   * its first call pins it.
+   */
+  mcpPendingApproval?: "new" | "added" | "changed";
 }
 
 /**
@@ -2098,6 +2511,12 @@ export interface BaseCompletionOptions {
   reasoningBudgetTokens?: number;
   promptCaching?: boolean;
   /**
+   * Advanced. `true` leaves temperature, topP and topK out of the request;
+   * `false` sends them even to a Claude model that refuses them (4.7 and
+   * later); unset follows the model.
+   */
+  omitSampling?: boolean;
+  /**
    * Lifetime of prompt cache entries written by this request. Only honoured by
    * providers that support it (Anthropic and Claude models on Bedrock); omit
    * for the provider's default of 5 minutes.
@@ -2150,6 +2569,9 @@ export interface ModelDescription {
 
   /** Tool overrides for this model */
   toolOverrides?: ToolOverride[];
+
+  /** The model's `contextManagement` settings the IDE reads. */
+  contextManagement?: ModelContextManagement;
 }
 
 export interface JSONEmbedOptions {
@@ -2331,6 +2753,12 @@ export type InternalSseMcpOptions = BaseInternalMCPOptions & {
 export interface McpOauthSettings {
   /** Port of the local redirect server used while signing in (default 3000). */
   callbackPort?: number;
+  /** Pre-registered OAuth client id; skips dynamic client registration. */
+  clientId?: string;
+  /** Secret of the pre-registered client (use a secrets reference). */
+  clientSecret?: string;
+  /** Host in the redirect URI: "localhost" (default) or "127.0.0.1". */
+  redirectHost?: "localhost" | "127.0.0.1";
 }
 
 export type InternalWebsocketMcpOptions = BaseInternalMCPOptions & {
@@ -2364,10 +2792,17 @@ export interface ContinueUIConfig {
   codeWrap?: boolean;
   showSessionTabs?: boolean;
   continueAfterToolRejection?: boolean;
+  /**
+   * Save sessions as an append-only log with large tool outputs and images
+   * stored once by hash (STOR6/STOR7) instead of rewriting a JSON file.
+   */
+  sessionLogStorage?: boolean;
   /** Ask the model once to re-issue a tool call it wrote as text (H13). Default true. */
   nudgeLeakedToolCalls?: boolean;
   /** The first-run overview on Settings > Permissions was dismissed. Never shown again. */
   permissionsIntroDismissed?: boolean;
+  /** Leave the model's thinking open after the answer starts, instead of folding it to "Thought for Ns". Default false. */
+  keepThinkingExpanded?: boolean;
 }
 
 export interface ContextMenuConfig {
@@ -2947,8 +3382,28 @@ export interface Skill {
   license?: string;
 }
 
+/**
+ * A local model the person chose on the onboarding Local tab instead of the
+ * suggested default. Everything but `chatModel` is optional.
+ */
+export interface LocalOnboardingChoice {
+  /** A provider id of the config schema: ollama, lmstudio, llama.cpp, vllm, openai. */
+  provider: string;
+  chatModel: string;
+  /** Shown in the model picker; the model name when absent. */
+  chatTitle?: string;
+  /** The server address; the provider's own default when absent. */
+  apiBase?: string;
+  /** Autocomplete (FIM) model. Ollama falls back to the suggested default. */
+  fimModel?: string;
+  /** Embeddings model. Ollama falls back to the suggested default. */
+  embeddingsModel?: string;
+}
+
 export interface CompleteOnboardingPayload {
   mode: OnboardingModes;
+  /** The Local tab's own choice; the suggested Ollama setup when absent. */
+  local?: LocalOnboardingChoice;
 }
 
 export interface CompiledMessagesResult {
@@ -2956,6 +3411,8 @@ export interface CompiledMessagesResult {
   didPrune: boolean;
   /** History ageing masked more tool results in this request (a planned cache rebuild). */
   didAge?: boolean;
+  /** What normalizeTurns repaired in the history (llm/normalizeTurns.ts); absent when nothing. */
+  repairs?: string[];
   contextPercentage: number;
   /** Tokens the context has left for the reply, after the prompt. */
   outputTokensAvailable?: number;
@@ -2963,12 +3420,20 @@ export interface CompiledMessagesResult {
 
 export interface AddToChatPayload {
   data: AddToChatPayloadItem[];
+  /** Resources the host would not add, so the chat can say why. */
+  refused?: AddToChatRefusal[];
 }
 
-interface AddToChatPayloadItem {
+export interface AddToChatPayloadItem {
   type: "file" | "folder";
+  /** A URI string, read by the `file` or `folder` provider at send time. */
   fullPath: string;
   name: string;
+}
+
+export interface AddToChatRefusal {
+  name: string;
+  reason: "secret" | "outside-workspace" | "not-found" | "unsaved";
 }
 
 export interface MessageOption {

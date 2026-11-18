@@ -103,6 +103,20 @@ export function shadowSpend(dir: string): number {
   return total;
 }
 
+/** Spend and review count in the retained trail: what a new spend ledger starts from. */
+export function shadowSeed(dir: string): { usd: number; reviews: number } {
+  let usd = 0;
+  let reviews = 0;
+  for (const records of readShadowRecords(dir).values()) {
+    for (const r of records) {
+      if (r.ev !== "shadow") continue;
+      reviews++;
+      if (typeof r.costUsd === "number") usd += r.costUsd;
+    }
+  }
+  return { usd, reviews };
+}
+
 export function shadowReport(
   bySession: ReadonlyMap<string, readonly AuditRecord[]>,
   filter: ShadowFilter = {},

@@ -201,9 +201,7 @@ The GitHub API rate limits public requests to 60 per hour. If you want to reliab
 
 ### How to Enable Local Crawling for Private Documentation
 
-Documentation sites are crawled on this machine. Set `useLocalCrawling` to `false` to send the site URL to the upstream crawl service instead.
-
-Private documentation stays on this machine with the default, or with `useLocalCrawling` set to `true`.
+Documentation sites are always crawled on this machine, fetching directly from the site you name. No crawl service is used, and `useLocalCrawling` is ignored (it is kept so existing configs still load).
 
 <Tabs>
   <Tab title="YAML">
@@ -246,7 +244,7 @@ Private documentation stays on this machine with the default, or with `useLocalC
 
 Further notes:
 
-- A site that is only reachable from this machine is crawled here. Leave `useLocalCrawling` unset (or `true`) when the URL itself should not be sent to the upstream crawl service.
+- A site that is only reachable from this machine is crawled here; the URL is never sent to a third-party service.
 - For GitHub Repos this has no effect because only the GitHub Crawler will be used, and if the repo is private it can only be accessed with a priveleged GitHub token anyways.
 
 ## How to Manage Your Documentation Indexes

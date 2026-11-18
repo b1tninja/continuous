@@ -3,6 +3,7 @@ import * as os from "os";
 import * as path from "path";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { tryLink } from "../tools/permissions/testLinks";
 import { migrateLegacyGlobalDir, replacePathPrefix } from "./paths";
 import {
   isIgnoreFile,
@@ -122,14 +123,15 @@ describe("migrateLegacyGlobalDir", () => {
     expect(fs.existsSync(path.join(dir, "config.yaml"))).toBe(false);
   });
 
-  it("copies the file a symlink points at", () => {
+  it("copies the file a symlink points at", (ctx) => {
     const home = tmp();
     const legacy = path.join(home, ".continue");
     const dir = path.join(home, ".continuous");
     const outside = path.join(home, "real-config.yaml");
     fs.mkdirSync(legacy);
     fs.writeFileSync(outside, "name: real\n");
-    fs.symlinkSync(outside, path.join(legacy, "config.yaml"));
+    const made = tryLink(outside, path.join(legacy, "config.yaml"), "file");
+    if (!made.ok) return ctx.skip(made.reason);
 
     expect(migrateLegacyGlobalDir(legacy, dir)).toBe(dir);
 

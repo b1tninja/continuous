@@ -1,3 +1,4 @@
+import { maskCommandForDisplay } from "core/tools/permissions/displayMask";
 import { CodeBracketIcon } from "@heroicons/react/24/outline";
 import { ToolbarButtonWithTooltip } from "../../../components/StyledMarkdownPreview/StepContainerPreToolbar/ToolbarButtonWithTooltip";
 
@@ -41,7 +42,9 @@ export const ArgsItems = ({ args, isShowing }: ArgsItemsProps) => {
       {args.map(([key, value]) => (
         <div key={key} className="flex flex-row items-center gap-2 py-0.5">
           <span className="text-lightgray">{key}:</span>
-          <code className="break-all">{JSON.stringify(value)}</code>
+          <code className="break-all">
+            {JSON.stringify(maskCommandForDisplay(value))}
+          </code>
         </div>
       ))}
     </div>

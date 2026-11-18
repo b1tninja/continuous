@@ -1,3 +1,4 @@
+import { maskArgsForDisplay } from "core/tools/permissions/displayMask";
 import { createAsyncThunk, unwrapResult } from "@reduxjs/toolkit";
 import { JSONContent } from "@tiptap/core";
 import { Tool, ToolCallState } from "core";
@@ -93,7 +94,7 @@ function snapshotArgs(value: unknown): Record<string, unknown> | undefined {
 }
 
 function argPreview(args: Record<string, unknown>): string | undefined {
-  const text = JSON.stringify(args);
+  const text = JSON.stringify(maskArgsForDisplay(args));
   if (!text || text === "{}") return undefined;
   return text.length > 240 ? `${text.slice(0, 240)}…` : text;
 }

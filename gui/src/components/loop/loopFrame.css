@@ -1,0 +1,138 @@
+/*
+ * The gradient loop frame: a 2 px frame round the loop dock whose colour is
+ * the loop's state (design: Loop mode redesign, variant C-G; the thin rounded
+ * frame and the #4C8DFF > #8B7CF6 > #A78BFA stops are the Continuous logo's).
+ * Running is the diagonal gradient (with a faint highlight arc turning once in
+ * 7 s only when LoopFrame says data-motion="sweep"); waiting is solid amber,
+ * failed solid red, finished solid green, stopped solid grey. The frame is
+ * redundancy: every state keeps its icon and word beside it.
+ *
+ * No layout shift: the border is always 2 px and transparent, painted by the
+ * backgrounds, so a state change only repaints. The glow is an outer
+ * box-shadow, so it never sits behind text; leave about 6 px of margin for it.
+ *
+ * Browser floor: Tailwind 4 (this webview's CSS) already needs Chromium 111
+ * (color-mix, @property), and VS Code ^1.105 ships a newer one. Where either
+ * is missing the declarations below degrade: no color-mix keeps the purple
+ * glow, no @property keeps the highlight as a still glint.
+ *
+ * Contrast of every ring colour is at least 3:1 (WCAG 1.4.11) against the page,
+ * the card and the input in the dark and light themes; loopFrameTokens.ts and
+ * its test hold the numbers, and these hexes must match it.
+ */
+@property --lf-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.loop-frame {
+  /* dark: the logo stops, and the state colours */
+  --lf-g1: #4c8dff;
+  --lf-g2: #8b7cf6;
+  --lf-g3: #a78bfa;
+  --lf-hl: rgba(255, 255, 255, 0.75);
+  --lf-glow: 35%;
+  --lf-amber: #e0b84a;
+  --lf-red: #f48771;
+  --lf-green: #89d185;
+  --lf-grey: #a0a0a0;
+  /* the surface inside the ring; override on the element for a card or input */
+  --lf-fill: var(
+    --vscode-sideBar-background,
+    var(--vscode-editor-background, #1e1e1e)
+  );
+  --lf-angle: 0deg;
+  --lf-stc: var(--lf-g2);
+  --lf-base: linear-gradient(135deg, var(--lf-g1), var(--lf-g2), var(--lf-g3));
+
+  box-sizing: border-box;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background:
+    linear-gradient(var(--lf-fill), var(--lf-fill)) padding-box,
+    var(--lf-base) border-box;
+  /* fallback for a webview without color-mix */
+  box-shadow: 0 0 6px rgba(139, 124, 246, 0.3);
+  box-shadow: 0 0 6px
+    color-mix(in srgb, var(--lf-stc) var(--lf-glow), transparent);
+}
+
+/* light themes: the logo stops fail 3:1 on white, so darker ones */
+:is(
+    [data-vscode-theme-kind="vscode-light"],
+    body.vscode-light,
+    body.vscode-high-contrast-light
+  )
+  .loop-frame {
+  --lf-g1: #2563eb;
+  --lf-g2: #5b4bd6;
+  --lf-g3: #6d45d9;
+  --lf-hl: rgba(10, 20, 90, 0.65);
+  --lf-glow: 22%;
+  --lf-amber: #7a5700;
+  --lf-red: #b3261e;
+  --lf-green: #1a6b2a;
+  --lf-grey: #5c5c5c;
+}
+
+.loop-frame[data-state="waiting"] {
+  --lf-stc: var(--lf-amber);
+  --lf-base: linear-gradient(var(--lf-amber), var(--lf-amber));
+}
+.loop-frame[data-state="failed"] {
+  --lf-stc: var(--lf-red);
+  --lf-base: linear-gradient(var(--lf-red), var(--lf-red));
+}
+.loop-frame[data-state="finished"] {
+  --lf-stc: var(--lf-green);
+  --lf-base: linear-gradient(var(--lf-green), var(--lf-green));
+}
+.loop-frame[data-state="stopped"] {
+  --lf-stc: var(--lf-grey);
+  --lf-base: linear-gradient(var(--lf-grey), var(--lf-grey));
+}
+
+/*
+ * The travelling highlight: only the focused, visible, running loop, and never
+ * under reduced motion (the media query, or VS Code's class on body). The
+ * conic-gradient is written here, in the rule that carries the animation: an
+ * unregistered custom property would resolve var(--lf-angle) where it is
+ * declared (angle 0) and the sweep would never move.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  body:not(.vscode-reduce-motion)
+    .loop-frame[data-state="running"][data-motion="sweep"] {
+    background:
+      linear-gradient(var(--lf-fill), var(--lf-fill)) padding-box,
+      conic-gradient(
+          from var(--lf-angle),
+          transparent 0 76%,
+          var(--lf-hl) 88%,
+          transparent 100%
+        )
+        border-box,
+      var(--lf-base) border-box;
+    animation: lf-spin 7s linear infinite;
+  }
+}
+@keyframes lf-spin {
+  to {
+    --lf-angle: 360deg;
+  }
+}
+
+/* high contrast: one solid border the theme draws; the icon and word carry the state */
+body.vscode-high-contrast .loop-frame,
+body.vscode-high-contrast-light .loop-frame {
+  border-color: var(--vscode-contrastBorder, CanvasText);
+  background: var(--lf-fill) !important;
+  box-shadow: none;
+}
+@media (forced-colors: active) {
+  .loop-frame {
+    border-color: CanvasText;
+    background: Canvas !important;
+    box-shadow: none;
+  }
+}

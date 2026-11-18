@@ -52,13 +52,13 @@ describe("streamChatResponse - Mode Switch During Streaming", () => {
     expect(toolNames).not.toContain("Write");
     expect(toolNames).not.toContain("MultiEdit");
 
-    // Should still include read-only tools, Bash (it asks first) and the plan tool
+    // Should still include read-only tools and the plan tool, but not Bash
     expect(toolNames).toContain("Read");
-    expect(toolNames).toContain("Bash");
+    expect(toolNames).not.toContain("Bash");
     expect(toolNames).toContain("List");
     expect(toolNames).toContain("PresentPlan");
 
-    // Headless plan mode has nobody to ask, so Bash is not offered at all
+    // Headless plan mode drops Bash too
     const headless = (await getRequestTools(true)).map((t) => t.function.name);
     expect(headless).not.toContain("Bash");
     expect(headless).toContain("Read");

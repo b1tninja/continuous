@@ -1,3 +1,4 @@
+import { maskCommandForDisplay } from "core/tools/permissions/displayMask.js";
 import { Box, Text, useInput } from "ink";
 import React, { useState } from "react";
 
@@ -38,11 +39,9 @@ export const ToolPermissionRequest: React.FC<ToolPermissionRequestProps> = ({
     const firstKey = Object.keys(args)[0];
     const firstValue = args[firstKey];
 
-    if (typeof firstValue === "string" && firstValue.length > 50) {
-      return `${firstValue.substring(0, 50)}...`;
-    }
-
-    return String(firstValue);
+    // Masked first, so a cut can not leave the start of a secret on screen
+    const shown = maskCommandForDisplay(String(firstValue));
+    return shown.length > 50 ? `${shown.substring(0, 50)}...` : shown;
   };
 
   return (

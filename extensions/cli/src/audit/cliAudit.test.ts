@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { setAuditTrailForTests } from "core/tools/permissions/audit/global.js";
+import { loopWorkerAuditAgent } from "core/tools/permissions/audit/identity.js";
 import {
   callRows,
   readAuditSession,
@@ -10,7 +11,11 @@ import {
 import { AuditTrail } from "core/tools/permissions/audit/trail.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { recordCliDecision, recordCliOutcome } from "./cliAudit.js";
+import {
+  recordCliDecision,
+  recordCliOutcome,
+  setCliAuditAgent,
+} from "./cliAudit.js";
 
 vi.mock("../session.js", () => ({
   getCurrentSession: () => ({ sessionId: "cli-sess" }),
@@ -24,6 +29,7 @@ beforeEach(() => {
   );
 });
 afterEach(() => {
+  setCliAuditAgent(undefined);
   setAuditTrailForTests(undefined);
   fs.rmSync(dir, { recursive: true, force: true });
 });
@@ -95,5 +101,40 @@ describe("the CLI permission path writes the audit", () => {
       model: "haiku-test",
       latencyMs: 640,
     });
+  });
+});
+
+describe("who the CLI says is calling", () => {
+  const agents = () =>
+    readAuditSession(dir, "cli-sess").map((r) =>
+      "agent" in r ? r.agent : undefined,
+    );
+
+  it("is the session's main agent unless a worker named itself", () => {
+    recordCliDecision(
+      call("1"),
+      { verdict: { decision: "allow", by: "rules" } },
+      { approved: true },
+    );
+    expect(agents()[0]).toEqual({ id: "main-cli-sess", kind: "main" });
+  });
+
+  it("is the Loop worker the parent named, in the mode every host uses", () => {
+    setCliAuditAgent(loopWorkerAuditAgent("parent-sess", "3"));
+    recordCliDecision(
+      call("1"),
+      { verdict: { decision: "allow", by: "rules" } },
+      { approved: true },
+    );
+    recordCliOutcome(call("1"), { ran: true, output: "ok" });
+    expect(agents()).toEqual([
+      expect.objectContaining({
+        id: "worker-3",
+        kind: "loop-worker",
+        mode: "agent",
+        parentId: "main-parent-sess",
+      }),
+      expect.objectContaining({ id: "worker-3" }),
+    ]);
   });
 });

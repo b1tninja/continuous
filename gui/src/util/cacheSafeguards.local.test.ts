@@ -1,5 +1,7 @@
 import type { ModelDescription } from "core";
 import { describe, expect, it } from "vitest";
+import ollamaOpenAI from "core/llm/__fixtures__/ollama/openai-stream-cache-hit.json";
+import { withServerTimings } from "core/llm/serverTimings";
 import { formatRereadCost } from "./cacheNotices";
 import {
   detectCacheMiss,
@@ -175,6 +177,38 @@ describe("local re-read time", () => {
     expect(formatRereadCost(loss!)).toBe(
       "120k tokens from scratch on the model server (about 2 min at its last speed)",
     );
+  });
+});
+
+describe("local re-read time on Ollama after a cache hit", () => {
+  // Ollama's OpenAI endpoint: 20,000 prompt tokens, 19,000 cached, 250 ms
+  const last = ollamaOpenAI.chunks[2] as any;
+  const usage = withServerTimings(
+    {
+      promptTokens: last.usage.prompt_tokens,
+      completionTokens: last.usage.completion_tokens,
+      promptTokensDetails: {
+        cachedTokens: last.usage.prompt_tokens_details.cached_tokens,
+      },
+    },
+    last.timings,
+  );
+  const ollama = model("openai", "http://127.0.0.1:11434/v1/", "qwen3:8b");
+
+  it("uses the read speed over the uncached tokens, not Ollama's figure", () => {
+    expect(last.timings.prompt_per_second).toBe(80_000);
+    expect(usage.promptTokensPerSecond).toBe(4000);
+    const loss = warmCacheLoss(
+      ollama,
+      undefined,
+      state({
+        lastInputTokens: 20_000,
+        promptTokensPerSecond: usage.promptTokensPerSecond,
+      }),
+      t0 + 60_000,
+    );
+    // 20,000 tokens at 4,000 tok/s; Ollama's own rate would say 0.25 s
+    expect(loss).toEqual({ tokens: 20_000, local: true, seconds: 5 });
   });
 });
 

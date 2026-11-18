@@ -12,11 +12,31 @@ import {
   RecentlyEditedRange,
 } from "../autocomplete/util/types";
 import type {
-  TerminalEnvironmentMode,
-  TerminalEnvironmentStatus,
-} from "../util/terminalEnvironment";
+  McpImportPreview,
+  McpImportRequest,
+  McpImportResult,
+} from "../config/importClineMcp";
+import type {
+  McpWizardAnalyzeResponse,
+  McpWizardListResponse,
+  McpWizardParseRequest,
+  McpWizardParseResponse,
+  McpWizardProbeRequest,
+  McpWizardProbeResponse,
+  McpWizardRemoveRequest,
+  McpWizardRemoveResponse,
+  McpWizardSaveRequest,
+  McpWizardSaveResponse,
+} from "../config/mcpWizard/protocolHandlers";
+import type { McpTemplateSummary } from "../config/mcpWizard/templates";
+import type { McpServerDraft } from "../config/mcpWizard/types";
+import type {
+  ModelBlockInfo,
+  ModelEditPreview,
+  ModelEditSaveResult,
+} from "../config/modelEdit/modelBlockEdit";
+import type { ModelPatchOp } from "../config/modelEdit/modelEditFields";
 import { ProfileDescription } from "../config/ProfileLifecycleManager";
-import { SharedConfigSchema } from "../config/sharedConfig";
 import type {
   MovePlaintextKeysResult,
   PlaintextKey,
@@ -24,29 +44,36 @@ import type {
   SaveProviderInstanceRequest,
   SaveProviderInstanceResult,
 } from "../config/providers/types";
-import type { ModeModelsInput } from "../config/yaml/saveModeModels";
-import type { SubagentLoadResult } from "../subagents/loadSubagents";
-import type { ApplyPatchResult, WorktreeInfo } from "../util/worktree";
-import type { DetectedLocalServer } from "../llm/localServers";
-import type { RulesByModeInput } from "../config/yaml/saveRulesByMode";
-import type {
-  AutoReviewReply,
-  AutoReviewRequest,
-} from "../tools/permissions/auto/handler";
-import type {
-  McpImportPreview,
-  McpImportRequest,
-  McpImportResult,
-} from "../config/importClineMcp";
+import type { TrashSessionResult } from "../util/history.js";
+import type { SessionSearchResult } from "../util/sessionSearch.js";
+import type { TrashedSession } from "../util/sessionTrash.js";
 import type {
   ProviderSetupInfo,
   SaveProviderModelsRequest,
   SaveProviderModelsResult,
 } from "../config/providerSetup";
-import type { DecisionSource as ToolDecisionSource } from "../tools/permissions/decide";
+import { SharedConfigSchema } from "../config/sharedConfig";
+import type { ModeModelsInput } from "../config/yaml/saveModeModels";
+import type { RulesByModeInput } from "../config/yaml/saveRulesByMode";
+import type { CommunityPrice } from "../llm/communityCatalog";
+import type { DetectedLocalServer } from "../llm/localServers";
+import type { PrewarmResult } from "../llm/localPrewarm";
+import type { CatalogModel } from "../llm/openRouterCatalog";
+import type { SubagentLoadResult } from "../subagents/loadSubagents";
 import type { ApprovalSettings } from "../tools/permissions/approval";
+import type {
+  AutoReviewReply,
+  AutoReviewRequest,
+} from "../tools/permissions/auto/handler";
+import type { DecisionSource as ToolDecisionSource } from "../tools/permissions/decide";
 import type { RuleEditRequest } from "../tools/permissions/ruleEditorHandlers";
 import { GlobalContextModelSelections } from "../util/GlobalContext";
+import type {
+  TerminalEnvironmentMode,
+  TerminalEnvironmentStatus,
+} from "../util/terminalEnvironment";
+import type { ApplyPatchResult, WorktreeInfo } from "../util/worktree";
+import type { AuditListProtocol } from "./audit";
 
 import {
   BaseSessionMetadata,
@@ -71,6 +98,8 @@ import {
   RangeInFileWithNextEditInfo,
   SerializedContinueConfig,
   Session,
+  SessionDelta,
+  SessionSaveResult,
   SiteIndexingConfig,
   SlashCommandDescWithSource,
   StreamDiffLinesPayload,
@@ -82,6 +111,8 @@ import { ConfigHandler } from "../config/ConfigHandler";
 import { ProcessedItem } from "../nextEdit/NextEditPrefetchQueue";
 import { NextEditOutcome } from "../nextEdit/types";
 import { ContinueErrorReason } from "../util/errors";
+import type { ProbeStatus } from "../util/measuredFacts";
+import type { RetirementNotice } from "../util/modelRetirement";
 import type { OpenAICompatTestResult } from "../util/openaiCompatTest";
 
 export enum OnboardingModes {
@@ -131,10 +162,33 @@ export interface BedrockModelOptionInfo {
    * "pending" while an access request is open.
    */
   access?: "available" | "needs-access" | "pending";
+  /**
+   * Set when the account's applied tokens- or requests-per-minute quota for
+   * this model on its route is 0 (Service Quotas): the warning to show
+   * before the first request, with the Service Quotas console link.
+   */
+  quotaWarning?: string;
+}
+
+/** The optional Service Quotas check that runs with Test connection. */
+export interface BedrockQuotaCheckInfo {
+  /** `ok`: quotas known; `skipped`: not checked (see `note`); `off`: model information updates are off */
+  status: "ok" | "skipped" | "off";
+  /** One quiet line, e.g. "Quota check skipped: this profile lacks servicequotas:ListServiceQuotas" */
+  note?: string;
+  docsUrl?: string;
+  fetchedAt?: string;
+  /** How many listed models have a 0 quota on their route */
+  zeroQuotaModels?: number;
 }
 
 export type BedrockListModelsResult =
-  { ok: true; models: BedrockModelOptionInfo[] } | { ok: false; error: string };
+  | {
+      ok: true;
+      models: BedrockModelOptionInfo[];
+      quota?: BedrockQuotaCheckInfo;
+    }
+  | { ok: false; error: string };
 
 /**
  * Whether the account lists the `global.` inference profile of a configured
@@ -163,7 +217,7 @@ export type BedrockProbeToolCallsResult =
 export type ProfileFileResult =
   { ok: true; profileId?: string } | { ok: false; error: string };
 
-export type ToCoreFromIdeOrWebviewProtocol = {
+export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
   // Special
   ping: [string, string];
   abort: [undefined, void];
@@ -173,9 +227,22 @@ export type ToCoreFromIdeOrWebviewProtocol = {
   "history/list": [ListHistoryOptions, BaseSessionMetadata[]];
   "history/delete": [{ id: string }, void];
   "history/load": [{ id: string }, Session];
-  "history/save": [Session, void];
+  "history/save": [Session, SessionSaveResult | void];
+  "history/saveDelta": [SessionDelta, SessionSaveResult];
   "history/share": [{ id: string; outputDir?: string }, void];
   "history/clear": [undefined, void];
+  /** Delete now: to the trash, restorable for 7 days (NI10). */
+  "history/trash": [{ id: string; force?: boolean }, TrashSessionResult];
+  "history/restore": [{ id: string }, BaseSessionMetadata];
+  "history/listTrash": [undefined, TrashedSession[]];
+  /** "Delete permanently" in the trash. */
+  "history/deleteFromTrash": [{ id: string }, void];
+  "history/emptyTrash": [undefined, void];
+  /** Message-text search over the newest sessions (bounded). */
+  "history/search": [
+    { query: string; maxSessions?: number; maxResults?: number },
+    SessionSearchResult,
+  ];
   "devdata/log": [DevDataLogEvent, void];
   "config/addOpenAiKey": [string, void];
   "config/addModel": [
@@ -230,8 +297,35 @@ export type ToCoreFromIdeOrWebviewProtocol = {
    * such entry to edit.
    */
   "config/setToolDialect": [
-    { title: string; toolDialect: ToolDialectSetting },
-    { saved: boolean },
+    {
+      title: string;
+      toolDialect: ToolDialectSetting;
+      /**
+       * Ask in the IDE's own dialog first (the page cannot answer it). When
+       * the answer is no, nothing is written and `declined` is true.
+       */
+      confirm?: string;
+    },
+    { saved: boolean; declined?: boolean },
+  ];
+  /**
+   * The config.yaml entry of the model with this title, for the model
+   * configuration dialog. Plain credential values are masked; secret
+   * references are returned as names.
+   */
+  "config/getModelBlock": [{ title: string }, ModelBlockInfo];
+  /** Check a change to that entry and return the YAML diff it would make. */
+  "config/previewModelEdit": [
+    { title: string; ops: ModelPatchOp[] },
+    ModelEditPreview,
+  ];
+  /**
+   * Write the change, if the file still matches the preview's `baseHash`.
+   * Comments, key order and keys the dialog does not manage are kept.
+   */
+  "config/saveModelEdit": [
+    { title: string; ops: ModelPatchOp[]; baseHash: string },
+    ModelEditSaveResult,
   ];
   /**
    * The effective policy for the environment commands inherit, where it comes
@@ -289,6 +383,24 @@ export type ToCoreFromIdeOrWebviewProtocol = {
       | undefined
     ),
     import("../tools/permissions/ruleEditor").UndoResponse,
+  ];
+  /**
+   * Shadow reviewer (B16) as the Settings page shows it: the saved switch,
+   * budget and timeout from the person's own config.yaml, and the spend and
+   * review count from the shared spend ledger.
+   */
+  "audit/shadowSettings": [
+    undefined,
+    import("../tools/permissions/audit/shadowSettingsHandlers").ShadowSettingsView,
+  ];
+  /**
+   * Change `audit.shadowReviewer` in the person's own config.yaml (comments
+   * kept, only those keys written). Turning it on waits for the IDE's own
+   * dialog. Budget: more than 0 and at most 100 dollars.
+   */
+  "audit/setShadowSettings": [
+    import("../tools/permissions/audit/shadowConfig").ShadowChange,
+    import("../tools/permissions/audit/shadowSettingsHandlers").ShadowSetResponse,
   ];
   /**
    * The narrowest allow rule for a pending tool call, or why there is none.
@@ -400,6 +512,15 @@ export type ToCoreFromIdeOrWebviewProtocol = {
     },
     { account?: string; converted: number; error?: string },
   ];
+  /**
+   * Take one provider connection's models out of the selected config (and
+   * their names out of modeModels). The account in providers.yaml, the
+   * catalog models and stored keys are kept.
+   */
+  "config/removeProviderConnection": [
+    import("../config/providerSetup").RemoveProviderConnectionRequest,
+    import("../config/providerSetup").RemoveProviderConnectionResult,
+  ];
   /** Add a model that uses a provider instance to the selected config. */
   "config/addConnectedModel": [
     { connection: string; model: string; name?: string; roles?: string[] },
@@ -440,6 +561,8 @@ export type ToCoreFromIdeOrWebviewProtocol = {
     void,
   ];
   "mcp/setServerEnabled": [{ id: string; enabled: boolean }, void];
+  /** Approve MCP tools waiting for approval (TR4); returns the names pinned */
+  "mcp/approveTools": [{ id: string; tools: string[] | "all" }, string[]];
   "mcp/getPrompt": [
     {
       serverName: string;
@@ -465,6 +588,29 @@ export type ToCoreFromIdeOrWebviewProtocol = {
     },
     void,
   ];
+  /*
+    The MCP add dialog (MCPW4a, core/config/mcpWizard/protocolHandlers.ts).
+    A secret value goes to core only inside a draft on mcp/probe and
+    mcp/save, and no answer ever carries one: a credential from a paste
+    comes back as a held marker, a saved one as its reference name.
+  */
+  /** The bundled templates (MCPW6), for the Start step's cards. */
+  "mcp/listTemplates": [undefined, McpTemplateSummary[]];
+  /** Read a README snippet, or open a template, as candidates to review. Runs nothing. */
+  "mcp/parsePaste": [McpWizardParseRequest, McpWizardParseResponse];
+  /** Launch safety (MCPW2) and the runtime line (MCPW10). Runs nothing. */
+  "mcp/analyzeLaunch": [{ draft: McpServerDraft }, McpWizardAnalyzeResponse];
+  /**
+   * Test connection. Starts the command or connects only when `consent` is
+   * exactly true, and never for a launch the analysis blocks.
+   */
+  "mcp/probe": [McpWizardProbeRequest, McpWizardProbeResponse];
+  /** Save to the person's own config.yaml (default) or "This project". */
+  "mcp/save": [McpWizardSaveRequest, McpWizardSaveResponse];
+  /** Saved servers in both scopes, names and references only. */
+  "mcp/list": [undefined, McpWizardListResponse];
+  /** Remove one saved server; its secrets are kept. */
+  "mcp/remove": [McpWizardRemoveRequest, McpWizardRemoveResponse];
   "context/getSymbolsForFiles": [{ uris: string[] }, FileSymbolMap];
   "context/loadSubmenuItems": [{ title: string }, ContextSubmenuItem[]];
   "autocomplete/complete": [AutocompleteInput, string[]];
@@ -532,8 +678,39 @@ export type ToCoreFromIdeOrWebviewProtocol = {
       apiBase?: string;
       apiKey?: string;
       model?: string;
+      /** The configured model id to check with `GET /models/{id}`. */
+      checkModel?: string;
     },
     OpenAICompatTestResult,
+  ];
+  /**
+   * The last local Test connection result for a model's endpoint, from the
+   * measured-facts file (core/util/measuredFacts.ts). "unknown" when none.
+   */
+  "openaiCompat/probeStatus": [
+    { provider: string; apiBase?: string; model: string },
+    ProbeStatus,
+  ];
+  /**
+   * The deprecation or retirement notice for a configured Anthropic model,
+   * from the checked-in table and the lifecycle the user's own key last
+   * returned (core/util/modelRetirement.ts). No network call.
+   */
+  "model/retirementNotice": [
+    { provider: string; model: string },
+    { notice?: RetirementNotice },
+  ];
+  "model/dismissRetirementNotice": [{ provider: string; model: string }, void];
+  /**
+   * The notices of several configured models at once (the picker, Settings >
+   * Models): same sources as `model/retirementNotice`, not filtered by a
+   * dismissal of the chip. No network call.
+   */
+  "model/retirementNotices": [
+    { models: { provider: string; model: string }[] },
+    {
+      notices: { provider: string; model: string; notice: RetirementNotice }[];
+    },
   ];
   "ollama/showHint": [
     { provider?: string; apiBase?: string; model: string },
@@ -583,6 +760,11 @@ export type ToCoreFromIdeOrWebviewProtocol = {
         messages: ChatMessage[];
         options: LLMFullCompletionOptions;
       };
+      /**
+       * A summary prepared in the background for exactly this span (planned
+       * compaction): saved at `index` with no summary request.
+       */
+      summary?: string;
     },
     string | undefined,
   ];
@@ -644,6 +826,24 @@ export type ToCoreFromIdeOrWebviewProtocol = {
        * Loop worker's worktree; absolute paths stay as they are.
        */
       workspaceDirs?: string[];
+      /**
+       * File edits is IDGAF: the file tools may name a path outside
+       * the workspace (tools/permissions/outsideEdits.ts). The decision was
+       * made by tools/evaluatePolicy; this lets the tool resolve the path.
+       */
+      allowOutsideWorkspace?: boolean;
+      /**
+       * What run_terminal_command does with output that looks like a
+       * runaway, from the Tools policy level: "stop" (default) or
+       * "keep-running" (Permissive and IDGAF).
+       */
+      runawayAction?: "stop" | "keep-running";
+      /**
+       * The session the call belongs to (a subagent's run: its own store id,
+       * `subagentStoreId`), for the web content store. Without it the tool
+       * has no session and nothing is stored.
+       */
+      sessionId?: string;
     },
     {
       contextItems: ContextItem[];
@@ -665,6 +865,15 @@ export type ToCoreFromIdeOrWebviewProtocol = {
     void,
   ];
   /**
+   * The save, dry-run: the exact permissions.yaml text core's writer would
+   * produce, line by line, and what the save's native dialog would ask about.
+   * Nothing is written.
+   */
+  "policy/preview": [
+    import("../tools/permissions/settingsFile").PolicyFileUpdate,
+    import("../tools/permissions/policySave").PolicySavePreview,
+  ];
+  /**
    * Every permission rule in effect with its area, source and state, and the
    * levels. Read-only. `levels` are the session's, when the caller has them.
    */
@@ -672,6 +881,39 @@ export type ToCoreFromIdeOrWebviewProtocol = {
     { levels?: import("../tools/permissions/policy").PolicyLevels } | undefined,
     import("../tools/permissions/effectiveRules").EffectiveRulesReport,
   ];
+  /**
+   * The audit figures for the Permissions page, read from the audit index
+   * (never the trail): per-rule use, the most-asked list, unused hints.
+   * Read-only; masked keys only.
+   */
+  "audit/overview": [
+    (
+      | import("../tools/permissions/audit/overviewHandler").AuditOverviewRequest
+      | undefined
+    ),
+    import("../tools/permissions/audit/auditOverview").AuditOverview,
+  ];
+  /**
+   * The fetch log (plans/research/web-fetch-deep-dive.md, section 7.8): one
+   * record per web request this core made, newest first, with the final URL,
+   * status, bytes, SHA-256 and the rule applied. No bodies. With a session,
+   * only the requests made by that session's tool calls.
+   */
+  "web/fetchLog": [
+    { session?: string } | undefined,
+    import("../util/fetchRecord").FetchRecord[],
+  ];
+  /**
+   * The session's turn is over (sent when the person's next message starts
+   * one): its `no-store`, credentialed and non-public pages leave the web
+   * content store (core/util/web/contentStore.ts).
+   */
+  "web/endTurn": [{ sessionId: string }, void];
+  /**
+   * The session is no longer open here (a new session or another one was
+   * opened, or a subagent's run finished): its pages leave the store.
+   */
+  "web/closeSession": [{ sessionId: string }, void];
   /** Run one call through the real evaluator and explain it. Nothing runs. */
   "policy/test": [
     Omit<
@@ -694,6 +936,12 @@ export type ToCoreFromIdeOrWebviewProtocol = {
       /** Which agent made the call (main, a subagent or a Loop worker), for the audit */
       agent?: import("../tools/permissions/audit/record").AuditAgent;
       /**
+       * The tool is withheld while the prompt cache is warm (C88): the call is
+       * refused with this reason, and the audit trail records it, without
+       * asking the rules.
+       */
+      withheld?: string;
+      /**
        * The conversation as the reviewer sees it. Offered only for a call that
        * may be shadow-reviewed (off unless the person's config turns it on).
        */
@@ -710,6 +958,8 @@ export type ToCoreFromIdeOrWebviewProtocol = {
       readOnly?: string;
       /** The rule that decided, as written in config.yaml. */
       rule?: string;
+      /** The protection that decided, when source is protected-path. */
+      protection?: string;
     },
   ];
   /**
@@ -719,12 +969,19 @@ export type ToCoreFromIdeOrWebviewProtocol = {
   "tools/autoReview": [AutoReviewRequest, AutoReviewReply];
   /** The person's answer to a call that asked, for the audit trail */
   "audit/answer": [{ callId: string; approved: boolean }, void];
+  /** A question answered for the person, where Questions is IDGAF (core/util/autoAnswer.ts) */
+  "audit/autoAnswer": [
+    { callId: string; question: string; answer: string; source: string },
+    void,
+  ];
   "tools/preprocessArgs": [
     {
       toolName: string;
       args: Record<string, unknown>;
       /** As for tools/call: resolve paths against these folders */
       workspaceDirs?: string[];
+      /** As for tools/call: File edits is IDGAF */
+      allowOutsideWorkspace?: boolean;
     },
     {
       preprocessedArgs?: Record<string, unknown>;
@@ -738,6 +995,51 @@ export type ToCoreFromIdeOrWebviewProtocol = {
   "process/isBackgrounded": [{ toolCallId: string }, boolean];
   "process/killTerminalProcess": [{ toolCallId: string }, void];
   "mdm/setLicenseKey": [{ licenseKey: string }, boolean];
+  /**
+   * The dated local copy of OpenRouter's public model list. `status` and
+   * `cached` read the file only; `pull` is a request to openrouter.ai made
+   * when the person asks (Pull now, Refresh now), refused when model
+   * information updates are `off`. With `automatic` (the default) core also
+   * refreshes the copy in the background when it is older than
+   * `refreshHours`; `lastAttempt` is that refresher's last request.
+   */
+  "modelCatalog/status": [
+    undefined,
+    {
+      policy: "automatic" | "ask" | "never" | "off";
+      refreshHours: number;
+      lastAttempt?: { at: string; error?: string };
+      openrouter?: { fetchedAt: string; count: number };
+      /** The community catalogue copy (models.dev), when there is one */
+      community?: { fetchedAt: string; count: number };
+    },
+  ];
+  "modelCatalog/cached": [
+    undefined,
+    { fetchedAt: string; models: CatalogModel[] } | null,
+  ];
+  /**
+   * The trimmed community catalogue copy (models.dev prices), the last price
+   * source; a file read, null when there is none or updates are `off`.
+   */
+  "modelCatalog/communityCached": [
+    undefined,
+    { fetchedAt: string; prices: CommunityPrice[] } | null,
+  ];
+  "modelCatalog/pull": [
+    undefined,
+    (
+      | { ok: true; fetchedAt: string; models: CatalogModel[] }
+      | { ok: false; error: string }
+    ),
+  ];
+  "modelCatalog/setPolicy": [
+    {
+      policy?: "automatic" | "ask" | "never" | "off";
+      refreshHours?: number;
+    },
+    { saved: boolean },
+  ];
   "models/fetch": [
     { provider: string; apiKey?: string; apiBase?: string },
     {
@@ -787,4 +1089,46 @@ export type ToCoreFromIdeOrWebviewProtocol = {
   ];
   "loop/worktreeRemove": [{ repo: string; path: string; branch: string }, void];
   "loop/dirtyFiles": [{ repo: string }, string[]];
+  /**
+   * The summary "conversation/compact" would save at `index`, without saving
+   * it: planned compaction prepares it while the person is idle. Aborted by
+   * an "abort" message whose message id is `requestId`. Never throws: a
+   * background request that fails or is aborted must not show an error, so
+   * the failure comes back as `error`.
+   */
+  "conversation/summarize": [
+    {
+      index: number;
+      sessionId: string;
+      prefix?: {
+        messages: ChatMessage[];
+        options: LLMFullCompletionOptions;
+      };
+      requestId?: string;
+    },
+    { summary: string } | { error: string; aborted: boolean },
+  ];
+  /**
+   * The compaction pre-warm (C106): `messages` and `options` are the request
+   * the chat will send once the prepared summary is saved, built by
+   * buildChatRequest on that session. Core compiles them as "llm/compileChat"
+   * does and sends them to the selected chat model with `max_tokens: 1` (and
+   * Strata's `strata_prefix` pin at the end of the summary). Aborted by an
+   * "abort" message whose message id is `requestId`. Never throws.
+   */
+  "llm/prewarm": [
+    {
+      messages: ChatMessage[];
+      options: LLMFullCompletionOptions;
+      promptTokens: number;
+      liveTokens?: number;
+      requestId: string;
+    },
+    PrewarmResult,
+  ];
+  /**
+   * The selected chat model's Strata `/metrics`, for the Compact now
+   * estimate's speeds (one read-only GET). Undefined for any other server.
+   */
+  "llm/strataMetrics": [undefined, unknown];
 };

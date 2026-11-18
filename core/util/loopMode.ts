@@ -1,5 +1,6 @@
 import type {
   LoopAnswer,
+  LoopAutoDecision,
   LoopAnswerRoute,
   LoopAutonomy,
   LoopBlocker,
@@ -10,10 +11,12 @@ import type {
   LoopItemState,
   LoopItemStatus,
   LoopPolicy,
+  LoopReplacedItem,
   LoopParallelRun,
   LoopQuestion,
   LoopQuestionKind,
   LoopState,
+  LoopStopBudget,
   LoopStopReason,
   LoopStrategy,
   MessageContent,
@@ -24,9 +27,11 @@ import type {
 import { stableStringify } from "../tools/permissions/auto/state.js";
 import {
   DEFAULT_POLICY_LEVELS,
+  parsePolicyLevel,
   planHandoff,
   policyLevelLabel,
   questionDecider,
+  questionsNeverAsk,
   type PolicyLevel,
   type PolicySettings,
 } from "../tools/permissions/policy.js";
@@ -43,6 +48,11 @@ import { TASK_LIST_BLOCK_CLOSE, TASK_LIST_BLOCK_OPEN } from "./taskPlan.js";
 import { describeBreach } from "./itemBudget";
 import { addCost } from "./costOf";
 import { costSince } from "./loopCost";
+import {
+  autoAnswerFor,
+  autoAnsweredLine,
+  NO_ONE_AVAILABLE,
+} from "./autoAnswer";
 
 /**
  * Loop mode: build a plan item by item without the person driving each step.
@@ -220,7 +230,7 @@ export const LOOP_AUTONOMY: Record<LoopAutonomy, LoopAutonomyPreset> = {
       "The agent answers every question itself, even important decisions, and never waits for you. Re-plans that add up to 5 to-dos go on by themselves.",
     replan: "bounded",
     maxNewItemsPerReplan: 5,
-    // Approvals are the approval mode's business (YOLO runs them all). One
+    // Approvals are the approval mode's business (IDGAF runs them all). One
     // that is held anyway must not stop the loop.
     waitTimeoutMs: 1000,
     budget: {
@@ -245,6 +255,7 @@ export function loopAutonomyFor(
     "manual" | "autoApprove" | "auto" | "review" | "yolo" | undefined,
 ): LoopAutonomy {
   switch (approvalMode) {
+    // "yolo" is a saved approval mode from before policy areas
     case "review":
     case "yolo":
       return "unattended";
@@ -291,7 +302,7 @@ export function loopPolicyOf(settings: PolicySettings): LoopPolicy {
   };
 }
 
-const EXPANSIVE: readonly PolicyLevel[] = ["permissive", "yolo"];
+const EXPANSIVE: readonly PolicyLevel[] = ["permissive", "idgaf"];
 
 /**
  * The preset that supplies a policy loop's budgets and default strategy. The
@@ -299,7 +310,7 @@ const EXPANSIVE: readonly PolicyLevel[] = ["permissive", "yolo"];
  * policy.
  */
 export function autonomyForPolicy(policy: LoopPolicy): LoopAutonomy {
-  if (policy.questions === "yolo") return "idgaf";
+  if (policy.questions === "idgaf") return "idgaf";
   if (EXPANSIVE.includes(policy.plan)) return "unattended";
   return policy.plan === "manual" ? "supervised" : "auto";
 }
@@ -319,7 +330,7 @@ export function loopAutonomy(loop: LoopState): LoopAutonomyPreset {
   return {
     ...preset,
     replan: "policy",
-    waitTimeoutMs: policy.questions === "yolo" ? 1000 : 0,
+    waitTimeoutMs: policy.questions === "idgaf" ? 1000 : 0,
   };
 }
 
@@ -329,7 +340,7 @@ export function loopAutonomy(loop: LoopState): LoopAutonomyPreset {
  */
 export function loopDecidesAlone(loop: LoopState): boolean {
   return loop.policy
-    ? loop.policy.questions === "yolo"
+    ? loop.policy.questions === "idgaf"
     : loop.autonomy === "idgaf";
 }
 
@@ -353,7 +364,47 @@ export function loopQuestionDecider(
  * are: the levels the person moves are about who decides, not about limits.
  */
 export function setLoopPolicy(loop: LoopState, policy: LoopPolicy): LoopState {
-  return { ...loop, policy, autonomy: autonomyForPolicy(policy) };
+  const next = { ...loop, policy, autonomy: autonomyForPolicy(policy) };
+  // Moved to IDGAF with questions already held: nobody is going to answer them
+  return questionsNeverAsk(policy.questions)
+    ? answerHeldWithoutAsking(next, new Date())
+    : next;
+}
+
+/**
+ * Questions is IDGAF: whatever the inbox holds is answered the way a new
+ * question would be (the labelled option, else the first, else the
+ * best-judgment line; an approval is refused), as the system's, so no item
+ * keeps waiting for a person who said nobody is asked.
+ */
+export function answerHeldWithoutAsking(loop: LoopState, now: Date): LoopState {
+  if (!loop.policy || !questionsNeverAsk(loop.policy.questions)) return loop;
+  const source = `Questions: ${policyLevelLabel("questions", loop.policy.questions)}`;
+  let next = loop;
+  for (const q of loop.questions.filter((x) => !x.answerId)) {
+    const refuse = q.kind === "approval";
+    const text = refuse
+      ? "Not allowed."
+      : q.kind === "assumption" && q.assumption && !q.options?.length
+        ? `Keep the assumption: ${q.assumption}`
+        : autoAnswerFor(q.options).text;
+    const result = answerLoop(
+      next,
+      {
+        questionId: q.id,
+        text,
+        ...(refuse ? { approve: false } : {}),
+      },
+      now,
+    );
+    if (!result.ok) continue;
+    next = addAutoDecision(
+      result.loop,
+      { kind: "question", source, text: autoAnsweredLine(q.question, text) },
+      now,
+    );
+  }
+  return next;
 }
 
 /**
@@ -590,7 +641,12 @@ export type LoopAction =
   | { kind: "wait"; until?: string }
   /** Unattended: the wait ran out; the waiting items go on (proceedUnanswered) */
   | { kind: "proceed" }
-  | { kind: "stop"; reason: LoopStopReason; detail: string }
+  | {
+      kind: "stop";
+      reason: LoopStopReason;
+      detail: string;
+      budget?: LoopStopBudget;
+    }
   | { kind: "none" };
 
 export interface LoopContext {
@@ -962,23 +1018,80 @@ export function loopTokensUsed(loop: LoopState, sessionTokens: number): number {
   return Math.max(0, sessionTokens - loop.tokensAtStart);
 }
 
+/**
+ * Moves the wait in progress into `waitedMs`: the loop is no longer waiting
+ * on the person. A loop that was not waiting is returned with `waitingSince`
+ * cleared as before. The clock defaults to now where a caller has none.
+ */
+export function bankWait(loop: LoopState, now: Date = new Date()): LoopState {
+  const since = loop.waitingSince
+    ? new Date(loop.waitingSince).getTime()
+    : Number.NaN;
+  const waited = Number.isFinite(since)
+    ? Math.max(0, now.getTime() - since)
+    : 0;
+  return {
+    ...loop,
+    waitingSince: undefined,
+    ...(waited > 0 ? { waitedMs: (loop.waitedMs ?? 0) + waited } : {}),
+  };
+}
+
+/** Milliseconds the loop has waited on the person, the wait in progress included. */
+export function loopWaitedMs(loop: LoopState, now: Date): number {
+  const banked = Math.max(0, loop.waitedMs ?? 0);
+  if (
+    (loop.status === "waiting" || loop.status === "awaiting_plan") &&
+    loop.waitingSince
+  ) {
+    const since = new Date(loop.waitingSince).getTime();
+    if (Number.isFinite(since)) {
+      return banked + Math.max(0, now.getTime() - since);
+    }
+  }
+  return banked;
+}
+
+/**
+ * Milliseconds the time budget counts: since the loop started, without the
+ * time it waited on the person.
+ */
+export function loopElapsedMs(loop: LoopState, now: Date): number {
+  return Math.max(
+    0,
+    now.getTime() -
+      new Date(loop.startedAt).getTime() -
+      loopWaitedMs(loop, now),
+  );
+}
+
 export function loopBudgetStop(
   loop: LoopState,
   ctx: LoopContext,
-): { reason: LoopStopReason; detail: string } | undefined {
+):
+  | { reason: LoopStopReason; detail: string; budget: LoopStopBudget }
+  | undefined {
   const { budget } = loop;
   const used = loopTokensUsed(loop, ctx.sessionTokens);
   if (budget.maxTokens > 0 && used >= budget.maxTokens) {
     return {
       reason: "tokens",
       detail: `The loop used ${used} tokens; its budget is ${budget.maxTokens}.`,
+      budget: { kind: "tokens", used, max: budget.maxTokens },
     };
   }
-  const elapsed = ctx.now.getTime() - new Date(loop.startedAt).getTime();
+  const elapsed = loopElapsedMs(loop, ctx.now);
   if (budget.maxWallMs > 0 && elapsed >= budget.maxWallMs) {
+    const waited = loopWaitedMs(loop, ctx.now);
+    const minutes = (ms: number) => Math.round(ms / 60000);
+    const ran =
+      waited >= 60000
+        ? `${minutes(elapsed)} minutes of work (${minutes(elapsed + waited)} minutes including waiting for you)`
+        : `${minutes(elapsed)} minutes`;
     return {
       reason: "time",
-      detail: `The loop ran for ${Math.round(elapsed / 60000)} minutes; its budget is ${Math.round(budget.maxWallMs / 60000)}.`,
+      detail: `The loop ran for ${ran}; its budget is ${minutes(budget.maxWallMs)}.`,
+      budget: { kind: "time", used: elapsed, max: budget.maxWallMs },
     };
   }
   return undefined;
@@ -1154,6 +1267,7 @@ export function stopLoop(
   loop: LoopState,
   reason: LoopStopReason,
   detail: string,
+  budget?: LoopStopBudget,
 ): LoopState {
   // The inline run and every worker of a wave go back to pending: the
   // harness ends them, and their next run checks what is already done
@@ -1185,6 +1299,7 @@ export function stopLoop(
     waitingSince: undefined,
     stopReason: reason,
     stopDetail: detail,
+    stopBudget: budget,
   };
 }
 
@@ -1204,7 +1319,9 @@ export function resumeLoop(
     status: "running",
     stopReason: undefined,
     stopDetail: undefined,
+    stopBudget: undefined,
     startedAt: iso(ctx.now),
+    waitedMs: undefined,
     tokensAtStart: ctx.sessionTokens,
     costAtStart: ctx.costMark,
     noProgressRounds: 0,
@@ -1227,7 +1344,10 @@ export function enterWait(loop: LoopState, now: Date): LoopState {
  * default. Its questions stay open, so an answer that comes later is still
  * routed (a done item is then redone). Nothing is confirmed.
  */
-export function proceedUnanswered(loop: LoopState): LoopState {
+export function proceedUnanswered(
+  loop: LoopState,
+  now: Date = new Date(),
+): LoopState {
   const items = loop.items.map((item) => {
     if (item.status !== "waiting") return item;
     const unanswered = openQuestions(loop, item.id).map((q) => q.id);
@@ -1238,7 +1358,7 @@ export function proceedUnanswered(loop: LoopState): LoopState {
       ...(unanswered.length ? { unanswered } : {}),
     };
   });
-  return { ...loop, items, status: "running", waitingSince: undefined };
+  return { ...bankWait(loop, now), items, status: "running" };
 }
 
 /**
@@ -1351,6 +1471,24 @@ function todos(n: number): string {
   return `${n} to-do${n === 1 ? "" : "s"}`;
 }
 
+/** Items whose failed or never-run check the plan changed or removed. */
+function changedChecks(loop: LoopState, plan: TaskPlan) {
+  const task = (id: string) => plan.items.find((t) => t.id === id);
+  const checkOf = (id: string) => {
+    const t = task(id);
+    return t ? itemCheck(loop, t) : undefined;
+  };
+  const failedCheck = loop.items.filter(
+    (i) => i.check?.status === "failed" && checkOf(i.id) !== i.check.command,
+  );
+  const stuckCheck = loop.items.filter((i) => {
+    if (i.status !== "failed" || i.check?.status === "failed") return false;
+    const previous = loop.current?.planChecks?.[i.id];
+    return previous !== undefined && checkOf(i.id) !== previous;
+  });
+  return { failedCheck, stuckCheck };
+}
+
 /**
  * What a re-plan did that nobody should find out about only afterwards: it
  * changed or removed a check that had failed, which is an easy way to make an
@@ -1367,19 +1505,8 @@ export function replanConcern(
   loop: LoopState,
   plan: TaskPlan,
 ): string | undefined {
+  const { failedCheck, stuckCheck } = changedChecks(loop, plan);
   const task = (id: string) => plan.items.find((t) => t.id === id);
-  const checkOf = (id: string) => {
-    const t = task(id);
-    return t ? itemCheck(loop, t) : undefined;
-  };
-  const failedCheck = loop.items.filter(
-    (i) => i.check?.status === "failed" && checkOf(i.id) !== i.check.command,
-  );
-  const stuckCheck = loop.items.filter((i) => {
-    if (i.status !== "failed" || i.check?.status === "failed") return false;
-    const previous = loop.current?.planChecks?.[i.id];
-    return previous !== undefined && checkOf(i.id) !== previous;
-  });
   const droppedDone = loop.items.filter(
     (i) => i.status === "done" && !i.skipped && !task(i.id),
   );
@@ -1453,6 +1580,7 @@ export function repairDecision(
 export function endReplan(
   loop: LoopState,
   plan: TaskPlan | undefined,
+  now: Date = new Date(),
 ): { loop: LoopState; accept: boolean } {
   const current = loop.current;
   const planTexts = current?.planTexts ?? [];
@@ -1467,20 +1595,85 @@ export function endReplan(
       : replanDecision(loop, planTexts, plan);
   const concern = plan ? replanConcern(loop, plan) : undefined;
   const reason = concern ? `${concern} ${decision.reason}` : decision.reason;
-  return {
-    loop: {
-      ...loop,
-      current: undefined,
-      status: "awaiting_plan",
-      replanReason: reason,
-      replanned: {
-        planTexts,
-        ...(current?.checkIn ? { checkIn: current.checkIn } : {}),
-        ...repairOf,
-      },
+  // A concern holds the re-plan only where the person has not opted out of
+  // plan cards (planHandoff: Manual and Cautious, with the rule on)
+  const concernHolds =
+    !!concern &&
+    (!loop.policy ||
+      planHandoff({
+        policy: policySettings(loop.policy),
+        first: false,
+        added: 0,
+        concern,
+      }).decision !== "go");
+  const accept = decision.accept && !concernHolds;
+  const waiting: LoopState = {
+    ...loop,
+    current: undefined,
+    status: "awaiting_plan",
+    // The wait on the card is not work: the time budget leaves it out
+    waitingSince: loop.waitingSince ?? iso(now),
+    replanReason: reason,
+    replanned: {
+      planTexts,
+      ...(current?.checkIn ? { checkIn: current.checkIn } : {}),
+      ...repairOf,
     },
-    accept: decision.accept && !concern,
   };
+  // Accepted without a card: say what changed, where nobody has to look
+  const noted =
+    accept && plan && loop.policy
+      ? addAutoDecision(waiting, {
+          kind: "plan",
+          source: `Plan edits: ${policyLevelLabel("plan", loop.policy.plan)}`,
+          text: replanNotice(loop, plan, planTexts),
+        })
+      : waiting;
+  return { loop: noted, accept };
+}
+
+/** The most auto decisions a loop keeps. */
+const MAX_AUTO_DECISIONS = 50;
+
+/**
+ * Records something the loop decided for the person, by the policy they set:
+ * who decided (always `system`), under which setting, and what. Shown as one
+ * line in the inbox; it never blocks.
+ */
+export function addAutoDecision(
+  loop: LoopState,
+  decision: Pick<LoopAutoDecision, "kind" | "source" | "text">,
+  now: Date = new Date(),
+): LoopState {
+  const next: LoopAutoDecision = { ...decision, by: "system", at: iso(now) };
+  return {
+    ...loop,
+    autoDecisions: [...(loop.autoDecisions ?? []), next].slice(
+      -MAX_AUTO_DECISIONS,
+    ),
+  };
+}
+
+/**
+ * One line for a re-plan that went on by itself: "Plan updated: 11 kept, 1
+ * added, 1 dropped; check of item 1 replaced". `loop` is the loop as the
+ * re-plan began (its current run still set); `planTexts` the plan it ran.
+ */
+export function replanNotice(
+  loop: LoopState,
+  plan: TaskPlan,
+  planTexts: string[],
+): string {
+  const diff = replanDiff({ ...loop, replanned: { planTexts } }, plan);
+  const counts = diff
+    ? `${diff.kept.length} kept, ${diff.added.length} added, ${diff.dropped.length} dropped`
+    : `${plan.items.length} to-dos`;
+  const { failedCheck, stuckCheck } = changedChecks(loop, plan);
+  const ids = [...new Set([...failedCheck, ...stuckCheck].map((i) => i.id))];
+  const checks = ids.length
+    ? `; check of ${ids.length === 1 ? "item" : "items"} ${ids.join(", ")} replaced`
+    : "";
+  return `Plan updated: ${counts}${checks}`;
 }
 
 export function startItemRun(
@@ -2119,7 +2312,7 @@ export type LoopControlResult =
 /** A loop that waited on the person goes on once something changed. */
 function wake(loop: LoopState): LoopState {
   return loop.status === "waiting"
-    ? { ...loop, status: "running", waitingSince: undefined }
+    ? { ...bankWait(loop), status: "running" }
     : loop;
 }
 
@@ -2342,29 +2535,50 @@ export type HoldResult =
  */
 function decideAlone(
   loop: LoopState,
-  itemId: string | undefined,
-  question: string,
-  assumption: unknown,
+  input: {
+    itemId?: string;
+    question: string;
+    assumption: unknown;
+    type?: QuestionType;
+    options?: string[];
+  },
   now: Date,
 ): HoldResult {
+  const { itemId, question, assumption, type, options } = input;
+  const answer = autoAnswerFor(options);
+  const source = loop.policy
+    ? `Questions: ${policyLevelLabel("questions", loop.policy.questions)}`
+    : "Autonomy: IDGAF";
   const decided: LoopQuestion = {
     id: nextId("q", loop.questions),
     ...(itemId ? { itemId } : {}),
     question,
     kind: "assumption",
+    ...(type ? { type } : {}),
+    ...(options ? { options } : {}),
     askedAt: iso(now),
     decidedAlone: true,
     answerId: "self",
+    autoAnswer: { text: answer.text, by: "system", source },
     ...(typeof assumption === "string" && assumption.trim()
       ? { assumption: assumption.trim() }
       : {}),
   };
+  const kept =
+    loop.questions.length < LOOP_LIMITS.maxQuestions
+      ? { ...loop, questions: [...loop.questions, decided] }
+      : loop;
   return {
     ok: true,
-    loop:
-      loop.questions.length < LOOP_LIMITS.maxQuestions
-        ? { ...loop, questions: [...loop.questions, decided] }
-        : loop,
+    loop: addAutoDecision(
+      kept,
+      {
+        kind: "question",
+        source,
+        text: autoAnsweredLine(question, answer.text),
+      },
+      now,
+    ),
     question: decided,
     duplicate: false,
   };
@@ -2372,6 +2586,54 @@ function decideAlone(
 
 /** Most characters of one choice the panel will show. */
 export const LOOP_OPTION_LENGTH = 160;
+
+/**
+ * A call that would ask the person, where Questions is IDGAF: nobody is asked
+ * and nothing waits. What stopped the call (a floor that no level lifts) still
+ * holds, so the call is not run; the loop records that, as the system's.
+ */
+function refuseWithoutAsking(
+  loop: LoopState,
+  input: {
+    itemId?: string;
+    question: string;
+    approval?: LoopQuestion["approval"];
+    now: Date;
+  },
+): HoldResult {
+  const source = `Questions: ${policyLevelLabel("questions", "idgaf")}`;
+  const text =
+    "Refused: nobody is asked at this level, so the call did not run";
+  const decided: LoopQuestion = {
+    id: nextId("q", loop.questions),
+    ...(input.itemId ? { itemId: input.itemId } : {}),
+    question: input.question,
+    kind: "approval",
+    askedAt: iso(input.now),
+    decidedAlone: true,
+    answerId: "self",
+    autoAnswer: { text, by: "system", source },
+    ...(input.approval ? { approval: input.approval } : {}),
+  };
+  const kept =
+    loop.questions.length < LOOP_LIMITS.maxQuestions
+      ? { ...loop, questions: [...loop.questions, decided] }
+      : loop;
+  return {
+    ok: true,
+    loop: addAutoDecision(
+      kept,
+      {
+        kind: "question",
+        source,
+        text: autoAnsweredLine(input.question, text),
+      },
+      input.now,
+    ),
+    question: decided,
+    duplicate: false,
+  };
+}
 
 /**
  * The choices a held question offers: two to four distinct, trimmed, non-empty
@@ -2428,8 +2690,30 @@ export function holdQuestion(
   if (kind !== "blocking" && kind !== "assumption" && kind !== "approval") {
     return { ok: false, error: 'kind must be "blocking" or "assumption"' };
   }
+  if (
+    kind === "approval" &&
+    loop.policy &&
+    questionsNeverAsk(loop.policy.questions)
+  ) {
+    return refuseWithoutAsking(loop, {
+      itemId: input.itemId,
+      question,
+      approval: input.approval,
+      now,
+    });
+  }
   if (kind !== "approval" && loopQuestionDecider(loop, type) === "agent") {
-    return decideAlone(loop, input.itemId, question, input.assumption, now);
+    return decideAlone(
+      loop,
+      {
+        itemId: input.itemId,
+        question,
+        assumption: input.assumption,
+        type,
+        options: questionOptions(input.options),
+      },
+      now,
+    );
   }
   const assumption =
     typeof input.assumption === "string" ? input.assumption.trim() : "";
@@ -2673,7 +2957,7 @@ export function answerLoop(
     !!refuseCheck ||
     (question?.kind === "approval" && !!input.approve);
   if (next.status === "waiting" && route !== "standing" && unblocks) {
-    next = { ...next, status: "running", waitingSince: undefined };
+    next = { ...bankWait(next, now), status: "running" };
   }
   return { ok: true, loop: next, answer };
 }
@@ -2880,19 +3164,64 @@ function sameTexts(previous: string[], plan: TaskPlan): boolean {
  *   alone; only the repaired item runs again (other failed items stay
  *   failed), and the to-dos it was split into inherit its repairs.
  */
+/**
+ * The to-dos an accepted re-plan took out of the plan, for the plan tree
+ * (LoopState.replacedItems). Their text comes from the plan the loop was
+ * running, when its to-dos still line up with the loop's items. A link to the
+ * to-do that took the place is kept only for a repair that replaced the failed
+ * item with exactly one new to-do: any other re-plan does not say which new
+ * to-do answers which old one, so those show as dropped. Undefined when
+ * nothing was taken out.
+ */
+function recordReplaced(
+  loop: LoopState,
+  plan: TaskPlan,
+  items: LoopItemState[],
+  round: number,
+  repairOf: LoopItemState | undefined,
+): LoopReplacedItem[] | undefined {
+  const kept = new Set(plan.items.map((t) => t.id));
+  const previous = loop.replanned?.planTexts ?? loop.current?.planTexts;
+  const aligned = !!previous && previous.length === loop.items.length;
+  const added = items.filter((i) => i.addedInRound === round);
+  const taken: LoopReplacedItem[] = [];
+  loop.items.forEach((item, i) => {
+    if (kept.has(item.id)) return;
+    const text = aligned ? previous[i] : undefined;
+    taken.push({
+      id: item.id,
+      ...(text ? { text } : {}),
+      round,
+      ...(repairOf?.id === item.id && added.length === 1
+        ? { replacedBy: added[0].id }
+        : {}),
+    });
+  });
+  if (taken.length === 0) return undefined;
+  return [...(loop.replacedItems ?? []), ...taken].slice(-MAX_REPLACED_ITEMS);
+}
+
+/** How many taken-out to-dos the loop remembers */
+const MAX_REPLACED_ITEMS = 20;
+
 export function acceptReplan(
   loop: LoopState,
   plan: TaskPlan,
   ctx: LoopContext,
 ): LoopState {
-  loop = { ...loop, ...rehomedReminders(loop, plan) };
+  loop = { ...bankWait(loop, ctx.now), ...rehomedReminders(loop, plan) };
   const scope = loop.replanned;
   const unchangedCheckIn = !!scope?.checkIn && sameTexts(scope.planTexts, plan);
   const repairOf = scope?.itemId ? itemState(loop, scope.itemId) : undefined;
+  // The round the plan's new to-dos come in with (LoopItemState.addedInRound)
+  const roundAfter = loop.round + (unchangedCheckIn ? 0 : 1);
   const items = plan.items.map((task) => {
     const known = itemState(loop, task.id);
     if (!known) {
-      const fresh = fromTask(task);
+      const fresh = {
+        ...fromTask(task),
+        ...(roundAfter > 1 ? { addedInRound: roundAfter } : {}),
+      };
       return repairOf?.repairs
         ? { ...fresh, repairs: repairOf.repairs }
         : fresh;
@@ -2908,8 +3237,10 @@ export function acceptReplan(
     }
     return state;
   });
+  const replacedItems = recordReplaced(loop, plan, items, roundAfter, repairOf);
   const strategyState: Partial<LoopState> = {
     replanned: undefined,
+    ...(replacedItems ? { replacedItems } : {}),
     ...(loopStrategy(loop) === "check-in"
       ? { doneSinceReplan: 0, checkInDue: undefined }
       : {}),
@@ -3558,13 +3889,27 @@ export function isLoopState(value: unknown): value is LoopState {
 }
 
 /**
+ * A loop saved by 2.14.x can name its top level `yolo`: it is IDGAF now.
+ * Nothing is written back in the old spelling.
+ */
+function withCurrentLevelNames(loop: LoopState): LoopState {
+  const policy = loop.policy;
+  if (!policy) return loop;
+  const plan = parsePolicyLevel(policy.plan) ?? policy.plan;
+  const questions = parsePolicyLevel(policy.questions) ?? policy.questions;
+  if (plan === policy.plan && questions === policy.questions) return loop;
+  return { ...loop, policy: { ...policy, plan, questions } };
+}
+
+/**
  * A loop restored from a saved session. A run that was going when the window
  * closed did not finish: its item goes back to pending (its next run checks
  * what is already done) and the loop is stopped, so a reload never starts
  * work by itself.
  */
-export function restoreLoop(value: unknown): LoopState | undefined {
-  if (!isLoopState(value)) return undefined;
+export function restoreLoop(raw: unknown): LoopState | undefined {
+  if (!isLoopState(raw)) return undefined;
+  const value = withCurrentLevelNames(raw);
   if (
     !value.current &&
     !value.parallel?.length &&
@@ -3621,7 +3966,11 @@ export function holdQuestionResult(
   names: LoopToolNames = LOOP_TOOL_NAMES,
 ): string {
   if (question.decidedAlone) {
-    return `Nobody will answer this: this loop decides for itself. Go on with your best judgment, even if the decision is important, and say what you chose in your summary. Do not report "waiting".`;
+    const auto = question.autoAnswer;
+    if (auto && auto.text !== NO_ONE_AVAILABLE) {
+      return `Answered automatically (${auto.source}): ${auto.text}. Go on with it, even if the decision is important, and say so in your summary. Do not report "waiting".`;
+    }
+    return `${NO_ONE_AVAILABLE}. This loop never waits for the person, even on an important decision. Do not report "waiting".`;
   }
   const prefix = duplicate
     ? `You already asked this (${question.id}).`
@@ -3636,6 +3985,9 @@ export function approvalHeldResult(
   question: LoopQuestion,
   names: LoopToolNames = LOOP_TOOL_NAMES,
 ): string {
+  if (question.decidedAlone) {
+    return `This call was not run, and nobody was asked: Questions is IDGAF, so a call that would need approval is refused. Do not report "waiting", and do not try to reach the same result another way; do what you can without it and say so in your summary.`;
+  }
   return `This call needs the person's approval, so it was not run. It is held as question ${question.id} in their inbox. Do not try to reach the same result another way. Do what you can without it, then call ${names.finishItem} with outcome "waiting"; the item will run again once they answer.`;
 }
 

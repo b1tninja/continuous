@@ -193,13 +193,28 @@ describe("the hit", () => {
     expect(
       envAssignmentHit("FOO_X=1 npm test", "bash", { ask: ["FOO_*"] })?.name,
     ).toBe("FOO_X");
+    // a sensitive name can be allowed
     expect(
-      envAssignmentHit("PATH=/x git status", "bash", { allow: ["PATH"] }),
+      envAssignmentHit("HTTP_PROXY=http://h:1 git status", "bash", {
+        allow: ["HTTP_PROXY"],
+      }),
     ).toBeUndefined();
+    // a name the built-in policy marks dangerous stays dangerous, however it is allowed
+    for (const allow of [["PATH"], ["PAT*"], ["path"], ["LD_PRELOAD"]]) {
+      expect(
+        envAssignmentHit("PATH=/x git status", "bash", { allow })?.severity,
+      ).toBe("dangerous");
+    }
+    expect(
+      envAssignmentHit("LD_PRELOAD=/x.so ls", "bash", {
+        allow: ["LD_*"],
+      })?.severity,
+    ).toBe("dangerous");
     // a value that runs code asks whatever the person allowed
     expect(
-      envAssignmentHit("PATH=$(id) git status", "bash", { allow: ["PATH"] })
-        ?.severity,
+      envAssignmentHit("HTTP_PROXY=$(id) git status", "bash", {
+        allow: ["HTTP_PROXY"],
+      })?.severity,
     ).toBe("dangerous");
   });
 });

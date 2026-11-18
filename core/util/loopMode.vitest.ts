@@ -502,6 +502,71 @@ describe("re-evaluation", () => {
     expect(decideNext(loop, next, ctx())).toEqual({ kind: "run", itemId: "4" });
   });
 
+  test("an accepted re-plan records the round of the to-dos it adds and what it takes out", () => {
+    let loop = runItem(loopOn(), "1", { outcome: "done" });
+    loop = runItem(loop, "2", { outcome: "stuck" });
+    const next: TaskPlan = {
+      ...PLAN,
+      items: [
+        PLAN.items[0],
+        { id: "4", text: "Add a test runner", status: "pending" },
+        PLAN.items[2],
+      ],
+    };
+    loop = acceptReplan(startReplan(loop, 0, T0, { plan: PLAN }), next, ctx());
+    expect(loop.round).toBe(2);
+    // the to-dos the loop started with carry no round, the new one carries 2
+    expect(loop.items.map((i) => [i.id, i.addedInRound])).toEqual([
+      ["1", undefined],
+      ["4", 2],
+      ["3", undefined],
+    ]);
+    // a round re-plan does not say which new to-do answers which old one:
+    // no link, only what was taken out
+    expect(loop.replacedItems).toEqual([
+      { id: "2", text: "Add tests", round: 2 },
+    ]);
+  });
+
+  test("a repair that leaves exactly one new to-do links it; a split does not", () => {
+    const one: TaskPlan = {
+      ...PLAN,
+      items: [
+        PLAN.items[0],
+        { id: "9", text: "Add tests, with a runner", status: "pending" },
+        PLAN.items[2],
+      ],
+    };
+    let loop = runItem(loopOn(), "1", { outcome: "done" });
+    loop = runItem(loop, "2", { outcome: "stuck" });
+    const started = startReplan(loop, 0, T0, { plan: PLAN, itemId: "2" });
+    const repaired = acceptReplan(endReplan(started, one).loop, one, ctx());
+    expect(repaired.replacedItems).toEqual([
+      { id: "2", text: "Add tests", round: 2, replacedBy: "9" },
+    ]);
+    expect(repaired.items.find((i) => i.id === "9")?.addedInRound).toBe(2);
+
+    const split: TaskPlan = {
+      ...PLAN,
+      items: [
+        PLAN.items[0],
+        { id: "8", text: "Install a runner", status: "pending" },
+        { id: "9", text: "Write the tests", status: "pending" },
+        PLAN.items[2],
+      ],
+    };
+    const parts = acceptReplan(endReplan(started, split).loop, split, ctx());
+    expect(parts.replacedItems).toEqual([
+      { id: "2", text: "Add tests", round: 2 },
+    ]);
+  });
+
+  test("a re-plan that takes nothing out leaves replacedItems unset", () => {
+    let loop = runItem(loopOn(), "1", { outcome: "done" });
+    loop = acceptReplan(startReplan(loop, 0, T0), PLAN, ctx());
+    expect(loop.replacedItems).toBeUndefined();
+  });
+
   test("waits instead of re-planning when every open item waits on the person", () => {
     let loop = runItem(loopOn(plan("A", "B")), "1", { outcome: "done" });
     loop = runItem(loop, "2", { outcome: "waiting" });

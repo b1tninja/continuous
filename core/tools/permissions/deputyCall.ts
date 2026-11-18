@@ -21,6 +21,18 @@ export interface DeputyCallInput {
   home?: string;
   /** An MCP tool: its path-named arguments are judged */
   mcp?: boolean;
+  /** The MCP tool's JSON schema (`inputSchema`): a string it calls a path is judged too */
+  schema?: Record<string, unknown>;
+  /** Every workspace folder as a path; a path in any of them is inside */
+  workspaceDirs?: readonly string[];
+  /**
+   * Follows links for an MCP path argument and says whether the real path is
+   * inside a workspace folder. Supplied only where the host is local
+   * (realPath.ts); without it MCP paths are judged as written.
+   */
+  resolvePath?: (
+    raw: string,
+  ) => { path: string; withinWorkspace: boolean } | undefined;
 }
 
 /**
@@ -38,6 +50,7 @@ export function deputyCallHit(
     input.toolName,
     input.parsedArgs,
     input.mcp === true,
+    input.schema,
   );
   if (!targets) return undefined;
   // read_currently_open_file names no path: judge the one it resolved.
@@ -48,18 +61,35 @@ export function deputyCallHit(
     : targets.paths;
   const home = input.home ?? os.homedir();
   const on = (id: BuiltinRuleId) => builtinRuleOn(input.approval as never, id);
+  const base = {
+    flavor: input.flavor ?? hostFlavor(),
+    home,
+    cwd: input.cwd,
+    roots: input.workspaceDirs,
+    globalDirs: globalDirsFor(home),
+  };
   for (const raw of paths) {
-    const hit: DeputyHit | undefined = deputyPathHit({
-      raw,
-      resolved: targets.single ? input.resolved?.path : undefined,
-      withinWorkspace: targets.single
-        ? input.resolved?.withinWorkspace
-        : undefined,
-      flavor: input.flavor ?? hostFlavor(),
-      home,
-      cwd: input.cwd,
-      globalDirs: globalDirsFor(home),
-    });
+    const followed =
+      input.mcp && !targets.single ? input.resolvePath?.(raw) : undefined;
+    const hit: DeputyHit | undefined =
+      // The real path first, then the path as written: a link can only add a
+      // reason to ask, never remove the one the text gives.
+      (followed
+        ? deputyPathHit({
+            ...base,
+            raw,
+            resolved: followed.path,
+            withinWorkspace: followed.withinWorkspace,
+          })
+        : undefined) ??
+      deputyPathHit({
+        ...base,
+        raw,
+        resolved: targets.single ? input.resolved?.path : undefined,
+        withinWorkspace: targets.single
+          ? input.resolved?.withinWorkspace
+          : undefined,
+      });
     if (!hit) continue;
     if (hit.why === "network" && !on("protect-network-paths")) continue;
     if (

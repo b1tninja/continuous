@@ -13,6 +13,14 @@ import {
 import { expandSuite } from "./suites.mjs";
 import { median } from "./stats.mjs";
 import { probeThink, thinkRefusal } from "./probe.mjs";
+import {
+  INHERITED,
+  samplingSent,
+  seedFor,
+  sentShape,
+  temperatureToSend,
+} from "./sampling.mjs";
+import { effectiveCounts } from "./stats.mjs";
 
 const DEFAULT_TPS = 20;
 const DEFAULT_LOAD_S = 30;
@@ -104,6 +112,7 @@ export function makePlan({
       cases: cases.length,
       passes,
       total: all.length,
+      ...sampleSize(cases, passes, cfg),
       remaining: remaining.length,
       tps: meas.tps,
       tpsSource: meas.tps
@@ -119,6 +128,44 @@ export function makePlan({
       }),
     };
   });
+}
+
+/**
+ * How many independent results a run will amount to. At temperature 0 a pass
+ * repeats the same output, so n is the number of prompts however many passes;
+ * under --temperature inherit the server decides, so the effective n is only
+ * known after the run (the report estimates it); above 0 the passes are
+ * draws that stay correlated within a prompt, so n is between the prompt
+ * count and the raw count.
+ */
+export function sampleSize(cases, passes, cfg = DEFAULT_CFG) {
+  const prompts = cases.length;
+  const rawN = prompts * passes;
+  const temps = cases.map((c) => temperatureToSend(cfg, c.temperature));
+  const inherit = cfg.temperature === "inherit";
+  const allZero = !inherit && temps.every((t) => t === 0);
+  if (passes <= 1)
+    return {
+      prompts,
+      rawN,
+      effN: rawN,
+      nNote: "one pass: n is the prompt count",
+    };
+  if (allZero)
+    return {
+      prompts,
+      rawN,
+      effN: prompts,
+      nNote: `temperature 0: the ${passes} passes repeat the same output, so n is ${prompts} prompts, not ${rawN}; passes only check determinism`,
+    };
+  return {
+    prompts,
+    rawN,
+    effN: undefined,
+    nNote: inherit
+      ? `temperature inherited: whether passes differ depends on the server's sampling; n is between ${prompts} and ${rawN}, estimated from the results (the report prints n effective)`
+      : `n is between ${prompts} prompts and ${rawN} passes (passes of one prompt are correlated); the report prints n effective. Add --seed so passes are distinct, reproducible draws`,
+  };
 }
 
 /** One tiny request to measure tokens per second and load time. */
@@ -142,6 +189,23 @@ export async function warmup(client, model) {
   };
 }
 
+/**
+ * The sampling of one request as the record carries it: read back from the
+ * request body when the transport kept it, else rebuilt from the options sent.
+ * Anything the lab did not send is listed in `inherited`, and then the
+ * engine's own defaults (`serverDefaults`, from /api/show or /props) are what
+ * applied.
+ */
+function samplingRecord({ cfg, reply, sentOptions, engine }) {
+  const s =
+    reply?.meta?.request?.sampling ??
+    samplingSent(cfg.api, sentShape(cfg.api, sentOptions ?? {}, cfg.bodyExtra));
+  const defaults = engine?.parameters ?? engine?.samplingDefaults;
+  return s.inherited?.length && defaults
+    ? { ...s, serverDefaults: defaults }
+    : s;
+}
+
 function recordFor({
   suite,
   model,
@@ -154,6 +218,7 @@ function recordFor({
   ms,
   cfg,
   engine,
+  sentOptions,
 }) {
   const u = reply?.usage ?? {};
   return {
@@ -161,9 +226,10 @@ function recordFor({
     api: cfg.api,
     cfg: {
       ...cfg,
-      temperature: cfg.temperature ?? c.temperature,
+      temperature: temperatureToSend(cfg, c.temperature) ?? INHERITED,
       numPredict: cfg.numPredict ?? c.numPredict,
     },
+    sampling: samplingRecord({ cfg, reply, sentOptions, engine }),
     engine,
     request: reply?.meta?.request,
     ts: new Date().toISOString(),
@@ -177,7 +243,8 @@ function recordFor({
     mode: c.mode,
     style: c.style,
     stream: c.stream,
-    temperature: c.temperature,
+    // what was sent ("inherited" under --temperature inherit), not the suite's grid value
+    temperature: temperatureToSend(cfg, c.temperature) ?? INHERITED,
     meta: c.meta,
     expectNone: !!c.expect?.none,
     toolCount: c.tools.length,
@@ -358,6 +425,12 @@ export async function runSuite({
           }
           const started = Date.now();
           let reply, cls, score, error;
+          const sentOptions = {
+            temperature: temperatureToSend(cfg, c.temperature),
+            num_predict: cfg.numPredict ?? c.numPredict,
+            num_ctx: opts.numCtx ?? c.numCtx,
+            seed: seedFor(cfg, pass),
+          };
           try {
             budget.spend(1);
             reply = await client.chat({
@@ -365,12 +438,7 @@ export async function runSuite({
               messages: c.messages,
               tools: c.sendTools ? c.tools : undefined,
               stream: c.stream,
-              options: {
-                temperature: cfg.temperature ?? c.temperature,
-                num_predict: cfg.numPredict ?? c.numPredict,
-                num_ctx: opts.numCtx ?? c.numCtx,
-                seed: cfg.seed,
-              },
+              options: sentOptions,
               // an explicit --think wins; otherwise the lab's old rule: off, and
               // only for models that report the capability
               think:
@@ -413,6 +481,7 @@ export async function runSuite({
             ms: Date.now() - started,
             cfg,
             engine,
+            sentOptions,
           });
           appendRecord(file, rec, roots);
           error ? summary.errors++ : summary.ran++;

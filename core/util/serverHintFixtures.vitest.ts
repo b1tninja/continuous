@@ -1,15 +1,23 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getOllamaShowHint, resetOllamaShowCache } from "./ollamaShowHint.js";
 import {
-  testOpenAICompatConnection,
+  testOpenAICompatConnection as realTest,
   type TestFetch,
 } from "./openaiCompatTest.js";
 import {
   hintFromLlamaCppProps,
   hintFromOllamaShow,
 } from "./toolDialectMetadata.js";
+
+const measuredDir = mkdtempSync(join(tmpdir(), "measured-"));
+/** Tests never write to the real global folder. */
+const testOpenAICompatConnection = (
+  i: Parameters<typeof realTest>[0],
+): ReturnType<typeof realTest> =>
+  realTest({ measuredFile: join(measuredDir, "m.json"), ...i });
 
 const dir = join(__dirname, "fixtures");
 const load = (sub: string, name: string): unknown =>

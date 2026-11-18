@@ -91,7 +91,7 @@ describe("GET /agents", () => {
       (await get(port, { host: "127.0.0.1", authorization: "Bearer nope" }))
         .status,
     ).toBe(401);
-    expect((await get(port, { ...ok, host: "evil.example" })).status).toBe(421);
+    expect((await get(port, { ...ok, host: "evil.example" })).status).toBe(403);
     expect(
       (await get(port, { ...ok, origin: "https://evil.example" })).status,
     ).toBe(403);

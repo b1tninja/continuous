@@ -10,6 +10,7 @@ import { ContinueError, ContinueErrorReason } from "../../util/errors.js";
 import { getUriPathBasename } from "../../util/uri.js";
 import { BuiltInToolNames } from "../builtIn.js";
 import type { ToolImpl } from "./index.js";
+import { outsideWriteNote } from "./outsideNote.js";
 
 /**
  * The two exact edit tools (single_find_and_replace, multi_edit) applied in
@@ -28,12 +29,12 @@ function requireWorkspace(extras: Parameters<ToolImpl>[1], tool: string) {
   }
 }
 
-function edited(fileUri: string, text: string): ContextItem[] {
+function edited(fileUri: string, text: string, note?: string): ContextItem[] {
   return [
     {
       name: `Edited ${getUriPathBasename(fileUri)}`,
       description: fileUri,
-      content: text,
+      content: note ? `${text}\n${note}` : text,
     },
   ];
 }
@@ -48,6 +49,7 @@ export const singleFindAndReplaceImpl: ToolImpl = async (args, extras) => {
   const fileUri = await validateSearchAndReplaceFilepath(
     args.filepath,
     extras.ide,
+    { allowOutside: extras.allowOutsideWorkspace },
   );
   const before = await extras.ide.readFile(fileUri);
   const after = executeFindAndReplace(
@@ -61,6 +63,7 @@ export const singleFindAndReplaceImpl: ToolImpl = async (args, extras) => {
   return edited(
     fileUri,
     `Replaced ${replaceAll ? "every occurrence" : "the text"} in ${args.filepath}.`,
+    await outsideWriteNote(extras, fileUri),
   );
 };
 
@@ -70,6 +73,7 @@ export const multiEditImpl: ToolImpl = async (args, extras) => {
   const fileUri = await validateSearchAndReplaceFilepath(
     args.filepath,
     extras.ide,
+    { allowOutside: extras.allowOutsideWorkspace },
   );
   const before = await extras.ide.readFile(fileUri);
   const after = executeMultiFindAndReplace(before, edits);
@@ -77,5 +81,6 @@ export const multiEditImpl: ToolImpl = async (args, extras) => {
   return edited(
     fileUri,
     `Applied ${edits.length} edit${edits.length === 1 ? "" : "s"} to ${args.filepath}.`,
+    await outsideWriteNote(extras, fileUri),
   );
 };

@@ -169,12 +169,9 @@ describe("AgentFileService", () => {
         authConfig: mockAuthConfig,
         isAuthenticated: true,
       };
-      const apiClientState = { apiClient: { mock: "apiClient" } };
-
       const result = await agentFileService.initialize(
         undefined,
         authServiceState,
-        apiClientState,
       );
 
       expect(result).toEqual(EMPTY_AGENT_FILE_STATE);
@@ -187,13 +184,7 @@ describe("AgentFileService", () => {
         authConfig: mockAuthConfig,
         isAuthenticated: true,
       };
-      const apiClientState = { apiClient: { mock: "apiClient" } };
-
-      await agentFileService.initialize(
-        "owner/agent",
-        authServiceState,
-        apiClientState,
-      );
+      await agentFileService.initialize("owner/agent", authServiceState);
 
       expect(mockLoadPackageFromHub).toHaveBeenCalledWith(
         "owner/agent",
@@ -213,13 +204,7 @@ describe("AgentFileService", () => {
         authConfig: mockAuthConfig,
         isAuthenticated: true,
       };
-      const apiClientState = { apiClient: { mock: "apiClient" } };
-
-      await agentFileService.initialize(
-        "owner/agent",
-        authServiceState,
-        apiClientState,
-      );
+      await agentFileService.initialize("owner/agent", authServiceState);
 
       expect(mockLoadModelFromHub).toHaveBeenCalledWith("gpt-4-agent");
 
@@ -237,13 +222,7 @@ describe("AgentFileService", () => {
         authConfig: mockAuthConfig,
         isAuthenticated: true,
       };
-      const apiClientState = { apiClient: { mock: "apiClient" } };
-
-      await agentFileService.initialize(
-        "owner/agent",
-        authServiceState,
-        apiClientState,
-      );
+      await agentFileService.initialize("owner/agent", authServiceState);
 
       const state = agentFileService.getState();
       expect(state.parsedRules).toBeDefined();
@@ -258,13 +237,7 @@ describe("AgentFileService", () => {
         authConfig: mockAuthConfig,
         isAuthenticated: true,
       };
-      const apiClientState = { apiClient: { mock: "apiClient" } };
-
-      await agentFileService.initialize(
-        "owner/agent",
-        authServiceState,
-        apiClientState,
-      );
+      await agentFileService.initialize("owner/agent", authServiceState);
 
       const state = agentFileService.getState();
       expect(state.parsedRules).toBeNull();
@@ -277,13 +250,7 @@ describe("AgentFileService", () => {
         authConfig: mockAuthConfig,
         isAuthenticated: true,
       };
-      const apiClientState = { apiClient: { mock: "apiClient" } };
-
-      await agentFileService.initialize(
-        "owner/agent",
-        authServiceState,
-        apiClientState,
-      );
+      await agentFileService.initialize("owner/agent", authServiceState);
 
       const state = agentFileService.getState();
       expect(state.parsedTools).toBeDefined();
@@ -299,13 +266,7 @@ describe("AgentFileService", () => {
         authConfig: mockAuthConfig,
         isAuthenticated: true,
       };
-      const apiClientState = { apiClient: { mock: "apiClient" } };
-
-      await agentFileService.initialize(
-        "owner/agent",
-        authServiceState,
-        apiClientState,
-      );
+      await agentFileService.initialize("owner/agent", authServiceState);
 
       const state = agentFileService.getState();
       expect(state.parsedTools).toBeNull();
@@ -321,36 +282,12 @@ describe("AgentFileService", () => {
         authConfig: mockAuthConfig,
         isAuthenticated: true,
       };
-      const apiClientState = { apiClient: { mock: "apiClient" } };
-
-      await agentFileService.initialize(
-        "owner/agent",
-        authServiceState,
-        apiClientState,
-      );
+      await agentFileService.initialize("owner/agent", authServiceState);
 
       expect(mockLoadModelFromHub).not.toHaveBeenCalled();
 
       const state = agentFileService.getState();
       expect(state.agentFileModel).toBeNull();
-    });
-
-    it("should throw error when API client is not available for model loading", async () => {
-      const authServiceState = {
-        authConfig: mockAuthConfig,
-        isAuthenticated: true,
-      };
-      const apiClientState = { apiClient: null };
-
-      await expect(
-        agentFileService.initialize(
-          "owner/agent",
-          authServiceState,
-          apiClientState,
-        ),
-      ).rejects.toThrow(
-        "Cannot load agent model, failed to load api client service",
-      );
     });
   });
 
@@ -366,14 +303,8 @@ describe("AgentFileService", () => {
         authConfig: mockAuthConfig,
         isAuthenticated: true,
       };
-      const apiClientState = { apiClient: { mock: "apiClient" } };
-
       await expect(
-        agentFileService.initialize(
-          "owner/agent",
-          authServiceState,
-          apiClientState,
-        ),
+        agentFileService.initialize("owner/agent", authServiceState),
       ).rejects.toThrow("Failed to load agent from owner/agent");
 
       const state = agentFileService.getState();
@@ -390,14 +321,8 @@ describe("AgentFileService", () => {
         authConfig: mockAuthConfig,
         isAuthenticated: true,
       };
-      const apiClientState = { apiClient: { mock: "apiClient" } };
-
       await expect(
-        agentFileService.initialize(
-          "invalid-slug",
-          authServiceState,
-          apiClientState,
-        ),
+        agentFileService.initialize("invalid-slug", authServiceState),
       ).rejects.toThrow("Failed to load agent from invalid-slug");
     });
 
@@ -408,14 +333,8 @@ describe("AgentFileService", () => {
         authConfig: mockAuthConfig,
         isAuthenticated: true,
       };
-      const apiClientState = { apiClient: { mock: "apiClient" } };
-
       await expect(
-        agentFileService.initialize(
-          "owner/agent",
-          authServiceState,
-          apiClientState,
-        ),
+        agentFileService.initialize("owner/agent", authServiceState),
       ).rejects.toThrow("Model load error");
     });
   });
@@ -426,13 +345,7 @@ describe("AgentFileService", () => {
         authConfig: mockAuthConfig,
         isAuthenticated: true,
       };
-      const apiClientState = { apiClient: { mock: "apiClient" } };
-
-      await agentFileService.initialize(
-        "owner/agent",
-        authServiceState,
-        apiClientState,
-      );
+      await agentFileService.initialize("owner/agent", authServiceState);
 
       const state = agentFileService.getState();
       expect(state.agentFile).toEqual(mockAgentFile);
@@ -448,7 +361,7 @@ describe("AgentFileService", () => {
 
     it("should have correct dependencies", () => {
       const dependencies = agentFileService.getDependencies();
-      expect(dependencies).toEqual(["auth", "apiClient"]);
+      expect(dependencies).toEqual(["auth"]);
     });
   });
 
@@ -467,13 +380,7 @@ describe("AgentFileService", () => {
         authConfig: mockAuthConfig,
         isAuthenticated: true,
       };
-      const apiClientState = { apiClient: { mock: "apiClient" } };
-
-      await agentFileService.initialize(
-        "owner/partial",
-        authServiceState,
-        apiClientState,
-      );
+      await agentFileService.initialize("owner/partial", authServiceState);
 
       const state = agentFileService.getState();
       expect(state.agentFile?.name).toBe("Partial Agent File");

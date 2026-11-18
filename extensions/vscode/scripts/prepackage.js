@@ -21,6 +21,7 @@ const {
   copyOnnxRuntimeFromNodeModules,
 } = require("./utils");
 const { onnxRuntimeFilesToValidate } = require("./onnxruntime");
+const { stageNotices } = require("./stage-notices");
 
 // Clear folders that will be packaged to ensure clean slate
 rimrafSync(path.join(__dirname, "..", "bin"));
@@ -461,6 +462,8 @@ void (async () => {
     `out/node_modules/@vscode/ripgrep/bin/rg${exe}`,
     `out/node_modules/@lancedb/vectordb-${target}${isWinTarget ? "-msvc" : ""}${isLinuxTarget ? "-gnu" : ""}/index.node`,
   ]);
+
+  stageNotices();
 
   console.log(
     `[timer] Prepackage completed in ${Date.now() - startTime}ms - finished at ${new Date().toISOString()}`,

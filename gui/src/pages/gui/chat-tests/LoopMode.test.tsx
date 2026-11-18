@@ -71,12 +71,14 @@ const ask = (
   kind: "blocking" | "assumption",
   assumption?: string,
   options?: string[],
+  type?: string,
 ) =>
   calls({
     name: BuiltInToolNames.HoldQuestion,
     args: {
       question,
       kind,
+      ...(type ? { type } : {}),
       ...(assumption ? { assumption } : {}),
       ...(options ? { options } : {}),
     },
@@ -241,7 +243,7 @@ beforeEach(() => {
 });
 
 describe("Loop mode", () => {
-  test("a loop is one card in the Loops panel, named by its plan, with the plan inside it", async () => {
+  test("a loop is one card above the input, named by its plan, with the plan inside it", async () => {
     const h = await setup(["Pick the grammar", "Write the lexer"]);
     h.turns.push(
       ask("Item 'Pick the grammar': ABNF or PEG?", "blocking"),
@@ -252,7 +254,8 @@ describe("Loop mode", () => {
     await waitFor(() => expect(h.loop().status).toBe("waiting"));
 
     const panel = document.querySelector("[data-testid=loops-panel]")!;
-    expect(panel.textContent).toContain("Loops");
+    // No separate "Loops" heading: the card is the loop
+    expect(panel.textContent).not.toContain("Loops");
     // Named by its plan, not just "Loop"
     expect(
       panel.querySelector("[data-testid=loop-status]")!.textContent,
@@ -283,17 +286,20 @@ describe("Loop mode", () => {
 
     // The model's choices were kept, and they appear in their own panel
     expect(h.loop().questions[0].options).toEqual(["ABNF", "PEG", "Both"]);
-    const panel = document.querySelector("[data-testid=question-panel]")!;
-    expect(panel.textContent).toContain("1 question for you");
+    const panel = document.querySelector("[data-testid=needs-you-tray]")!;
+    expect(panel.textContent).toContain("Needs you");
+    expect(
+      panel.querySelector("[data-testid=needs-you-pager]")!.textContent,
+    ).toBe("1 of 1");
     expect(
       [...panel.querySelectorAll("[data-testid=loop-choice-option]")].map(
         (b) => b.textContent,
       ),
     ).toEqual(["ABNF", "PEG", "Both"]);
-    // The inbox points at the panel instead of listing the question again
+    // The inbox does not point at the panel: the panel is on screen
     expect(
       document.querySelector("[data-testid=loop-questions-pointer]"),
-    ).not.toBeNull();
+    ).toBeNull();
 
     // Selecting a choice only marks it: nothing is sent until Answer
     await act(async () =>
@@ -313,7 +319,15 @@ describe("Loop mode", () => {
     );
     await waitFor(() => expect(h.loop().status).toBe("stopped"));
     expect(h.prompt(2)).toContain(": PEG");
-    expect(document.querySelector("[data-testid=question-panel]")).toBeNull();
+    // Nothing waits any more: the tray is one quiet line
+    expect(
+      document.querySelector("[data-testid=needs-you-question]"),
+    ).toBeNull();
+    expect(
+      document
+        .querySelector("[data-testid=needs-you-tray]")!
+        .getAttribute("data-quiet"),
+    ).toBe("true");
   });
 
   test("Other opens a field for an answer of your own", async () => {
@@ -387,10 +401,10 @@ describe("Loop mode", () => {
     expect(panel.textContent).toContain("1 question for you");
     expect(panel.textContent).toContain("Where does the fix land?");
     expect(panel.textContent).toContain("Workspace copy (recommended)");
-    // The card points at the panel instead of repeating the question
+    // The card neither points at the panel nor repeats the question
     expect(
       document.querySelector("[data-testid=plan-card-decisions-pointer]"),
-    ).not.toBeNull();
+    ).toBeNull();
     expect(
       document.querySelector("[data-testid=plan-card-decisions]"),
     ).toBeNull();
@@ -555,19 +569,28 @@ describe("Loop mode", () => {
     expect(
       document.querySelector("[data-testid=plan-card-diff]")!.textContent,
     ).toContain("2 kept, 1 added, 0 dropped");
+    // The to-dos are the plan tree now: it opens by itself while the plan waits
+    const tree = document.querySelector("[data-testid=plan-tree]")!;
     expect(
-      document.querySelector("[data-testid=plan-card-diff]")!.textContent,
-    ).toContain("Install vitest");
+      tree
+        .querySelector("[data-testid=plan-tree-root]")!
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+    expect(tree.textContent).toContain("Install vitest");
     expect(
-      document.querySelector("[data-testid=plan-card-replan-reason]")!
+      document.querySelector("[data-testid=needs-you-plan-reason]")!
         .textContent,
     ).toContain("Why you are asked");
-    const marks = [
-      ...document.querySelectorAll("[data-testid=plan-card-todos] li"),
-    ].map((li) => li.textContent);
-    expect(marks[0]).toContain("[x] Write the lexer");
-    expect(marks[1]).toContain("[ ] Install vitest");
-    expect(marks[2]).toContain("[!] Add tests");
+    // State is an icon and a word for a screen reader, not a bracket mark
+    const rows = [...tree.querySelectorAll("[data-testid^=plan-tree-item-]")];
+    const row = (text: string) =>
+      rows.find((r) => r.textContent?.includes(text))?.textContent;
+    expect(
+      tree.querySelector("[data-testid=plan-tree-fold-done]")!.textContent,
+    ).toContain("1 done");
+    expect(row("Install vitest")).toContain("to do");
+    expect(row("Install vitest")).toContain("new");
+    expect(row("Add tests")).toContain("failed");
     expect(h.store.getState().session.mode).toBe("plan");
     expect(h.prompt(2)).toContain("Re-evaluate the plan");
     expect(h.prompt(2)).toContain("(failed: no test runner installed)");
@@ -580,7 +603,7 @@ describe("Loop mode", () => {
 
     const cont = await waitFor(() => {
       const el = document.querySelector<HTMLElement>(
-        "[data-testid=plan-card-loop-continue]",
+        "[data-testid=needs-you-accept-plan]",
       );
       expect(el).not.toBeNull();
       return el!;
@@ -663,6 +686,12 @@ describe("Loop mode", () => {
     await reading;
 
     // A note for every item, given while item 1 runs
+    // The loop's settings are behind the gear on the status line
+    await act(async () => {
+      fireEvent.click(
+        document.querySelector("[data-testid=loop-settings-toggle]")!,
+      );
+    });
     await act(async () => {
       fireEvent.change(
         document.querySelector("[data-testid=loop-plan-note]")!,
@@ -745,6 +774,96 @@ describe("Loop mode", () => {
     expect(h.prompt(3)).toContain("only this item: Install vitest");
   });
 
+  test("with Questions IDGAF an irreversible question is answered by the system and the loop goes on", async () => {
+    const h = await setup(["Drop the old table", "Add tests"]);
+    await act(async () => {
+      h.store.dispatch(setPolicyLevel({ area: "questions", level: "idgaf" }));
+    });
+    h.turns.push(
+      ask(
+        "Drop the old table?",
+        "blocking",
+        undefined,
+        ["Keep it", "Drop it (recommended)"],
+        "irreversible",
+      ),
+      finish("done", "dropped"),
+      finish("done", "tests added"),
+    );
+    await h.start();
+    await waitFor(() => expect(h.loop().status).toBe("stopped"));
+    expect(h.loop().stopReason).toBe("done");
+    // Never a panel, never waiting; the record names the system and the setting
+    expect(document.querySelector("[data-testid=question-panel]")).toBeNull();
+    expect(h.loop().questions[0].autoAnswer).toEqual({
+      text: "Drop it",
+      by: "system",
+      source: "Questions: IDGAF",
+    });
+    expect(h.loop().autoDecisions?.[0].text).toBe(
+      "Auto-answered: Drop the old table? -> Drop it",
+    );
+    // The agent was told the answer in the tool result
+    expect(JSON.stringify(h.requests[1].messages)).toContain(
+      "Answered automatically (Questions: IDGAF): Drop it",
+    );
+  });
+
+  test("with Questions Cautious the same irreversible question waits in the tray", async () => {
+    const h = await setup(["Drop the old table"]);
+    h.turns.push(
+      ask(
+        "Drop the old table?",
+        "blocking",
+        undefined,
+        ["Keep it", "Drop it (recommended)"],
+        "irreversible",
+      ),
+      finish("waiting", "needs the decision"),
+    );
+    await h.start();
+    await waitFor(() => expect(h.loop().status).toBe("waiting"));
+    expect(h.loop().questions[0].answerId).toBeUndefined();
+    expect(h.loop().autoDecisions).toBeUndefined();
+    // In a loop the question is in the Needs you tray, not the panel
+    expect(
+      document.querySelector("[data-testid=needs-you-question]"),
+    ).not.toBeNull();
+  });
+
+  test("with Questions Permissive a plan's open decisions are answered in the plan file by the system", async () => {
+    const h = await setup(["Build the store"]);
+    h.files[PLAN_FILE] = serializePlanFile({
+      title: "Build the parser",
+      body: "Parse the grammar.",
+      items: [{ id: "1", status: "pending" as const, text: "Build the store" }],
+      decisions: [
+        {
+          question: "Which store?",
+          options: ["sqlite", "postgres (recommended)"],
+          pick: "sqlite",
+          todos: [1],
+        },
+      ],
+    });
+    await act(async () => {
+      h.store.dispatch(
+        setPolicyLevel({ area: "questions", level: "permissive" }),
+      );
+    });
+    h.turns.push(finish("done", "built"));
+    await h.start();
+    await waitFor(() => expect(h.loop().status).toBe("stopped"));
+    expect(h.files[PLAN_FILE]).toContain("postgres");
+    expect(h.loop().autoDecisions?.[0]).toMatchObject({
+      kind: "question",
+      by: "system",
+      source: "Questions: Permissive",
+      text: "Auto-answered: Which store? -> postgres",
+    });
+    expect(document.querySelector("[data-testid=question-panel]")).toBeNull();
+  });
+
   test("Permissive on Plan edits does not start a timer: a question waits until you answer", async () => {
     const h = await setup(["Pick the database"]);
     await act(async () => {
@@ -779,6 +898,12 @@ describe("Loop mode", () => {
       questions: "cautious",
     });
     await waitFor(() => expect(h.loop().status).toBe("waiting"));
+    // The loop's settings are behind the gear on the status line
+    await act(async () => {
+      fireEvent.click(
+        document.querySelector("[data-testid=loop-settings-toggle]")!,
+      );
+    });
     expect(
       document.querySelector("[data-testid=loop-policy]")!.textContent,
     ).toContain("Plan Cautious");
@@ -998,11 +1123,11 @@ describe("Loop mode", () => {
         args: { filepath: `new${n}.ts`, contents: "x" },
       });
     await act(async () => {
-      h.store.dispatch(setPolicyLevel({ area: "tools", level: "yolo" }));
+      h.store.dispatch(setPolicyLevel({ area: "tools", level: "idgaf" }));
     });
     h.ideMessenger.responseHandlers["tools/evaluatePolicy"] = async () => ({
       policy: "allowedWithoutPermission",
-      source: "yolo",
+      source: "idgaf",
     });
     h.turns.push(
       test(),
@@ -1096,9 +1221,12 @@ describe("Loop mode", () => {
     const el = (id: string) =>
       document.querySelector(`[data-testid=${id}]`) as HTMLElement;
 
-    // The limits stay out of sight until asked for, and no usage is shown yet
+    // The limits are in the settings dialog behind the gear, and stay out of
+    // sight there until asked for
+    expect(el("loop-settings")).toBeNull();
+    await act(async () => fireEvent.click(el("loop-settings-toggle")));
+    expect(el("loop-settings")).not.toBeNull();
     expect(el("loop-limit-rounds")).toBeNull();
-    expect(el("loop-usage")).toBeNull();
     await act(async () => fireEvent.click(el("loop-budget-toggle")));
     expect(el("loop-limit-rounds")).not.toBeNull();
 
@@ -2106,7 +2234,7 @@ describe("Loop mode's parallel waves", () => {
     await h.start({ parallel: true });
     await waitFor(() => expect(h.requests).toHaveLength(2));
 
-    expect(el("loop-stop")!.textContent).toBe("Stop the wave");
+    expect(el("loop-stop")!.getAttribute("aria-label")).toBe("Stop the wave");
     expect(el("loop-stop-now")).toBeNull();
     await act(async () => {
       fireEvent.click(el("loop-stop")!);

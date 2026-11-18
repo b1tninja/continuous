@@ -2,7 +2,6 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import {
-  ApiClientServiceState,
   AuthServiceState,
   ConfigServiceState,
   MCPServiceState,
@@ -17,7 +16,6 @@ interface ServiceDebuggerProps {
     config?: ConfigServiceState;
     model?: ModelServiceState;
     mcp?: MCPServiceState;
-    apiClient?: ApiClientServiceState;
   };
   loading: boolean;
   error: any;
@@ -54,8 +52,6 @@ const ServiceDebugger: React.FC<ServiceDebuggerProps> = ({
         return service?.mcpService
           ? `Tools: ${service.mcpService.getTools()?.length || 0}`
           : "No MCP service";
-      case "apiClient":
-        return service?.apiClient ? "API client ready" : "No API client";
       default:
         return "";
     }
@@ -82,7 +78,7 @@ const ServiceDebugger: React.FC<ServiceDebuggerProps> = ({
       <Text> </Text>
       <Text color="yellow">Individual Services:</Text>
 
-      {["auth", "config", "model", "mcp", "apiClient"].map((serviceName) => {
+      {["auth", "config", "model", "mcp"].map((serviceName) => {
         const service = services[serviceName as keyof typeof services];
         const status = getServiceStatus(serviceName, service);
         const details = getServiceDetails(serviceName, service);

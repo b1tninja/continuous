@@ -36,6 +36,10 @@ import {
   responseToChatCompletion,
   toResponsesParams,
 } from "./openaiResponses.js";
+import {
+  openaiReasoningEffort,
+  requestedReasoningEffort,
+} from "./reasoningSwitch.js";
 
 /**
  * openai 7 throws when a client is built without credentials, and treats ""
@@ -118,6 +122,19 @@ export class OpenAIApi implements BaseLlmApi {
     // variant that only set reasoning_effort did nothing in the CLI.
     const extra = this.config.requestOptions?.extraBodyProperties;
     if (extra) Object.assign(body, extra);
+
+    // The reasoning switch (reasoningSwitch.ts) as OpenAI's own API takes it
+    if (isOfficialOpenAIAPI && body.reasoning_effort !== undefined) {
+      const effort = openaiReasoningEffort(
+        body.model,
+        body.reasoning_effort ?? undefined,
+      );
+      if (effort) {
+        body.reasoning_effort = effort as typeof body.reasoning_effort;
+      } else {
+        delete body.reasoning_effort;
+      }
+    }
     return body;
   }
 
@@ -286,12 +303,30 @@ export class OpenAIApi implements BaseLlmApi {
     return (await this.openai.models.list()).data;
   }
 
+  /**
+   * The body's effort, or the config's (the Responses request is built from
+   * the body alone), as OpenAI's API takes it (openaiReasoningEffort).
+   */
+  private withResponsesEffort<T extends ChatCompletionCreateParams>(
+    body: T,
+  ): T {
+    const effort = openaiReasoningEffort(
+      body.model,
+      requestedReasoningEffort(
+        body,
+        this.config.requestOptions?.extraBodyProperties,
+      ),
+    );
+    const { reasoning_effort: _requested, ...rest } = body;
+    return (effort ? { ...rest, reasoning_effort: effort } : rest) as T;
+  }
+
   async responsesNonStream(
     body: ChatCompletionCreateParamsNonStreaming,
     signal: AbortSignal,
   ): Promise<Response> {
     const params = toResponsesParams({
-      ...(body as ChatCompletionCreateParams),
+      ...(this.withResponsesEffort(body) as ChatCompletionCreateParams),
       stream: false,
     });
     return (await this.openai.responses.create(params, {
@@ -304,7 +339,7 @@ export class OpenAIApi implements BaseLlmApi {
     signal: AbortSignal,
   ): AsyncGenerator<ChatCompletionChunk> {
     const params = toResponsesParams({
-      ...(body as ChatCompletionCreateParams),
+      ...(this.withResponsesEffort(body) as ChatCompletionCreateParams),
       stream: true,
     });
 

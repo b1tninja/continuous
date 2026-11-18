@@ -9,11 +9,11 @@ import {
 
 export const USAGE = `Usage: node bench/screenshots/screenshot.mjs [options]
 
-  --view <names|all>     chat, conversation, streaming, tool-call, tool-call-done,
+  --view <names|all>     chat, conversation, streaming, tool-call, approval, tool-call-done,
                          loop, settings-tools, permissions-editor (comma list; default all)
   --width <px,px>        viewport widths (default 300,800)
   --height <px>          viewport height (default 700)
-  --theme <dark|light|both>   (default both)
+  --theme <dark|light|hc|both>   (default both = dark,light; hc is opt-in)
   --out <dir>            where the PNGs and manifest.json go (required)
   --diff <dir>           compare with an earlier run's folder; writes diff-*.png
                          for pictures that changed and exits 1 if any did

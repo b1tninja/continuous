@@ -215,13 +215,29 @@ describe("runMcpAppToolCall", () => {
     expect(called).toHaveLength(0);
   });
 
-  it("asks in plan mode even when the tool is set to run on its own", async () => {
+  it("does not offer the tool in plan mode unless the user listed it", async () => {
+    const { result, approve, called } = await run({
+      tools: [issue],
+      server: "Github",
+      name: "create_issue",
+      patch: (state) => {
+        state.session.mode = "plan";
+        state.ui.toolSettings[issue.function.name] = ALLOW;
+      },
+    });
+    expect(result).toEqual({ ok: false, error: "This tool is turned off." });
+    expect(approve).not.toHaveBeenCalled();
+    expect(called).toHaveLength(0);
+  });
+
+  it("asks in plan mode for a tool the user listed, even when it is set to run on its own", async () => {
     const { approve, called } = await run({
       tools: [issue],
       server: "Github",
       name: "create_issue",
       patch: (state) => {
         state.session.mode = "plan";
+        state.ui.policyExtras = { planMcpTools: ["Github/*"] };
         state.ui.toolSettings[issue.function.name] = ALLOW;
       },
     });

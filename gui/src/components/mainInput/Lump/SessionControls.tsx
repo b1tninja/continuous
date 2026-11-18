@@ -1,8 +1,10 @@
 import { useAppSelector } from "../../../redux/hooks";
 import { ToolTip } from "../../gui/Tooltip";
 import { ModeSelect } from "../../ModeSelect";
-import { PolicyControls } from "../../PolicyControls";
+import { PolicyControls, IdgafChip } from "../../PolicyControls";
 import { RovingToolbar } from "../../PolicyControls/RovingToolbar";
+import { RecentlyBlocked } from "../../RecentlyBlocked";
+import { SafetyShield } from "../../SafetyShield/SafetyShield";
 import HoverItem from "../InputToolbar/HoverItem";
 
 /**
@@ -28,7 +30,10 @@ export function SessionControls() {
           <ModeSelect />
         </HoverItem>
       </ToolTip>
+      <IdgafChip />
       <PolicyControls />
+      <SafetyShield />
+      <RecentlyBlocked />
     </RovingToolbar>
   );
 }

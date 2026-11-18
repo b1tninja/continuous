@@ -1,15 +1,23 @@
 import {
   decisionDraft,
+  fetchDraft,
   outcomeDraft,
   policyDraft,
+  settingDraft,
   shadowDraft,
+  secretReadDraft,
+  taintDraft,
   turnDraft,
   type AuditAgent,
   type AuditPolicy,
   type DecisionInput,
+  type FetchAuditInput,
   type OutcomeInput,
   type PolicyInput,
+  type SettingInput,
   type ShadowInput,
+  type SecretReadInput,
+  type TaintInput,
 } from "./record";
 import { pruneAudit, type PruneResult } from "./reader";
 import { AuditWriter, DEFAULT_MAX_FILE_BYTES } from "./writer";
@@ -132,18 +140,27 @@ export class AuditTrail {
   }
 
   /** The person's answer to an ask. */
-  answer(callId: string, approved: boolean): void {
+  answer(
+    callId: string,
+    approved: boolean,
+    by: "person" | "system" = "person",
+  ): void {
     this.guard(() => {
       const p = this.pending.get(callId);
       if (!p || p.policy !== "ask") return;
       this.decision({
         ...p.input,
         policy: approved ? "allow" : "deny",
-        by: "person",
+        by,
         source: undefined,
         rule: undefined,
         reviewer: undefined,
-        reason: approved ? "The person approved it." : "The person refused it.",
+        reason:
+          by === "system"
+            ? "Answered over a connection with no access token (--no-auth)."
+            : approved
+              ? "The person approved it."
+              : "The person refused it.",
       });
       if (!approved) this.outcome({ callId, ran: false });
     });
@@ -216,6 +233,60 @@ export class AuditTrail {
       }
     });
     return ok;
+  }
+
+  /**
+   * A change to a permission setting that is not a rule (level, preset,
+   * floor, built-in switch, trust). Returns false when it could not be
+   * written; the change itself is not undone.
+   */
+  setting(input: SettingInput): boolean {
+    if (!this.enabled) return true;
+    let ok = true;
+    this.guard(() => {
+      const result = this.writer.write(settingDraft(input));
+      if (!result.ok) {
+        ok = false;
+        this.fail(result.error);
+      }
+    });
+    return ok;
+  }
+
+  /** A taint label added to or cleared from a session. */
+  taint(input: TaintInput): void {
+    this.guard(() => {
+      const result = this.writer.write(taintDraft(input));
+      if (!result.ok) this.fail(result.error);
+    });
+  }
+
+  /**
+   * A web request (fetch tool, `@url`, favicon, search). Written under the
+   * session of the call that made it when that call's decision is still
+   * waiting for its outcome, else under the fetch session.
+   */
+  fetch(input: FetchAuditInput): void {
+    this.guard(() => {
+      const session =
+        input.session ??
+        (input.callId ? this.sessionOf(input.callId) : undefined);
+      const result = this.writer.write(fetchDraft({ ...input, session }));
+      if (!result.ok) this.fail(result.error);
+    });
+  }
+
+  /** The session of a call whose decision was written and whose outcome was not. */
+  sessionOf(callId: string): string | undefined {
+    return this.pending.get(callId)?.input.session;
+  }
+
+  /** B92: a secret was read in a session (what read it, never the content). */
+  secretRead(input: SecretReadInput): void {
+    this.guard(() => {
+      const result = this.writer.write(secretReadDraft(input));
+      if (!result.ok) this.fail(result.error);
+    });
   }
 
   /** Delete files past the retention. Never throws. */

@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import * as YAML from "yaml";
 import { getConfigYamlPath } from "../../../util/paths";
+import {
+  DEFAULT_SHADOW_TIMEOUT_MS,
+  MAX_SHADOW_TIMEOUT_MS,
+} from "./shadowLimits";
 
 /**
  * Shadow mode for the reviewer (ROADMAP B16): `audit.shadowReviewer` in the
@@ -22,9 +26,7 @@ export interface ShadowSettings {
   timeoutMs: number;
 }
 
-export const DEFAULT_SHADOW_TIMEOUT_MS = 5000;
-/** A shadow review is never worth holding anything up for */
-export const MAX_SHADOW_TIMEOUT_MS = 15_000;
+export { DEFAULT_SHADOW_TIMEOUT_MS, MAX_SHADOW_TIMEOUT_MS };
 
 /** The settings in a config.yaml text; undefined means off. */
 export function shadowSettingsFromYaml(

@@ -16,6 +16,36 @@ describe("validateSingleEdit", () => {
       }).not.toThrow();
     });
 
+    it.each([
+      ["spaces", "   "],
+      ["newline only", "\n"],
+      ["indentation only", "    \t  "],
+      ["blank lines with indentation", "\n    \n  \n"],
+    ])("should reject whitespace-only old_string (%s)", (_name, oldString) => {
+      expect(() => {
+        validateSingleEdit(oldString, "new content", undefined);
+      }).toThrowError(
+        expect.objectContaining({
+          reason: ContinueErrorReason.FindAndReplaceWhitespaceOnlyOldString,
+        }),
+      );
+    });
+
+    it("should give an actionable message for whitespace-only old_string", () => {
+      let message = "";
+      try {
+        validateSingleEdit("   ", "x", undefined, 2);
+      } catch (e: any) {
+        message = e.message;
+      }
+      expect(message).toContain("edit at index 2: ");
+      expect(message).toContain("only whitespace");
+      expect(message).toContain("inference server");
+      expect(message).toContain("48753");
+      expect(message).toContain("Qwen3");
+      expect(message).toContain("empty old_string");
+    });
+
     it("should allow empty new_string for deletion", () => {
       expect(() => {
         validateSingleEdit("delete me", "", undefined);

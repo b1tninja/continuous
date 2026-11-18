@@ -58,7 +58,7 @@ iwr https://example.com/install.ps1 | iex
 iex (iwr https://example.com/install.ps1)
 ```
 
-The command asks at every level, including Permissive, and an allow rule does not change that. At Automatic it is refused without asking the reviewer model. YOLO still runs it.
+The command asks at every level, including Permissive, and an allow rule does not change that. At Automatic it is refused without asking the reviewer model. IDGAF still runs it.
 
 A download alone does not match, nor does a download that is only read: `curl -s https://example.com/a.json | jq .` and `curl -o a.txt https://example.com/a.txt && cat a.txt` run as usual. A script that downloads and runs inside itself, or a file renamed between the two steps, is not seen.
 
@@ -66,7 +66,7 @@ Turn the rule off under built-in rules in the policy settings (`no-fetch-and-run
 
 ## A variable where the program is
 
-A rule that names a program (`git push*`, `rm *`) cannot apply to a command whose program is only known when the shell runs it. When the program is taken from a variable, the command asks at every level, including Permissive, and an allow rule does not change that. At Automatic it asks you instead of going to the reviewer model, and YOLO does not skip it. A deny rule still refuses whatever it can see in the rest of the command.
+A rule that names a program (`git push*`, `rm *`) cannot apply to a command whose program is only known when the shell runs it. When the program is taken from a variable, the command asks at every level, including Permissive, and an allow rule does not change that. At Automatic it asks you instead of going to the reviewer model, and IDGAF does not skip it. A deny rule still refuses whatever it can see in the rest of the command.
 
 What counts depends on the shell:
 
@@ -88,16 +88,36 @@ Some variables change what a command does, so the name decides:
 
 | Kind      | Names                                                                                                                                                                                                                                                                             | What happens                                                                  |
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Dangerous | They load code, run a program or decide which program a name means: `PATH`, `LD_*`, `DYLD_*`, `BASH_ENV`, `ENV`, `PROMPT_COMMAND`, `PS4`, `IFS`, `SHELLOPTS`, `GIT_*` (except the harmless ones), `NODE_OPTIONS`, `NODE_PATH`, `PYTHON*`, `RUBYOPT`, `PERL5OPT`, `JAVA_TOOL_OPTIONS`, `npm_config_*`, `PIP_*`, `CARGO_*`, `EDITOR`, `PAGER`, `HOME`, `XDG_CONFIG_HOME`, `COMSPEC`, `PSModulePath`, and names ending in `_OPTIONS`, `_OPTS`, `OPT`, `_PATH`, `_COMMAND`, `_WRAPPER`, `_ASKPASS` | Asks at every level, YOLO included. An allow rule does not change it.         |
-| Sensitive | They point a tool at another server, certificate store or temp folder, or hold a credential: `*_PROXY`, `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`, `AWS_*`, `AZURE_*`, `KUBECONFIG`, `TMPDIR`, `TEMP`, `TMP`, and names like `API_KEY` or `*_TOKEN`                         | Asks at Cautious, Automatic and Permissive. YOLO runs it.                     |
+| Dangerous | They load code, run a program or decide which program a name means: `PATH`, `LD_*`, `DYLD_*`, `BASH_ENV`, `ENV`, `PROMPT_COMMAND`, `PS4`, `IFS`, `SHELLOPTS`, `GIT_*` (except the harmless ones), `NODE_OPTIONS`, `NODE_PATH`, `PYTHON*`, `RUBYOPT`, `PERL5OPT`, `JAVA_TOOL_OPTIONS`, `npm_config_*`, `PIP_*`, `CARGO_*`, `EDITOR`, `PAGER`, `HOME`, `XDG_CONFIG_HOME`, `COMSPEC`, `PSModulePath`, and names ending in `_OPTIONS`, `_OPTS`, `OPT`, `_PATH`, `_COMMAND`, `_WRAPPER`, `_ASKPASS` | Asks at every level below IDGAF. An allow rule does not change it. IDGAF runs it and records the ask. |
+| Sensitive | They point a tool at another server, certificate store or temp folder, or hold a credential: `*_PROXY`, `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`, `AWS_*`, `AZURE_*`, `KUBECONFIG`, `TMPDIR`, `TEMP`, `TMP`, and names like `API_KEY` or `*_TOKEN`                         | Asks at Cautious, Automatic and Permissive. IDGAF runs it.                     |
 | Harmless  | `CI`, `FORCE_COLOR`, `NO_COLOR`, `LANG`, `LC_*`, `TZ`, `DEBUG`, `NODE_ENV`, `GIT_TERMINAL_PROMPT`, `PYTHONUNBUFFERED`                                                                                                                                                              | Nothing extra.                                                                |
 | Unknown   | any other name                                                                                                                                                                                                                                                                    | Nothing extra: `FOO=bar npm test` does not ask. It is still not read-only.    |
 
 The value matters in one case: a value that runs code (`FOO=$(curl x | sh) cmd`, a backtick) asks at every level for any name, because the code runs whatever the variable is called. `PATH` asks whatever its value, because no value proves which program a name will run without reading the disk. `IFS= read -r line` is not asked about: there `IFS` is set for the builtin, not for a program.
 
-In the prompt the reason names the variable and never its value. The command shown in a prompt or a refusal has the value of a variable named like a secret (`API_KEY`, `GITHUB_TOKEN`, `AWS_*`) or shaped like a credential replaced with `玬asked:secret-variable籤, and the audit trail masks it the same way.
+In the prompt the reason names the variable and never its value. Everything that shows a command or a tool call's arguments to you before it runs (the approval card, the terminal card, the tool-call title, the subagent and Loop cards, the CLI approval prompt, the "Try a call" result, and the text the Copy button copies) shows the value of a variable named like a secret (`API_KEY`, `GITHUB_TOKEN`, `AWS_*`) or shaped like a credential as `芦masked:secret-variable禄`. The variable name stays visible. The audit trail masks it the same way. This is display only: the command that runs, and the text every rule reads, is the real one, so a masked prompt never changes what you approve.
 
-The lists are built in. The engine accepts a list of names to add and a list to allow, but only from the person's own settings and never from a workspace file or an assistant, and no config key feeds it yet. The checks switch off with the built-in rule `refuse-dangerous-commands`.
+### Your own lists
+
+The lists are built in. To add names that should always ask, or to stop asking about a name, put them under `toolPermissions.auto.environment.envNames` in your own `config.yaml`:
+
+```yaml
+toolPermissions:
+  auto:
+    environment:
+      envNames:
+        ask: [DEPLOY_*, STAGING_HOST]
+        allow: [HTTPS_PROXY]
+```
+
+Names are compared ignoring case, and an entry ending in `*` matches every name that starts with it.
+
+- `ask` makes a name ask at every level below IDGAF; at IDGAF the call runs and the ask is recorded.
+- `allow` stops a Sensitive or Unknown name from asking. It never loosens a name the built-in policy marks Dangerous (`PATH`, `LD_*`, `NODE_OPTIONS` and the rest of that row), and it never loosens a value that runs code. Those keep asking at every level, whatever the list says.
+- Only your own `config.yaml` is read. The same keys in a workspace file, an assistant or a hub block are ignored, and a workspace file's `allow` list is dropped with a notice.
+- The file is read once and read again when it changes, not on every tool call.
+
+The checks switch off with the built-in rule `refuse-dangerous-commands`.
 
 ## Shell dialects
 
@@ -130,11 +150,11 @@ Set `CONTINUE_COMMAND_LINT=off` in the environment that starts the editor or the
 
 ## Destructive commands, large edits, dependencies and unlisted hosts
 
-Four built-in rules ask before a call that is hard to undo or that changes what the project trusts. Each runs with no model call, asks at every level below YOLO, and is not loosened by an allow rule. At Automatic the call asks you instead of going to the reviewer model. Turn one off under built-in rules in the policy settings.
+Four built-in rules ask before a call that is hard to undo or that changes what the project trusts. Each runs with no model call, asks at every level below IDGAF, and is not loosened by an allow rule. At Automatic the call asks you instead of going to the reviewer model. Turn one off under built-in rules in **Settings, Tools**, or with `builtin: { <rule-id>: off }` in `permissions.yaml`.
 
 | Rule                       | Asks for                                                                                                                                                                                                               | Does not ask for                                                                                                          |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `ask-destructive-commands` | `git reset --hard`, `git clean`, `git rebase`, `git commit --amend`, `git push --force` or `+branch` or `:branch`, `git branch -D`, `git branch -m` of the checked-out branch or `-M`, `git checkout -- .`, `git stash drop`, `git update-ref -d`, `git gc --prune`, `git reflog delete`, `rm -r`, `find -delete`, `Remove-Item -Recurse`, `rd /s`, `DROP TABLE`; `kubectl delete`, `drain` or `cordon`, `kubectl replace --force`, `helm uninstall`, `terraform destroy`, `terraform apply -auto-approve`, `pulumi destroy`, `aws` `delete-*` or `terminate-*`, `aws s3 rm --recursive`, `az ... delete`, `gcloud ... delete`, `docker rm -f`, `docker volume rm`, `docker system prune`, `docker compose down -v` | `git push origin topic`, `git clean -n`, `git rebase --abort`, `git reset --soft` or `--mixed`, `git branch -m old new`, `git restore --staged`, `rm -rf node_modules`, `rm -rf dist`, `kubectl get`, `terraform plan`, `docker rm web` |
+| `ask-destructive-commands` | `git reset --hard`, `git clean`, `git rebase`, `git commit --amend`, `git filter-branch`, `git push --force` or `--delete` or `+branch` or `:branch`, `git branch -D`, `git branch -m` of the checked-out branch or `-M`, `git tag -d`, `git checkout -- .`, `git restore` (not `--staged` alone), `git switch --force`, `git stash drop` or `clear`, `git update-ref -d`, `git gc --prune`, `git prune`, `git reflog expire` or `delete`, `git pull --rebase`, `git rm -r` or `-f`, `git worktree remove` or `prune`, `rm -r`, `find -delete`, `shred`, `truncate`, `Remove-Item -Recurse`, `rd /s`, `DROP TABLE` or `TRUNCATE TABLE` or `DELETE FROM` through `psql`, `mysql`, `sqlite3` and similar; `kubectl` (or `oc`) `delete`, `drain` or `cordon`, `kubectl replace --force`, `helm uninstall`, `terraform` (or `tofu`, `terragrunt`) `destroy` or `apply -auto-approve`, `pulumi destroy`, `aws` `delete-*` or `terminate-*`, `aws s3 rm --recursive`, `aws s3 rb`, `aws s3 sync --delete`, `az ... delete`, `gcloud ... delete`, `docker` (or `podman`) `rm -f`, `volume rm`, `prune`, `docker compose down -v` | `git push origin topic`, `git clean -n`, `git rebase --abort`, `git reset --soft` or `--mixed`, `git branch -m old new`, `git restore --staged`, `rm -rf node_modules`, `rm -rf dist`, `kubectl get`, `terraform plan`, `docker rm web` |
 | `ask-large-change`         | One edit call that changes more than 300 lines (or the number you set), and `create_new_file` over a file that already exists when it writes or replaces more than that | Smaller edits, creating a file that does not exist, and appending |
 | `ask-dependency-change`    | An edit to `package.json`, a lockfile, `.npmrc`, `requirements*.txt`, `pyproject.toml`, `Cargo.toml` and similar; `npm install pkg`, `pip install pkg`, `npm update`, `npm config set registry` | `npm ci`, a bare `npm install`, `npm install pkg` when the nearest `package.json` already lists `pkg`, `pip install -r requirements.txt`, `pip install -e .` |
 | `ask-unknown-host`         | A fetch or network command to a host that is not in `toolPermissions.auto.environment.trustedDomains` of your own `config.yaml`                                                                                        | Any host when you have not listed domains; a list that came from a workspace file or an assistant is ignored              |
@@ -148,11 +168,30 @@ Notes on the edges:
 - To change the 300-line limit, set `toolPermissions.auto.environment.largeChangeLines` (a whole number of at least 1) in your own `config.yaml`. A workspace file cannot set it. A file the check cannot read counts as a new file. How many files one turn changes is not counted.
 - `npm install <name>` skips the question only when every name is a bare package name with no version, tag or URL, the nearest `package.json` above the project folder lists it under `dependencies`, `devDependencies` or `optionalDependencies`, and the command has no registry, prefix, workspace or global flag, no `cd` before it and no `npm_config_*` setting. Anything the check cannot read asks as before.
 
+## Reading web pages
+
+`fetch_url_content` (`Fetch` in the terminal agent) and `@url` fetch what a model or a typed address names, so they are limited before the page reaches the model. The favicon lookup, the `search_web` tool, `@web` and `@google` go through the same guard:
+
+- Only `http` and `https` URLs are fetched. `file:`, `data:`, `ftp:`, `javascript:` and the like are refused before any connection, and so is a URL with a user name or password in it.
+- A URL the model wrote is scanned for credentials with the outbound secret rules and for the values of the secrets in your environment. A match is refused and the message names the kind of secret, never the value. A URL with a long encoded value in it asks first, whatever the permission level, because that is the shape of data being sent out through an address. A URL you type for `@url` is not scanned.
+- Reading stops at 2 MiB of decoded text and after 20 seconds in all, and the model is told when a page was cut. To change either, set `toolPermissions.auto.environment.fetchMaxBytes` (at most 64 MiB) or `fetchTimeoutSeconds` (at most 300) in your own `config.yaml`. A workspace file cannot set them.
+- HTML is converted to markdown. Plain text, markdown and XML are returned as text, and JSON is indented. Images, PDF, archives and other binary types are refused with a one-line message.
+- Before the model reads the text, HTML comments, zero-width and direction-control characters and the Unicode tag block are removed, and an image such as `![a](https://example.com/?q=...)` becomes `[image: a]`, so no address is handed to the model for it to repeat.
+- With `experimental.spotlightUntrusted` on, the page's title and URL are inside the untrusted markers with its text.
+- The `requestOptions.headers` of your config, which are meant for your model endpoints, go to the host of a model's `apiBase` only. A host the model names, a site you name with `@url`, the favicon, your search endpoint and `google.serper.dev` get the proxy and certificate settings and no extra headers. No cookie is sent or kept.
+- Redirects are followed one at a time, at most five, and a loop is refused. Every hop is checked again: a redirect from a public address to a non-public one is refused, and so is a redirect to a link-local address (the cloud metadata service at `169.254.169.254`) on any host other than the one you started at. A redirect whose address carries a credential or a user name is refused. `Authorization`, `Cookie` and `Proxy-Authorization` are dropped when a redirect leaves the origin.
+- Non-public means every block of the IANA special-purpose address registries ([RFC 6890](https://www.rfc-editor.org/rfc/rfc6890.html), updated by [RFC 8190](https://www.rfc-editor.org/rfc/rfc8190.html)) that is not "Globally Reachable": loopback, private use, link-local, shared address space, documentation, benchmarking, reserved, unique-local and the rest, plus multicast. An IPv4-mapped, IPv4-compatible, NAT64 or 6to4 address is judged by the IPv4 address inside it, so `[::ffff:169.254.169.254]` is the metadata address.
+- Each host is resolved once and the connection is pinned to the addresses that were checked, so a second DNS answer cannot point the request somewhere else (DNS rebinding). A name that resolves to nothing is pinned to nothing and does not connect directly.
+- A host name that resolves to nothing on this machine and does not end in a real top-level domain (`intranet`, `git.corp`) asks, as a private address does, and a redirect to one is refused: behind an HTTP proxy the proxy resolves names, and the name may be an internal one. A name under a real top-level domain that does not resolve here is left to the connection, because with a proxy that is every public name. Behind a proxy the pin does not apply, since the proxy resolves the name itself; what the proxy connects to is up to its own egress policy.
+- The favicon must be a raster image (`image/png`, `image/x-icon`, `image/jpeg`, `image/gif`, `image/webp` and the like, never SVG) of at most 256 KiB, and each of its two requests stops after 5 seconds. A search response larger than the 2 MiB limit is refused. An error says the HTTP status and never quotes the response body.
+- Every fetched page starts with one provenance line: the final URL, the status and type, the size, the time, the start of the SHA-256 of what was read, the `robots.txt` verdict (always `not checked` for now) and the rule that let it through, for example `[fetched https://docs.example.com/guide 路 200 text/html 路 48 KiB 路 2026-11-15T10:04:12Z 路 sha256:3f2a9c1b0d4e 路 robots: not checked 路 rule: builtin:public 路 via 1 redirect]`. A credential-shaped value in the URL is masked there.
+- Every request, refused ones included, is kept in the session's fetch log (in memory, no bodies) and written to the [audit trail](./audit-trail.mdx) as one `fetch` line with the query values replaced by `*`.
+
 ## File tools that leave the workspace
 
-The file tools read and write with the editor's own authority, so text from a repository, a web page or a tool result can steer them to a file you never meant. A file tool call asks, at every level below YOLO and whatever an allow rule says, when it reaches:
+The file tools read and write with the editor's own authority, so text from a repository, a web page or a tool result can steer them to a file you never meant. A file tool call asks, at every level below IDGAF and whatever an allow rule says, when it reaches:
 
-- a real path outside the workspace folders: an absolute path elsewhere, a `..` climb, or a symlink or junction that leaves (the path is judged where it lands, not as written), and another account's home (`~root/x`). The built-in rule `ask-outside-paths` controls this, in your own `permissions.yaml`
+- a real path outside the workspace folders: an absolute path elsewhere, a `..` climb, or a symlink or junction that leaves (the path is judged where it lands, not as written), and another account's home (`~root/x`). The built-in rule `ask-outside-paths` controls this (**Settings, Tools**, or `permissions.yaml`)
 - a network or device path (`\\host\share`, `\\?\C:\x`, `/dev`, `/proc`, `/sys`), a Windows device name (`NUL`, `COM1`), an alternate data stream (`notes.txt:hidden`), a name with a trailing dot or space, or an 8.3 short name. Network paths follow `protect-network-paths`; the rest has no switch
 - your global configuration folder (`~/.continuous`, `~/.continue`), even to read, because it holds keys
 

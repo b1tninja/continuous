@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as nodePath from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { deputyTargets } from "./deputyTargets";
 
 /**
@@ -18,13 +18,32 @@ export interface RealPath {
   isWithinWorkspace: boolean;
 }
 
-function real(p: string): string {
+/**
+ * A path with its links followed. A link whose target does not exist (a
+ * dangling link) is followed to where the target would be, so a write through
+ * it is judged where it would create the file; a missing file is judged by
+ * its nearest existing parent. `hops` bounds a loop of links.
+ */
+function real(p: string, hops = 0): string {
   try {
     return fs.realpathSync.native(p);
   } catch {
+    if (hops < 16) {
+      try {
+        if (fs.lstatSync(p).isSymbolicLink()) {
+          const target = nodePath.resolve(
+            real(nodePath.dirname(p), hops + 1),
+            fs.readlinkSync(p),
+          );
+          return real(target, hops + 1);
+        }
+      } catch {
+        // Not a link, or not readable: fall back to the parent.
+      }
+    }
     const parent = nodePath.dirname(p);
     if (parent === p) return p;
-    return nodePath.join(real(parent), nodePath.basename(p));
+    return nodePath.join(real(parent, hops + 1), nodePath.basename(p));
   }
 }
 
@@ -37,6 +56,7 @@ export function resolveRealPath(
   raw: string,
   cwd: string,
   home: string = os.homedir(),
+  otherRoots: readonly string[] = [],
 ): RealPath | undefined {
   const text = raw.trim();
   if (!text) return undefined;
@@ -54,14 +74,14 @@ export function resolveRealPath(
   }
   const abs = nodePath.resolve(cwd, candidate);
   const target = real(abs);
-  const root = real(nodePath.resolve(cwd));
+  const roots = [cwd, ...otherRoots].map((r) => real(nodePath.resolve(r)));
   const fold = (s: string) =>
     process.platform === "win32" ? s.toLowerCase() : s;
   return {
     uri: pathToFileURL(target).href,
     displayPath: raw,
     isAbsolute: nodePath.isAbsolute(candidate),
-    isWithinWorkspace: inside(fold(target), fold(root)),
+    isWithinWorkspace: roots.some((r) => inside(fold(target), fold(r))),
   };
 }
 
@@ -78,4 +98,25 @@ export function processedPathArgs(
   if (!targets?.single || targets.paths.length !== 1) return undefined;
   const resolved = resolveRealPath(targets.paths[0], cwd);
   return resolved ? { resolvedPath: resolved } : undefined;
+}
+
+/**
+ * The link-following resolver for MCP path arguments (deputyCall `resolvePath`),
+ * for a host whose workspace folders are local paths. Undefined when there are
+ * none, so a remote workspace is judged as written.
+ */
+export function localLinkResolver(
+  workspaceDirs: readonly string[],
+  home: string = os.homedir(),
+):
+  | ((raw: string) => { path: string; withinWorkspace: boolean } | undefined)
+  | undefined {
+  const [first, ...rest] = workspaceDirs;
+  if (!first) return undefined;
+  return (raw) => {
+    const r = resolveRealPath(raw, first, home, rest);
+    return r
+      ? { path: fileURLToPath(r.uri), withinWorkspace: r.isWithinWorkspace }
+      : undefined;
+  };
 }

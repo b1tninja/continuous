@@ -95,7 +95,7 @@ describe("Plan mode holds tools that may make changes", () => {
     }
   });
 
-  async function planCall(level: "permissive" | "yolo") {
+  async function planCall(level: "permissive" | "idgaf") {
     const ide = new MockIdeMessenger();
     ide.responseHandlers["tools/evaluatePolicy"] = async () =>
       ({ policy: ALLOW, source: level }) as any;
@@ -109,13 +109,13 @@ describe("Plan mode holds tools that may make changes", () => {
     );
   }
 
-  it("YOLO runs it: the level says everything runs", async () => {
-    const result = await planCall("yolo");
+  it("IDGAF runs it: the level says everything runs", async () => {
+    const result = await planCall("idgaf");
     expect(result.policy).toBe(ALLOW);
-    expect(result.source).toBe("yolo");
+    expect(result.source).toBe("idgaf");
   });
 
-  it("Permissive does not lift it: Plan mode changes nothing below YOLO", async () => {
+  it("Permissive does not lift it: Plan mode changes nothing below IDGAF", async () => {
     const result = await planCall("permissive");
     expect(result.policy).toBe(ASK);
     expect(result.source).toBe("plan-mode");

@@ -21,7 +21,7 @@ export type PromptCacheTtl = "5m" | "1h";
 /** What the cached prefix was built from. A change to any part rebuilds it. */
 export interface PromptCacheKey {
   model: string;
-  /** Checksum of the tool names sent, so a change to the tool list is visible. */
+  /** Checksum of each tool's name, description and input schema. */
   tools: string;
   /** Checksum of the system message. */
   system: string;
@@ -32,6 +32,15 @@ export interface PromptCacheKey {
    * Absent on keys made before this field existed, which are not compared.
    */
   messages?: string[];
+  /**
+   * Reasoning effort and thinking settings of the request. Anthropic rebuilds
+   * the messages cache when they change. Absent on older keys.
+   */
+  effort?: string;
+  /** The tool choice, which also rebuilds the messages cache. */
+  toolChoice?: string;
+  /** Whether any message carries an image; it appearing or going rebuilds it. */
+  images?: boolean;
 }
 
 /** A request that should have read the cache and mostly did not. */
@@ -40,6 +49,11 @@ export interface PromptCacheMiss {
   expectedTokens: number;
   /** What changed since the last request, in words; empty when unknown. */
   causes: string[];
+  /**
+   * The request followed a tool result (an agent's tool round), where nobody
+   * is asked before the oldest messages are dropped (C117).
+   */
+  inToolRound?: boolean;
 }
 
 /** Per-session facts the Auto lifetime learns from. Not persisted. */
@@ -234,7 +248,9 @@ export function modelUsesLocalPrefixCache(
  * How long after its last request a local server's cache is taken to still
  * hold the conversation. Local servers keep it until another conversation
  * or an unload pushes it out, which the client cannot see, so this is a
- * guess on the safe side for a warning.
+ * guess on the safe side for a warning. This is the window for llama.cpp
+ * and other servers that keep prompt slots with no time limit; Ollama has
+ * its own (localCacheWarmMs in localWarmWindow.ts).
  */
 export const LOCAL_CACHE_WARM_MS = 15 * 60 * 1000;
 

@@ -6,7 +6,7 @@ import {
   selectAutoApproval,
   selectEffectiveLevels,
   selectLoopPolicy,
-  selectYoloAreas,
+  selectIdgafAreas,
 } from "./selectAutoApproval";
 
 const state = (over: {
@@ -73,8 +73,9 @@ describe("selectApprovalSettings", () => {
       levels: DEFAULT_POLICY_LEVELS,
     });
     expect(
-      selectApprovalSettings(state({ levels: { tools: "yolo" } })).levels.tools,
-    ).toBe("yolo");
+      selectApprovalSettings(state({ levels: { tools: "idgaf" } })).levels
+        .tools,
+    ).toBe("idgaf");
   });
 
   it("a saved Automatic that cannot run becomes Cautious, never looser", () => {
@@ -100,23 +101,23 @@ describe("selectApprovalSettings", () => {
   });
 });
 
-describe("the loop's policy and the YOLO banner", () => {
+describe("the loop's policy and the IDGAF banner", () => {
   it("the loop follows Plan edits and Questions", () => {
     expect(
       selectLoopPolicy(
-        state({ levels: { plan: "permissive", questions: "yolo" } }),
+        state({ levels: { plan: "permissive", questions: "idgaf" } }),
       ),
-    ).toMatchObject({ plan: "permissive", questions: "yolo" });
+    ).toMatchObject({ plan: "permissive", questions: "idgaf" });
   });
 
-  it("names every area at YOLO", () => {
+  it("names every area at IDGAF", () => {
     expect(
-      selectYoloAreas(
+      selectIdgafAreas(
         state({
-          levels: { tools: "yolo", questions: "yolo", edits: "permissive" },
+          levels: { tools: "idgaf", questions: "idgaf", edits: "permissive" },
         }),
       ),
     ).toEqual(["tools", "questions"]);
-    expect(selectYoloAreas(state({}))).toEqual([]);
+    expect(selectIdgafAreas(state({}))).toEqual([]);
   });
 });
