@@ -92,6 +92,11 @@ import {
   refuseTruncatedToolCalls,
 } from "./preprocessToolCallArgs";
 import { refuseRoleCalls } from "./refuseRoleCalls";
+import {
+  ensureSessionEnvironment,
+  needsSessionEnvironment,
+  recordDateNotice,
+} from "./sessionEnvironment";
 import { refuseWithheldCalls } from "./refuseWithheldCalls";
 import { withheldTools } from "../../util/toolListHold";
 import { checkpointSession } from "./session";
@@ -120,6 +125,12 @@ export const streamNormalInput = createAsyncThunk<
       console.error(message, JSON.stringify(getState(), null, 2));
       throw new Error(message);
     }
+    // The session's environment, gathered once by core and frozen with the
+    // session (the system line, the shell sentence and the first-message block)
+    if (needsSessionEnvironment(getState())) {
+      await ensureSessionEnvironment(getState, dispatch, extra.ideMessenger);
+    }
+    recordDateNotice(getState, dispatch);
     const state = getState();
     const selectedChatModel = selectSelectedChatModel(state);
 

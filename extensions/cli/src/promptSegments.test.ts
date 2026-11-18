@@ -178,12 +178,10 @@ describe("CLI prefix stability (C62 a)", () => {
       "mcp-order",
       "mode-switch",
       "tool-list-event",
-      "uncapped-git-status",
     ]);
     expect(visibleOffenders(manifests["cli-plan"]).sort()).toEqual([
       "instruction-file-edit",
       "mode-switch",
-      "uncapped-git-status",
     ]);
   });
 });

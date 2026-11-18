@@ -61,6 +61,7 @@ import {
 } from "../util/editLoggingUtils";
 import type { VsCodeWebviewProtocol } from "../webviewProtocol";
 import { registerVsCodeAi } from "../ai/registerVsCodeAi";
+import { registerEnvironmentDetailSetting } from "../environmentDetailSetting";
 import { registerTerminalShellSetting } from "../terminalShellSetting";
 import { registerModelInfoSetting } from "../modelInfoSetting";
 import { registerConfigLanguageSupport } from "../lang-server/configLanguageSupport";
@@ -302,6 +303,7 @@ export class VsCodeExtension {
 
     // Where terminal commands run (the host shell or WSL)
     registerTerminalShellSetting(context);
+    registerEnvironmentDetailSetting(context);
 
     // Model information updates (OpenRouter's list), into the shared store
     registerModelInfoSetting(context);

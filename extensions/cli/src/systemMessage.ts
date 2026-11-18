@@ -1,4 +1,3 @@
-import { execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -15,6 +14,10 @@ import {
   attributionInstructions,
   loadAttributionSettings,
 } from "./attribution.js";
+import {
+  ensureSessionEnvironment,
+  environmentDisclosure,
+} from "./environmentContext.js";
 import { processRule } from "./hubLoader.js";
 import {
   AGENT_FILES,
@@ -28,53 +31,21 @@ import { serviceContainer } from "./services/ServiceContainer.js";
 import { ConfigServiceState, SERVICE_NAMES } from "./services/types.js";
 import { SYSTEM_MARKERS } from "./systemMessageMarkers.js";
 
-/** Longest wait for `git rev-parse`; a hung git reads as "not a repo". */
-export const GIT_CHECK_TIMEOUT_MS = 5000;
-
-/**
- * Check if a directory is a git repository
- */
-function isGitRepo(cwd: string): boolean {
-  try {
-    execSync("git rev-parse --is-inside-work-tree", {
-      stdio: "ignore",
-      cwd,
-      timeout: GIT_CHECK_TIMEOUT_MS,
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// The folder the preamble describes is the one the process started in, as it
-// was when the preamble was built at module load. Reading process.cwd() here
-// costs nothing; the git check is deferred to the first prompt, so --help and
-// other commands that never build a prompt start no git process. The review
-// and loop workers and ACP change folder before their first prompt, so the
-// check runs against this folder, not the current one, and the text is the
-// same as before.
-const startupCwd = process.cwd();
-let cachedBaseSystemMessage: string | undefined;
-
 // The CLI's preamble. The turn's own instructions (act or plan) are shared
 // with the IDE and appended by constructSystemMessage; see
 // core/llm/prompts/turns.ts and plans/policy-areas.md.
 //
-// Only facts that are the same for every run in this folder go here, so the
-// cached prefix matches across sessions. The date and the git status change
-// between runs and travel in the first user message of each request instead
-// (src/environmentContext.ts).
+// Only facts that are the same for every run in every folder go here, so the
+// cached prefix matches across folders and sessions: the renderer's system
+// line (the platform and where the session facts are). The working folder,
+// the date and the git state travel in the first user message of each
+// request instead (src/environmentContext.ts).
+let cachedBaseSystemMessage: string | undefined;
+
 export function getBaseSystemMessage(): string {
   cachedBaseSystemMessage ??= `You are an agent in the Continuous CLI. Your replies are shown in a terminal: be concise and direct, and show file names and code only where they help.
 Here is useful information about the environment you are running in:
-<env>
-Working directory: ${startupCwd}
-Is directory a git repo: ${isGitRepo(startupCwd)}
-Platform: ${process.platform}
-</env>
-
-Today's date and the git status of the working tree are in a <context name="environment"> block in the first user message.`;
+${environmentDisclosure().systemLine}`;
   return cachedBaseSystemMessage;
 }
 
@@ -241,6 +212,7 @@ export async function constructSystemMessage(
   }
 
   // Construct the comprehensive system message
+  await ensureSessionEnvironment();
   let systemMessage = getBaseSystemMessage();
 
   // The turn's instructions: a plan turn in plan mode, an act turn otherwise.

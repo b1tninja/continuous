@@ -99,6 +99,7 @@ import {
   SerializedContinueConfig,
   Session,
   SessionDelta,
+  SessionEnvironment,
   SessionSaveResult,
   SiteIndexingConfig,
   SlashCommandDescWithSource,
@@ -229,6 +230,12 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
   "history/load": [{ id: string }, Session];
   "history/save": [Session, SessionSaveResult | void];
   "history/saveDelta": [SessionDelta, SessionSaveResult];
+  /**
+   * The session's environment (the snapshot and its three texts), gathered
+   * once for a new session; a saved one is sent back to freeze the terminal
+   * executor at its shell again (core/util/environmentSession.ts).
+   */
+  "environment/session": [{ saved?: SessionEnvironment }, SessionEnvironment];
   "history/share": [{ id: string; outputDir?: string }, void];
   "history/clear": [undefined, void];
   /** Delete now: to the trash, restorable for 7 days (NI10). */

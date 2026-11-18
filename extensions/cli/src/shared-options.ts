@@ -114,7 +114,11 @@ export function addCommonOptions(command: Command): Command {
       },
       [] as string[],
     )
-    .option("--agent <path>", "Load an agent file (path to a .md file)");
+    .option("--agent <path>", "Load an agent file (path to a .md file)")
+    .option(
+      "--env-detail <level>",
+      "How much the agent is told about this machine and folder: minimal, standard (default) or full. Your account name, host name, git identity and addresses are never sent.",
+    );
 }
 
 // Function to merge parent options into subcommand options
@@ -147,6 +151,7 @@ export function mergeParentOptions(parentCommand: Command, options: any): any {
     "maxTurns",
     "maxDuration",
     "budgetAllowUnpriced",
+    "envDetail",
   ];
 
   for (const optName of inheritableOptions) {

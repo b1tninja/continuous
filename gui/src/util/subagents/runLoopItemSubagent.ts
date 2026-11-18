@@ -296,7 +296,10 @@ export async function runLoopItemSubagent(
       dispatch,
       getState,
       controller,
-      local: newLocalSession(input.prompt),
+      local: newLocalSession(
+        input.prompt,
+        state.session.environment?.strings?.firstMessageBlock,
+      ),
       model: input.model,
       tools,
       ...prepared,

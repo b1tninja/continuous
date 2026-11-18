@@ -108,11 +108,16 @@ describe("constructSystemMessage", () => {
     expect(result).toContain('<context name="userRules">');
   });
 
-  it("should include working directory information", async () => {
+  it("names no folder: the working folder is in the first user message", async () => {
     const result = await constructSystemMessage("normal");
 
-    expect(result).toContain("Working directory:");
+    expect(result).not.toContain("Working directory:");
+    expect(result).not.toContain(process.cwd());
+    expect(result).not.toContain("Is directory a git repo");
     expect(result).toContain("<env>");
+    expect(result).toContain(
+      `The working folder, today's date and the git state are in a <context name="environment"> block in the first user message.`,
+    );
   });
 
   it("should include platform information", async () => {

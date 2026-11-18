@@ -10,6 +10,8 @@ import {
   prevFilepaths,
 } from "./autocomplete/util/openedFilesLruCache";
 import { ConfigHandler } from "./config/ConfigHandler";
+import { editorEnvironmentDetail } from "./util/environmentDetail";
+import { editorSessionEnvironment } from "./util/environmentSession";
 import {
   getModelBlock,
   previewModelEdit,
@@ -1504,6 +1506,17 @@ export class Core {
     on("history/saveDelta", (msg) => {
       return historyManager.saveDelta(msg.data);
     });
+
+    on("environment/session", async (msg) =>
+      editorSessionEnvironment({
+        saved: msg.data?.saved,
+        workspaceDirs: () => this.ide.getWorkspaceDirs(),
+        // A remote window: the system line says so, the shell is not known
+        // here and the local git is not read (ENV15)
+        remoteName: async () => (await this.ide.getIdeInfo()).remoteName,
+        detail: editorEnvironmentDetail(),
+      }),
+    );
 
     on("history/share", async (msg) => {
       const session = historyManager.load(msg.data.id);

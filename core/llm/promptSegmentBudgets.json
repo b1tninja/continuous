@@ -17,7 +17,10 @@
       "maxTokens": 627
     },
     "format.agent": {
-      "maxTokens": 1038
+      "maxTokens": 1239
+    },
+    "env.system": {
+      "maxTokens": 49
     },
     "summary.compaction": {
       "maxTokens": 18
@@ -52,7 +55,7 @@
       "maxTokens": 67
     },
     "env.date+git": {
-      "maxTokens": 53
+      "maxTokens": 119
     },
     "task-list": {
       "maxTokens": 13

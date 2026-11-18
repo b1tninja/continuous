@@ -1,11 +1,11 @@
 {
-  "ide-agent-claude": "4d253a0d919bf6bfa7fe2af921be6a25358cb2d663735705d3954a635921aa82",
-  "ide-agent-claude-tasklist": "db7ebdd053026c6ecb790dd51ba3868e7af8e41e382293195da60ad602024519",
-  "ide-plan-claude": "91a7fff8b7360d2481203c93f241608fe665b9d13d7298cba0d72d817e3416d5",
-  "ide-agent-qwen-prompted": "6b984b4464ab9752fb8bae0441b63abe7c38ff3900bdf553a7eb77ee6b998ccd",
-  "ide-agent-nova": "4d253a0d919bf6bfa7fe2af921be6a25358cb2d663735705d3954a635921aa82",
-  "ide-loop-item": "fa8e3b6a608eec13a4d77a6af5c4739eecc5813992aab9c324b7132e3db7bd9a",
-  "ide-agent-scoped-rule": "f2340dcd8e376abd2d3375818c4ad8ee5afe82c2cc3accc47887565181fbd346",
-  "ide-agent-scoped-first": "f2340dcd8e376abd2d3375818c4ad8ee5afe82c2cc3accc47887565181fbd346",
-  "ide-compacted": "6e04c05a783f5e2f9218426c4317d606d60684d2fdf5b27d975357fab1ce7a3d"
+  "ide-agent-claude": "856f76b5e55f2bc0a9890cee8ff467d6d236d2368931e0451420016d106b48b9",
+  "ide-agent-claude-tasklist": "a2d9ccc3e7bf630a85cd11db5a8f233e98a387eb1fdaff4d1bcbfac210f14647",
+  "ide-plan-claude": "e204fd1c45cc9804dfa68d16fdee867b24f0c2fd5b6d6ac30b63aebebe25481e",
+  "ide-agent-qwen-prompted": "1d98e5f28c6c8f411bb2146b492c4b1fc2f959c3a2f48f3e1ed4fbae2e1940da",
+  "ide-agent-nova": "856f76b5e55f2bc0a9890cee8ff467d6d236d2368931e0451420016d106b48b9",
+  "ide-loop-item": "2bf415bbb613d5044c7a1ccb1f3be604801bfb6f7c4d11e972fbbd09e7ff4e14",
+  "ide-agent-scoped-rule": "c9785cd5c4d91e17b45b41c3b7da1f34ad1fb70bc126e95e933d7bb5c16e1ef4",
+  "ide-agent-scoped-first": "c9785cd5c4d91e17b45b41c3b7da1f34ad1fb70bc126e95e933d7bb5c16e1ef4",
+  "ide-compacted": "8bec86099eb1a1609a431733f520b0e6659e861d4cef8a1101fba83635fd4891"
 }

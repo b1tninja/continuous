@@ -4,6 +4,7 @@
 import "./init.js";
 
 import { Command } from "commander";
+import { parseEnvDetail } from "core/util/environmentSnapshot.js";
 import { dismissCurrentNotice } from "core/util/retirementStartup.js";
 
 import { acp } from "./commands/acp.js";
@@ -26,6 +27,7 @@ import { sandboxCommand } from "./commands/sandbox.js";
 import { serve } from "./commands/serve.js";
 import { terminalEnvCommand } from "./commands/terminalEnv.js";
 import { testConnectionCommand } from "./commands/testConnection.js";
+import { setEnvironmentDetail } from "./environmentContext.js";
 import {
   handleValidationErrors,
   validateFlags,
@@ -258,6 +260,18 @@ addRootOptions(program)
       logger.debug("Verbose logging enabled");
     }
 
+    // --env-detail: how much the model is told about the machine (ENV18)
+    if (options.envDetail !== undefined) {
+      const detail = parseEnvDetail(options.envDetail);
+      if (!detail) {
+        safeStderr(
+          `--env-detail must be minimal, standard or full (got "${options.envDetail}")\n`,
+        );
+        process.exit(1);
+      }
+      setEnvironmentDetail(detail);
+    }
+
     // Handle piped input for headless mode (only if we haven't already read it)
     if (options.print && !stdinInput) {
       const headlessStdinInput = readStdinSync();
@@ -421,16 +435,31 @@ program
 program
   .command("doctor [topic] [urls...]")
   .description(
-    "Read-only diagnostics: doctor config (settings files and each control's value and source), doctor network [url...] (proxy and certificates)",
+    "Read-only diagnostics: doctor config (settings files and each control's value and source), doctor network [url...] (proxy and certificates), doctor env (what the agent is told about this machine)",
   )
-  .option("--json", "config: machine-readable output")
-  .action(async (topic: string | undefined, urls: string[], options) => {
-    const code = await doctorCommand(topic, urls, {
-      json: options.json,
-      flags: program.opts(),
-    });
-    await gracefulExit(code);
-  });
+  .option("--json", "config and env: machine-readable output")
+  .option(
+    "--surface <surface>",
+    "doctor env: preview another surface (cli, ide-agent, subagent, ...)",
+  )
+  .option(
+    "--detail <level>",
+    "doctor env: preview another detail level (minimal, standard, full)",
+  )
+  .action(
+    async (
+      topic: string | undefined,
+      urls: string[],
+      opts: { json?: boolean; surface?: string; detail?: string },
+    ) => {
+      const code = await doctorCommand(topic, urls, {
+        json: opts.json,
+        flags: program.opts(),
+        env: { json: opts.json, surface: opts.surface, detail: opts.detail },
+      });
+      await gracefulExit(code);
+    },
+  );
 
 // Reviewer evaluation: dry by default, --run sends the requests
 registerReviewerCommand(program, gracefulExit);

@@ -1,38 +1,47 @@
 {
   "ide-agent-claude": {
-    "tools.builtin@agent": "853bff50eda7",
-    "turn.agent@full": "85ef5288de58"
+    "tools.builtin@agent": "7bdb91318d72",
+    "turn.agent@full": "85ef5288de58",
+    "env.system": "446a2a30254a"
   },
   "ide-agent-claude-tasklist": {
-    "tools.builtin@agent": "72b4aaa30c5b",
-    "turn.agent@full": "85ef5288de58"
+    "tools.builtin@agent": "eb2101628047",
+    "turn.agent@full": "85ef5288de58",
+    "env.system": "446a2a30254a"
   },
   "ide-plan-claude": {
     "tools.builtin@plan": "78e1a89acf12",
-    "turn.plan@full": "1ddaf76d6251"
+    "turn.plan@full": "1ddaf76d6251",
+    "env.system": "446a2a30254a"
   },
   "ide-agent-qwen-prompted": {
     "turn.agent@tailored": "318c4dd200eb",
-    "format.agent": "f6d793648874"
+    "env.system": "446a2a30254a",
+    "format.agent": "9479fba68aad"
   },
   "ide-agent-nova": {
-    "tools.builtin@agent": "853bff50eda7",
-    "turn.agent@full": "85ef5288de58"
+    "tools.builtin@agent": "7bdb91318d72",
+    "turn.agent@full": "85ef5288de58",
+    "env.system": "446a2a30254a"
   },
   "ide-loop-item": {
-    "tools.builtin@agent": "853bff50eda7",
-    "turn.agent@full": "85ef5288de58"
+    "tools.builtin@agent": "7bdb91318d72",
+    "turn.agent@full": "85ef5288de58",
+    "env.system": "446a2a30254a"
   },
   "ide-agent-scoped-rule": {
-    "tools.builtin@agent": "853bff50eda7",
-    "turn.agent@full": "85ef5288de58"
+    "tools.builtin@agent": "7bdb91318d72",
+    "turn.agent@full": "85ef5288de58",
+    "env.system": "446a2a30254a"
   },
   "ide-agent-scoped-first": {
-    "tools.builtin@agent": "853bff50eda7",
-    "turn.agent@full": "85ef5288de58"
+    "tools.builtin@agent": "7bdb91318d72",
+    "turn.agent@full": "85ef5288de58",
+    "env.system": "446a2a30254a"
   },
   "ide-compacted": {
-    "tools.builtin@agent": "853bff50eda7",
-    "turn.agent@full": "85ef5288de58"
+    "tools.builtin@agent": "7bdb91318d72",
+    "turn.agent@full": "85ef5288de58",
+    "env.system": "446a2a30254a"
   }
 }

@@ -419,6 +419,58 @@ describe("ENV8-c hostile repository", () => {
     expect(out.length).toBeLessThanOrEqual(ENV_BLOCK_CAPS.firstUser);
   });
 
+  // #750's capGitStatus cases (C65), moved here when its helper was deleted
+  // in favour of the renderer's -z path. The order is the renderer's: by the
+  // whole line (the status column, then the path), not by path alone.
+  const statusOf = (...entries: string[]) =>
+    renderEnvironment(
+      {
+        ...SNAP_4_8,
+        git: { isRepo: true, branch: "main", statusZ: statusZ(...entries) },
+      },
+      CLI,
+    )
+      .firstMessageBlock.split("\n")
+      .filter((l) => /^(.. |\.\.\. and )/.test(l));
+  const modified = (n: number) =>
+    Array.from(
+      { length: n },
+      (_, i) => ` M src/file${String(i).padStart(4, "0")}.ts`,
+    );
+
+  it("C65: a short status is listed as it is", () => {
+    expect(statusOf(" M a.ts", "?? b.ts")).toEqual([" M a.ts", "?? b.ts"]);
+  });
+
+  it("C65: cut at the line cap with an explicit count of the rest", () => {
+    const out = statusOf(...modified(100));
+    expect(out).toHaveLength(41);
+    expect(out.at(-1)).toBe("... and 60 more changed files");
+  });
+
+  it("C65: cut at the 4,000-character cap", () => {
+    const long = Array.from(
+      { length: 40 },
+      (_, i) => ` M ${"d/".repeat(60)}f${String(i).padStart(2, "0")}.ts`,
+    );
+    const [last, ...rest] = statusOf(...long).reverse();
+    expect(last).toMatch(/^\.\.\. and \d+ more changed files$/);
+    expect(rest.length).toBeLessThan(40);
+    expect(rest.join("\n").length).toBeLessThanOrEqual(4000);
+  });
+
+  it("C65: the order does not depend on git's, and groups by the status column", () => {
+    const list = modified(60);
+    expect(statusOf(...[...list].reverse())).toEqual(statusOf(...list));
+    expect(statusOf(...[...list].reverse())[0]).toBe(list[0]);
+    // #750 sorted by path (notes/ before src/); the renderer sorts the whole
+    // line, so the modified file comes first, as in the plan's 4.2
+    expect(statusOf("?? notes/todo.md", " M src/app.ts")).toEqual([
+      " M src/app.ts",
+      "?? notes/todo.md",
+    ]);
+  });
+
   it("the whole block stays under 6,000 characters with a visible notice", () => {
     const roots = Array.from(
       { length: 8 },

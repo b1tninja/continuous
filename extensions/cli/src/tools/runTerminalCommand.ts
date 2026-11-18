@@ -1,5 +1,4 @@
 import type { ChildProcess, ChildProcessByStdio } from "child_process";
-import fs from "fs";
 import type { Readable } from "stream";
 
 import {
@@ -15,13 +14,16 @@ import {
   commandEnvironment,
   spawnAgentCommand,
 } from "core/util/commandSpawn.js";
-import { getTerminalShellPreference } from "core/util/shell.js";
 import {
   TERMINAL_ENV_NOTICE,
   terminalEnvironment,
 } from "core/util/terminalEnvironment.js";
 
 import { shellChildEnv } from "../childEnv.js";
+import {
+  environmentDisclosure,
+  isRunningInWsl,
+} from "../environmentContext.js";
 import { backgroundJobService } from "../services/BackgroundJobService.js";
 import { services } from "../services/index.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
@@ -42,27 +44,7 @@ import { Tool, ToolRunContext } from "./types.js";
 const DEFAULT_BASH_MAX_CHARS = 50000; // ~12.5k tokens
 const DEFAULT_BASH_MAX_LINES = 1000;
 
-/**
- * When running on Windows, but inside WSL, shell commands need to run using the WSL environment.
- */
-export function isRunningInWsl(): boolean {
-  // WSL only applies when platform reports as Linux
-  if (process.platform !== "linux") {
-    return false;
-  }
-
-  if (process.env.WSL_DISTRO_NAME) {
-    return true;
-  }
-
-  // Check /proc/version for Microsoft/WSL indicators
-  try {
-    const procVersion = fs.readFileSync("/proc/version", "utf8").toLowerCase();
-    return procVersion.includes("microsoft") || procVersion.includes("wsl");
-  } catch {
-    return false;
-  }
-}
+export { isRunningInWsl };
 
 function getBashMaxChars(): number {
   return parseEnvNumber(
@@ -79,35 +61,15 @@ function getBashMaxLines(): number {
 }
 
 /**
- * One sentence for the tool description naming the shell the command runs in
- * (the same choice as getShellCommand), so the model writes for it: without
- * it, models wrote `a && b` on Windows, which Windows PowerShell rejects, and
- * lost several calls per run.
+ * The Bash tool's shell sentence: the renderer's `toolSentence` for this
+ * session's snapshot (core/util/environmentPrompt.ts), the one text the IDE's
+ * terminal tool uses too. It names the shell the executor really starts, so
+ * the model writes for it: without it, models wrote `a && b` on Windows,
+ * which Windows PowerShell rejects, and lost several calls per run. It holds
+ * no folder, so the tool list is the same in every folder.
  */
-export function describeShell(
-  platform: NodeJS.Platform = process.platform,
-  shell: string | undefined = process.env.SHELL,
-  wsl: boolean = platform === "linux" && isRunningInWsl(),
-): string {
-  const preference = getTerminalShellPreference();
-  if (preference?.kind === "container") {
-    return `Runs in ${getCommandExecutor().describe()}: use bash syntax and Linux paths; the command starts in the workspace folder and cannot see anything else.`;
-  }
-  const wslShell =
-    platform === "win32" && preference?.kind === "wsl" ? preference : undefined;
-  if (wslShell) {
-    return `Runs in bash as a login shell inside WSL${wslShell.distro ? ` (${wslShell.distro})` : ""}, started from the workspace folder (a Windows drive appears as /mnt/c): use bash syntax and Linux paths.`;
-  }
-  if (platform === "win32") {
-    return "Runs in Windows PowerShell 5.1 (powershell.exe) on Windows: chain commands with ; or a newline, not &&, and use PowerShell cmdlets and syntax.";
-  }
-  const name =
-    (shell || "/bin/bash")
-      .split(/[\\/]/)
-      .pop()
-      ?.replace(/\.exe$/i, "") || "bash";
-  const where = wsl ? "WSL" : platform === "darwin" ? "macOS" : platform;
-  return `Runs in ${name} as a login shell on ${where}.`;
+export function describeShell(): string {
+  return environmentDisclosure().toolSentence;
 }
 
 // Why a command is not run: its place (WSL) is not there, or the lint
@@ -164,13 +126,14 @@ export async function runCommandInBackground(command: string): Promise<{
 export const runTerminalCommandTool: Tool = {
   name: "Bash",
   displayName: "Bash",
-  description: `Executes a terminal command and returns the output. ${describeShell()}
+  // Read when the tool list is built, from the session's frozen snapshot
+  get description() {
+    return `Executes a terminal command and returns the output. ${describeShell()}
 ${TERMINAL_ENV_NOTICE}
 
-Commands are automatically executed from the current working directory (${process.cwd()}), so there's no need to change directories with 'cd' commands.
-
 IMPORTANT: To edit files, use Edit/MultiEdit tools instead of bash commands (sed, awk, etc). A command that writes a file (redirection, Set-Content, node -e or python -c calling a write) counts as a file edit: use Write or Edit for it, and if Write or Edit was refused, the command is refused too.
-`,
+`;
+  },
   parameters: {
     type: "object",
     required: ["command"],

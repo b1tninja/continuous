@@ -173,7 +173,32 @@ export function setTerminalShellPreference(
   configuredShell = preference;
 }
 
+let sessionShell: TerminalShellPreference | "default" | undefined;
+
+/**
+ * Freezes the shell for the editor's current session at the one its
+ * environment snapshot names, so the prompt (which says which shell runs a
+ * command) and the executor cannot disagree when the setting changes during
+ * the session (plans/research/env-disclosure-master-plan.md 3.7, ENV13).
+ * `"default"` is the host's own shell; `undefined` follows the setting again.
+ */
+export function setSessionTerminalShell(
+  preference: TerminalShellPreference | "default" | undefined,
+): void {
+  sessionShell = preference;
+}
+
 export function getTerminalShellPreference(
+  env: Record<string, string | undefined> = process.env,
+): TerminalShellPreference | undefined {
+  if (sessionShell !== undefined) {
+    return sessionShell === "default" ? undefined : sessionShell;
+  }
+  return configuredShell ?? parseTerminalShell(env.CONTINUOUS_TERMINAL_SHELL);
+}
+
+/** The setting as configured, ignoring a session's frozen shell: what a new session starts with. */
+export function configuredTerminalShellPreference(
   env: Record<string, string | undefined> = process.env,
 ): TerminalShellPreference | undefined {
   return configuredShell ?? parseTerminalShell(env.CONTINUOUS_TERMINAL_SHELL);

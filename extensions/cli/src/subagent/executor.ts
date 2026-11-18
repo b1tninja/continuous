@@ -9,6 +9,11 @@ import {
 
 import { emitAgent, ensureMainAgent, tokensOf } from "../agents/feed.js";
 import { getSubagentModel } from "../contextManagement.js";
+import {
+  environmentDisclosure,
+  inheritEnvironment,
+  inheritedEnvironment,
+} from "../environmentContext.js";
 import { fireSubagentStart, fireSubagentStop } from "../hooks/fireHook.js";
 import { usageSince } from "../loop/loopBudget.js";
 import { toolPermissionManager } from "../permissions/permissionManager.js";
@@ -405,6 +410,11 @@ async function runSubAgent(
         ? chatHistorySvc.isReady
         : undefined;
 
+    // The child is told what the parent was told: the parent's three
+    // environment strings, not a new gather (ENV17), so the two share bytes
+    const parentEnvironment = inheritedEnvironment();
+    inheritEnvironment(parentEnvironment ?? environmentDisclosure());
+
     // Override system message for this execution
     if (services.systemMessage) {
       services.systemMessage.getSystemMessage = async () => systemMessage;
@@ -529,6 +539,8 @@ async function runSubAgent(
       escapeEvents.removeListener("user-escape", escapeHandler);
       signal.removeEventListener("abort", onAbort);
       prompts?.rejectPending();
+
+      inheritEnvironment(parentEnvironment);
 
       // Restore original system message function
       if (services.systemMessage && originalGetSystemMessage) {

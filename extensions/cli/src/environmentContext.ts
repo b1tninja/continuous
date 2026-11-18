@@ -1,136 +1,302 @@
-import { execSync } from "child_process";
+import fs from "fs";
 
-import { sanitizeEnvValue } from "core/util/envDisclosure.js";
+import type { Session, SessionEnvironment } from "core/index.js";
+import {
+  readUserEnvironmentDetail,
+  resolveEnvironmentDetail,
+} from "core/util/environmentDetail.js";
+import {
+  placeEnvironment,
+  withDateNotice,
+  withTrailingText,
+  type EnvironmentNotice,
+} from "core/util/environmentMessages.js";
+import {
+  CONTEXT_CLOSE,
+  ENVIRONMENT_BLOCK_OPEN as BLOCK_OPEN,
+  renderEnvironment,
+  type Detail,
+  type EnvironmentDisclosure,
+  type EnvironmentSnapshot,
+  type Surface,
+} from "core/util/environmentPrompt.js";
+import {
+  baseSnapshot,
+  gatherEnvironment,
+  isEnvironmentSnapshot,
+  localDayOf,
+  type GatherInput,
+} from "core/util/environmentSnapshot.js";
 import type { ChatCompletionMessageParam } from "openai/resources.mjs";
 
+import { getCurrentSession } from "./session.js";
+
 /**
- * The facts about a session that change between two runs in the same folder:
- * the date and the git status. They used to sit in the system message, where
- * a changed working tree invalidated the cached prefix (tool list, system
- * text, AGENTS.md and rules) on every provider that caches it. They now go in
- * the first user message of the request, after the system checkpoint, so two
- * sessions started from the same config in the same folder read the same
- * cached prefix. Computed once per process, so the request is stable from
- * turn to turn; the stable facts (working directory, platform) stay in the
- * system message.
+ * What the CLI tells the model about this machine and folder, from one
+ * snapshot per session (core/util/environmentSnapshot.ts) rendered by the one
+ * renderer (core/util/environmentPrompt.ts):
+ *
+ * - `systemLine` in the system message: the platform and a pointer to the
+ *   block, the same in every folder;
+ * - `toolSentence` in the Bash tool: the shell, the same in every folder;
+ * - `firstMessageBlock` on the first user message: the date, the masked
+ *   working folder and the git facts at the start, fenced and capped.
+ *
+ * The snapshot is gathered once, asynchronously (git calls stop after 2 s),
+ * and saved with the session, so a resumed session keeps its bytes. The
+ * system line and the tool sentence need no git, so they are the session's
+ * bytes even before the gather finishes.
  */
 
-function isGitRepo(): boolean {
-  try {
-    execSync("git rev-parse --is-inside-work-tree", { stdio: "ignore" });
+export const ENVIRONMENT_BLOCK_OPEN = BLOCK_OPEN;
+export const ENVIRONMENT_BLOCK_CLOSE = CONTEXT_CLOSE;
+
+/** The three strings a request carries. */
+export interface EnvironmentStrings {
+  systemLine: string;
+  toolSentence: string;
+  firstMessageBlock: string;
+}
+
+/**
+ * When running on Windows, but inside WSL, shell commands need to run using
+ * the WSL environment.
+ */
+export function isRunningInWsl(): boolean {
+  // WSL only applies when platform reports as Linux
+  if (process.platform !== "linux") {
+    return false;
+  }
+
+  if (process.env.WSL_DISTRO_NAME) {
     return true;
+  }
+
+  // Check /proc/version for Microsoft/WSL indicators
+  try {
+    const procVersion = fs.readFileSync("/proc/version", "utf8").toLowerCase();
+    return procVersion.includes("microsoft") || procVersion.includes("wsl");
   } catch {
     return false;
   }
 }
 
-/** Most changed files listed in the block, and most characters they may take. */
-export const MAX_GIT_STATUS_LINES = 40;
-export const MAX_GIT_STATUS_CHARS = 4000;
+let surface: Surface = "cli";
+let detailSetting: Detail | undefined;
+let inherited: EnvironmentStrings | undefined;
+let cached: { sessionId?: string; env: SessionEnvironment } | undefined;
+let pending:
+  { sessionId?: string; promise: Promise<SessionEnvironment> } | undefined;
+let rendered:
+  | { snapshot: EnvironmentSnapshot; key: string; d: EnvironmentDisclosure }
+  | undefined;
 
-/**
- * The porcelain lines in a fixed order (by path text), cut at the line and
- * character caps with an explicit "... and N more changed files" line, so a
- * large working tree cannot bloat the first user message.
- */
-export function capGitStatus(
-  status: string,
-  maxLines: number = MAX_GIT_STATUS_LINES,
-  maxChars: number = MAX_GIT_STATUS_CHARS,
-): string {
-  const lines = status
-    .split("\n")
-    .map((l) => l.trimEnd())
-    .filter((l) => l.length > 0)
-    .sort((a, b) => {
-      const [pa, pb] = [a.slice(3), b.slice(3)];
-      if (pa !== pb) return pa < pb ? -1 : 1;
-      return a < b ? -1 : a > b ? 1 : 0;
-    });
-  const kept: string[] = [];
-  let chars = 0;
-  for (const line of lines) {
-    if (kept.length >= maxLines || chars + line.length + 1 > maxChars) break;
-    kept.push(line);
-    chars += line.length + 1;
-  }
-  const more = lines.length - kept.length;
-  if (more > 0) kept.push(`... and ${more} more changed files`);
-  return kept.join("\n");
+/** `cli` by default; headless, serve and ACP render the same bytes. */
+export function setEnvironmentSurface(next: Surface): void {
+  surface = next;
+}
+
+export function environmentSurface(): Surface {
+  return surface;
+}
+
+/** The detail level for sessions started from now on. */
+export function setEnvironmentDetail(detail: Detail | undefined): void {
+  detailSetting = detail;
 }
 
 /**
- * The porcelain text as the model may read it. File names come from the
- * repository: hidden and control characters are removed (a name spelled in
- * Unicode tag characters reaches the porcelain output as is when
- * `core.quotePath` is false) and `&`, `<` and `>` are escaped, so a path such
- * as `</context>x` cannot close the environment block. A line says how many
- * characters were removed. Nothing else changes: a clean tree and names
- * without those characters give the same bytes as before. The line and
- * character caps are `capGitStatus`; this runs after that cap. Only a trailing
- * newline is dropped, so the status column's leading space stays.
+ * `--env-detail`, else `environment.detail` in the person's own config.yaml,
+ * else `standard` (core/util/environmentDetail.ts). An assistant's config may
+ * only lower it.
  */
-export function gitStatusForPrompt(status: string): string {
-  // keepQuotes: these are git's own porcelain lines, which quote a name with
-  // a space in it, so the bytes of an ordinary tree stay as they were.
-  // trimEnd keeps the status column's leading space that capGitStatus preserved.
-  const { text, removed } = sanitizeEnvValue(status.trimEnd(), {
-    maxChars: Number.POSITIVE_INFINITY,
-    keepQuotes: true,
+export function environmentDetail(): Detail {
+  return resolveEnvironmentDetail({
+    flag: detailSetting,
+    user: readUserEnvironmentDetail(),
+    lowerOnly: [assistantDetail],
   });
-  if (removed === 0) return text;
-  const what = removed === 1 ? "character was" : "characters were";
-  return `${text}\n(${removed} hidden or control ${what} removed from file names.)`;
 }
 
-function getGitStatus(): string {
+let assistantDetail: Detail | undefined;
+
+/** `environment.detail` of the loaded assistant config: it may only lower the level. */
+export function setAssistantEnvironmentDetail(detail: Detail | undefined) {
+  assistantDetail = detail;
+}
+
+function currentSession(): Session | undefined {
   try {
-    if (!isGitRepo()) {
-      return "Not a git repository";
-    }
-    const result = execSync("git status --porcelain", {
-      encoding: "utf-8",
-      cwd: process.cwd(),
-    });
-    return gitStatusForPrompt(capGitStatus(result)) || "Working tree clean";
+    return getCurrentSession();
   } catch {
-    return "Git status not available";
+    return undefined;
   }
 }
 
-export const ENVIRONMENT_BLOCK_OPEN = '<context name="environment">';
-export const ENVIRONMENT_BLOCK_CLOSE = "</context>";
+function gatherInput(): GatherInput {
+  return {
+    cwd: process.cwd(),
+    hostWsl: process.platform === "linux" ? isRunningInWsl() : undefined,
+  };
+}
 
-let block: string | undefined;
+function savedOf(session: Session | undefined): SessionEnvironment | undefined {
+  const saved = session?.environment;
+  return saved && isEnvironmentSnapshot(saved.snapshot) ? saved : undefined;
+}
 
-/** The block for this process, built on first use. */
+/**
+ * The session's environment: the saved one, the one gathered for this
+ * session, or, until the gather has finished, a snapshot without git (its
+ * system line and tool sentence are the same bytes).
+ */
+export function sessionEnvironment(): SessionEnvironment {
+  const session = currentSession();
+  const saved = savedOf(session);
+  if (saved) return saved;
+  if (cached && cached.sessionId === session?.sessionId) return cached.env;
+  return { snapshot: baseSnapshot(gatherInput()), detail: environmentDetail() };
+}
+
+/**
+ * Gathers the session's snapshot once and saves it on the session. A resumed
+ * session's saved snapshot is reused as it is.
+ */
+export async function ensureSessionEnvironment(): Promise<SessionEnvironment> {
+  const session = currentSession();
+  const saved = savedOf(session);
+  if (saved) return saved;
+  const id = session?.sessionId;
+  if (!cached || cached.sessionId !== id) {
+    if (!pending || pending.sessionId !== id) {
+      const detail = environmentDetail();
+      pending = {
+        sessionId: id,
+        promise: gatherEnvironment(gatherInput()).then((snapshot) => ({
+          snapshot,
+          detail,
+        })),
+      };
+    }
+    const env = await pending.promise;
+    cached = { sessionId: id, env };
+  }
+  if (session && !session.environment) session.environment = cached.env;
+  return cached.env;
+}
+
+/** The rendered disclosure for the session (or the parent's, for a subagent). */
+export function environmentDisclosure(
+  env: SessionEnvironment = sessionEnvironment(),
+): EnvironmentStrings {
+  if (inherited) return inherited;
+  return environmentReport(env);
+}
+
+/** The whole rendering for one snapshot: the three strings and the field report. */
+export function environmentReport(
+  env: SessionEnvironment = sessionEnvironment(),
+): EnvironmentDisclosure {
+  const key = `${surface}\0${env.detail}`;
+  if (rendered && rendered.snapshot === env.snapshot && rendered.key === key) {
+    return rendered.d;
+  }
+  const d = renderEnvironment(env.snapshot, { surface, detail: env.detail });
+  rendered = { snapshot: env.snapshot, key, d };
+  return d;
+}
+
+/**
+ * A subagent tells its model what the parent told its own: the same three
+ * strings, not a new gather, so the subagent can read the parent's cached
+ * prefix (ENV17). `undefined` goes back to the session's own.
+ */
+export function inheritEnvironment(
+  strings: EnvironmentStrings | undefined,
+): void {
+  inherited = strings
+    ? {
+        systemLine: strings.systemLine,
+        toolSentence: strings.toolSentence,
+        firstMessageBlock: strings.firstMessageBlock,
+      }
+    : undefined;
+}
+
+/** The strings a subagent run is carrying, if one is running. */
+export function inheritedEnvironment(): EnvironmentStrings | undefined {
+  return inherited;
+}
+
+/** The block for the first user message of this session. */
 export function environmentContextBlock(): string {
-  if (block === undefined) {
-    const today = new Date().toISOString().split("T")[0];
-    block = `${ENVIRONMENT_BLOCK_OPEN}
-Today's date: ${today}
-Git status at the start of the session (a snapshot; it does not update during the conversation):
-${getGitStatus()}
-${ENVIRONMENT_BLOCK_CLOSE}`;
-  }
-  return block;
+  return environmentDisclosure().firstMessageBlock;
 }
 
-/** Forget the block, so the next request builds it again. For tests. */
+/** Forget everything, so the next request gathers again. For tests. */
 export function resetEnvironmentContextBlock(): void {
-  block = undefined;
+  cached = undefined;
+  pending = undefined;
+  rendered = undefined;
+  inherited = undefined;
+  detailSetting = undefined;
+  assistantDetail = undefined;
+  surface = "cli";
 }
 
 /**
  * The request's messages with the environment block appended to the first
  * user message. Nothing is written back to the history: the block is added at
- * request time, like the task list block, so saved sessions do not carry it
- * and a resumed session gets the date and status of the run that resumed it.
- * Messages without a user message are returned as they are.
+ * request time, like the task list block, and built from the session's saved
+ * snapshot, so a resumed session carries the bytes it started with. Messages
+ * without a user message are returned as they are.
  */
 export function withEnvironmentBlock(
   messages: ChatCompletionMessageParam[],
   environmentBlock: string = environmentContextBlock(),
+  notices: readonly EnvironmentNotice[] = environmentNotices(),
+): ChatCompletionMessageParam[] {
+  const withBlock = withFirstBlock(messages, environmentBlock);
+  if (notices.length === 0 || withBlock === messages) return withBlock;
+  // Each date notice stays on the user message it was first added to
+  return placeEnvironment(
+    withBlock,
+    (m) => m.role === "user",
+    (m, add) =>
+      ({
+        ...m,
+        content: withTrailingText(m.content, add.notices.join("\n\n")),
+      }) as ChatCompletionMessageParam,
+    undefined,
+    notices,
+  );
+}
+
+/** The date notices this session has sent, each on its user message. */
+export function environmentNotices(): readonly EnvironmentNotice[] {
+  return savedOf(currentSession())?.notices ?? [];
+}
+
+/**
+ * Records a date notice when the person's local day has moved on since the
+ * session started (or since the last notice): on the newest of the request's
+ * `userTurns` user messages, saved with the session, so later requests carry
+ * it on the same message and earlier bytes never change (ENV32).
+ */
+export function noteDateRollover(
+  userTurns: number,
+  today: string = localDayOf(),
+): void {
+  const env = savedOf(currentSession());
+  if (!env) return;
+  const before = env.notices ?? [];
+  const next = withDateNotice(env.snapshot, before, userTurns, today);
+  if (next !== before) env.notices = [...next];
+}
+
+function withFirstBlock(
+  messages: ChatCompletionMessageParam[],
+  environmentBlock: string,
 ): ChatCompletionMessageParam[] {
   const index = messages.findIndex((m) => m.role === "user");
   if (index === -1) return messages;

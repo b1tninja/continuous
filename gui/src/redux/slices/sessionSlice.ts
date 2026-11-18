@@ -27,6 +27,7 @@ import {
   RemovedByUser,
   RuleMetadata,
   Session,
+  SessionEnvironment,
   SessionUsage,
   SubagentRunState,
   TaskPlan,
@@ -467,6 +468,11 @@ type SessionState = {
   taskPlan?: TaskPlan;
   /** URI of the plan file this session works from; see core/util/planFile.ts */
   planFile?: string;
+  /**
+   * What the model is told about the machine and workspace, gathered by core
+   * once for the session and saved with it; see core/util/environmentSession.ts
+   */
+  environment?: SessionEnvironment;
   /** Loop mode's state, saved with the session; see core/util/loopMode.ts */
   loop?: LoopState;
   /**
@@ -821,6 +827,13 @@ export const sessionSlice = createSlice({
     },
     setPlanFile: (state, { payload }: PayloadAction<string | undefined>) => {
       state.planFile = payload || undefined;
+    },
+    setSessionEnvironment: (
+      state,
+      { payload }: PayloadAction<SessionEnvironment | undefined>,
+    ) => {
+      // A frozen snapshot with readonly lists, stored as it is
+      state.environment = payload as never;
     },
     /**
      * A tool call cut off at the output limit: drop its partial arguments. The
@@ -1346,6 +1359,10 @@ export const sessionSlice = createSlice({
           : undefined;
         state.planFile =
           typeof payload.planFile === "string" ? payload.planFile : undefined;
+        state.environment =
+          payload.environment && typeof payload.environment === "object"
+            ? (payload.environment as never)
+            : undefined;
         state.loop = restoreLoop(payload.loop);
         state.loopRequested = payload.loopRequested === true || undefined;
         state.forkedFrom = payload.forkedFrom;
@@ -1360,6 +1377,7 @@ export const sessionSlice = createSlice({
         state.checkpoints = [];
         state.taskPlan = undefined;
         state.planFile = undefined;
+        state.environment = undefined;
         state.loop = undefined;
         state.loopRequested = undefined;
         state.forkedFrom = undefined;
@@ -2002,6 +2020,7 @@ export const {
   setCheckpoints,
   setTaskPlan,
   setPlanFile,
+  setSessionEnvironment,
   clearToolCallArguments,
   setLoop,
   setLoopRequested,

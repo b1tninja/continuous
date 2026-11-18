@@ -2,7 +2,14 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import { renderEnvironment } from "core/util/environmentPrompt.js";
+import { baseSnapshot } from "core/util/environmentSnapshot.js";
 import { setTerminalShellPreference } from "core/util/shell.js";
+
+import {
+  resetEnvironmentContextBlock,
+  sessionEnvironment,
+} from "../environmentContext.js";
 
 import {
   describeShell,
@@ -11,44 +18,45 @@ import {
 } from "./runTerminalCommand.js";
 
 describe("describeShell", () => {
-  it("names Windows PowerShell and its command separator on Windows", () => {
-    const text = describeShell("win32", undefined, false);
-    expect(text).toContain("Windows PowerShell");
-    expect(text).toContain("not &&");
+  afterEach(() => resetEnvironmentContextBlock());
+
+  it("is the renderer's tool sentence for this session's snapshot", () => {
+    const env = sessionEnvironment();
+    expect(describeShell()).toBe(
+      renderEnvironment(env.snapshot, { surface: "cli", detail: env.detail })
+        .toolSentence,
+    );
+  });
+
+  it("names Windows PowerShell 5.1 and its separator on Windows", () => {
+    const text = renderEnvironment(
+      baseSnapshot({ platform: "win32", env: {}, terminalShell: "default" }),
+      { surface: "cli", detail: "standard" },
+    ).toolSentence;
+    expect(text).toContain("Windows PowerShell 5.1 (powershell.exe)");
+    expect(text).toContain("&& and || are syntax errors here");
   });
 
   it("says bash in WSL on a Windows host when commands are sent there", () => {
     setTerminalShellPreference({ kind: "wsl", distro: "Ubuntu" });
     try {
-      const text = describeShell("win32", undefined, false);
-      expect(text).toContain("bash");
-      expect(text).toContain("WSL (Ubuntu)");
+      const text = renderEnvironment(
+        baseSnapshot({ platform: "win32", env: {} }),
+        { surface: "cli", detail: "standard" },
+      ).toolSentence;
+      expect(text).toContain("WSL");
+      expect(text).toContain("Ubuntu");
       expect(text).not.toContain("PowerShell");
-      // Off Windows the preference means nothing
-      expect(describeShell("linux", "/bin/bash", false)).toBe(
-        "Runs in bash as a login shell on linux.",
-      );
     } finally {
       setTerminalShellPreference(undefined);
     }
   });
 
-  it("names the login shell elsewhere", () => {
-    expect(describeShell("darwin", "/bin/zsh", false)).toBe(
-      "Runs in zsh as a login shell on macOS.",
-    );
-    expect(describeShell("linux", "/bin/bash", false)).toBe(
-      "Runs in bash as a login shell on linux.",
-    );
-    expect(describeShell("linux", "/usr/bin/fish", true)).toBe(
-      "Runs in fish as a login shell on WSL.",
-    );
-  });
-
-  it("is the second sentence of the tool description", () => {
+  it("is the second sentence of the tool description, which names no folder", () => {
     expect(runTerminalCommandTool.description).toContain(
       `returns the output. ${describeShell()}`,
     );
+    expect(runTerminalCommandTool.description).not.toContain(process.cwd());
   });
 });
 

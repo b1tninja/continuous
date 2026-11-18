@@ -28,6 +28,8 @@ import { SUMMARY_MESSAGE_PREFIX } from "core/util/summaryMessage";
  * block from `generateToolsSystemMessage`. Nothing here is sent.
  */
 
+const SEP = "\n\n";
+
 // A rule that is not global comes and goes with the files in play.
 const isScoped = (r: RuleWithSource) => !isGlobalRule(r);
 
@@ -139,6 +141,21 @@ function systemSegments(
     }),
   );
   let rest = full.slice(base.length);
+  // The session's system line (core/util/environmentPrompt.ts): the same
+  // bytes in every mode and folder on the machine
+  const systemLine = state.session.environment?.strings?.systemLine;
+  if (systemLine && rest.startsWith(`${SEP}${systemLine}`)) {
+    out.push(
+      makeSegment({
+        id: "env.system",
+        source: "environment",
+        stability: "static",
+        region: "system",
+        text: `${SEP}${systemLine}`,
+      }),
+    );
+    rest = rest.slice(SEP.length + systemLine.length);
+  }
   if (request.systemToolsFramework && request.activeTools.length > 0) {
     const block = `\n\n${generateToolsSystemMessage(
       request.activeTools,

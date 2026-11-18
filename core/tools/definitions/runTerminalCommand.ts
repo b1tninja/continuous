@@ -3,10 +3,34 @@ import {
   ToolPolicy,
 } from "@continuedev/terminal-security";
 import os from "os";
+
 import { Tool } from "../..";
+import { renderEnvironment } from "../../util/environmentPrompt";
+import { baseSnapshot } from "../../util/environmentSnapshot";
 import { resolveShell } from "../../util/shell";
-import { TERMINAL_ENV_NOTICE } from "../../util/terminalEnvironment";
 import { BUILT_IN_GROUP_NAME, BuiltInToolNames } from "../builtIn";
+import {
+  terminalToolDescription,
+  terminalToolSystemPrefix,
+  withTerminalToolSentence,
+} from "./terminalToolText";
+
+/**
+ * The shell sentence of the core process's own machine, for a request built
+ * before the editor's session has its snapshot. A session's request replaces
+ * it with the session's `toolSentence` (`withTerminalToolSentence`), the
+ * renderer's text that the CLI's Bash tool uses too. It names no folder.
+ */
+function processShellSentence(): string {
+  try {
+    return renderEnvironment(baseSnapshot(), {
+      surface: "ide-agent",
+      detail: "standard",
+    }).toolSentence;
+  } catch {
+    return "";
+  }
+}
 
 /**
  * The host's shell, as the executor starts it (resolveShell), so the sentence
@@ -25,18 +49,9 @@ export function getPreferredShell(
   }).executable;
 }
 
-const PLATFORM_INFO = `Choose terminal commands and scripts optimized for ${os.platform()} and ${os.arch()} and shell ${getPreferredShell()}.`;
+const PROCESS_SENTENCE = processShellSentence();
 
-/** How long output is handled (plans/research/runaway-command-output.md). */
-const OUTPUT_NOTE = `Output longer than about 30,000 characters is cut to its start and end; the full output is kept, and read_command_output reads more of it (the end, or the lines matching a pattern). A command that floods output or prints the same lines over and over is stopped. For a long log, filter it yourself (${os.platform() === "win32" ? "| Select-Object -Last 50" : "| tail -n 50"}).`;
-
-const RUN_COMMAND_NOTES = `The shell is not stateful and will not remember any previous commands.\
-      When a command is run in the background, end it with stop_command, or suggest shell commands to stop it; NEVER suggest using Ctrl+C.\
-      ${OUTPUT_NOTE}\
-      When suggesting subsequent shell commands ALWAYS format them in shell command blocks.\
-      Do NOT perform actions requiring special/admin privileges.\
-      IMPORTANT: To edit files, use Edit/MultiEdit tools instead of bash commands (sed, awk, etc). A command that writes a file (redirection, Set-Content, node -e or python -c calling a write) counts as a file edit: use the edit tools for it, and if an edit was refused, the command is refused too.\
-      ${TERMINAL_ENV_NOTICE}      ${PLATFORM_INFO}`;
+export { withTerminalToolSentence };
 
 export const runTerminalCommandTool: Tool = {
   type: "function",
@@ -48,7 +63,7 @@ export const runTerminalCommandTool: Tool = {
   group: BUILT_IN_GROUP_NAME,
   function: {
     name: BuiltInToolNames.RunTerminalCommand,
-    description: `Run a terminal command in the current directory.\n${RUN_COMMAND_NOTES}`,
+    description: terminalToolDescription(PROCESS_SENTENCE),
     parameters: {
       type: "object",
       required: ["command"],
@@ -77,10 +92,7 @@ export const runTerminalCommandTool: Tool = {
     );
   },
   systemMessageDescription: {
-    prefix: `To run a terminal command, use the ${BuiltInToolNames.RunTerminalCommand} tool
-${RUN_COMMAND_NOTES}
-You can also optionally include the waitForCompletion argument set to false to run the command in the background.      
-For example, to see the git log, you could respond with:`,
+    prefix: terminalToolSystemPrefix(PROCESS_SENTENCE),
     exampleArgs: [["command", "git log"]],
   },
 };

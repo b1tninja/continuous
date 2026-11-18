@@ -157,6 +157,22 @@
           "default": false,
           "markdownDescription": "Experimental. Use the accounts added for Continuous in VS Code's Language Models editor as provider accounts, next to `providers.yaml` (which wins on a name). Their keys stay in VS Code's secret storage and are never written to a file. The editor's configuration API is not final yet."
         },
+        "continuous.environment.detail": {
+          "type": "string",
+          "enum": [
+            "minimal",
+            "standard",
+            "full"
+          ],
+          "enumDescriptions": [
+            "The platform, the shell and today's date only: no folder and no git facts.",
+            "Also the workspace folder (home shown as ~), whether it is a git repository and the branch.",
+            "Also the absolute folder, the OS release, the time zone and locale, the git status and the origin as host/owner/repository."
+          ],
+          "default": "standard",
+          "scope": "machine",
+          "markdownDescription": "How much the agent is told about this machine and workspace at the start of each session. Your account name, the host name, your git identity and network addresses are never sent at any level. This is a machine setting: a workspace value can lower it but not raise it. `environment.detail` in your own config.yaml sets it too, and this setting wins."
+        },
         "continuous.terminal.shell": {
           "type": "string",
           "enum": [

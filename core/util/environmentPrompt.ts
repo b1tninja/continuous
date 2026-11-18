@@ -52,6 +52,7 @@ import {
   remoteKindOf,
   type ShellFacts,
 } from "./shellDescription";
+import { CONTEXT_CLOSE } from "./environmentUpdate";
 import { rootLabels } from "./workspaceContext";
 
 export type { Detail, Surface } from "./environmentContract";
@@ -152,8 +153,11 @@ export interface EnvironmentDisclosure {
 }
 
 export const ENVIRONMENT_BLOCK_OPEN = '<context name="environment">';
-export const ENVIRONMENT_UPDATE_OPEN = '<context name="environment-update">';
-export const CONTEXT_CLOSE = "</context>";
+export {
+  CONTEXT_CLOSE,
+  ENVIRONMENT_UPDATE_OPEN,
+  renderEnvironmentUpdate,
+} from "./environmentUpdate";
 export const SNAPSHOT_NOTICE =
   "Session facts, recorded at the start of this session (a snapshot; they do not update during the conversation).";
 export const WORKSPACE_DATA_NOTICE =
@@ -496,23 +500,28 @@ function folderLines(r: Renderer): string[] {
   }
   const spec = ENV_FIELDS.find((f) => f.id === "roots")!;
   const max = spec.capItems ?? 8;
-  const roots = (s.workspace.roots ?? []).map((root) =>
-    root
-      .replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "")
-      .replace(/^\/(?=[A-Za-z]:)/, ""),
-  );
-  if (roots.length === 0) return ["Workspace folder: none open"];
-  const labels = rootLabels(roots.slice(0, max));
-  const where = remote ? " on the remote machine" : "";
-  const shown = labels.map((label, i) => {
-    let path = roots[i];
+  // A file URI as the editor sends it (`file:///c%3A/Users/...`): decoded
+  // before the drive is recognised, and on a local Windows machine written
+  // with the platform's separator, so home masking sees the path it knows
+  const roots = (s.workspace.roots ?? []).map((root) => {
+    let path = root.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "");
     try {
       path = decodeURIComponent(path);
     } catch {
       // keep the raw text
     }
-    return `${r.value(label, 120, { mask: ctx })} (${r.value(path, PATH_CAP, { mask: ctx })}${where})`;
+    path = path.replace(/^\/(?=[A-Za-z]:)/, "");
+    return !remote && s.platform === "win32" && /^[A-Za-z]:\//.test(path)
+      ? path.replace(/\//g, "\\")
+      : path;
   });
+  if (roots.length === 0) return ["Workspace folder: none open"];
+  const labels = rootLabels(roots.slice(0, max));
+  const where = remote ? " on the remote machine" : "";
+  const shown = labels.map(
+    (label, i) =>
+      `${r.value(label, 120, { mask: ctx })} (${r.value(roots[i], PATH_CAP, { mask: ctx })}${where})`,
+  );
   if (shown.length === 1 && roots.length === 1) {
     return [`Workspace folder: ${shown[0]}`];
   }
@@ -687,27 +696,6 @@ export function renderEnvironment(
     sessionHash: sha256(system, tool, block),
     withheld: r.withheld,
   };
-}
-
-/**
- * The S3 notice for the next user message when the person's local day is no
- * longer the snapshot's, or nothing. It never changes earlier bytes: the
- * caller appends it to the newest user message.
- */
-export function renderEnvironmentUpdate(
-  saved: EnvironmentSnapshot,
-  now: { localDay?: string },
-): string | undefined {
-  const day = now.localDay;
-  if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day) || day === saved.localDay) {
-    return undefined;
-  }
-  assertMayRender("dateUpdate", "update");
-  return [
-    ENVIRONMENT_UPDATE_OPEN,
-    `Today's date is now ${day} (the session started on ${saved.localDay}).`,
-    CONTEXT_CLOSE,
-  ].join("\n");
 }
 
 /**

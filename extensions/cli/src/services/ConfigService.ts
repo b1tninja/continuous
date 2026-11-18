@@ -4,6 +4,7 @@ import {
   mergeUnrolledAssistants,
   PackageIdentifier,
 } from "@continuedev/config-yaml";
+import { environmentDetailOf } from "core/util/environmentDetail.js";
 
 import { isStringRule } from "src/hubLoader.js";
 import { loadMarkdownRulesWithMetadata } from "src/systemMessage.js";
@@ -15,6 +16,7 @@ import {
   loadConfiguration,
   unrollPackageIdentifiersAsConfigYaml,
 } from "../configLoader.js";
+import { setAssistantEnvironmentDetail } from "../environmentContext.js";
 import { isSafeMode } from "../safeMode.js";
 import { logger } from "../util/logger.js";
 
@@ -398,6 +400,10 @@ export class ConfigService
 
   setState(newState: Partial<ConfigServiceState>): void {
     super.setState(newState);
+    // An assistant's environment.detail may only lower the level (ENV18)
+    setAssistantEnvironmentDetail(
+      environmentDetailOf(this.currentState.config),
+    );
     serviceContainer.set(SERVICE_NAMES.CONFIG, this.currentState);
   }
 }

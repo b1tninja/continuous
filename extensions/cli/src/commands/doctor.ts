@@ -30,6 +30,7 @@ import {
 import type { NetworkRequestOptions } from "../util/networkFetch.js";
 
 import { doctorConfigCommand, type DoctorFlags } from "./doctorConfig.js";
+import { doctorEnvCommand, type DoctorEnvOptions } from "./doctorEnv.js";
 
 const PROXY_VARS = [
   "HTTPS_PROXY",
@@ -184,15 +185,17 @@ export interface DoctorOptions {
   json?: boolean;
   /** The root flags of this invocation, for `config`. */
   flags?: DoctorFlags;
+  /** `doctor env`: --json, --surface, --detail. */
+  env?: Omit<DoctorEnvOptions, "write">;
 }
 
 /**
  * The topics, in the order the usage line lists them. A new topic is one
- * entry here and one `case` in `doctorCommand`; `env` (what the model is told
- * about this machine, ENV28) is planned as the next one.
+ * entry here and one `case` in `doctorCommand`.
  */
 export const DOCTOR_TOPICS: Readonly<Record<string, string>> = {
   config: "settings files (do they parse) and each control's value and source",
+  env: "what the agent is told about this machine and folder",
   network: "proxy and certificate settings, and a TLS test per URL",
 };
 
@@ -218,6 +221,8 @@ export async function doctorCommand(
         flags: options.flags,
         write,
       });
+    case "env":
+      return doctorEnvCommand({ ...options.env, write });
     case "network":
       return doctorNetwork(urls, options, write);
     default:

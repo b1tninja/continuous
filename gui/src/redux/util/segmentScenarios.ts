@@ -3,8 +3,10 @@ import type {
   Tool,
   ModelDescription,
   RuleWithSource,
+  SessionEnvironment,
   TaskPlan,
 } from "core";
+import { renderEnvironment } from "core/util/environmentPrompt";
 import { editFileTool } from "core/tools/definitions/editFile";
 import { multiEditTool } from "core/tools/definitions/multiEdit";
 import { presentPlanTool } from "core/tools/definitions/presentPlan";
@@ -64,8 +66,46 @@ export const RULES: RuleWithSource[] = [
   },
 ];
 
+/**
+ * The scenarios' session environment: a fixed Linux machine with bash, in a
+ * repository, rendered by the real renderer. With it the request carries the
+ * real system line, the real terminal tool text with this shell sentence (in
+ * place of the stand-in's), and the first-message block, the same on every
+ * machine.
+ */
+export function scenarioEnvironment(): SessionEnvironment {
+  const snapshot: SessionEnvironment["snapshot"] = {
+    version: 1,
+    takenAt: "2026-11-07T10:00:00.000Z",
+    localDay: "2026-11-07",
+    platform: "linux",
+    arch: "x64",
+    shell: {
+      shell: { kind: "bash", source: "spawned", label: "bash" },
+      executable: "/bin/bash",
+      os: { value: "linux", confidence: "known", source: "platform linux" },
+    },
+    workspace: { home: "/home/dev", user: "dev", roots: ["file:///repo"] },
+    git: { isRepo: true, branch: "main", statusZ: " M src/lexer.ts\0" },
+  };
+  const d = renderEnvironment(snapshot, {
+    surface: "ide-agent",
+    detail: "standard",
+  });
+  return {
+    snapshot,
+    detail: "standard",
+    strings: {
+      systemLine: d.systemLine,
+      toolSentence: d.toolSentence,
+      firstMessageBlock: d.firstMessageBlock,
+    },
+  };
+}
+
 // The real terminal tool describes the host OS and shell, so a fixed stand-in
-// keeps the goldens the same on every platform.
+// keeps the goldens the same on every platform; the session's shell sentence
+// then replaces its text with the real tool's (withTerminalToolSentence).
 const terminalStandIn: Tool = {
   type: "function",
   displayTitle: "Run Terminal Command",
@@ -152,6 +192,7 @@ export function ideState(opts: {
       history: history as RootState["session"]["history"],
       taskPlan: opts.taskPlan,
       loop,
+      environment: scenarioEnvironment(),
     },
   };
 }

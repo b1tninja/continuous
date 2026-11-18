@@ -80,6 +80,7 @@ class MessageTypes {
             "history/load",
             "history/save",
             "history/saveDelta",
+            "environment/session",
             "history/loadRemote",
             "history/clear",
             "history/trash",

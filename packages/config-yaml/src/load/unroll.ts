@@ -422,6 +422,7 @@ export async function unrollBlocks(
     modeModels: assistant.modeModels,
     toolPermissions: assistant.toolPermissions,
     terminal: assistant.terminal,
+    environment: assistant.environment,
     modelCatalog: assistant.modelCatalog,
     modelCatalogRefreshHours: assistant.modelCatalogRefreshHours,
   };
@@ -448,6 +449,7 @@ export async function unrollBlocks(
     | "rulesByMode"
     | "toolPermissions"
     | "terminal"
+    | "environment"
     | "web"
     | "modelCatalog"
     | "modelCatalogRefreshHours"

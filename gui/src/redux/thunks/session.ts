@@ -545,6 +545,7 @@ function sessionToSave(
     checkpoints: session.checkpoints,
     ...(session.taskPlan && { taskPlan: session.taskPlan }),
     ...(session.planFile && { planFile: session.planFile }),
+    ...(session.environment && { environment: session.environment }),
     ...(session.loop && { loop: session.loop }),
     ...(session.loopRequested && { loopRequested: true }),
     ...(session.forkedFrom && { forkedFrom: session.forkedFrom }),

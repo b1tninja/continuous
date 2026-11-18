@@ -164,8 +164,8 @@ export function describeCliRequest(facts: CliRequestFacts): PromptSegment[] {
         stability: "session",
         region: "first-user",
         text: facts.environmentBlock,
-        // No cap on the status text, and a resumed run takes a new snapshot.
-        exposedTo: ["uncapped-git-status"],
+        // The session's frozen snapshot, capped at 6,000 characters (the git
+        // status at 40 lines and 4,000), and reused on resume.
       }),
     );
   }

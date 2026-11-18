@@ -286,6 +286,16 @@ export const terminalSchema = z.object({
 });
 export type TerminalConfig = z.infer<typeof terminalSchema>;
 
+/**
+ * What the model is told about the machine and the workspace (ENV18):
+ * `minimal`, `standard` (default) or `full`. Only the person's own
+ * config.yaml can raise it; an assistant or a project may only lower it.
+ */
+export const environmentSchema = z.object({
+  detail: z.enum(["minimal", "standard", "full"]).optional(),
+});
+export type EnvironmentConfig = z.infer<typeof environmentSchema>;
+
 export const baseConfigYamlSchema = z.object({
   name: z.string(),
   version: z.string(),
@@ -298,6 +308,7 @@ export const baseConfigYamlSchema = z.object({
   rulesByMode: rulesByModeSchema.optional(),
   toolPermissions: toolPermissionsSchema.optional(),
   terminal: terminalSchema.optional(),
+  environment: environmentSchema.optional(),
   /** How web pages are fetched: identity, robots.txt, limits, cache, per-host overrides (schemas/web.ts). */
   web: webConfigSchema.optional(),
   /**
