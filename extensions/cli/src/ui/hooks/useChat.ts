@@ -85,6 +85,7 @@ export function useChat({
   onShowJobsSelector,
   onShowExportSelector,
   onShowLoopInbox,
+  onShowRewindSelector,
   onClear,
   onRefreshStatic,
   isRemoteMode = false,
@@ -652,6 +653,7 @@ export function useChat({
       onShowUpdateSelector,
       onShowExportSelector,
       onShowLoopInbox,
+      onShowRewindSelector,
       onClear,
     });
 

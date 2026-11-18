@@ -100,6 +100,11 @@ describe("slashCommands", () => {
   });
 
   describe("handleSlashCommands", () => {
+    it("/rewind opens the rewind picker", async () => {
+      const result = await handleSlashCommands("/rewind", mockAssistant);
+      expect(result).toEqual({ openRewindSelector: true });
+    });
+
     it("should handle /help command", async () => {
       const result = await handleSlashCommands("/help", mockAssistant);
 

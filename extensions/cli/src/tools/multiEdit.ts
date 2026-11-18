@@ -5,6 +5,10 @@ import { executeMultiFindAndReplace } from "core/edit/searchAndReplace/performRe
 import { writeFileAtomicSync } from "core/util/atomicWrite.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
 
+import {
+  checkpointAfterWrite,
+  checkpointBeforeWrite,
+} from "../checkpoints/sessionCheckpoints.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
 import {
   calculateLinesOfCodeDiff,
@@ -118,7 +122,10 @@ export const multiEditTool: Tool = {
     editCount: number;
   }) => {
     try {
+      // Snapshot first, so /rewind can put the file back (checkpoints/)
+      checkpointBeforeWrite(args.file_path);
       writeFileAtomicSync(args.file_path, args.newContent);
+      checkpointAfterWrite(args.file_path, args.newContent);
 
       // Get lines for telemetry
       const { added, removed } = calculateLinesOfCodeDiff(

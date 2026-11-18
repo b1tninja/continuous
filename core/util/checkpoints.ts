@@ -204,9 +204,20 @@ export function addFileSnapshot(
   return next;
 }
 
+/**
+ * The shape the turn-planning functions below need. The IDE stores
+ * `TurnCheckpoint` with contents inline; the terminal agent stores the same
+ * turns with content-addressed blobs (extensions/cli/src/checkpoints), and
+ * both share this planning.
+ */
+export interface CheckpointTurnLike<F extends { uri: string }> {
+  turnId: string;
+  files: F[];
+}
+
 /** Index of the first checkpoint belonging to the target turn or a later one. */
 function firstAffectedIndex(
-  checkpoints: TurnCheckpoint[],
+  checkpoints: readonly { turnId: string }[],
   turnOrder: string[],
   targetTurnId: string,
 ): number {
@@ -220,7 +231,7 @@ function firstAffectedIndex(
 
 /** Whether restoring to this turn would have anything to undo. */
 export function hasCheckpointsFrom(
-  checkpoints: TurnCheckpoint[],
+  checkpoints: readonly { turnId: string }[],
   turnOrder: string[],
   targetTurnId: string,
 ): boolean {
@@ -232,16 +243,16 @@ export function hasCheckpointsFrom(
  * before its first change in that range, i.e. its state before the target turn.
  * `turnOrder` is the user message ids in conversation order.
  */
-export function planRestore(
-  checkpoints: TurnCheckpoint[],
+export function planRestore<F extends { uri: string } = FileCheckpoint>(
+  checkpoints: readonly CheckpointTurnLike<F>[],
   turnOrder: string[],
   targetTurnId: string,
-): FileCheckpoint[] {
+): F[] {
   const start = firstAffectedIndex(checkpoints, turnOrder, targetTurnId);
   if (start === -1) {
     return [];
   }
-  const earliest = new Map<string, FileCheckpoint>();
+  const earliest = new Map<string, F>();
   for (const turn of checkpoints.slice(start)) {
     for (const file of turn.files) {
       if (!earliest.has(file.uri)) {
@@ -257,12 +268,14 @@ export function planRestore(
  * `keepUris` are files that failed to restore: their snapshots stay so the
  * person can try again. Everything else from the target turn onward is dropped.
  */
-export function pruneCheckpointsFrom(
-  checkpoints: TurnCheckpoint[],
+export function pruneCheckpointsFrom<
+  T extends CheckpointTurnLike<{ uri: string }> = TurnCheckpoint,
+>(
+  checkpoints: T[],
   turnOrder: string[],
   targetTurnId: string,
   keepUris?: ReadonlySet<string>,
-): TurnCheckpoint[] {
+): T[] {
   const start = firstAffectedIndex(checkpoints, turnOrder, targetTurnId);
   if (start === -1) {
     return checkpoints;

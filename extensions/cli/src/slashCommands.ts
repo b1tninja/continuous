@@ -481,6 +481,7 @@ const commandHandlers: Record<string, CommandHandler> = {
   thinking: handleThinking,
   tools: handleTools,
   export: handleExport,
+  rewind: () => ({ openRewindSelector: true }),
   import: handleImport,
 };
 

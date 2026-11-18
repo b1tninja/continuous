@@ -19,6 +19,7 @@ export type NavigationScreen =
   | "diff" // Full-screen diff overlay
   | "update" // Update selector
   | "edit" // Edit message selector
+  | "rewind" // Checkpoint rewind picker
   | "jobs" // Background Jobs selector
   | "loop" // Loop mode's inbox
   | "export"; // Export session selector

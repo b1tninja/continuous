@@ -256,6 +256,7 @@ const TUIChat: React.FC<TUIChatProps> = ({
       exportRawRef.current = !!options?.raw;
       navigateTo("export");
     },
+    onShowRewindSelector: () => navigateTo("rewind"),
     onReload: handleReload,
     onClear: handleClear,
     onRefreshStatic: () => setStaticRefreshTrigger((prev) => prev + 1),
@@ -511,6 +512,11 @@ const TUIChat: React.FC<TUIChatProps> = ({
           chatHistory={chatHistory}
           handleEditMessage={handleEditMessage}
           onShowEditSelector={() => navigateTo("edit")}
+          onRewindHistory={(history) => {
+            setChatHistory(history);
+            setStaticRefreshTrigger((prev) => prev + 1);
+          }}
+          onRewindDone={handleShowStatusMessage}
         />
 
         {/* Resource debug bar - only in verbose mode */}
