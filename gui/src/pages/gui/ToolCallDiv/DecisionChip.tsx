@@ -1,4 +1,4 @@
-import { modernizeLevelText } from "core/tools/permissions/policy";
+import { modernizeLevelText } from "core/tools/permissions/levelText";
 import { maskCommandForDisplay } from "core/tools/permissions/displayMask";
 import type { ToolCallDecision } from "core";
 

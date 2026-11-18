@@ -210,9 +210,10 @@ export interface EvaluateInput extends TaintedSessionInput, WebEvaluateInput {
  * The policy for one tool call: the tool's own check first (command safety
  * floor, workspace-only reads), then the user's `toolPermissions` rules on top.
  * Without rules this returns exactly what it did before rules existed. At
- * IDGAF on the call's area every call runs (idgafRunsEverything), except the
- * secret-read plus network pair (B92), which is refused there and asks at
- * every other level (applySecretEgressRule, the last step).
+ * IDGAF on the call's area every call runs (idgafRunsEverything). The
+ * secret-read plus network pair asks below IDGAF and runs at IDGAF, unless
+ * the person turned safety checks on, in which case IDGAF refuses it
+ * (applySecretEgressRule, the last step).
  */
 export function evaluateToolPolicyWithRules(
   input: EvaluateInput,
@@ -244,6 +245,28 @@ function callLevel(input: EvaluateInput): string | undefined {
     cwd: input.cwd,
     shell: input.shell,
   })?.level;
+}
+
+/** Protections the call skips: every one, when the person turned safety checks off. */
+function protectionsToSkip(input: EvaluateInput): ProtectedKind[] {
+  if (input.approval?.safetyChecks === false) {
+    return [
+      "secret",
+      "config",
+      "network",
+      "private-url",
+      "fetch-and-run",
+      "mcp-definition-changed",
+      "hidden-command",
+      "env-assignment",
+      "destructive-command",
+      "large-change",
+      "dependency-change",
+      "unknown-host",
+      "file-deputy",
+    ];
+  }
+  return skippedProtections(input.approval);
 }
 
 /** Says what IDGAF let through, for the decision chip, the transcript and the audit trail. */
@@ -288,6 +311,14 @@ function idgafRunsPast(
     shell: input.shell,
   });
   if (found?.level !== "idgaf") return result;
+  // The person turned safety checks on: those blocks stand at IDGAF too
+  if (
+    input.approval?.safetyChecks === true &&
+    result.source &&
+    (result.source === "safety-floor" || result.source === "protected-path")
+  ) {
+    return result;
+  }
   const { protection, rule, ...rest } = result;
   return {
     ...rest,
@@ -403,7 +434,7 @@ function refuseProfileWrites(
 ): ToolPolicyResult {
   const { tool, toolName } = input;
   if (!tool || result.policy === "disabled") return result;
-  if (skippedProtections(input.approval).includes("config")) return result;
+  if (protectionsToSkip(input).includes("config")) return result;
   const level = callLevel(input);
   if (level !== "automatic" && level !== "idgaf") return result;
   const resolved = input.processedArgs?.resolvedPath as
@@ -454,7 +485,7 @@ function firstProtectedHit(
       toolName,
       parsedArgs,
       resolvedPath,
-      skip: skippedProtections(input.approval),
+      skip: protectionsToSkip(input),
       cwd: input.cwd,
       shell: input.shell,
     }),
@@ -462,17 +493,21 @@ function firstProtectedHit(
     parts.changedDefinition,
     parts.hiddenName,
     parts.envHit,
-    askProtectionHit({
-      toolName,
-      parsedArgs,
-      resolvedPath,
-      shell: input.shell,
-      approval: input.approval,
-      trustedDomains: input.trustedDomains,
-      largeChangeLines: input.largeChangeLines,
-      cwd: input.cwd,
-    }),
-    deputyCallHit(deputyInputOf(input, resolved, resolvedPath)),
+    input.approval?.safetyChecks === false
+      ? undefined
+      : askProtectionHit({
+          toolName,
+          parsedArgs,
+          resolvedPath,
+          shell: input.shell,
+          approval: input.approval,
+          trustedDomains: input.trustedDomains,
+          largeChangeLines: input.largeChangeLines,
+          cwd: input.cwd,
+        }),
+    input.approval?.safetyChecks === false
+      ? undefined
+      : deputyCallHit(deputyInputOf(input, resolved, resolvedPath)),
   ].find((hit) => hit !== undefined);
 }
 
@@ -564,7 +599,9 @@ function evaluateRules(input: EvaluateInput): ToolPolicyResult {
     typeof parsedArgs.command === "string"
       ? parsedArgs.command
       : undefined;
-  const floorOn = builtinRuleOn(input.approval, "refuse-dangerous-commands");
+  const floorOn =
+    input.approval?.safetyChecks !== false &&
+    builtinRuleOn(input.approval, "refuse-dangerous-commands");
   // The person switched off the safety check's refusals: such a command asks
   if (
     evaluated === "disabled" &&

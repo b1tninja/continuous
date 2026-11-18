@@ -116,10 +116,16 @@ export function resetPolicyLevels(): void {
 }
 
 /** What core's engine is given besides the levels. */
-export function approvalExtras(): Pick<ApprovalSettings, "builtin" | "floor"> {
+export function approvalExtras(): Pick<
+  ApprovalSettings,
+  "builtin" | "floor" | "safetyChecks"
+> {
   return {
     ...(extras.builtin ? { builtin: extras.builtin } : {}),
     ...(extras.floor?.length ? { floor: extras.floor } : {}),
+    ...(typeof extras.safetyChecks === "boolean"
+      ? { safetyChecks: extras.safetyChecks }
+      : {}),
   };
 }
 
@@ -134,6 +140,7 @@ export function policyIsDefault(l: PolicyLevels): boolean {
     // A Web level of its own changes what a fetch does (WB45)
     l.web === undefined &&
     !extra.floor &&
+    extra.safetyChecks !== false &&
     !Object.values(extra.builtin ?? {}).includes(false)
   );
 }

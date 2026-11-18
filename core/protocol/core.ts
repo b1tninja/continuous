@@ -958,6 +958,8 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
       readOnly?: string;
       /** The rule that decided, as written in config.yaml. */
       rule?: string;
+      /** The protection that decided, when source is protected-path. */
+      protection?: string;
     },
   ];
   /**

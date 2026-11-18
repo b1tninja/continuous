@@ -3,6 +3,20 @@ import { BuiltInToolNames } from "../builtIn";
 import type { ShellKind } from "../../util/shell";
 import { canonicalRuleName } from "./names";
 import { classifyReadOnly, type ReadOnlyClaim } from "./readOnlyCommand";
+import {
+  parsePolicyLevel,
+  POLICY_LEVELS,
+  type PolicyLevel,
+} from "./levelText";
+
+export {
+  DEPRECATED_LEVEL_ALIASES,
+  isDeprecatedLevelSpelling,
+  modernizeLevelText,
+  parsePolicyLevel,
+  POLICY_LEVELS,
+} from "./levelText";
+export type { PolicyLevel } from "./levelText";
 
 /**
  * Five areas, each with its own level (plans/policy-areas.md). This replaces
@@ -16,18 +30,6 @@ export const POLICY_AREAS: readonly PolicyArea[] = [
   "edits",
   "plan",
   "questions",
-];
-
-/** The top level, IDGAF, is the same on every area. */
-export type PolicyLevel =
-  "manual" | "cautious" | "automatic" | "permissive" | "idgaf";
-
-export const POLICY_LEVELS: readonly PolicyLevel[] = [
-  "manual",
-  "cautious",
-  "automatic",
-  "permissive",
-  "idgaf",
 ];
 
 /**
@@ -64,40 +66,6 @@ export function parseWebLevel(value: unknown): WebLevel | undefined {
   const word = value.trim().toLowerCase();
   if (word === "off" || word === "listed") return word;
   return parsePolicyLevel(word);
-}
-
-/**
- * Spellings that are read as a level and never written. 2.14.x called the top
- * level `yolo` (and `IDGAF` on Plan edits and Questions only).
- */
-export const DEPRECATED_LEVEL_ALIASES: Readonly<Record<string, PolicyLevel>> = {
-  yolo: "idgaf",
-};
-
-/** A level from stored or typed text: any case, `yolo` read as `idgaf`. */
-export function parsePolicyLevel(value: unknown): PolicyLevel | undefined {
-  if (typeof value !== "string") return undefined;
-  const word = value.trim().toLowerCase();
-  const level = DEPRECATED_LEVEL_ALIASES[word] ?? word;
-  return POLICY_LEVELS.includes(level as PolicyLevel)
-    ? (level as PolicyLevel)
-    : undefined;
-}
-
-/** True when the text spells a level the way 2.14.x did (`yolo`, any case). */
-export function isDeprecatedLevelSpelling(value: unknown): boolean {
-  return (
-    typeof value === "string" &&
-    Object.hasOwn(DEPRECATED_LEVEL_ALIASES, value.trim().toLowerCase())
-  );
-}
-
-/**
- * Text written by 2.14.x (an audit reason, a saved notice) with the old name
- * of the top level replaced, for display. The stored text is not changed.
- */
-export function modernizeLevelText(text: string): string {
-  return text.replace(/\bYOLO\b/g, "IDGAF").replace(/\byolo\b/g, "idgaf");
 }
 
 /** What a question is about. The agent names it when it asks. */
@@ -238,6 +206,11 @@ export interface PolicySettings {
   };
   /** Built-in rules by id. Absent means on. */
   builtin?: Partial<Record<BuiltinRuleId, boolean>>;
+  /**
+   * The safety-check shield. Absent follows the mode: on below IDGAF, off at
+   * IDGAF. `true` or `false` is the person's choice at every level.
+   */
+  safetyChecks?: boolean;
 }
 
 export const DEFAULT_MAX_NEW_PLAN_ITEMS = 5;
@@ -300,7 +273,7 @@ export const POLICY_PRESETS: Record<
   idgaf: {
     label: "IDGAF",
     description:
-      "Everything runs and nothing asks. Every rule is ignored, locked rules included.",
+      "Everything runs and nothing asks. Safety checks stay off unless you turn them on.",
     levels: {
       context: "idgaf",
       tools: "idgaf",
@@ -467,6 +440,20 @@ export function builtinRuleOn(
   id: BuiltinRuleId,
 ): boolean {
   return policy?.builtin?.[id] !== false;
+}
+
+/**
+ * Whether the safety checks apply to this call. Absent follows the mode: on
+ * below IDGAF, off at IDGAF. An explicit true or false is the person's choice
+ * at every level, IDGAF included.
+ */
+export function safetyChecksApply(
+  policy: { safetyChecks?: boolean } | undefined,
+  atIdgaf: boolean,
+): boolean {
+  if (policy?.safetyChecks === true) return true;
+  if (policy?.safetyChecks === false) return false;
+  return !atIdgaf;
 }
 
 /** Automatic needs a reviewer: without one, Cautious, so nothing loosens. */
