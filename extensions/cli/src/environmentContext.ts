@@ -71,6 +71,9 @@ export function capGitStatus(
  * newline is dropped, so the status column's leading space stays.
  */
 export function gitStatusForPrompt(status: string): string {
+  // Quotes stay as git wrote them: the shared sanitiser does not escape them,
+  // so a name with a space keeps its porcelain quotes. trimEnd keeps the
+  // status column's leading space that capGitStatus preserved.
   const { text, removed } = sanitiseEnvValue(status.trimEnd(), {
     maxChars: Number.POSITIVE_INFINITY,
   });
