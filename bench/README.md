@@ -27,6 +27,8 @@ outside the repository.
 
 Live capture of raw tool-call replies (real tool list, streaming, passes, Wilson intervals) is a separate script: `plans/live-capture.md`.
 
+Start-up, memory, bundle and long-session measurements of the product itself (no model) are in `perf/`: see `perf/README.md`.
+
 ## Running a slice
 
 Build the CLI once (`npm run build` in `extensions/cli`), then from the
