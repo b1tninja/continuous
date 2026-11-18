@@ -20,6 +20,7 @@ import {
   type DocumentStamp,
 } from "./applyTarget";
 import { assembleAppliedContent } from "./assembleAppliedContent";
+import { EditNotAppliedError, EditNotAppliedReason } from "./editNotApplied";
 import {
   pendingEditorForFilepath,
   pendingFilepathForEditor,
@@ -53,7 +54,7 @@ export class ApplyManager {
     const editor = this.editorFor(filepath);
     if (!editor) {
       void vscode.window.showErrorMessage("No active editor to apply edits to");
-      return;
+      throw new EditNotAppliedError(EditNotAppliedReason.NoEditor);
     }
     const stamp: DocumentStamp = {
       uri: editor.document.uri.toString(),
@@ -71,9 +72,7 @@ export class ApplyManager {
       toolCallId,
     });
 
-    if (this.stale(editor, stamp)) {
-      return;
-    }
+    this.throwIfStale(editor, stamp);
 
     const hasExistingDocument = !!originalFileContent.trim();
     const isNewFile = pendingFilepathForEditor(stamp.uri) !== undefined;
@@ -122,32 +121,50 @@ export class ApplyManager {
     });
   }
 
-  /** True when the document was edited after `stamp`. Tells the person and skips the apply. */
-  private stale(editor: vscode.TextEditor, stamp: DocumentStamp): boolean {
+  /**
+   * Throws when the document was edited after `stamp`. Tells the person, and
+   * the error ends the edit's tool call (see editNotApplied.ts): a quiet
+   * return left it running forever.
+   */
+  private throwIfStale(editor: vscode.TextEditor, stamp: DocumentStamp): void {
     if (
       !documentChanged(stamp, {
         uri: editor.document.uri.toString(),
         version: editor.document.version,
       })
     ) {
-      return false;
+      return;
     }
     void vscode.window.showErrorMessage(
       "The file changed before the edit could be applied.",
     );
-    return true;
+    throw new EditNotAppliedError(EditNotAppliedReason.FileChanged);
   }
 
+  /**
+   * Opens the file to edit without moving keyboard focus: the person may be
+   * typing in the chat, and focus in the editor put their keystrokes into
+   * the file, which then failed the edit's version check.
+   */
   private async ensureFileOpen(filepath: string): Promise<void> {
     const fileExists = await this.ide.fileExists(filepath);
     if (!fileExists) {
       // Do not create an empty file on disk before the edit is accepted.
       const doc = await vscode.workspace.openTextDocument({ content: "" });
-      await vscode.window.showTextDocument(doc, { preview: false });
+      await vscode.window.showTextDocument(doc, {
+        preview: false,
+        preserveFocus: true,
+      });
       trackPendingNewFile(doc.uri.toString(), filepath);
       return;
     }
-    await this.ide.openFile(filepath);
+    const doc = await vscode.workspace.openTextDocument(
+      vscode.Uri.parse(filepath),
+    );
+    await vscode.window.showTextDocument(doc, {
+      preview: false,
+      preserveFocus: true,
+    });
   }
 
   private modelIsTooFastForStreaming(model: string): boolean {
@@ -183,11 +200,9 @@ export class ApplyManager {
     const { config } = await this.configHandler.loadConfig();
     if (!config) {
       void vscode.window.showErrorMessage("Config not loaded");
-      return;
+      throw new EditNotAppliedError(EditNotAppliedReason.NoApplyModel);
     }
-    if (this.stale(editor, stamp)) {
-      return;
-    }
+    this.throwIfStale(editor, stamp);
 
     const llm =
       config.selectedModelByRole.apply ?? config.selectedModelByRole.chat;
@@ -195,7 +210,7 @@ export class ApplyManager {
       void vscode.window.showErrorMessage(
         `No model with roles "apply" or "chat" found in config.`,
       );
-      return;
+      throw new EditNotAppliedError(EditNotAppliedReason.NoApplyModel);
     }
 
     const fileUri = editor.document.uri.toString();
@@ -293,7 +308,7 @@ export class ApplyManager {
     const { config } = await this.configHandler.loadConfig();
     if (!config) {
       void vscode.window.showErrorMessage("Config not loaded");
-      return;
+      throw new EditNotAppliedError(EditNotAppliedReason.NoApplyModel);
     }
 
     const prompt = this.getApplyPrompt(text);
@@ -331,9 +346,7 @@ export class ApplyManager {
       );
 
       if (finalContent) {
-        if (stamp && this.stale(editor, stamp)) {
-          return;
-        }
+        if (stamp) this.throwIfStale(editor, stamp);
         const diffLinesGenerator = generateLines(
           myersDiff(editor.document.getText(), finalContent),
         );

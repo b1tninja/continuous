@@ -3,6 +3,10 @@ import * as URI from "uri-js";
 import * as vscode from "vscode";
 
 import {
+  EditNotAppliedError,
+  EditNotAppliedReason,
+} from "../../apply/editNotApplied";
+import {
   AddedLineDecorationManager,
   RemovedLineDecorationManager,
   belowIndexDecorationType,
@@ -10,8 +14,8 @@ import {
 } from "./decorations";
 import { getFirstChangedLine } from "./util";
 
-import type { VerticalDiffCodeLens } from "./manager";
 import type { ApplyState, DiffLine } from "core";
+import type { VerticalDiffCodeLens } from "./manager";
 
 export interface VerticalDiffHandlerOptions {
   input?: string;
@@ -83,7 +87,12 @@ export class VerticalDiffHandler implements vscode.Disposable {
     this.disposables.push(disposable);
   }
 
-  /**  ensures the current target file is open and focused before performing edits*/
+  /**
+   * Ensures the target file is open and visible before performing edits,
+   * without moving keyboard focus: the person may be typing in the chat, and
+   * taking focus put their keystrokes into the file being edited (which then
+   * failed the edit's version check).
+   */
   private async ensureCurrentFileIsFocused() {
     const targetUri = this.editor.document.uri;
     const active = vscode.window.activeTextEditor;
@@ -99,21 +108,19 @@ export class VerticalDiffHandler implements vscode.Disposable {
       URI.equal(foundEditor.document.uri.toString(), targetUri.toString()),
     );
     if (visible) {
-      await vscode.window.showTextDocument(visible.document, {
+      this.editor = await vscode.window.showTextDocument(visible.document, {
         preview: false,
-        preserveFocus: false,
+        preserveFocus: true,
         viewColumn: visible.viewColumn,
       });
-      this.editor = vscode.window.activeTextEditor ?? visible;
       return;
     }
 
     const doc = await vscode.workspace.openTextDocument(targetUri);
-    const editor = await vscode.window.showTextDocument(doc, {
+    this.editor = await vscode.window.showTextDocument(doc, {
       preview: false,
-      preserveFocus: false,
+      preserveFocus: true,
     });
-    this.editor = editor;
   }
 
   public get range(): vscode.Range {
@@ -211,7 +218,9 @@ export class VerticalDiffHandler implements vscode.Disposable {
 
       const myersDiffs = await this.reapplyWithMyersDiff(diffLines);
       if (!myersDiffs) {
-        return diffLines;
+        // The document changed under the edit (typed in mid-apply): report
+        // it, so the tool call ends instead of waiting forever
+        throw new EditNotAppliedError(EditNotAppliedReason.FileChanged);
       }
 
       // Scroll to the first diff

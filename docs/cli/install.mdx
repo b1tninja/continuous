@@ -1,0 +1,84 @@
+---
+title: "Install the terminal agent"
+---
+
+The terminal agent is the package `@b1tninja/continuous-cli`. It installs two commands, `continuous` and the short alias `cn`, which run the same program. It needs Node.js 22 or newer.
+
+The package is not on the npm registry. It is published as a tarball, `continuous-cli-<version>.tgz`, on each [GitHub release](https://github.com/b1tninja/continuous/releases), and both ways of installing below use that file.
+
+## Install script
+
+The scripts look up the latest release, download its tarball, compare it with the release's `SHA256SUMS.txt`, and run `npm install -g` on it. If Node.js 22 is missing they install it with fnm first (on Windows through winget, or a direct download of fnm when winget is not there). Running a script again upgrades in place.
+
+Read a script before you run it. macOS, Linux, WSL and Git Bash:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/b1tninja/continuous/main/extensions/cli/scripts/install.sh -o install.sh
+less install.sh
+bash install.sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/b1tninja/continuous/main/extensions/cli/scripts/install.ps1 -OutFile install.ps1
+notepad install.ps1
+.\install.ps1
+```
+
+The scripts contact `api.github.com` and `github.com` for the release, the npm registry for dependencies and, only when Node.js 22 is missing, fnm's installer (or winget). They send no telemetry.
+
+`SHA256SUMS.txt` is published next to the tarball, so the check catches a corrupt download. It is not a signature. A mismatch stops the install. When the file has no entry for the tarball, the script prints the tarball's SHA-256 for you to compare and goes on.
+
+### Pin a version
+
+Two environment variables skip the lookup of the latest release:
+
+| Variable                 | Meaning                                                                               |
+| ------------------------ | ------------------------------------------------------------------------------------- |
+| `CONTINUOUS_CLI_VERSION` | Install this release, for example `2.14.0`. Default: the latest release               |
+| `CONTINUOUS_CLI_URL`     | Install this exact tarball URL. It wins over the version and over the lookup          |
+
+```bash
+CONTINUOUS_CLI_VERSION=2.14.0 bash install.sh
+```
+
+```powershell
+$env:CONTINUOUS_CLI_VERSION = "2.14.0"; .\install.ps1
+```
+
+`install.ps1` also takes them as parameters, `-Version` and `-Url`.
+
+## Install the tarball with npm
+
+With Node.js 22 or newer already installed, give npm the release URL:
+
+```bash
+npm i -g https://github.com/b1tninja/continuous/releases/download/v2.16.2-vscode/continuous-cli-2.16.2.tgz
+```
+
+The release tag is `v<version>-vscode` and the file is `continuous-cli-<version>.tgz`.
+
+## Check the install
+
+```bash
+continuous --version
+cn --version
+```
+
+Both print the same version number. If a command is not found, the npm global folder is not on your `PATH`: open a new terminal, or add the folder that `npm config get prefix` prints (its `bin` subfolder on macOS and Linux).
+
+## Update and uninstall
+
+To update, run the install script again or install the next release's tarball the same way. The terminal agent does not look for new releases and does not update itself. `/update` opens a menu whose **Run update** answers with the address of the releases page and installs nothing.
+
+```bash
+npm uninstall -g @b1tninja/continuous-cli
+```
+
+Uninstalling removes both commands. It leaves your configuration, sessions and logs in `~/.continuous`; [Where things are stored](/reference/storage-and-reset) lists what is there and how to remove it.
+
+## Related
+
+- [First session](/cli/first-session)
+- [Command reference](/cli/reference)

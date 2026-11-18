@@ -54,3 +54,70 @@ export function getToolNameFromMCPServer(
     : `mcp_${toolName}`;
   return isBuiltInToolName(marked) ? `mcp_${marked}` : marked;
 }
+
+export interface McpToolIdentity {
+  serverName: string;
+  toolName: string;
+}
+
+/** Six hex digits that depend only on the server and the tool, never on order. */
+function mcpToolNameSuffix(identity: McpToolIdentity): string {
+  let hash = 0x811c9dc5;
+  for (const ch of `${identity.serverName}\u0000${identity.toolName}`) {
+    hash ^= ch.codePointAt(0)!;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0").slice(0, 6);
+}
+
+function countNames(names: readonly string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1);
+  return counts;
+}
+
+/**
+ * The names the model calls a set of MCP tools by, one per item and in the
+ * same order, with no two the same.
+ *
+ * A name nothing else claims is exactly what `getToolNameFromMCPServer` gives
+ * (or the bare tool name with `bare`), so rules and habits written for it keep
+ * working. Names that collide (`a` with `b_c` and `a_b` with `c` both compose
+ * to `a_b_c`) are ALL renamed with a suffix taken from the server and tool, so
+ * neither inherits a rule written for the other and the result does not depend
+ * on connection order.
+ *
+ * `bare` keeps the tool's own name unless another server offers it too or it
+ * is in `reserved` (the caller's built-in names); those fall back to the
+ * server-qualified name.
+ */
+export function assignMcpToolNames(
+  items: readonly McpToolIdentity[],
+  options: { bare?: boolean; reserved?: ReadonlySet<string> } = {},
+): string[] {
+  const reserved = options.reserved ?? new Set<string>();
+  const qualified = (item: McpToolIdentity) =>
+    getToolNameFromMCPServer(item.serverName, item.toolName);
+
+  let names = items.map((item) =>
+    options.bare ? item.toolName : qualified(item),
+  );
+  if (options.bare) {
+    const counts = countNames(names);
+    names = names.map((name, i) =>
+      counts.get(name)! > 1 || reserved.has(name) ? qualified(items[i]) : name,
+    );
+  }
+
+  const counts = countNames(names);
+  const taken = new Set(
+    names.filter((name) => counts.get(name) === 1 && !reserved.has(name)),
+  );
+  return names.map((name, i) => {
+    if (counts.get(name) === 1 && !reserved.has(name)) return name;
+    let renamed = `${name}_${mcpToolNameSuffix(items[i])}`;
+    while (taken.has(renamed) || reserved.has(renamed)) renamed += "_";
+    taken.add(renamed);
+    return renamed;
+  });
+}

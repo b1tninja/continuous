@@ -2,6 +2,7 @@ import * as fs from "fs";
 
 import { validateMultiEdit } from "core/edit/searchAndReplace/multiEditValidation.js";
 import { executeMultiFindAndReplace } from "core/edit/searchAndReplace/performReplace.js";
+import { writeFileAtomicSync } from "core/util/atomicWrite.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
 
 import { telemetryService } from "../telemetry/telemetryService.js";
@@ -117,7 +118,7 @@ export const multiEditTool: Tool = {
     editCount: number;
   }) => {
     try {
-      fs.writeFileSync(args.file_path, args.newContent, "utf-8");
+      writeFileAtomicSync(args.file_path, args.newContent);
 
       // Get lines for telemetry
       const { added, removed } = calculateLinesOfCodeDiff(

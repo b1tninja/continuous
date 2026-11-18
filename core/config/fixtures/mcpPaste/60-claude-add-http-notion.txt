@@ -1,0 +1,1 @@
+claude mcp add --transport http notion https://mcp.notion.com/mcp

@@ -6,7 +6,7 @@ import {
   type ItemBudget,
 } from "./itemBudget";
 import { questionsNeverAsk } from "../tools/permissions/policy";
-import { skipItem } from "./loopMode";
+import { bankWait, skipItem } from "./loopMode";
 import type { StuckLevel } from "./stuckSignals";
 
 /**
@@ -173,7 +173,11 @@ export function extendItem(
           : i,
       ),
       ...(loop.status === "waiting"
-        ? { status: "running" as const, waitingSince: undefined }
+        ? {
+            status: "running" as const,
+            waitingSince: undefined,
+            waitedMs: bankWait(loop).waitedMs,
+          }
         : {}),
     },
   };
@@ -446,7 +450,7 @@ export function answerLimitQuestion(
     ),
   };
   if (next.status === "waiting") {
-    next = { ...next, status: "running", waitingSince: undefined };
+    next = { ...bankWait(next, now), status: "running" };
   }
   return { ok: true, loop: next, answer, ...(budget ? { budget } : {}) };
 }

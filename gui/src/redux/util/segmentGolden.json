@@ -1,11 +1,11 @@
 {
   "ide-agent-claude": {
-    "tools.builtin@agent": "47d1216d6cdc",
+    "tools.builtin@agent": "7bdb91318d72",
     "turn.agent@full": "85ef5288de58",
     "env.system": "446a2a30254a"
   },
   "ide-agent-claude-tasklist": {
-    "tools.builtin@agent": "30d62d66d12b",
+    "tools.builtin@agent": "eb2101628047",
     "turn.agent@full": "85ef5288de58",
     "env.system": "446a2a30254a"
   },
@@ -17,30 +17,30 @@
   "ide-agent-qwen-prompted": {
     "turn.agent@tailored": "318c4dd200eb",
     "env.system": "446a2a30254a",
-    "format.agent": "891b968867d2"
+    "format.agent": "9479fba68aad"
   },
   "ide-agent-nova": {
-    "tools.builtin@agent": "47d1216d6cdc",
+    "tools.builtin@agent": "7bdb91318d72",
     "turn.agent@full": "85ef5288de58",
     "env.system": "446a2a30254a"
   },
   "ide-loop-item": {
-    "tools.builtin@agent": "47d1216d6cdc",
+    "tools.builtin@agent": "7bdb91318d72",
     "turn.agent@full": "85ef5288de58",
     "env.system": "446a2a30254a"
   },
   "ide-agent-scoped-rule": {
-    "tools.builtin@agent": "47d1216d6cdc",
+    "tools.builtin@agent": "7bdb91318d72",
     "turn.agent@full": "85ef5288de58",
     "env.system": "446a2a30254a"
   },
   "ide-agent-scoped-first": {
-    "tools.builtin@agent": "47d1216d6cdc",
+    "tools.builtin@agent": "7bdb91318d72",
     "turn.agent@full": "85ef5288de58",
     "env.system": "446a2a30254a"
   },
   "ide-compacted": {
-    "tools.builtin@agent": "47d1216d6cdc",
+    "tools.builtin@agent": "7bdb91318d72",
     "turn.agent@full": "85ef5288de58",
     "env.system": "446a2a30254a"
   }

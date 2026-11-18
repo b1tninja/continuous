@@ -102,6 +102,18 @@ describe("Bedrock stream response facts", () => {
     expect((chunks[0] as any).usage.response).toMatchObject({ latencyMs: 0 });
   });
 
+  it("passes on the service tier that served the request", async () => {
+    const chunks = await usageOf(
+      new StreamBedrock([
+        text,
+        { metadata: { usage, serviceTier: { type: "flex" } } },
+      ]),
+    );
+    expect((chunks[0] as any).usage.response).toMatchObject({
+      serviceTier: "flex",
+    });
+  });
+
   it("sends no usage chunk when the stream carried no usage", async () => {
     const chunks = await usageOf(
       new StreamBedrock([text, { messageStop: { stopReason: "end_turn" } }]),

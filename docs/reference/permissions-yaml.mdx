@@ -1,0 +1,163 @@
+---
+title: "permissions.yaml"
+---
+
+`permissions.yaml` in the global folder (`~/.continuous/permissions.yaml`, or `CONTINUOUS_GLOBAL_DIR`) holds the permission settings that the VS Code extension and the terminal agent share: the level of each area, the loop's question and plan settings, the built-in rule switches, and the locked rules. It also holds the terminal agent's own `allow`, `ask` and `exclude` lists.
+
+Only this one file is read. A project cannot ship a `permissions.yaml` that changes yours. It is one of the locked policy files: an agent's write to it asks you, and is refused at Automatic. At IDGAF it runs, and the audit trail records that the lock would have refused it.
+
+```yaml title="~/.continuous/permissions.yaml"
+levels:
+  context: permissive
+  tools: cautious
+  edits: manual
+  plan: cautious
+  questions: cautious
+plan:
+  maxNewItems: 5
+questions:
+  youDecide: [scope, irreversible, security, cost]
+  agentDecides: [detail]
+builtin:
+  ask-large-change: off
+floor:
+  - runTerminalCommand(git push --force*)
+  - runTerminalCommand(terraform destroy*)
+allow:
+  - Bash(npm test)
+```
+
+Most of this is written for you: the toolbar and **Settings, Tools** in the extension, and `/policy` in the terminal agent, save the levels here. The extension's **Custom policy** editor (see the [Permissions page](/ide-extensions/agent/permissions-page#custom-policy)) writes every key in the table except the terminal agent's lists and `sandbox`. The Permissions page explains what the levels and presets mean; this page lists the keys.
+
+## Keys
+
+| Key                      | Type                                   | Default                                  | Written by                                   |
+| ------------------------ | -------------------------------------- | ---------------------------------------- | -------------------------------------------- |
+| `levels.context`         | level                                  | `permissive`                             | extension, `/policy`                         |
+| `levels.tools`           | level                                  | `cautious`                               | extension, `/policy`                         |
+| `levels.edits`           | level                                  | `manual`                                 | extension, `/policy`                         |
+| `levels.plan`            | level                                  | `cautious`                               | extension, `/policy`                         |
+| `levels.questions`       | level                                  | `cautious`                               | extension, `/policy`                         |
+| `levels.web`             | level, or `off` / `listed`             | none: follows `levels.tools`             | `/policy`, by hand                           |
+| `levels.custom`          | `from:` a preset, `levels:` the five levels | none                                | extension (Custom policy)                    |
+| `plan.maxNewItems`       | whole number, 0 or more                | `5`                                      | extension                                    |
+| `plan.allowTerminal`     | `true` / `false` (or `on` / `off`)     | `false`                                  | by hand, extension (Custom policy) |
+| `plan.mcpTools`          | list of `server/tool`, `server/*` or `server` | none                              | by hand, extension (Custom policy) |
+| `background.mcpTools`    | list of `server/tool`, `server/*` or `server` | none                              | by hand                            |
+| `questions.delivery`     | `inbox` or `wait`                      | `inbox`                                  | extension (Custom policy) |
+| `questions.youDecide`    | list of question types                 | `scope`, `irreversible`, `security`, `cost` | extension                                 |
+| `questions.agentDecides` | list of question types                 | `detail`                                 | extension                                    |
+| `builtin.<id>`           | `on` / `off` (or `true` / `false`)     | every rule on                            | extension (written only when `off`)          |
+| `floor`                  | list of rules                          | none                                     | by hand, extension (Custom policy) |
+| `mcpServers.<name>`      | `trusted`                              | none                                     | by hand, extension (Custom policy) |
+| `allow`, `ask`, `exclude` | list of terminal agent rules          | none                                     | terminal agent ("always allow")              |
+| `sandbox`                | reserved                               |                                          | accepted, nothing reads it yet               |
+
+### `levels`
+
+One level per area: `manual`, `cautious`, `automatic`, `permissive` or `idgaf`, in any case. `yolo` is read as `idgaf`.
+
+`levels.web` also takes `off` (no agent web tools) and `listed` (only the hosts you allowed, never asks). When it is absent, Web follows `levels.tools`; an unknown value or `idgaf` is read as absent, with a notice. See [The Web level](/customize/web#the-web-level).
+
+IDGAF is never saved. A stored `idgaf` or `yolo` is read as that area's default, with the notice `levels.<area>: idgaf is for one session only, so <default> applies.` The notice goes to the log, not to a dialog. A preset is not stored either: the file holds the five levels, and the preset is worked out from them.
+
+`levels.custom` keeps your last saved custom set, so you can go back to it after choosing a preset, and the preset it started from, so the chip can say **Custom (from Careful)**. It is a label and a memory, never a rule: nothing reads it to decide a call. It never holds IDGAF, and a set started from IDGAF is not kept.
+
+```yaml
+levels:
+  tools: cautious
+  edits: manual
+  custom:
+    from: careful
+    levels:
+      context: permissive
+      tools: permissive
+      edits: manual
+      plan: cautious
+      questions: cautious
+```
+
+It sits under `levels` rather than at the top of the file on purpose: every terminal agent and extension version reads `levels` and only the five area names inside it, so an older one ignores `custom`. An unknown top-level key would make an older terminal agent skip the whole file's `allow`, `ask` and `exclude` lists.
+
+### `plan`
+
+- `maxNewItems`: at Plan edits **Permissive**, a re-plan in Loop mode that adds more new to-dos than this waits for you. It has no effect at the other levels.
+- `allowTerminal`: offer the shell tool in the terminal agent's plan mode. Each command still goes through the permission checks and asks. Terminal agent only.
+- `mcpTools`: MCP tools that Plan mode may use, whatever the server says about them.
+
+### `background`
+
+- `mcpTools`: the MCP tools that runs nobody watches may use: headless `continuous -p` and `continuous serve`, Loop workers, and background agents. They get no MCP tool that is not listed. A listed tool of a server you never approved is offered to them, and its first call pins that tool only. A tool added or changed after an approval waits until you approve it in the IDE or the terminal UI. See [MCP tool changes](/ide-extensions/agent/mcp-tool-changes#plan-mode-and-unattended-runs).
+
+`background` is a top-level key, so a terminal agent older than 2.18.0 does not know it and treats the file as broken. Add it once every machine that reads the file is updated.
+
+```yaml
+background:
+  mcpTools:
+    - docs/search
+    - wiki/*
+```
+
+### `questions`
+
+`youDecide` and `agentDecides` take the question types `scope`, `irreversible`, `security`, `cost`, `design` and `detail`. How they apply depends on the Questions level; see [Loop mode](/ide-extensions/agent/loop-mode#questions). At Automatic and Permissive only your own `youDecide` list still reaches you, not the default one.
+
+`delivery` is `inbox` (work goes on while a question waits) or `wait`.
+
+### `builtin`
+
+Switches for the built-in rules, by id. Absent means on. An unknown id or a value other than on and off is ignored with a notice.
+
+| Id                          | Label in the product                          | What it covers                                                                                                                                       |
+| --------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `protect-secrets`           | Ask before touching credentials               | Key files, tokens and credentials, for every tool and command                                                                                        |
+| `protect-config`            | Ask before changing what runs later           | Git hooks, CI, editor tasks and shell startup files. A write to a PowerShell profile (`Documents\WindowsPowerShell` or `Documents\PowerShell`, under your home folder or a OneDrive-redirected Documents, and `$PROFILE`) is refused at Automatic |
+| `protect-network-paths`     | Ask before contacting a network path          | UNC paths, which reach another computer                                                                                                              |
+| `refuse-dangerous-commands` | Refuse dangerous commands                     | Commands the built-in safety check refuses                                                                                                           |
+| `no-fetch-and-run`          | Ask before running a download                 | A command that runs what it downloads (`curl x \| sh`). Refused at Automatic                                                                         |
+| `ask-destructive-commands`  | Ask before destroying work                    | History rewrites and recursive deletes (`git reset --hard`, `git push --force`, `git clean`, `rm -rf`). Build-output folders such as `node_modules` are not asked about |
+| `ask-large-change`          | Ask before a large change                     | One edit that changes more than 300 lines                                                                                                            |
+| `ask-dependency-change`     | Ask before changing dependencies              | Edits to manifests, lockfiles and registry settings, and commands that add, update or remove a package. Installing what the lockfile names does not ask |
+| `ask-unknown-host`          | Ask before contacting an unlisted host        | When you list trusted domains in your own config, a fetch or network command to any other host asks                                                  |
+| `ask-outside-paths`         | Ask before a file tool leaves the workspace   | A read, listing or write of a real path outside the workspace folders                                                                                |
+| `plan-keeps-checks`         | Stop a re-plan that weakens a check           | A re-plan that changes a failing check or drops a finished item waits for you                                                                        |
+| `protect-policy-files`      | Never change the permission files             | Every file the product loads as config, code, rules or hooks. **Cannot be switched off**: `builtin.protect-policy-files` is refused as an unknown id |
+
+The first eleven can be switched off here. `protect-policy-files` is a lock: no setting, level or IDGAF lifts it. The threshold of `ask-large-change` is `toolPermissions.auto.environment.largeChangeLines` in your own `config.yaml` (default 300). [Command checks](/ide-extensions/agent/command-checks) describes the rules in more detail.
+
+### `floor`
+
+Locked rules: Never rules that bind at every level below IDGAF (at IDGAF the call runs and the audit trail records the rule). They are written in the `config.yaml` rule form, with the extension's tool names:
+
+```yaml
+floor:
+  - runTerminalCommand(git push*)
+  - writeFile(**/.env)
+```
+
+The Permissions page shows them as locked. Change them in this file, or in the extension's **Custom policy** editor (the **Locked rules** list), which keeps the file's comments and the other keys.
+
+### `mcpServers`
+
+`<server name>: trusted` believes that server's own read-only hints, so Plan mode may use the tools it marks read-only. A server that came with the open folder is never trusted this way.
+
+### `allow`, `ask`, `exclude`
+
+The terminal agent's own rule lists, in its dialect: a tool name such as `Write`, or a tool with a pattern, `Bash(npm test)`. `exclude` means the model is not offered the tool at all. They are weighed before the `toolPermissions` rules of `config.yaml`, and the Permissions page shows them with the badge **CLI file**. The extension reads them and never writes them.
+
+Choosing **Continue + always allow** in the terminal agent appends a rule to `allow`: the exact command for `Bash`, `host:<host>` for `Fetch` (**Always allow `<host>`**), and the bare tool name for anything else.
+
+A `host:` entry in `allow` (`host:docs.example.com`, or `host:*.example.com` for the subdomains) allows the agent's fetch to that host at every Web level below Manual. The extension reads these entries too. See [The Web level](/customize/web#the-web-level).
+
+## Things to know
+
+- **A file that does not parse is the defaults.** The notice is `permissions.yaml could not be read (...), so the defaults apply.`, written to the log.
+- **The terminal agent's writer rewrites the whole file.** "Always allow" in the terminal agent writes the file again from what it could read, without its comments. If the file did not parse, or has a key that is not in the table above, that write keeps only the new rule. Keep a copy of a hand-edited file. The extension's writer keeps comments and every other key.
+- **Two writers, no lock.** The extension and the terminal agent each read, change and write the file. Two windows saving at once can lose one of the changes.
+- A flag (`--policy`, `--allow`, `--ask`, `--exclude`) wins over this file for one run and is not saved.
+
+## Related
+
+- [Permissions page](/ide-extensions/agent/permissions-page)
+- [Command checks](/ide-extensions/agent/command-checks)
+- [Where things are stored](/reference/storage-and-reset)

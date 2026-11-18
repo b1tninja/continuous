@@ -47,12 +47,17 @@ export function subagentPermissions(
   const unmatched = canPrompt ? ("ask" as const) : ("exclude" as const);
   return {
     policies: [
-      { tool: SUBAGENT_TOOL_META.name, permission: "exclude" },
+      {
+        tool: SUBAGENT_TOOL_META.name,
+        permission: "exclude",
+        structural: true,
+      },
       // The task list belongs to the parent's session, which a subagent
       // shares: its own list would replace the parent's.
       ...TASK_LIST_TOOLS.map((tool) => ({
         tool,
         permission: "exclude" as const,
+        structural: true,
       })),
       ...parent.policies.map((p) =>
         p.permission === "ask" && !canPrompt

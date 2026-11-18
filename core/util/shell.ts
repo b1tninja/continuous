@@ -62,14 +62,25 @@ export function shellKindOf(executable: string | undefined): ShellKind {
  * is not reported, and `$?` decides success so `node -e "process.exit(3)";
  * echo hi` is still 0, as it is without the tail. A failing cmdlet leaves
  * `$LASTEXITCODE` null and exits 1. Other shells report the real code
- * already and get `command` back unchanged. Opt-in: ordinary Bash tool calls
- * do not use it.
+ * already and get `command` back unchanged.
+ *
+ * `resetFirst: false` leaves out the line that clears `$LASTEXITCODE`, so the
+ * command stays on line 1 and PowerShell's own error text ("At line:1
+ * char:5") is what it would be without the tail: the terminal tools use it,
+ * because the model reads that text. The price is small: when the last
+ * statement is a failing cmdlet, no native program ran in the command, and
+ * the person's profile left a non-zero `$LASTEXITCODE`, that stale number is
+ * reported in place of 1 (a failure either way).
  */
-export function withRealExitCode(command: string, kind: ShellKind): string {
+export function withRealExitCode(
+  command: string,
+  kind: ShellKind,
+  opts: { resetFirst?: boolean } = {},
+): string {
   if (kind !== "powershell") return command;
   // Newlines, not `;`: a trailing `# comment` must not swallow the tail
   return [
-    "$global:LASTEXITCODE = $null",
+    ...(opts.resetFirst === false ? [] : ["$global:LASTEXITCODE = $null"]),
     command,
     "$__ok = $?",
     "if ($__ok) { exit 0 }",
@@ -213,7 +224,9 @@ export function wslArgs(command: string, distro?: string): string[] {
 
 /**
  * The shell terminal commands run in: Windows PowerShell on Windows, the
- * person's login shell elsewhere (bash when `$SHELL` is not set). WSL is a
+ * person's login shell elsewhere. When `$SHELL` is not set (an editor started
+ * from the Dock on some setups), that is zsh on macOS, every new account's
+ * shell since 10.15, and bash elsewhere. WSL is a
  * Linux, so it takes the second branch. On Windows a preference for WSL
  * (`terminalShell`, the editor's setting, or `CONTINUOUS_TERMINAL_SHELL`) runs
  * commands in bash inside that distribution instead.
@@ -258,8 +271,13 @@ export function resolveShell(opts: ShellEnvironment = {}): ResolvedShell {
     return {
       kind: "powershell",
       executable: "powershell.exe",
+      // -NonInteractive: a prompt (Read-Host, a confirmation, a cmdlet asking
+      // for a missing mandatory parameter such as the `curl` alias's -Uri)
+      // fails at once with PowerShell's own error instead of waiting for an
+      // answer nobody can type
       args: (command) => [
         "-NoLogo",
+        "-NonInteractive",
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
@@ -269,11 +287,74 @@ export function resolveShell(opts: ShellEnvironment = {}): ResolvedShell {
       runsProfile: true,
     };
   }
-  const executable = env.SHELL || "/bin/bash";
+  const executable =
+    env.SHELL || (platform === "darwin" ? "/bin/zsh" : "/bin/bash");
   return {
     kind: shellKindOf(executable),
     executable,
     args: (command) => ["-l", "-c", command],
     runsProfile: true,
   };
+}
+
+/**
+ * The editor's remote names for which the terminal tool starts the shell
+ * itself, on this machine. For any other (SSH, a WSL window, a dev container,
+ * Codespaces) the command is typed into the editor's integrated terminal on
+ * the other machine.
+ */
+export const LOCAL_REMOTE_NAMES: readonly string[] = ["", "local"];
+
+export interface ExecutionShell {
+  /** The grammar to read the command with; "unknown" when it cannot be told */
+  kind: ShellKind;
+  /**
+   * "spawned": this process starts the shell, so the kind is a fact.
+   * "terminal": the command is sent to a terminal whose shell this process
+   * cannot see (its profile on the other machine, or whatever is running in
+   * it), so the kind is unknown and never this machine's own shell.
+   */
+  source: "spawned" | "terminal";
+  /** Words for a person: "Windows PowerShell 5.1", "bash in WSL", "the remote terminal's shell". */
+  label: string;
+}
+
+/** The words for a shell this process starts itself. */
+export function shellLabel(shell: ResolvedShell): string {
+  const program = (shell.executable.split(/[\/]/).pop() ?? "").toLowerCase();
+  if (program === "wsl.exe") return "bash in WSL";
+  if (program === "docker" || program === "podman")
+    return "bash in a container";
+  // powershell.exe is Windows PowerShell, whose last version is 5.1; pwsh is 7 or later
+  if (program === "powershell.exe" || program === "powershell") {
+    return "Windows PowerShell 5.1";
+  }
+  if (program === "pwsh" || program === "pwsh.exe")
+    return "PowerShell 7 or later";
+  return shell.kind === "unknown"
+    ? `${program || "a shell"} (not a shell this product parses)`
+    : program || shell.kind;
+}
+
+/**
+ * The shell a terminal command will really be read by, and how that is known.
+ * The permission engine, the lint and the audit record must use this, not
+ * `resolveShell()` alone: in a remote window `resolveShell()` describes the
+ * machine the editor runs on (PowerShell on a Windows laptop) while the
+ * command is read by the terminal on the other side (bash on a Linux host).
+ * With no remote name (the CLI, a test) the shell is the one started here.
+ */
+export function executionShell(
+  remoteName?: string,
+  opts: ShellEnvironment = {},
+): ExecutionShell {
+  if (remoteName !== undefined && !LOCAL_REMOTE_NAMES.includes(remoteName)) {
+    return {
+      kind: "unknown",
+      source: "terminal",
+      label: `the shell of the editor's terminal (${remoteName})`,
+    };
+  }
+  const shell = resolveShell(opts);
+  return { kind: shell.kind, source: "spawned", label: shellLabel(shell) };
 }

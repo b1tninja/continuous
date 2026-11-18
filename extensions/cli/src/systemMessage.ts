@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 
 import { parseMarkdownRule, RuleObject } from "@continuedev/config-yaml";
+import type { InstructionFileNotice } from "core/config/markdown/instructionFiles.js";
 import { CLI_TURN_TOOL_NAMES } from "core/llm/prompts/turns.js";
 import {
   actTurnTextFor,
@@ -18,8 +19,14 @@ import {
   environmentDisclosure,
 } from "./environmentContext.js";
 import { processRule } from "./hubLoader.js";
-import { AGENT_FILES, rulesDirs } from "./instructionFiles.js";
+import {
+  AGENT_FILES,
+  readInstructionFile,
+  rulesDirs,
+  warnOnce,
+} from "./instructionFiles.js";
 import { PermissionMode } from "./permissions/types.js";
+import { isSafeMode } from "./safeMode.js";
 import { serviceContainer } from "./services/ServiceContainer.js";
 import { ConfigServiceState, SERVICE_NAMES } from "./services/types.js";
 import { SYSTEM_MARKERS } from "./systemMessageMarkers.js";
@@ -33,10 +40,13 @@ import { SYSTEM_MARKERS } from "./systemMessageMarkers.js";
 // line (the platform and where the session facts are). The working folder,
 // the date and the git state travel in the first user message of each
 // request instead (src/environmentContext.ts).
-function baseSystemMessage(): string {
-  return `You are an agent in the Continuous CLI. Your replies are shown in a terminal: be concise and direct, and show file names and code only where they help.
+let cachedBaseSystemMessage: string | undefined;
+
+export function getBaseSystemMessage(): string {
+  cachedBaseSystemMessage ??= `You are an agent in the Continuous CLI. Your replies are shown in a terminal: be concise and direct, and show file names and code only where they help.
 Here is useful information about the environment you are running in:
 ${environmentDisclosure().systemLine}`;
+  return cachedBaseSystemMessage;
 }
 
 async function getConfigYamlRules(): Promise<string[]> {
@@ -67,6 +77,8 @@ function getRuleNameFromPath(filePath: string): string {
  */
 export function loadMarkdownRulesWithMetadata(): RuleObject[] {
   const rules: RuleObject[] = [];
+  // --safe: no rules folder is read
+  if (isSafeMode()) return rules;
 
   for (const dir of rulesDirs()) {
     if (!fs.existsSync(dir)) continue;
@@ -90,10 +102,13 @@ export function loadMarkdownRulesWithMetadata(): RuleObject[] {
       }
 
       try {
-        const content = fs.readFileSync(filePath, "utf-8");
+        const notices: InstructionFileNotice[] = [];
+        const content = readInstructionFile(filePath, (n) => notices.push(n));
         const { frontmatter, markdown } = parseMarkdownRule(content);
 
+        // A prompt file is not an instruction: nothing to warn about here
         if (frontmatter.invokable) continue;
+        notices.forEach(warnOnce);
 
         const isAlwaysApply =
           frontmatter.alwaysApply === true ||
@@ -153,11 +168,12 @@ export async function constructSystemMessage(
   let agentContent = "";
 
   try {
-    for (const fileName of AGENT_FILES) {
+    // --safe: no agent file (AGENTS.md and the like) is read
+    for (const fileName of isSafeMode() ? [] : AGENT_FILES) {
       const filePath = path.join(process.cwd(), fileName);
 
       if (fs.existsSync(filePath)) {
-        agentContent = fs.readFileSync(filePath, "utf-8");
+        agentContent = readInstructionFile(filePath);
         break; // Use the first found agent file
       }
     }
@@ -197,7 +213,7 @@ export async function constructSystemMessage(
 
   // Construct the comprehensive system message
   await ensureSessionEnvironment();
-  let systemMessage = baseSystemMessage();
+  let systemMessage = getBaseSystemMessage();
 
   // The turn's instructions: a plan turn in plan mode, an act turn otherwise.
   // The same texts serve the IDE, so the two surfaces cannot drift apart; the

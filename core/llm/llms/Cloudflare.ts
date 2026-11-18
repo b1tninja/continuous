@@ -31,7 +31,8 @@ export default class Cloudflare extends BaseLLM {
       method: "POST",
       headers,
       body: JSON.stringify({
-        messages,
+        // Workers AI has no "thinking" role; a reasoning turn is not sent back.
+        messages: messages.filter((m) => m.role !== "thinking"),
         stream: true,
         model: this.model,
         ...this._convertArgs(options),

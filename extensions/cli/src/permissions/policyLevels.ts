@@ -11,7 +11,9 @@ import {
   POLICY_PRESET_ORDER,
   POLICY_PRESETS,
   policyLevelLabel,
+  parseWebLevel,
   presetOf,
+  WEB_LEVELS,
   type PolicyArea,
   type PolicyLevel,
   type PolicyLevels,
@@ -22,6 +24,14 @@ import {
   type PolicyFileSettings,
   type PolicyFileUpdate,
 } from "core/tools/permissions/settingsFile.js";
+import {
+  effectiveWebLevel,
+  WEB_AREA_LABEL,
+  WEB_LEVEL_DESCRIPTIONS,
+  webLevelLabel,
+} from "core/tools/permissions/webPolicy.js";
+
+import { capAtDefaults, isSafeMode } from "../safeMode.js";
 
 import { isAutoReviewEnabled } from "./coreRules.js";
 import { PERMISSIONS_YAML_PATH } from "./permissionsYamlLoader.js";
@@ -76,7 +86,7 @@ export function getPolicyExtras(): Omit<PolicyFileSettings, "levels"> {
 export function loadPolicyFile(file: string = PERMISSIONS_YAML_PATH): string[] {
   const { settings, notices } = readPolicyFile(file);
   const { levels: fileLevels, ...rest } = settings;
-  levels = { ...fileLevels };
+  levels = isSafeMode() ? capAtDefaults(fileLevels) : { ...fileLevels };
   extras = rest;
   return notices;
 }
@@ -84,7 +94,8 @@ export function loadPolicyFile(file: string = PERMISSIONS_YAML_PATH): string[] {
 /** Writes the levels (never IDGAF) and the other settings back to the file. */
 export function savePolicyFile(
   file: string = PERMISSIONS_YAML_PATH,
-  update: PolicyFileUpdate = { levels },
+  // `web` always given, so a Web level cleared here (a preset) is cleared there
+  update: PolicyFileUpdate = { levels: { ...levels, web: levels.web } },
 ): void {
   writePolicyFile(file, update);
 }
@@ -94,7 +105,8 @@ export function getPolicyLevels(): PolicyLevels {
 }
 
 export function setPolicyLevels(next: PolicyLevels): void {
-  levels = { ...next };
+  // --safe: no area looser than its default, whatever --policy or /policy say
+  levels = isSafeMode() ? capAtDefaults(next) : { ...next };
 }
 
 export function resetPolicyLevels(): void {
@@ -104,10 +116,16 @@ export function resetPolicyLevels(): void {
 }
 
 /** What core's engine is given besides the levels. */
-export function approvalExtras(): Pick<ApprovalSettings, "builtin" | "floor"> {
+export function approvalExtras(): Pick<
+  ApprovalSettings,
+  "builtin" | "floor" | "safetyChecks"
+> {
   return {
     ...(extras.builtin ? { builtin: extras.builtin } : {}),
     ...(extras.floor?.length ? { floor: extras.floor } : {}),
+    ...(typeof extras.safetyChecks === "boolean"
+      ? { safetyChecks: extras.safetyChecks }
+      : {}),
   };
 }
 
@@ -119,7 +137,10 @@ export function policyIsDefault(l: PolicyLevels): boolean {
   const extra = approvalExtras();
   return (
     toolLevelsAreDefault(l) &&
+    // A Web level of its own changes what a fetch does (WB45)
+    l.web === undefined &&
     !extra.floor &&
+    extra.safetyChecks !== false &&
     !Object.values(extra.builtin ?? {}).includes(false)
   );
 }
@@ -144,6 +165,8 @@ export function effectiveLevels(mode: PermissionMode): PolicyLevels {
     for (const area of TOOL_AREAS) {
       if (result[area] === "cautious") result[area] = "automatic";
     }
+    // Web, when set apart from Tool use, follows the same rule
+    if (result.web === "cautious") result.web = "automatic";
   }
   return result;
 }
@@ -168,6 +191,9 @@ const AREA_KEYS: Record<string, PolicyArea> = {
   questions: "questions",
   question: "questions",
 };
+
+/** `web=<level>` (WB45): the sixth area, with Off and Listed of its own. */
+const WEB_KEYS = new Set(["web"]);
 
 /** `yolo` is the old spelling of the top level and of the preset: still read. */
 const DEPRECATED_PRESET = "yolo";
@@ -208,6 +234,9 @@ export function parsePolicySpec(
   if (preset) {
     return {
       ok: true,
+      // A preset sets Web too: absent, Web follows Tool use, which is the
+      // preset's own Web level (POLICY_PRESET_WEB), and a Web level set
+      // before is cleared (savePolicyFile writes its absence)
       levels: { ...POLICY_PRESETS[preset].levels },
       ...(lowered === DEPRECATED_PRESET
         ? { deprecated: YOLO_DEPRECATION_NOTE }
@@ -229,6 +258,20 @@ export function parsePolicySpec(
         };
       }
       for (const area of POLICY_AREAS) next[area] = level;
+      // Web follows Tool use, so it is at this level too
+      delete next.web;
+      continue;
+    }
+    if (WEB_KEYS.has(key.trim().toLowerCase())) {
+      const web = parseWebLevel(value);
+      if (isDeprecatedLevelSpelling(value)) deprecated = YOLO_DEPRECATION_NOTE;
+      if (rest.length || !web) {
+        return {
+          ok: false,
+          error: `"${value}" is not a Web level. Levels: ${WEB_LEVELS.join(", ")}.`,
+        };
+      }
+      next.web = web;
       continue;
     }
     const area = AREA_KEYS[key.trim().toLowerCase()];
@@ -237,13 +280,16 @@ export function parsePolicySpec(
     if (rest.length || !area) {
       return {
         ok: false,
-        error: `"${part}": the areas are ${POLICY_AREAS.join(", ")}.`,
+        error: `"${part}": the areas are ${[...POLICY_AREAS, "web"].join(", ")}.`,
       };
     }
     if (!level) {
+      const webOnly = parseWebLevel(value);
       return {
         ok: false,
-        error: `"${value}" is not a level. Levels: ${POLICY_LEVELS.join(", ")} (yolo is the old name of idgaf).`,
+        error: webOnly
+          ? `"${value}" is a Web level only (web=${webOnly}). Levels for ${key}: ${POLICY_LEVELS.join(", ")}.`
+          : `"${value}" is not a level. Levels: ${POLICY_LEVELS.join(", ")} (yolo is the old name of idgaf).`,
       };
     }
     next[area] = level;
@@ -264,6 +310,10 @@ export function describePolicy(l: PolicyLevels): string[] {
       `  ${POLICY_AREA_LABELS[area].padEnd(12)} ${policyLevelLabel(area, l[area]).padEnd(10)} ${POLICY_LEVEL_DESCRIPTIONS[area][l[area]]}`,
     );
   }
+  const web = effectiveWebLevel(l);
+  lines.push(
+    `  ${WEB_AREA_LABEL.padEnd(12)} ${webLevelLabel(web.level).padEnd(10)} ${WEB_LEVEL_DESCRIPTIONS[web.level]}${web.source === "tools" ? " (follows Tool use)" : ""}`,
+  );
   lines.push(
     "",
     "A preset sets all five levels at once. Rules (Never, Ask, Always) are listed with `continuous permissions list`; they and the built-in rules apply before the level.",

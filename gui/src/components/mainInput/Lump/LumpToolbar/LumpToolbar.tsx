@@ -1,19 +1,14 @@
 import { BuiltInToolNames } from "core/tools/builtIn";
-import { useContext, useEffect } from "react";
-import { IdeMessengerContext } from "../../../../context/IdeMessenger";
+import { useEffect } from "react";
 import { useAppDispatch, useAppSelector } from "../../../../redux/hooks";
 import {
   selectFirstPendingToolCall,
   selectPendingToolCalls,
   selectToolCallsByStatus,
 } from "../../../../redux/selectors/selectToolCalls";
-import { cancelToolCall } from "../../../../redux/slices/sessionSlice";
-import { cancelToolCallThunk } from "../../../../redux/thunks/cancelToolCall";
 import { callToolById } from "../../../../redux/thunks/callToolById";
-import { cancelStream } from "../../../../redux/thunks/cancelStream";
-import { logToolUsage } from "../../../../redux/util";
-import { isJetBrains } from "../../../../util";
-import { useMainEditor } from "../../TipTapEditor";
+import { askToStopResponse } from "../../../../redux/thunks/interruptConfirm";
+import { stopResponseThunk } from "../../../../redux/thunks/paletteCommands";
 import { BlockSettingsTopToolbar } from "./BlockSettingsTopToolbar";
 import { EditOutcomeToolbar } from "./EditOutcomeToolbar";
 import { EditToolbar } from "./EditToolbar";
@@ -27,16 +22,6 @@ import { TtsActiveToolbar } from "./TtsActiveToolbar";
 const isExecuteToolCallShortcut = (event: KeyboardEvent) => {
   const metaKey = event.metaKey || event.ctrlKey;
   return metaKey && event.key === "Enter";
-};
-
-const isCancelToolCallShortcut = (
-  event: KeyboardEvent,
-  isJetBrains: boolean,
-) => {
-  const metaKey = event.metaKey || event.ctrlKey;
-  const altKey = event.altKey;
-  const modifierKey = isJetBrains ? altKey : metaKey;
-  return modifierKey && event.key === "Backspace";
 };
 
 // Check if a tool call is a terminal command
@@ -103,10 +88,6 @@ export function isInlineToolbarKind(kind: LumpToolbarKind): boolean {
 export function LumpToolbar() {
   const kind = useLumpToolbarKind();
   const dispatch = useAppDispatch();
-  const ideMessenger = useContext(IdeMessengerContext);
-  const isStreaming = useAppSelector((state) => state.session.isStreaming);
-  const jetbrains = isJetBrains();
-  const pendingToolCalls = useAppSelector(selectPendingToolCalls);
   const firstPendingToolCall = useAppSelector(selectFirstPendingToolCall);
   const applyStates = useAppSelector(
     (state) => state.session.codeBlockApplyStates.states,
@@ -114,7 +95,6 @@ export function LumpToolbar() {
   const pendingApplyStates = applyStates.filter(
     (state) => state.status === "done",
   );
-  const editor = useMainEditor();
 
   // Get ALL running terminal commands
   const runningToolCalls = useAppSelector((state) =>
@@ -123,51 +103,11 @@ export function LumpToolbar() {
   const runningTerminalCalls = runningToolCalls.filter(isTerminalCommand);
   const hasRunningTerminalCommand = runningTerminalCalls.length > 0;
 
-  // Simple handler: stop ALL running terminal commands
-  const handleStopAllTerminalCommands = async () => {
-    if (runningTerminalCalls.length === 0) {
-      return;
-    }
-
-    // Stop all terminal commands concurrently
-    const stopPromises = runningTerminalCalls.map(async (terminalCall) => {
-      try {
-        // Cancel the process on the backend
-        await ideMessenger.request("process/killTerminalProcess", {
-          toolCallId: terminalCall.toolCallId,
-        });
-
-        // Cancel the tool call in the UI
-        dispatch(
-          cancelToolCall({
-            toolCallId: terminalCall.toolCallId,
-          }),
-        );
-
-        logToolUsage(terminalCall, false, true, ideMessenger);
-      } catch (error) {
-        console.error(
-          `Failed to cancel terminal command ${terminalCall.toolCallId}:`,
-          error,
-        );
-      }
-    });
-
-    // Wait for all cancellations to complete
-    await Promise.all(stopPromises);
-  };
-
-  // Combined stop handler
-  const handleStopAction = async () => {
-    // Stop all terminal commands if any are running
-    if (hasRunningTerminalCommand) {
-      await handleStopAllTerminalCommands();
-    }
-
-    // Also stop regular streaming if it's happening
-    if (isStreaming) {
-      dispatch(cancelStream());
-    }
+  // The same Stop as the Command Palette's "Stop Response": running
+  // terminal commands are killed and the reply is cancelled. From the
+  // keyboard it asks first (NI8); a pointer click stops at once.
+  const handleStopAction = (fromKeyboard: boolean) => {
+    void dispatch(fromKeyboard ? askToStopResponse() : stopResponseThunk());
   };
 
   useEffect(() => {
@@ -183,25 +123,6 @@ export function LumpToolbar() {
         void dispatch(
           callToolById({ toolCallId: firstPendingToolCall.toolCallId }),
         );
-      } else if (isCancelToolCallShortcut(event, jetbrains)) {
-        event.preventDefault();
-        event.stopPropagation();
-
-        if (hasRunningTerminalCommand) {
-          // Stop running terminal commands
-          void handleStopAction();
-        } else if (firstPendingToolCall) {
-          // Cancel pending tool call. If last call, focus editor
-          if (pendingToolCalls.length === 1) {
-            editor.mainEditor?.commands.focus();
-          }
-          void dispatch(
-            cancelToolCallThunk({
-              toolCallId: firstPendingToolCall.toolCallId,
-            }),
-          );
-          logToolUsage(firstPendingToolCall, false, true, ideMessenger);
-        }
       }
     };
 
@@ -209,13 +130,7 @@ export function LumpToolbar() {
     return () => {
       document.removeEventListener("keydown", handleToolCallKeyboardShortcuts);
     };
-  }, [
-    firstPendingToolCall,
-    pendingToolCalls,
-    editor,
-    hasRunningTerminalCommand,
-    runningTerminalCalls,
-  ]);
+  }, [firstPendingToolCall, hasRunningTerminalCommand, runningTerminalCalls]);
 
   switch (kind) {
     case "applying":
@@ -234,7 +149,7 @@ export function LumpToolbar() {
       );
     }
     case "streaming":
-      return <StreamingToolbar onStop={() => dispatch(cancelStream())} />;
+      return <StreamingToolbar onStop={handleStopAction} />;
     case "pending-tool-calls":
       return <PendingToolCallToolbar />;
     case "pending-apply":

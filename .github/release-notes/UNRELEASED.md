@@ -1,52 +1,9 @@
 # Unreleased
 
-Staging note for the next release. Fold it into that release's `<tag>.md` (the release job reads `.github/release-notes/<tag>.md`) and delete this file.
+Staging note for the next release. New entries go in `unreleased/<branch>.md` (see `unreleased/README.md`); this file keeps entries that were added before fragments. At release time, fold this file and every fragment into that release's `<tag>.md` (the release job reads `.github/release-notes/<tag>.md`; `node scripts/release-notes-fragments.mjs` prints them combined), then delete this file and the fragments.
 
-## Privacy: Continuous no longer contacts Continue-operated servers
-
-Earlier builds said they collect no telemetry, and the claim was not fully accurate. This change makes it accurate.
-
-- **The built-in web search is gone.** The `search_web` tool and the `@web` context provider used to post the query, with the version, the operating system, a machine id and a key embedded in the code, to a Google Cloud Run proxy run by the upstream Continue project. That proxy is no longer contacted and the key is removed. `search_web` and `@web` now exist only if you set `CONTINUOUS_WEB_SEARCH_URL` to a search endpoint of your own (SearXNG-compatible JSON; optional `CONTINUOUS_WEB_SEARCH_KEY`). See `docs/customize/web-search.mdx`.
-- **The docs crawler no longer has a remote path.** The `useLocalCrawling: false` setting that sent a site URL to the same proxy is ignored; sites are always fetched directly from the host you named.
-- **Terminal agent metrics are opt-in.** They used to start whenever any `OTEL_*` variable was set. They now also need `CONTINUOUS_OTEL=1`, and the service name is `continuous-cli`. The old `CONTINUE_METRICS_ENABLED` and `CONTINUE_CLI_ENABLE_TELEMETRY` switches are no longer read.
-- **A test now guards the claim.** `core/egress/egressAllowlist.vitest.ts` fails when a new hostname appears in source without an entry and a reason in `core/egress/egress-allowlist.json`.
-- What Continuous stores, sends and does not send is now written down in [PRIVACY.md](https://github.com/b1tninja/continuous/blob/main/PRIVACY.md).
-
-## Loop mode: it goes on when Plan edits and Questions are permissive
-
-- A loop no longer stops on a plan card or in the Questions panel when you chose not to be asked. At Plan edits Automatic, Permissive or IDGAF a re-plan (a repair, a replaced check, added or dropped to-dos) is accepted and the next round starts. Before, a re-plan that replaced a failed item's check always waited, even at IDGAF.
-- At Questions Automatic, Permissive or IDGAF a question the agent asks, and a decision in a plan, is answered by the system: the option labelled `(recommended)`, else the first, else "No one is available to answer; use your best judgment and state the assumption". The record says `system` and names the setting. At Manual and Cautious nothing changes.
-- The loop panel shows one non-blocking line for each, such as `Plan updated: 11 kept, 1 added, 1 dropped; check of item 1 replaced` and `Auto-answered: <question> -> <answer>`. The extension, `cn` and `cn serve` share one rule. See "What Plan edits and Questions do for a loop" in the Permissions page docs.
-
-## Questions at IDGAF: nothing asks
-
-- At Questions IDGAF no question waits for you any more, outside a loop too. `cn`'s AskQuestion (terminal UI, `-p`, `serve`), a plan's decisions made in Plan mode, held questions left over when you move a loop to IDGAF, an item over its limit under Suggest and an MCP server's elicitation are all answered by the system. A call that a loop would hold for approval is refused instead of held, and a call at an IDGAF-level area that still asked (a command that hides what it runs) is refused with its reason.
-- The answer is the option labelled `(recommended)`, else the plan's pick, else the first option, else "No one is available to answer; use your best judgment and state the assumption", recorded as `system` with `Questions: IDGAF` and shown as `Auto-answered: <question> -> <answer>`. Your own "you decide" list no longer applies at IDGAF. MCP elicitation takes the server's defaults, or is declined when a field has none or asks for a secret. Permissive, Automatic, Cautious and Manual are unchanged.
-
-## Hub assistants and the generated SDK client are removed
-
-- The generated hub/API SDK client (`packages/continue-sdk`) is deleted, together with the terminal agent's API client service and the `CONTINUE_API_BASE` setting. The code no longer names a Continue-operated host, and `core/egress/egress-allowlist.json` has no entry for one.
-- `--config owner/slug` (a hub assistant) now fails with "hub assistants are not supported; pass a config.yaml path". Pass a path to a `config.yaml`.
+## New
 
 ## Behaviour changes
 
-- The YOLO level is now called IDGAF; existing settings keep working. A saved `yolo` (settings, loops, `--policy yolo`) is read as `idgaf`, and nothing writes the old name.
-- Prompt cache, once: the first request after upgrading writes the prompt cache once because the prompt prefix changed. The changes are all in text sent to the model: the `multi_edit` / `MultiEdit` tool description is shorter (the same rules in about a quarter of the words), the terminal agent's git status in the environment block is capped at 40 files and 4,000 characters (the rest is counted in a "... and N more changed files" line, files listed by status and then path), and, with tool search on, the `search_tools` description now lists every deferrable tool and no longer changes after a search. Tool search is still off by default. In the terminal agent the tools a search activated are now read from the conversation, so a resumed session keeps the tools its history already called and a new session in the same process starts with none.
-
-## What the agent is told about your machine (2.18.0 train)
-
-- One renderer now writes what both the editor and the terminal agent tell the model about the machine and folder, from one snapshot read when a session starts and saved with it, so a resumed session sends the same bytes. The system message carries only the platform (no folder, no git answer); the terminal tool names the shell that really runs the command (and no folder); the folder, today's date (your local day, not UTC) and the git facts go in a fenced block in the first message, with your home folder shown as `~`. Your account name, the host name, your git identity and network addresses are never sent.
-- The editor's terminal tool no longer says "optimized for win32 and x64 and shell powershell.exe": it carries the same shell sentence as the terminal agent, and the shell is fixed for the session, so a change to `continuous.terminal.shell` takes effect in the next session. A remote window says the shell is not known there.
-- A session that runs past midnight, or is resumed on a later day, gets one "Today's date is now ..." notice on the newest message.
-- `environment.detail` (`minimal`, `standard`, `full`) in your config.yaml, `continuous.environment.detail` in VS Code and `--env-detail` in the terminal agent choose how much is sent; an assistant's config may only lower it.
-- `continuous doctor env` prints what is sent and why (`--json`, `--surface`, `--detail`), with no network call.
-- Prompt cache, once more: these change the tools and system text, so the first request after upgrading writes the cache once.
-
-## File edits at IDGAF now reach outside the workspace
-
-At File edits = IDGAF (the top level, also reached by `--auto`), the agent can create, edit and write files outside the workspace folder, in the editor, the terminal UI, headless `-p` and `serve`, with no prompt and no refusal. Before, a headless run refused such a write whatever the level, and the editor's exact edit tools treated an absolute path elsewhere as a file that does not exist.
-
-- Each such write is listed in the audit trail as allowed by the level, with the resolved absolute path, and the tool result says `Wrote outside the workspace: <path>`.
-- Lower levels are unchanged: Manual, Cautious and Automatic ask, Permissive holds it by the outside-paths protection.
-- Still binding at IDGAF: the locked policy files, a tool switched off, an organisation ceiling and the `floor:` rules you wrote. Secret-file name checks inside the file tools, and the webview's own write guard (used for plan files), are not changed.
-- Separate fix: an absolute path inside the workspace given to the new-file tool is now written where it says, not under a folder named after the drive.
+## Fixes

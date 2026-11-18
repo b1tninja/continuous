@@ -94,6 +94,11 @@ export const cacheBehaviorSchema = z.object({
   // after a pause that a 1-hour entry would have covered. Does not turn
   // caching on by itself.
   ttl: z.enum(["auto", "5m", "1h"]).optional(),
+  // Lifetime of a subagent run's cache entries (C85). Default "5m": a run's
+  // requests come seconds apart. "1h" and "auto" (5 minutes, then 1 hour from
+  // the run's fifth request) are the opt-in; "inherit" follows the chat's
+  // setting as before.
+  subagentTtl: z.enum(["5m", "1h", "auto", "inherit"]).optional(),
 });
 export type CacheBehavior = z.infer<typeof cacheBehaviorSchema>;
 
@@ -149,6 +154,23 @@ const autoCompactFields = {
 
 export const contextManagementSchema = z.object({
   ...autoCompactFields,
+  /**
+   * Planned compaction in the IDE: past 70% of the window (75% on a cloud
+   * provider) the compaction boundary is fixed and the summary of everything
+   * before it is prepared while the person is idle, so "Compact now" is
+   * instant. Defaults to on for a local server, off otherwise; `false` turns
+   * it off everywhere.
+   */
+  plannedCompaction: z.boolean().optional(),
+  /**
+   * Once the background summary is ready, read the compacted prompt on the
+   * server while the person is idle, so applying the compaction does not
+   * re-read it. Experimental: "off" (default) until the Strata live check,
+   * "local" on Strata and llama.cpp.
+   * "always" is reserved for cloud providers too, which are not pre-warmed
+   * yet; it acts as "local".
+   */
+  prewarm: z.enum(["off", "local", "always"]).optional(),
   /** Budget applied when this model runs as a sub-agent */
   subagent: z
     .object({
@@ -171,7 +193,7 @@ export const contextManagementSchema = z.object({
 });
 export type ContextManagement = z.infer<typeof contextManagementSchema>;
 
-const templateSchema = z.enum([
+export const CHAT_TEMPLATE_VALUES = [
   "llama2",
   "alpaca",
   "zephyr",
@@ -190,7 +212,8 @@ const templateSchema = z.enum([
   "granite",
   "llama3",
   "codestral",
-]);
+] as const;
+const templateSchema = z.enum(CHAT_TEMPLATE_VALUES);
 
 export const autocompleteOptionsSchema = z.object({
   disable: z.boolean().optional(),
@@ -278,6 +301,28 @@ export const toolDialectSchema = z.enum(TOOL_DIALECT_VALUES, {
 });
 export type ToolDialectSetting = z.infer<typeof toolDialectSchema>;
 
+const perMillionTokens = z
+  .number({ error: "A price is a number of US dollars per million tokens." })
+  .nonnegative({ error: "A price cannot be negative." });
+
+/**
+ * What this model costs, in US dollars per million tokens. Used when no price
+ * table knows the model (a local or unlisted model), and ahead of the tables
+ * when set: budgets (`--max-budget-usd`) and cost displays then use it. Zero
+ * is a real price (a model on your own hardware).
+ */
+export const modelPricingSchema = z.object({
+  input: perMillionTokens,
+  output: perMillionTokens,
+  /** Absent: cache reads are priced at the input rate */
+  cacheRead: perMillionTokens.optional(),
+  /** Absent: cache writes are priced at the input rate */
+  cacheWrite: perMillionTokens.optional(),
+  /** Only US dollars for now; written for clarity, never required */
+  currency: z.literal("USD", { error: "Prices are in USD." }).optional(),
+});
+export type ModelPricing = z.infer<typeof modelPricingSchema>;
+
 const baseModelFields = {
   name: z.string(),
   model: z.string(),
@@ -308,6 +353,7 @@ const baseModelFields = {
     .record(z.string(), z.union([z.string(), z.boolean(), z.number()]))
     .optional(),
   autocompleteOptions: autocompleteOptionsSchema.optional(),
+  pricing: modelPricingSchema.optional(),
   /**
    * Further accounts serving the same model, tried in order when the one
    * before fails (at most three routes in all). A model with no connection

@@ -187,9 +187,10 @@ describe("getFaviconBase64", () => {
     expectFetched(faviconUrl);
   });
 
-  it("should use default mime type if content-type header is missing", async () => {
-    const iconData = "icon data";
-    const arrayBuffer = new TextEncoder().encode(iconData).buffer;
+  it("should take the type from the bytes if content-type header is missing", async () => {
+    // An ICO header: reserved 0, type 1
+    const iconData = Buffer.from([0, 0, 1, 0, 1, 0, 16, 16]);
+    const arrayBuffer = new Uint8Array(iconData).buffer;
     const mockResponse = {
       ok: true,
       status: 200,

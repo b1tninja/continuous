@@ -35,9 +35,17 @@ export const VIEWS = {
     fixture: "attach-open",
     note: 'the "+" menu at the left of the prompt, open',
   },
-  "overflow-open": {
-    fixture: "overflow-open",
-    note: 'the "..." menu under the prompt, open',
+  "status-row": {
+    fixture: "status-row",
+    note: "the row under the prompt after a reply: usage, reasoning, prompt cache",
+  },
+  "usage-open": {
+    fixture: "usage-open",
+    note: "the usage breakdown, opened from the readout under the prompt",
+  },
+  "context-open": {
+    fixture: "context-open",
+    note: "what the context holds, opened from the context meter under the prompt",
   },
   "preset-open": {
     fixture: "preset-open",
@@ -46,6 +54,54 @@ export const VIEWS = {
   loop: {
     fixture: "loop",
     note: "Loop mode: the plan card, per-item budgets and loop controls",
+  },
+  "loop-running": {
+    fixture: "loop-running",
+    note: "Loop mode, running item 2: the status line with Now:, progress, round and budget",
+  },
+  "loop-questions": {
+    fixture: "loop-questions",
+    note: "Loop mode with three questions waiting: the Needs you tray shows one at a time",
+  },
+  "loop-replan": {
+    fixture: "loop-replan",
+    note: "Loop mode with a re-plan waiting: the Needs you tray holds Review diff, Keep planning and Accept plan",
+  },
+  "loop-failed": {
+    fixture: "loop-failed",
+    note: "Loop mode, a failed item being repaired: the red state",
+  },
+  "loop-finished": {
+    fixture: "loop-finished",
+    note: "Loop mode, every item done: the green state, Close",
+  },
+  "loop-stopped": {
+    fixture: "loop-stopped",
+    note: "Loop mode stopped by the person: Resume and Close",
+  },
+  "loop-settings-open": {
+    fixture: "loop-settings-open",
+    note: "Loop mode with the gear opened: strategy, Parallel and the note",
+  },
+  "loop-plan-tile": {
+    fixture: "loop-plan-tile",
+    note: "Loop mode: the plan card as a collapsed tile (title, file link, round line, one root row)",
+  },
+  "loop-plan-running": {
+    fixture: "loop-plan-running",
+    note: "Loop mode: the plan tree open while running: done fold, current item with live lines, upcoming rows, trace and auto-answer",
+  },
+  "loop-plan-waiting": {
+    fixture: "loop-plan-waiting",
+    note: "Loop mode: a re-plan waits to be accepted: dropped struck through, new to-do, kept folded; opens by itself",
+  },
+  "loop-plan-failed": {
+    fixture: "loop-plan-failed",
+    note: "Loop mode: an item failed and a repair runs: check output, fix-forward line; opens by itself",
+  },
+  "loop-plan-finished": {
+    fixture: "loop-plan-finished",
+    note: "Loop mode: finished, every to-do done folded into one row",
   },
   "loop-idgaf": {
     fixture: "loop-idgaf",
@@ -79,11 +135,15 @@ export const VIEWS = {
   "settings-help": { fixture: "settings-help", note: "Settings, Help tab" },
   "agents-running": {
     fixture: "agents-running",
-    note: "the agents tree with long names and unknown costs",
+    note: "the agents panel: Active and Done groups, long names, unknown costs",
   },
   "agents-ended": {
     fixture: "agents-ended",
-    note: "the agents tree after every agent ended, one interrupted",
+    note: "the agents panel after every agent ended (Done folded), one interrupted",
+  },
+  catalogue: {
+    fixture: "catalogue",
+    note: "OpenRouter provider setup with the one-time prompt to pull the model list",
   },
   "bedrock-ok": {
     fixture: "bedrock-ok",
@@ -156,6 +216,14 @@ export const VIEWS = {
   "settings-tools": {
     fixture: "settings-tools",
     note: "Settings, Tools tab, with Commands and secrets",
+  },
+  "drop-target": {
+    fixture: "drop-target",
+    note: "the chat input while a file is dragged over it: the drop target and the VS Code Shift hint",
+  },
+  "drop-refused": {
+    fixture: "drop-refused",
+    note: "the chat input after a drop of .env and a file outside the workspace: the refusal note",
   },
 };
 

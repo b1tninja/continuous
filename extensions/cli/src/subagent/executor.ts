@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 
 import type { ChatHistoryItem } from "core";
 import { costMarkOf, costSince } from "core/util/loopCost.js";
+import {
+  subagentStoreId,
+  webContentStore,
+} from "core/util/web/contentStore.js";
 
 import { emitAgent, ensureMainAgent, tokensOf } from "../agents/feed.js";
 import { getSubagentModel } from "../contextManagement.js";
@@ -14,10 +18,15 @@ import { fireSubagentStart, fireSubagentStop } from "../hooks/fireHook.js";
 import { usageSince } from "../loop/loopBudget.js";
 import { toolPermissionManager } from "../permissions/permissionManager.js";
 import { services } from "../services/index.js";
+import {
+  announceModelInUse,
+  describeModelInUse,
+  modelInUseOf,
+} from "../services/modelInUse.js";
 import { serviceContainer } from "../services/ServiceContainer.js";
 import type { ToolPermissionServiceState } from "../services/ToolPermissionService.js";
 import { ModelServiceState, SERVICE_NAMES } from "../services/types.js";
-import { getSessionUsage } from "../session.js";
+import { getCurrentSession, getSessionUsage } from "../session.js";
 import { streamChatResponse } from "../stream/streamChatResponse.js";
 import type { StreamCallbacks } from "../stream/streamChatResponse.types.js";
 import type { ToolCallPreview, ToolPermissionPrompt } from "../tools/types.js";
@@ -103,6 +112,15 @@ async function buildAgentSystemMessage(
   }
 
   return baseMessage;
+}
+
+/** The session the run was started from, or none (a run with no session). */
+function parentSessionId(): string {
+  try {
+    return getCurrentSession().sessionId;
+  } catch {
+    return "no-session";
+  }
 }
 
 function abortReason(signal: AbortSignal): string {
@@ -346,6 +364,13 @@ async function runSubAgent(
     }
     // The model's sub-agent context budget, if one is configured
     const model = getSubagentModel(subAgent.model);
+    // The subagent's own model and effort, in its output and the stream (M7)
+    const inUse = modelInUseOf(model, "subagent", {
+      use: "subagent",
+      agent: agentType,
+    });
+    transcript.notice(describeModelInUse(inUse));
+    announceModelInUse(inUse);
 
     // SubagentStart cannot block (Claude Code: exit 2 "shows stderr to user
     // only"); its additionalContext goes to the subagent before its prompt.
@@ -443,6 +468,9 @@ async function runSubAgent(
         : undefined,
     };
 
+    // The run's own pages in the web content store, gone when it ends: the
+    // parent gets the answer in text, never the run's store
+    const webSessionId = subagentStoreId(parentSessionId(), agentId);
     try {
       let continuations = 0;
       for (;;) {
@@ -457,7 +485,7 @@ async function runSubAgent(
           // the child history must not overwrite the parent session. The
           // requests are the subagent's use, not the parent turn's (a Loop
           // item's prompt and tail would otherwise reach it).
-          { persistSession: false, use: "subagent" },
+          { persistSession: false, use: "subagent", webSessionId },
         );
         if (signal.aborted) break;
 
@@ -507,6 +535,7 @@ async function runSubAgent(
         "The subagent stopped after a tool call without giving a final answer.",
       );
     } finally {
+      webContentStore.deleteSession(webSessionId);
       escapeEvents.removeListener("user-escape", escapeHandler);
       signal.removeEventListener("abort", onAbort);
       prompts?.rejectPending();

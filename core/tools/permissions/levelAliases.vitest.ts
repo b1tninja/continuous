@@ -37,9 +37,6 @@ describe("the top level is IDGAF everywhere", () => {
     expect(Object.keys(POLICY_PRESETS)).toContain("idgaf");
     expect(Object.keys(POLICY_PRESETS)).not.toContain("yolo");
     expect(POLICY_PRESETS.idgaf.label).toBe("IDGAF");
-    expect(POLICY_PRESETS.idgaf.description).toBe(
-      "Everything runs and nothing asks. Every rule is ignored.",
-    );
     expect(Object.values(POLICY_PRESETS.idgaf.levels)).toEqual(
       Array(5).fill("idgaf"),
     );

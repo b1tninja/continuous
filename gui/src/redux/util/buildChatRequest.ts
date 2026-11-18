@@ -23,12 +23,22 @@ import {
   getModeReasoningEffort,
   reasoningOptionsForEffort,
 } from "../../util/modeModels";
-import { selectActiveTools } from "../selectors/selectActiveTools";
+import {
+  functionFingerprint,
+  sameToolList,
+  thinkingCutAfterCompaction,
+  thinkingCutAfterToolChange,
+} from "core/tools/toolListHold";
+import {
+  heldToolList,
+  toolListKey,
+  type ToolListHoldStatus,
+} from "../../util/toolListHold";
 import { applyToolSearch } from "./applyToolSearch";
 import { selectModelUse } from "../selectors/selectModelUse";
 import { selectSelectedChatModel } from "../slices/configSlice";
 import type { RootState } from "../store";
-import { constructMessages } from "./constructMessages";
+import { constructMessages, summaryIndexOf } from "./constructMessages";
 import { getBaseSystemMessage } from "./getBaseSystemMessage";
 
 const NOTICE_SEPARATOR = "\n\n";
@@ -88,6 +98,19 @@ export interface ChatRequest {
   systemToolsFramework: SystemMessageToolCodeblocksFramework | undefined;
   /** How many user messages the request's history has (for the date notice). */
   userTurns: number;
+  /**
+   * The tool list before model overrides and tool search, with its context
+   * key: what the request records as sent (setSentToolList). `held` is true
+   * when a change to the list is waiting for the prompt cache to go cold;
+   * `pending.removed` are then withheld tools, refused if called (C88).
+   */
+  toolList: ToolListHoldStatus & { key: string };
+  /**
+   * On a model whose preserved thinking breaks when `tools[]` changes, the
+   * history index before which reasoning is not sent: set by the request
+   * that changes the list, kept for the later ones (thinkingCutAt).
+   */
+  thinkingCut: number | undefined;
 }
 
 /**
@@ -107,6 +130,8 @@ export interface ChatRequest {
 export function buildChatRequest(
   state: RootState,
   history = state.session.history,
+  /** For the prompt cache's age: whether a tool change still waits (C80) */
+  now: number = Date.now(),
 ): ChatRequest {
   const model = selectSelectedChatModel(state);
   if (!model) {
@@ -117,15 +142,32 @@ export function buildChatRequest(
   // the session (core/util/environmentSession.ts); absent until core answers.
   const environment = state.session.environment?.strings;
 
-  // Get tools and apply model-level overrides (disabled, description, etc.).
-  // The terminal tool names the shell the session's executor runs.
-  let activeTools = selectActiveTools(state);
+  // The tools the settings give, or while the prompt cache is warm the list
+  // the last request offered (core/tools/toolListHold.ts), then the
+  // model-level overrides (disabled, description, etc.). The terminal tool
+  // names the shell the session's executor runs.
+  const toolList = { ...heldToolList(state, now), key: toolListKey(state) };
+  let activeTools = toolList.tools;
   if (environment?.toolSentence) {
     activeTools = withTerminalToolSentence(
       activeTools,
       environment.toolSentence,
     );
   }
+  // A changed tool list invalidates the reasoning minted under the old one on
+  // models with preserved thinking's prefix check, and sending it back is a
+  // 400 (plans/research/mid-session-tool-changes.md 6.5): from this request
+  // on, the reasoning before the change is left out
+  const sent = state.session.sentToolList;
+  const thinkingCut = thinkingCutAfterToolChange({
+    modelId: model.model,
+    listChanged:
+      !!sent &&
+      sent.key === toolList.key &&
+      !sameToolList(sent.tools, toolList.tools, functionFingerprint),
+    historyLength: history.length,
+    previous: state.session.thinkingCutAt,
+  });
   if (model.toolOverrides?.length) {
     const { tools: overriddenTools, errors } = applyToolOverrides(
       activeTools,
@@ -255,6 +297,38 @@ export function buildChatRequest(
   const tail = use
     ? tailFor(state.config.config.modeModels, use, model.model)
     : undefined;
+  // After a compaction that kept later turns, their reasoning was minted with
+  // the summarised turns in front of it: on a model with the prefix check it
+  // is not sent again either (core/tools/toolListHold.ts)
+  const summaryAt = summaryIndexOf(history);
+  const compactionCut = thinkingCutAfterCompaction({
+    modelId: model.model,
+    summaryIndex: summaryAt,
+    historyLengthAtCompaction:
+      summaryAt >= 0
+        ? history[summaryAt].conversationSummaryHistoryLength
+        : undefined,
+  });
+  const reasoningCut =
+    thinkingCut === undefined
+      ? compactionCut
+      : Math.max(thinkingCut, compactionCut ?? 0);
+  // Each sent item's index in the history, for the applied rules below. The
+  // item that carries the summary always stays: without it the whole
+  // history would be sent.
+  const sentIndex = withoutMessageIds
+    .map((_, i) => i + contextStart)
+    .filter(
+      (at) =>
+        reasoningCut === undefined ||
+        history[at].message.role !== "thinking" ||
+        at >= reasoningCut ||
+        at === summaryAt,
+    );
+  const sentItems =
+    sentIndex.length === withoutMessageIds.length
+      ? withoutMessageIds
+      : sentIndex.map((at) => withoutMessageIds[at - contextStart]);
   // The first-message block goes before the first user message's text, the
   // frozen bytes of the session's start, so every request extends the last.
   // A date notice (ENV32) rides at the end of the user message it was first
@@ -263,7 +337,7 @@ export function buildChatRequest(
   const withEnvironment =
     environment?.firstMessageBlock || notices.length
       ? placeEnvironment(
-          withoutMessageIds,
+          sentItems,
           (item) => item.message.role === "user",
           (item, add) => ({
             ...item,
@@ -278,8 +352,8 @@ export function buildChatRequest(
           environment?.firstMessageBlock,
           notices,
         )
-      : withoutMessageIds;
-  const userTurns = withoutMessageIds.filter(
+      : sentItems;
+  const userTurns = sentItems.filter(
     (item) => item.message.role === "user",
   ).length;
 
@@ -309,7 +383,9 @@ export function buildChatRequest(
   );
 
   const appliedRuleIndex =
-    runRuleIndex >= 0 ? runRuleIndex + contextStart : runRuleIndex;
+    runRuleIndex >= 0
+      ? (sentIndex[runRuleIndex] ?? runRuleIndex + contextStart)
+      : runRuleIndex;
 
   const taskListMessage: ChatMessage | undefined = loopBlock
     ? undefined
@@ -327,5 +403,7 @@ export function buildChatRequest(
     appliedRuleIndex,
     systemToolsFramework,
     userTurns,
+    toolList,
+    thinkingCut,
   };
 }

@@ -50,6 +50,7 @@ import {
   prepareLoopTurn,
   requestLoopTurnEnd,
   resetLoopMemory,
+  resumeStoppedLoop,
   runLoopItemAgain,
   setRunningLoopBudget,
   skipLoopItem,
@@ -567,6 +568,28 @@ describe("Loop mode's driver in the CLI", () => {
     );
   });
 
+  it("a resumed loop follows this process's levels, not the ones saved with it", async () => {
+    await planOf("One");
+    const plan = getSessionTaskPlan()!;
+    const now = new Date("2026-11-07T10:00:00Z");
+    const saved = {
+      ...createLoop(plan, { now, sessionTokens: 0, autonomy: "auto" }),
+      policy: { plan: "cautious", questions: "cautious" },
+      status: "stopped" as const,
+    } as LoopState;
+    commitLoop(saved);
+    setPolicyLevels({
+      ...getPolicyLevels(),
+      plan: "idgaf",
+      questions: "idgaf",
+    });
+    expect(resumeStoppedLoop(now)).toBe(true);
+    expect(getSessionLoop()?.policy).toMatchObject({
+      plan: "idgaf",
+      questions: "idgaf",
+    });
+  });
+
   it("an unattended loop wakes when its wait runs out", async () => {
     await planOf("One");
     const plan = getSessionTaskPlan()!;
@@ -758,9 +781,9 @@ describe("Loop mode's driver in the CLI", () => {
       services.toolPermissions.switchMode("auto");
       runItem("done");
       await runCheck("1");
-      // Windows PowerShell's -Command reports 1 for any failing native
-      // command, so the code the check chose (3) survives only on POSIX.
-      const code = process.platform === "win32" ? 1 : 3;
+      // The code the check chose, on every platform: under PowerShell the
+      // check runs through withRealExitCode (core/util/shell.ts).
+      const code = 3;
       expect(loopNow().items[0]).toMatchObject({
         status: "pending",
         check: { status: "failed", exitCode: code },

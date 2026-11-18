@@ -1,57 +1,104 @@
-name: 'Setup Component'
-description: 'Cache and install dependencies for a specific component'
+name: "Setup Component"
+description: "Cache and install dependencies for a specific component"
 inputs:
   component:
-    description: 'Component name (core, gui, vscode, binary)'
+    description: "Component name (core, gui, vscode, binary)"
     required: true
   include-packages:
-    description: 'Whether to include packages cache (default: true)'
+    description: "Unused; kept so existing callers keep working. The built packages come from the setup-packages action, which every caller runs first."
     required: false
-    default: 'true'
+    default: "true"
   include-root:
-    description: 'Whether to include root cache (default: false)'
-    required: false  
-    default: 'false'
+    description: "Whether to include root cache (default: false)"
+    required: false
+    default: "false"
+  cache:
+    description: "Use caches. Release builds pass 'false' so that nothing restored from a cache reaches a shipped artefact."
+    required: false
+    default: "true"
 
+# Cache policy (docs/ci-caching.md). node_modules is saved right after a clean `npm ci`, before
+# anything mutates it, so a restored copy is what `npm ci` would produce; the key carries the OS,
+# the node version and the lockfile hash. Other jobs (e2e, jetbrains, the extension build) restore
+# these keys without saving. The npm download cache is saved from main only: it is hundreds of
+# megabytes and every pull request ref would otherwise keep its own copy.
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - uses: actions/setup-node@v7
+      id: node
       with:
         node-version-file: ".nvmrc"
-    - uses: actions/cache@v6
-      with:
-        path: ~/.npm
-        key: ${{ runner.os }}-npm-cache-${{ inputs.component }}-${{ hashFiles(inputs.component == 'vscode' && 'extensions/vscode/package-lock.json' || format('{0}/package-lock.json', inputs.component)) }}
 
-    - uses: actions/cache@v6
-      if: inputs.include-packages == 'true'
-      with:
-        path: |
-          packages/*/node_modules
-        key: ${{ runner.os }}-packages-node-modules-${{ hashFiles('packages/*/package-lock.json') }}
+    - name: Locate the component
+      id: loc
+      shell: bash
+      run: echo "dir=${{ inputs.component == 'vscode' && 'extensions/vscode' || inputs.component }}" >> "$GITHUB_OUTPUT"
 
-    - uses: actions/cache@v6
-      if: inputs.include-root == 'true'
+    - name: Restore root node_modules
       id: root-cache
+      if: inputs.include-root == 'true' && inputs.cache == 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: node_modules
-        key: ${{ runner.os }}-root-node-modules-${{ hashFiles('package-lock.json') }}
+        key: ${{ runner.os }}-root-node-modules-node${{ steps.node.outputs.node-version }}-${{ hashFiles('package-lock.json') }}
+
+    - name: Restore component node_modules
+      id: component-cache
+      if: inputs.cache == 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.loc.outputs.dir }}/node_modules
+        key: ${{ runner.os }}-${{ inputs.component }}-node-modules-node${{ steps.node.outputs.node-version }}-${{ hashFiles(format('{0}/package-lock.json', steps.loc.outputs.dir)) }}
+
+    # Only needed when an install has to run.
+    - name: Restore npm download cache
+      id: npm-cache
+      if: inputs.cache == 'true' && runner.os != 'Windows' && (steps.component-cache.outputs.cache-hit != 'true' || (inputs.include-root == 'true' && steps.root-cache.outputs.cache-hit != 'true'))
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-npm-cache-${{ inputs.component }}-${{ hashFiles(format('{0}/package-lock.json', steps.loc.outputs.dir)) }}
+        restore-keys: |
+          ${{ runner.os }}-npm-cache-${{ inputs.component }}-
 
     - name: Install root dependencies
       if: inputs.include-root == 'true' && steps.root-cache.outputs.cache-hit != 'true'
       shell: bash
       run: npm ci
 
-    - uses: actions/cache@v6
-      id: component-cache
-      with:
-        path: ${{ inputs.component == 'vscode' && 'extensions/vscode/node_modules' || format('{0}/node_modules', inputs.component) }}
-        key: ${{ runner.os }}-${{ inputs.component }}-node-modules-${{ hashFiles(inputs.component == 'vscode' && 'extensions/vscode/package-lock.json' || format('{0}/package-lock.json', inputs.component)) }}
-
     - name: Install component dependencies
       if: steps.component-cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
-        cd ${{ inputs.component == 'vscode' && 'extensions/vscode' || inputs.component }}
+        cd ${{ steps.loc.outputs.dir }}
         npm ci
+
+    - name: Save root node_modules
+      if: inputs.include-root == 'true' && inputs.cache == 'true' && steps.root-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: node_modules
+        key: ${{ steps.root-cache.outputs.cache-primary-key }}
+
+    - name: Save component node_modules
+      if: inputs.cache == 'true' && steps.component-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.loc.outputs.dir }}/node_modules
+        key: ${{ steps.component-cache.outputs.cache-primary-key }}
+
+    - name: Save npm download cache
+      if: inputs.cache == 'true' && steps.npm-cache.outcome == 'success' && steps.npm-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.npm
+        key: ${{ steps.npm-cache.outputs.cache-primary-key }}
+
+    - uses: ./.github/actions/cache-report
+      if: always()
+      with:
+        entries: |
+          ${{ inputs.component }}-node-modules|${{ steps.component-cache.outcome }}|${{ steps.component-cache.outputs.cache-hit }}|${{ steps.component-cache.outputs.cache-matched-key }}
+          root-node-modules|${{ steps.root-cache.outcome }}|${{ steps.root-cache.outputs.cache-hit }}|${{ steps.root-cache.outputs.cache-matched-key }}
+          npm-${{ inputs.component }}|${{ steps.npm-cache.outcome }}|${{ steps.npm-cache.outputs.cache-hit }}|${{ steps.npm-cache.outputs.cache-matched-key }}

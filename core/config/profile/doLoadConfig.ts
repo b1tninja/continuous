@@ -1,4 +1,5 @@
 import fs from "fs";
+import path from "path";
 
 import {
   AssistantUnrolled,
@@ -19,23 +20,37 @@ import {
 import { stringifyMcpPrompt } from "../../commands/slash/mcpSlashCommand";
 import { convertRuleBlockToSlashCommand } from "../../commands/slash/ruleBlockSlashCommand";
 import { MCPManagerSingleton } from "../../context/mcp/MCPManagerSingleton";
+import {
+  inlineMcpServerNames,
+  mcpToolIsReadOnly,
+  type McpTrustContext,
+} from "../../context/mcp/mcpTrust";
 import MCPContextProvider from "../../context/providers/MCPContextProvider";
 import { initSlashCommand } from "../../promptFiles/initPrompt";
 import { getConfigDependentToolDefinitions } from "../../tools";
 import { encodeMCPToolUri } from "../../tools/callTool";
-import { getMCPToolName } from "../../tools/mcpToolName";
+import { assignMcpToolNames, getMCPToolName } from "../../tools/mcpToolName";
+import { readPolicyFile } from "../../tools/permissions/settingsFile";
 import { GlobalContext } from "../../util/GlobalContext";
-import { getConfigJsonPath, getConfigYamlPath } from "../../util/paths";
+import {
+  getConfigJsonPath,
+  getConfigYamlPath,
+  getContinueGlobalPath,
+} from "../../util/paths";
 import { localPathOrUriToPath } from "../../util/pathToUri";
 import { IdeInfoService } from "../../util/IdeInfoService";
+import { configRetirementWarnings } from "../../util/retirementStartup";
 import { TTS } from "../../util/tts";
 import { getWorkspaceContinueRuleDotFiles } from "../getWorkspaceContinueRuleDotFiles";
 import { loadContinueConfigFromJson } from "../load";
+import { fileIsInsideDir } from "../projectTrust";
 import { CodebaseRulesCache } from "../markdown/loadCodebaseRules";
 import { loadMarkdownRules } from "../markdown/loadMarkdownRules";
 import { migrateJsonSharedConfig } from "../migrateSharedConfig";
 import { rectifySelectedModelsFromGlobalContext } from "../selectedModels";
 import { loadContinueConfigFromYaml } from "../yaml/loadYaml";
+import { withholdWebTools } from "../../tools/permissions/webPolicy";
+import { getWebConfig } from "../../util/webConfig";
 
 async function loadRules(ide: IDE) {
   const rules: RuleWithSource[] = [];
@@ -62,17 +77,47 @@ async function loadRules(ide: IDE) {
 }
 
 /**
- * Whether to believe an MCP tool's `readOnlyHint`. The MCP spec says to treat
- * annotations as untrusted unless the server is, and a server configured
- * inside the open repository came with the repository.
+ * The servers the person vouches for (see `mcpServerIsTrusted`): their own
+ * permissions.yaml and config.yaml, never a folder or a hub assistant.
  */
-export function mcpToolIsReadOnly(
-  tool: { annotations?: { readOnlyHint?: boolean } },
-  sourceFile: string | undefined,
+function mcpTrustContext(
   workspaceDirs: string[],
-): boolean {
-  if (tool.annotations?.readOnlyHint !== true) return false;
-  return !workspaceDirs.some((dir) => sourceFile?.startsWith(dir));
+  packageIdentifier: PackageIdentifier,
+): McpTrustContext {
+  const globalDir = getContinueGlobalPath();
+  let trustedServers: string[] = [];
+  try {
+    trustedServers = Object.keys(
+      readPolicyFile(path.join(globalDir, "permissions.yaml")).settings
+        .mcpServers ?? {},
+    );
+  } catch {
+    // no readable policy file: nothing is listed
+  }
+  let userConfigServers: Set<string> | undefined;
+  try {
+    if (
+      packageIdentifier.uriType === "file" &&
+      fileIsInsideDir(packageIdentifier.fileUri, globalDir)
+    ) {
+      userConfigServers = inlineMcpServerNames(
+        packageIdentifier.content ??
+          fs.readFileSync(
+            localPathOrUriToPath(packageIdentifier.fileUri),
+            "utf8",
+          ),
+      );
+    }
+  } catch {
+    // an unreadable config vouches for nothing
+  }
+  return {
+    workspaceDirs,
+    trustedServers,
+    userConfigServers,
+    globalDir,
+    isInside: (file, dir) => file.startsWith(dir) || fileIsInsideDir(file, dir),
+  };
 }
 
 export default async function doLoadConfig(options: {
@@ -205,6 +250,21 @@ export default async function doLoadConfig(options: {
   // Rectify model selections for each role
   newConfig = rectifySelectedModelsFromGlobalContext(newConfig, profileId);
 
+  // Config check: a configured model that is deprecated, retired or retiring
+  // soon warns once per notice (not on every load), from the checked-in
+  // table and the lifecycle the provider's own list last returned.
+  for (const message of configRetirementWarnings(
+    Object.values(newConfig.modelsByRole ?? {})
+      .flat()
+      .map((llm) => ({
+        provider: llm?.providerName,
+        model: llm?.model,
+        title: llm?.title,
+      })),
+  )) {
+    void ide.showToast("warning", message);
+  }
+
   // Add things from MCP servers
   const mcpManager = MCPManagerSingleton.getInstance();
   const mcpServerStatuses = mcpManager.getStatuses();
@@ -215,6 +275,28 @@ export default async function doLoadConfig(options: {
   });
   newConfig.mcpServerStatuses = serializableStatuses;
 
+  const workspaceDirs = mcpServerStatuses.some((s) => s.status === "connected")
+    ? await ide.getWorkspaceDirs()
+    : [];
+  const trustContext = mcpTrustContext(workspaceDirs, packageIdentifier);
+
+  // One model-facing name per tool, never the same for two (see mcpToolName.ts)
+  const connectedTools = mcpServerStatuses
+    .filter((server) => server.status === "connected")
+    .flatMap((server) =>
+      server.tools.map((tool) => ({
+        key: JSON.stringify([server.id, tool.name]),
+        serverName: server.name,
+        toolName: tool.name,
+      })),
+    );
+  const mcpToolNames = new Map(
+    assignMcpToolNames(connectedTools).map((name, i) => [
+      connectedTools[i].key,
+      name,
+    ]),
+  );
+
   for (const server of mcpServerStatuses) {
     server.errors.forEach((error) => {
       // MCP errors will also show as config loading errors
@@ -224,34 +306,47 @@ export default async function doLoadConfig(options: {
       });
     });
     if (server.status === "connected") {
-      const workspaceDirs = await ide.getWorkspaceDirs();
       const connection = mcpManager.getConnection(server.id);
-      const serverTools: Tool[] = server.tools.map((tool) => ({
-        displayTitle: server.name + " " + tool.name,
-        function: {
-          description: tool.description,
-          name: getMCPToolName(server, tool),
-          parameters: tool.inputSchema,
-        },
-        faviconUrl: server.faviconUrl,
-        // A server's word that the tool only fetches context: it runs without
-        // asking, in Plan mode too. Not from a server a repository brought.
-        readonly: mcpToolIsReadOnly(tool, server.sourceFile, workspaceDirs),
-        ...(mcpToolIsReadOnly(tool, server.sourceFile, workspaceDirs) && {
-          defaultToolPolicy: "allowedWithoutPermission" as const,
-        }),
-        type: "function" as const,
-        uri: encodeMCPToolUri(server.id, tool.name),
-        group: server.name,
-        originalFunctionName: tool.name,
-        mcpMeta: tool._meta,
-        ...(workspaceDirs.some((dir) => server.sourceFile?.startsWith(dir)) && {
-          mcpFromWorkspace: true,
-        }),
-        ...(connection?.changedTools.get(tool.name) && {
-          mcpDefinitionChange: connection.changedTools.get(tool.name),
-        }),
-      }));
+      const fromWorkspace = workspaceDirs.some((dir) =>
+        server.sourceFile?.startsWith(dir),
+      );
+      const serverTools: Tool[] = server.tools.map((tool) => {
+        const readOnly = mcpToolIsReadOnly(tool, server, trustContext);
+        return {
+          displayTitle: server.name + " " + tool.name,
+          function: {
+            description: tool.description,
+            name:
+              mcpToolNames.get(JSON.stringify([server.id, tool.name])) ??
+              getMCPToolName(server, tool),
+            parameters: tool.inputSchema,
+          },
+          faviconUrl: server.faviconUrl,
+          // A server's word that the tool only fetches context: it runs without
+          // asking, in Plan mode too. Not from a server a repository brought.
+          readonly: readOnly,
+          ...(readOnly && {
+            defaultToolPolicy: "allowedWithoutPermission" as const,
+          }),
+          type: "function" as const,
+          uri: encodeMCPToolUri(server.id, tool.name),
+          group: server.name,
+          originalFunctionName: tool.name,
+          mcpMeta: tool._meta,
+          ...(fromWorkspace
+            ? { mcpFromWorkspace: true }
+            : trustContext.trustedServers?.includes(server.name)
+              ? { mcpServerTrusted: true }
+              : {}),
+          ...(connection?.changedTools.get(tool.name) && {
+            mcpDefinitionChange: connection.changedTools.get(tool.name),
+          }),
+          // Not offered until the person approves it (TR4, roleTools.ts)
+          ...(connection?.pendingTools.get(tool.name) && {
+            mcpPendingApproval: connection.pendingTools.get(tool.name),
+          }),
+        };
+      });
       newConfig.tools.push(...serverTools);
 
       // Fetch MCP prompt content during config load
@@ -325,6 +420,11 @@ export default async function doLoadConfig(options: {
       ide,
       toolSearch: newConfig.experimental?.toolSearch,
     })),
+  );
+  // web.enabled: false from any config turns every agent web tool off (WB45)
+  newConfig.tools = withholdWebTools(
+    newConfig.tools,
+    getWebConfig().enabled === false,
   );
 
   // Detect duplicate tool names

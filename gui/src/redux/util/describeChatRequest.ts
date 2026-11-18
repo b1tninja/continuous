@@ -18,7 +18,7 @@ import { selectModelUse } from "../selectors/selectModelUse";
 import type { RootState } from "../store";
 import { type ChatRequest, buildChatRequest } from "./buildChatRequest";
 import { getBaseSystemMessage } from "./getBaseSystemMessage";
-import { SUMMARY_MARKER } from "./constructMessages";
+import { SUMMARY_MESSAGE_PREFIX } from "core/util/summaryMessage";
 
 /**
  * Describes, without changing anything, the segments the IDE's chat request
@@ -175,32 +175,44 @@ function systemSegments(
       rest = rest.slice(block.length);
     }
   }
-  const summaryAt = rest.lastIndexOf(SUMMARY_MARKER);
-  const rulesText = summaryAt >= 0 ? rest.slice(0, summaryAt) : rest;
-  out.push(...ruleSegments(request, state, rulesText));
-  if (summaryAt >= 0) {
-    out.push(
-      makeSegment({
-        id: "summary.compaction",
-        source: "summary",
-        stability: "turn",
-        region: "system",
-        text: rest.slice(summaryAt),
-        exposedTo: ["summary-in-system"],
-      }),
-    );
-  }
+  out.push(...ruleSegments(request, state, rest));
   return out;
+}
+
+/** The message that carries a compaction summary: the first after the system message. */
+function summaryMessageOf(request: ChatRequest): ChatMessage | undefined {
+  const first = request.messages.find((m) => m.role !== "system");
+  return first?.role === "user" &&
+    typeof first.content === "string" &&
+    first.content.startsWith(SUMMARY_MESSAGE_PREFIX)
+    ? first
+    : undefined;
 }
 
 function conversationSegments(
   request: ChatRequest,
   state: RootState,
 ): PromptSegment[] {
+  const summary = summaryMessageOf(request);
   const conversation: ChatMessage[] = request.messages.filter(
-    (m) => m.role !== "system",
+    (m) => m.role !== "system" && m !== summary,
   );
-  const out: PromptSegment[] = [
+  const out: PromptSegment[] = [];
+  // After a compaction the summary is the first user message (C104): it
+  // changes only at the next compaction, and the system message before it
+  // does not change at all
+  if (summary) {
+    out.push(
+      makeSegment({
+        id: "summary.compaction",
+        source: "summary",
+        stability: "session",
+        region: "first-user",
+        text: renderChatMessage(summary),
+      }),
+    );
+  }
+  out.push(
     makeSegment({
       id: "history",
       source: "history",
@@ -208,7 +220,7 @@ function conversationSegments(
       region: "history",
       text: JSON.stringify(conversation),
     }),
-  ];
+  );
   const use = selectModelUse(state);
   const tail = use
     ? tailFor(state.config.config.modeModels, use, request.model.model)

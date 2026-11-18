@@ -7,7 +7,8 @@ import { TERMINAL_ENV_NOTICE } from "../../util/terminalEnvironment";
 import { BuiltInToolNames } from "../builtIn";
 
 const RUN_COMMAND_NOTES = `The shell is not stateful and will not remember any previous commands.\
-      When a command is run in the background ALWAYS suggest using shell commands to stop it; NEVER suggest using Ctrl+C.\
+      When a command is run in the background, end it with stop_command, or suggest shell commands to stop it; NEVER suggest using Ctrl+C.\
+      Output longer than about 30,000 characters is cut to its start and end; the full output is kept, and read_command_output reads more of it (the end, or the lines matching a pattern). A command that floods output or prints the same lines over and over is stopped. For a long log, filter it yourself (| tail -n 50, or | Select-Object -Last 50 on Windows).\
       When suggesting subsequent shell commands ALWAYS format them in shell command blocks.\
       Do NOT perform actions requiring special/admin privileges.\
       IMPORTANT: To edit files, use Edit/MultiEdit tools instead of bash commands (sed, awk, etc). A command that writes a file (redirection, Set-Content, node -e or python -c calling a write) counts as a file edit: use the edit tools for it, and if an edit was refused, the command is refused too.\

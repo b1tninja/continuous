@@ -393,12 +393,18 @@ export function setWaveAbort(abort: (() => void) | undefined): void {
 export function resumeStoppedLoop(now = new Date()): boolean {
   const loop = getSessionLoop();
   if (!loop || loop.status !== "stopped") return false;
+  // The policy saved with the session is the one of the process that saved
+  // it: the loop goes on at this process's levels (`--policy idgaf` now means
+  // IDGAF, and a saved IDGAF is not carried into a run without it)
   commitLoop(
-    resumeLoop(loop, {
-      now,
-      sessionTokens: sessionTokens(),
-      costMark: sessionCostMark(),
-    }),
+    setLoopPolicy(
+      resumeLoop(loop, {
+        now,
+        sessionTokens: sessionTokens(),
+        costMark: sessionCostMark(),
+      }),
+      cliLoopPolicy(services.toolPermissions.getCurrentMode()),
+    ),
   );
   return true;
 }

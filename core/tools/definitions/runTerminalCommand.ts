@@ -1,15 +1,19 @@
-import { renderEnvironment } from "../../util/environmentPrompt";
-import { baseSnapshot } from "../../util/environmentSnapshot";
-import { Tool } from "../..";
-import { BUILT_IN_GROUP_NAME, BuiltInToolNames } from "../builtIn";
-import {
-  terminalToolDescription,
-  terminalToolSystemPrefix,
-} from "./terminalToolText";
 import {
   evaluateTerminalCommandSecurity,
   ToolPolicy,
 } from "@continuedev/terminal-security";
+import os from "os";
+
+import { Tool } from "../..";
+import { renderEnvironment } from "../../util/environmentPrompt";
+import { baseSnapshot } from "../../util/environmentSnapshot";
+import { resolveShell } from "../../util/shell";
+import { BUILT_IN_GROUP_NAME, BuiltInToolNames } from "../builtIn";
+import {
+  terminalToolDescription,
+  terminalToolSystemPrefix,
+  withTerminalToolSentence,
+} from "./terminalToolText";
 
 /**
  * The shell sentence of the core process's own machine, for a request built
@@ -28,9 +32,26 @@ function processShellSentence(): string {
   }
 }
 
+/**
+ * The host's shell, as the executor starts it (resolveShell), so the sentence
+ * and the program that runs the command cannot disagree: they did on macOS
+ * with no `$SHELL`, where this said /bin/zsh and the command ran in /bin/bash.
+ * A WSL or container preference is left out on purpose: the text stays what it
+ * was for them.
+ */
+export function getPreferredShell(
+  opts: { platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv } = {},
+): string {
+  return resolveShell({
+    platform: opts.platform ?? os.platform(),
+    env: opts.env ?? process.env,
+    terminalShell: "default",
+  }).executable;
+}
+
 const PROCESS_SENTENCE = processShellSentence();
 
-export { withTerminalToolSentence } from "./terminalToolText";
+export { withTerminalToolSentence };
 
 export const runTerminalCommandTool: Tool = {
   type: "function",

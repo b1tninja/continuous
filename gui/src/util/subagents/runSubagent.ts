@@ -19,23 +19,33 @@ import { resolveSubagentModel } from "core/subagents/model";
 import type { AuditAgent } from "core/tools/permissions/audit/record";
 import { subagentAuditAgent } from "core/tools/permissions/audit/identity";
 import { modeModelFor } from "core/util/modelUse";
+import { subagentStoreId } from "core/util/web/contentStoreIds";
 import {
   SubagentRunStatus,
   SubagentToolCallSummary,
   summarizeToolArgs,
 } from "core/subagents/result";
+import { sessionMessageText } from "core/subagents/messages";
 import { resolveSubagentTools } from "core/subagents/tools";
 import { applyToolOverrides } from "core/tools/applyToolOverrides";
 import { BuiltInToolNames } from "core/tools/builtIn";
 import { withTerminalToolSentence } from "core/tools/definitions/terminalToolText";
 import { withLeadingText } from "core/util/environmentMessages";
-import { flagToolOutput } from "core/tools/permissions/injection";
+import {
+  flagToolOutput,
+  stripsHiddenCharacters,
+} from "core/tools/permissions/injection";
 import { addSystemMessageToolsToSystemMessage } from "core/tools/systemMessageTools/buildToolsSystemMessage";
 import { interceptSystemToolCalls } from "core/tools/systemMessageTools/interceptSystemToolCalls";
 import { SystemMessageToolCodeblocksFramework } from "core/tools/systemMessageTools/toolCodeblocks";
 import { ContinueError, ContinueErrorReason } from "core/util/errors";
 import { renderChatMessage } from "core/util/messageContent";
 import { selectCacheSetting } from "../../redux/selectors/selectCacheSetting";
+import {
+  nextSubagentAutoTtl,
+  subagentFirstCacheTtl,
+  subagentTtlPolicy,
+} from "./subagentCacheTtl";
 import { selectActiveTools } from "../../redux/selectors/selectActiveTools";
 import { selectApprovalSettings } from "../../redux/selectors/selectAutoApproval";
 import { allowOutsideWorkspaceOf } from "../outsideEdits";
@@ -64,18 +74,26 @@ import type {
 import {
   INITIAL_PROMPT_CACHE_STATE,
   modelSupportsPromptCacheControl,
+  type PromptCacheSessionState,
   promptCacheStatus,
   resolvePromptCache,
 } from "../promptCache";
 import { splitPromptProgress } from "../promptProgress";
 import { subagentResultItem } from "./interrupt";
 import {
+  answerSessionTool,
+  sessionToolsFor,
+  subagentBatchOf,
+} from "./sessionTools";
+import {
   registerSubagentRun,
   STOPPED_BY_USER,
   subagentPrefixGate,
   subagentServerSlots,
   subagentSlots,
+  takeInbox,
   waitForSubagentApproval,
+  type SubagentInboxMessage,
 } from "./registry";
 
 const CANCELLED_BY_PARENT = "The parent conversation was stopped";
@@ -135,6 +153,9 @@ export function buildSubagentSystemMessage(
   const preamble = [
     `You are "${definition.name}", a subagent. Another agent gave you one task; it sees only your final message, not your tool calls or their output.`,
     "Work on the task with the tools you have. You cannot ask the person questions, and you cannot start subagents.",
+    // Every run carries this sentence, whether or not a message comes, so
+    // sibling runs keep one system prompt and one cached prefix
+    'The person may send you messages, which arrive as user messages in <message from="person"> tags and never in tool output; follow them as you would the task.',
     "When you are done, reply with a self-contained report as your final message: the answer first, then the evidence (file paths and line numbers), then anything you could not finish.",
     workspaceDirs.length && !hasEnvironment
       ? `Workspace folders: ${workspaceDirs.join(", ")}`
@@ -164,6 +185,30 @@ function assistantTexts(history: ChatHistoryItem[]): string[] {
     .filter((item) => item.message.role === "assistant")
     .map((item) => renderChatMessage(item.message).trim())
     .filter(Boolean);
+}
+
+/**
+ * Messages as the subagent reads them: one user message, each in its own tag
+ * so it is not mistaken for the parent's task, and one from another agent
+ * labelled as not from the person (core/subagents/messages.ts).
+ */
+export function personMessageText(
+  messages: readonly SubagentInboxMessage[],
+): string {
+  return sessionMessageText(messages);
+}
+
+/** How a message is kept in the run's record. */
+function recordOf(
+  m: SubagentInboxMessage,
+  delivered: boolean,
+): NonNullable<SubagentRunState["messages"]>[number] {
+  return {
+    text: m.text,
+    at: m.at,
+    delivered,
+    ...(m.from?.kind === "agent" ? { from: m.from.name } : {}),
+  };
 }
 
 function lastToolCalls(local: LocalSession): ToolCallState[] {
@@ -251,6 +296,11 @@ export interface SubagentDriveInput {
   completionOptions: LLMFullCompletionOptions;
   /** Prompt caching is on: the first request waits its turn at the prefix gate */
   cachingOn: boolean;
+  /**
+   * `cacheBehavior.subagentTtl: auto`: each request's lifetime follows the
+   * Auto policy on this run's own requests (set only with caching on)
+   */
+  autoCacheTtl?: boolean;
   maxTurns: number;
   /** The run's live state: the parent's card, or a Loop worker's inbox row */
   onUpdate: (patch: Partial<SubagentRunState>) => void;
@@ -267,10 +317,26 @@ export interface SubagentDriveInput {
    * call to core as usual.
    */
   handleCall?: (call: ToolCallState) => Promise<HandledCall | undefined>;
+  /**
+   * Calls the gui answers itself, after the parent's policies allowed them
+   * (asked the person, at Careful): list_sessions and send_message. Undefined
+   * for a tool sends the call to core.
+   */
+  localCall?: (call: ToolCallState) => Promise<ContextItem[] | undefined>;
   /** Folders (URIs) the tool calls run in: a worker's worktree */
   workspaceDirs?: string[];
   /** Who the audit trail names for this run's calls, under the parent's session */
   audit?: { sessionId: string; agent: AuditAgent };
+  /**
+   * The run's own id in the web content store (`subagentStoreId`): its
+   * fetched pages are its own, never its parent's. Undefined: none.
+   */
+  webSessionId?: string;
+  /**
+   * The run's message queue in the registry (the parent's tool call id).
+   * Undefined for a run nobody messages (a Loop worker).
+   */
+  inboxId?: string;
 }
 
 export interface SubagentDriveResult {
@@ -339,9 +405,11 @@ export async function driveSubagent(
     framework,
     completionOptions,
     cachingOn,
+    autoCacheTtl,
     maxTurns,
     onUpdate,
   } = input;
+  let autoCacheState: PromptCacheSessionState | undefined;
   const signal = controller.signal;
   let local = input.local;
   const reduce = (action: Parameters<typeof sessionSlice.reducer>[1]) => {
@@ -358,6 +426,27 @@ export async function driveSubagent(
     status: SubagentRunStatus,
     error?: string,
   ): SubagentDriveResult => ({ status, error, local, toolCalls, usage });
+  // The person's messages, appended as one user message for the next request
+  let sent: NonNullable<SubagentRunState["messages"]> = [];
+  const deliver = (messages: SubagentInboxMessage[]) => {
+    if (messages.length === 0) return;
+    local = {
+      ...local,
+      history: [
+        ...local.history,
+        {
+          message: {
+            role: "user",
+            content: personMessageText(messages),
+            id: `subagent-message-${messages[0].id}`,
+          },
+          contextItems: [],
+        },
+      ],
+    };
+    sent = [...sent, ...messages.map((m) => recordOf(m, true))];
+    update({ messages: sent });
+  };
 
   for (let turn = 1; ; turn++) {
     if (signal.aborted) return result("cancelled", reasonOf(signal));
@@ -388,8 +477,14 @@ export async function driveSubagent(
     try {
       // Stopped while waiting for the gate: send nothing
       if (signal.aborted) return result("cancelled", reasonOf(signal));
+      let options = completionOptions;
+      if (autoCacheTtl) {
+        const next = nextSubagentAutoTtl(model, autoCacheState);
+        autoCacheState = next.nextState;
+        options = { ...completionOptions, promptCacheTtl: next.ttl };
+      }
       let gen = ideMessenger.llmStreamChat(
-        { completionOptions, title: model.title, messages },
+        { completionOptions: options, title: model.title, messages },
         signal,
       );
       if (framework) {
@@ -423,7 +518,16 @@ export async function driveSubagent(
     if (signal.aborted) return result("cancelled", reasonOf(signal));
 
     const calls = lastToolCalls(local);
-    if (calls.length === 0) return result("completed");
+    if (calls.length === 0) {
+      // Would finish: messages still queued keep the run going, one more
+      // model call that counts against the turn limit. With no call left,
+      // they stay queued and are reported as not delivered.
+      const waiting =
+        input.inboxId && turn < maxTurns ? takeInbox(input.inboxId, "all") : [];
+      if (waiting.length === 0) return result("completed");
+      deliver(waiting);
+      continue;
+    }
     for (const call of calls) {
       reduce(setToolGenerated({ toolCallId: call.toolCallId, tools }));
     }
@@ -446,6 +550,11 @@ export async function driveSubagent(
       );
     }
     if (ended) return result("completed");
+    // Tool boundary: "Send now" messages go in after the tool results, before
+    // the next request, as the main chat's steering does
+    if (input.inboxId && !signal.aborted && turn < maxTurns) {
+      deliver(takeInbox(input.inboxId, "steer"));
+    }
   }
 
   /** Runs one call; true when it ends the run (HandledCall.endRun). */
@@ -564,6 +673,14 @@ export async function driveSubagent(
         }
       }
 
+      const answered = signal.aborted
+        ? undefined
+        : await input.localCall?.(current);
+      if (answered) {
+        succeed(answered);
+        return false;
+      }
+
       // Stop does not wait for the call: core cannot cancel a tool call, so
       // its result is dropped, and a terminal command is killed as the
       // parent's own Stop does.
@@ -576,6 +693,7 @@ export async function driveSubagent(
           ...(allowOutsideWorkspaceOf(getState())
             ? { allowOutsideWorkspace: true }
             : {}),
+          ...(input.webSessionId ? { sessionId: input.webSessionId } : {}),
         }),
         signal,
       );
@@ -599,7 +717,9 @@ export async function driveSubagent(
         fail(`${name} failed with the message: ${result.content.errorMessage}`);
         return false;
       }
-      const { items } = flagToolOutput(result.content.contextItems ?? []);
+      const { items } = flagToolOutput(result.content.contextItems ?? [], {
+        stripHidden: stripsHiddenCharacters(name, call.tool?.uri),
+      });
       succeed(items);
     } catch (e) {
       fail(e instanceof Error ? e.message : String(e));
@@ -614,9 +734,10 @@ export async function driveSubagent(
 
 /**
  * How a run's requests go to this model: native tools or the system message
- * framework, and prompt caching as the parent has it for this model. A fresh
- * cache state, so "auto" starts at 5 minutes: a run's requests come seconds
- * apart, and nothing here learns from them.
+ * framework, and prompt caching on or off as the parent has it for this
+ * model. The lifetime is `cacheBehavior.subagentTtl` (default 5 minutes, see
+ * subagentCacheTtl.ts); with "inherit" it is the parent's, from a fresh cache
+ * state, so the parent's "auto" starts at 5 minutes.
  */
 export function prepareSubagentRequests(
   state: ReturnType<ClientToolExtras["getState"]>,
@@ -625,7 +746,11 @@ export function prepareSubagentRequests(
   baseSystem: string,
 ): Pick<
   SubagentDriveInput,
-  "systemMessage" | "framework" | "completionOptions" | "cachingOn"
+  | "systemMessage"
+  | "framework"
+  | "completionOptions"
+  | "cachingOn"
+  | "autoCacheTtl"
 > {
   // A subagent is told what its parent was told: the parent session's three
   // environment strings, not a new gather (ENV17), so it can read the
@@ -661,11 +786,23 @@ export function prepareSubagentRequests(
   const cachingOn =
     modelSupportsPromptCacheControl(model) &&
     promptCacheStatus(model, cacheSetting, INITIAL_PROMPT_CACHE_STATE, 0).on;
+  // The run's own lifetime, only when caching is on: it never turns caching
+  // on, and an "off" request carries no lifetime
+  const policy = subagentTtlPolicy(model);
+  const ttl = cachingOn ? subagentFirstCacheTtl(policy) : undefined;
   const completionOptions: LLMFullCompletionOptions = {
     ...(useNativeTools && tools.length > 0 ? { tools } : {}),
     ...cacheOptions,
+    ...(ttl ? { promptCacheTtl: ttl } : {}),
   };
-  return { systemMessage, framework, completionOptions, cachingOn };
+  const autoCacheTtl = cachingOn && policy === "auto";
+  return {
+    systemMessage,
+    framework,
+    completionOptions,
+    cachingOn,
+    ...(autoCacheTtl ? { autoCacheTtl } : {}),
+  };
 }
 
 /**
@@ -713,6 +850,8 @@ export async function runSubagentTool(
     args.prompt,
     getState().session.environment?.strings?.firstMessageBlock,
   );
+  // The run's fetched pages, dropped when it ends: the parent gets its answer
+  const webSessionId = subagentStoreId(getState().session.id, toolCallId);
 
   const finish = (status: SubagentRunStatus, error?: string) => {
     const texts = assistantTexts(local.history);
@@ -774,7 +913,12 @@ export async function runSubagentTool(
       parentTools = applyToolOverrides(parentTools, model.toolOverrides).tools;
     }
     const resolved = resolveSubagentTools(definition, parentTools);
-    const tools = resolved.tools;
+    // Started with other subagents: it may list them and message them
+    const batchSize = subagentBatchOf(state.session.history, toolCallId).length;
+    const tools = [
+      ...resolved.tools,
+      ...sessionToolsFor(definition, batchSize),
+    ];
     const notices = [
       ...(fallbackReason ? [fallbackReason] : []),
       // Built-in agents list tools that only some setups have; only a
@@ -814,6 +958,14 @@ export async function runSubagentTool(
       maxTurns: definition.maxTurns ?? DEFAULT_SUBAGENT_MAX_TURNS,
       onUpdate: update,
       approvalScope: toolCallId,
+      inboxId: toolCallId,
+      localCall: async (call) =>
+        answerSessionTool(
+          call,
+          { runId: toolCallId, name: definition.name },
+          getState,
+        ),
+      webSessionId,
       audit: {
         sessionId: getState().session.id,
         agent: subagentAuditAgent(
@@ -834,6 +986,25 @@ export async function runSubagentTool(
     release?.();
     unregister();
     parentSignal.removeEventListener("abort", onParentAbort);
+    ideMessenger.post("web/closeSession", { sessionId: webSessionId });
+  }
+
+  // Messages the run ended before reading: kept in its record as not
+  // delivered, and said on the card. No message can be queued after this
+  // point, because the run is no longer live.
+  const undelivered = takeInbox(toolCallId, "all");
+  if (undelivered.length > 0) {
+    const n = undelivered.length;
+    update({
+      messages: [
+        ...(run.messages ?? []),
+        ...undelivered.map((m) => recordOf(m, false)),
+      ],
+      notices: [
+        ...(run.notices ?? []),
+        `${n === 1 ? "Your message was" : `${n} of your messages were`} not delivered: the run ended first.`,
+      ],
+    });
   }
 
   // The session was reloaded in this window while the run wound down: it was

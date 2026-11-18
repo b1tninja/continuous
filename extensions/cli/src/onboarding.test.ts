@@ -62,6 +62,16 @@ models:
     await expect(
       initializeWithOnboarding(mockAuthConfig, configPath),
     ).rejects.toThrow(/Failed to load config from ".*malformed\.yaml": .+/);
+
+    // The file is named once, with the position, and none of its lines
+    const error = await initializeWithOnboarding(
+      mockAuthConfig,
+      configPath,
+    ).catch((e) => e);
+    expect(error.message.split("malformed.yaml")).toHaveLength(2);
+    expect(error.message).toMatch(/line \d+, column \d+/);
+    expect(error.message).not.toContain("unclosed array");
+    expect(error.message).not.toContain("[object Object]");
   });
 
   test("should fail loudly when --config points to file with missing required fields", async () => {

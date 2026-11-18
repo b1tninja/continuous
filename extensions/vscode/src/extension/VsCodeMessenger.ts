@@ -23,7 +23,9 @@ import { addCurrentSelectionToEdit } from "../quickEdit/AddCurrentSelection";
 import EditDecorationManager from "../quickEdit/EditDecorationManager";
 import { handleLLMError } from "../util/errorHandling";
 import { showTutorial } from "../util/tutorial";
+import { readSessionIdgaf, writeSessionIdgaf } from "../util/sessionIdgaf";
 import { getExtensionUri } from "../util/vscode";
+import { instructionFilesState } from "../util/workspaceConfigTrust";
 import { VsCodeIde } from "../VsCodeIde";
 import { VsCodeWebviewProtocol } from "../webviewProtocol";
 
@@ -32,7 +34,6 @@ import {
   isInsideWorkspace,
   openUrlFromWebviewOk,
   policySavePayloadOk,
-  raisedPolicyAreas,
   runCommandFromWebviewOk,
   subprocessFromWebviewOk,
   writeFileFromWebviewOk,
@@ -260,6 +261,22 @@ export class VsCodeMessenger {
       editDecorationManager.clear();
     });
 
+    // IDGAF lasts for the editor session (util/sessionIdgaf.ts)
+    this.onWebview("policy/sessionIdgaf", async (msg) => {
+      const store = this.context.workspaceState;
+      const session = vscode.env.sessionId;
+      const areas =
+        msg.data?.areas === undefined
+          ? readSessionIdgaf(store, session)
+          : await writeSessionIdgaf(store, session, msg.data.areas);
+      return { areas };
+    });
+
+    // Instruction file notices and the Restricted Mode Load (X20)
+    this.onWebview("instructionFiles/state", async (msg) =>
+      instructionFilesState(msg.data?.load, await this.configHandlerPromise),
+    );
+
     this.onWebview("session/share", async (msg) => {
       await vscode.commands.executeCommand(
         "continuous.shareSession",
@@ -270,11 +287,13 @@ export class VsCodeMessenger {
     /** PASS THROUGH FROM WEBVIEW TO CORE AND BACK **/
     WEBVIEW_TO_CORE_PASS_THROUGH.forEach((messageType) => {
       this.onWebview(messageType, async (msg) => {
-        if (messageType === "policy/save") {
-          const allowed = await this.confirmPolicySave(msg.data);
-          if (!allowed) {
-            throw new Error("The permission change was not confirmed.");
-          }
+        // Core asks in a modal before a save that loosens (policySave.ts);
+        // here only the shape is checked
+        if (
+          (messageType === "policy/save" || messageType === "policy/preview") &&
+          !policySavePayloadOk(msg.data)
+        ) {
+          throw new Error("That is not a permission settings change.");
         }
         return await this.inProcessMessenger.externalRequest(
           messageType,
@@ -480,28 +499,5 @@ export class VsCodeMessenger {
     this.onWebviewOrCore("reportError", async (msg) => {
       await handleLLMError(msg.data);
     });
-  }
-
-  /**
-   * A save that raises a permission level waits for a native confirmation.
-   * Anything that is not a settings object is refused.
-   */
-  private async confirmPolicySave(data: unknown): Promise<boolean> {
-    if (!policySavePayloadOk(data)) return false;
-    const levels = (data as { levels?: Record<string, string> }).levels;
-    if (!levels) return true;
-    const loaded = await this.inProcessMessenger.externalRequest(
-      "policy/load",
-      undefined,
-    );
-    const current = loaded?.settings?.levels;
-    const raised = raisedPolicyAreas(current, levels);
-    if (raised.length === 0) return true;
-    const choice = await vscode.window.showWarningMessage(
-      `Raise the Continuous permission level for ${raised.join(", ")}?`,
-      { modal: true },
-      "Raise",
-    );
-    return choice === "Raise";
   }
 }

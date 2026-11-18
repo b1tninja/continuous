@@ -177,6 +177,18 @@ describe("Permissions: audit figures", () => {
     expect(screen.queryByTestId("rule-unused")).toBeNull();
   });
 
+  it("counts the calls IDGAF ran that a rule or guard would have stopped", async () => {
+    await setup(async () => overview({ idgafObjections: 3 }));
+    expect(screen.getByTestId("audit-idgaf-objections").textContent).toContain(
+      "IDGAF ran 3 calls",
+    );
+  });
+
+  it("says nothing about IDGAF when nothing was objected to", async () => {
+    await setup(async () => overview());
+    expect(screen.queryByTestId("audit-idgaf-objections")).toBeNull();
+  });
+
   it("shows loading, then the list", async () => {
     let release: (v: unknown) => void = () => {};
     await setup(() => new Promise((r) => (release = r)));

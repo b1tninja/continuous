@@ -8,6 +8,8 @@ import { selectSelectedChatModel } from "../../redux/slices/configSlice";
 import { dismissCacheTip } from "../../redux/slices/uiSlice";
 import { cacheTipKey, cacheTips } from "../../util/cacheTips";
 import { Popover, PopoverButton, PopoverPanel } from "../ui";
+import { HoverButton } from "./InputToolbar/HoverItem";
+import { useToolbarWidthTier } from "./InputToolbar/widthTier";
 
 /**
  * A small warning icon in the toolbar that appears only when there is advice
@@ -64,27 +66,32 @@ export function useCacheTips() {
   return { dispatch, model, tips, hasWarning };
 }
 
-/** `inMenu`: shown as a labelled row in the toolbar's overflow menu. */
-export function CacheTipsButton({ inMenu = false }: { inMenu?: boolean }) {
+/**
+ * The tips, in the row under the prompt: the icon and how many there are,
+ * with "tips" spelled out when the row is wide. It takes the place of the
+ * old "..." menu, whose other entries are now in the row itself.
+ */
+export function CacheTipsButton() {
   const { dispatch, model, tips, hasWarning } = useCacheTips();
+  const tier = useToolbarWidthTier();
   if (!model || tips.length === 0) return null;
+  const count = `${tips.length} tip${tips.length === 1 ? "" : "s"}`;
 
   return (
-    <Popover className="relative">
+    <Popover className="relative flex flex-none">
       <PopoverButton
+        as={HoverButton}
         data-testid="cache-tips-button"
-        aria-label={`${tips.length} tip${tips.length === 1 ? "" : "s"} about this model`}
-        title={tips[0].title}
-        className={`m-0 flex min-h-6 flex-none cursor-pointer items-center gap-2 border-none bg-transparent p-0 text-xs text-foreground ${inMenu ? "w-full px-2" : "min-w-6 justify-center"}`}
+        aria-label={`${count} about this model${hasWarning ? " (needs attention)" : ""}`}
+        className="flex-none gap-0.5 px-0.5 [font-size:inherit] tabular-nums"
       >
         <ExclamationTriangleIcon
+          aria-hidden="true"
           className={`h-4 w-4 shrink-0 ${hasWarning ? "text-warning" : "text-description"}`}
         />
-        {inMenu && (
-          <span>
-            {tips.length} tip{tips.length === 1 ? "" : "s"} about this model
-          </span>
-        )}
+        <span data-testid="cache-tips-count" aria-hidden="true">
+          {tier === "wide" ? count : tips.length}
+        </span>
       </PopoverButton>
       <PopoverPanel
         anchor="top start"

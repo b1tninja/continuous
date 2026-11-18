@@ -7,6 +7,7 @@ import { WalkerSync } from "ignore-walk";
 import { z } from "zod";
 
 import { env } from "../env.js";
+import { isSafeMode } from "../safeMode.js";
 
 export interface Skill {
   name: string;
@@ -88,6 +89,8 @@ async function getSkillFilesFromDir(dirPath: string): Promise<string[]> {
 export async function loadMarkdownSkills(): Promise<LoadSkillsResult> {
   const errors: { fatal: boolean; message: string }[] = [];
   const skills: Skill[] = [];
+  // --safe: no skills folder is read
+  if (isSafeMode()) return { skills, errors };
 
   const cwd = process.cwd();
 

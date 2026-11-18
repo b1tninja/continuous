@@ -31,7 +31,15 @@ export interface EventKeys {
   callKey?: string;
   /** What the call key adds: asks and the person's answers */
   callCounts?: DayCounts;
+  /** IDGAF ran the call past a rule or guard that would have objected */
+  idgafObjected?: boolean;
 }
+
+/**
+ * The index key that counts calls IDGAF ran past an objection (in the
+ * "allows" column). Not a rule text: no rule can be written this way.
+ */
+export const IDGAF_OBJECTION_KEY = "~idgaf:would-have-objected";
 
 /** The index's own key for a rule text: masked and clipped, so lookups use the same form. */
 export function ruleKeyOf(rule: string): string {
@@ -78,6 +86,7 @@ export function keysOfEvent(
   }
   if (ev.by === "reviewer") counts[5] = 1;
   const out: EventKeys = { day, counts };
+  if (ev.wouldHave) out.idgafObjected = true;
   if (ev.rule && ev.by !== "person") out.ruleKey = ruleKeyOf(ev.rule);
   if (ev.policy === "ask" || ev.by === "person") {
     out.callKey = callKeyOf(ev, cache);

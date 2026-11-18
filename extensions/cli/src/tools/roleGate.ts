@@ -7,7 +7,10 @@ import {
   type ToolRole,
 } from "core/tools/roleTools.js";
 
-import { getPolicyExtras } from "../permissions/policyLevels.js";
+import {
+  effectiveLevels,
+  getPolicyExtras,
+} from "../permissions/policyLevels.js";
 
 import type { Tool } from "./types.js";
 
@@ -25,7 +28,15 @@ export function cliToolRole(mode: string | undefined): ToolRole {
 
 /** An MCP tool is any tool that is not built in; its server is the one it came from. */
 export function cliToolRef(
-  tool: Pick<Tool, "name" | "isBuiltIn" | "mcpServer" | "readonly">,
+  tool: Pick<
+    Tool,
+    | "name"
+    | "isBuiltIn"
+    | "mcpServer"
+    | "mcpToolName"
+    | "readonly"
+    | "mcpPendingApproval"
+  >,
 ): RoleToolRef {
   return tool.isBuiltIn
     ? { name: tool.name }
@@ -33,10 +44,39 @@ export function cliToolRef(
         name: tool.name,
         mcp: {
           server: tool.mcpServer ?? "",
-          tool: tool.name,
+          tool: tool.mcpToolName ?? tool.name,
           readOnlyHint: tool.readonly === true,
+          ...(tool.mcpPendingApproval
+            ? { pendingApproval: tool.mcpPendingApproval }
+            : {}),
         },
       };
+}
+
+let unattended = false;
+
+/**
+ * This process runs unattended (headless `-p` or `serve`, a Loop worker): it
+ * gets only the MCP tools listed in `background.mcpTools` (TR1, TR25).
+ */
+export function setCliUnattended(value: boolean): void {
+  unattended = value;
+}
+
+export function cliIsUnattended(): boolean {
+  return unattended;
+}
+
+/** Tool use is IDGAF in this mode: a tool waiting for approval is offered (TR4). */
+function approvalWaived(mode: string | undefined): boolean {
+  try {
+    return (
+      mode !== "plan" &&
+      effectiveLevels(mode === "auto" ? "auto" : "normal").tools === "idgaf"
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** What the person listed for Plan mode in permissions.yaml. */
@@ -48,22 +88,38 @@ export function cliPlanMcpTrust(): PlanMcpTrust {
   };
 }
 
-const OPTIONS = () => ({
+const OPTIONS = (mode: string | undefined) => ({
   trust: cliPlanMcpTrust(),
   allowPlanTerminal: getPolicyExtras().planAllowTerminal === true,
+  unattended,
+  unattendedMcpTools: getPolicyExtras().backgroundMcpTools,
+  approvalWaived: approvalWaived(mode),
 });
 
 export function filterCliToolsForRole<T extends Tool>(
   mode: string | undefined,
   tools: T[],
 ): T[] {
-  return filterToolsForRole(cliToolRole(mode), tools, cliToolRef, OPTIONS());
+  return filterToolsForRole(
+    cliToolRole(mode),
+    tools,
+    cliToolRef,
+    OPTIONS(mode),
+  );
 }
 
 /** The error for a call the mode's role may not make, or undefined. */
 export function cliRoleRefusal(
   mode: string | undefined,
-  tool: Pick<Tool, "name" | "isBuiltIn" | "mcpServer" | "readonly">,
+  tool: Pick<
+    Tool,
+    | "name"
+    | "isBuiltIn"
+    | "mcpServer"
+    | "mcpToolName"
+    | "readonly"
+    | "mcpPendingApproval"
+  >,
 ): string | undefined {
-  return roleRefusal(cliToolRole(mode), cliToolRef(tool), OPTIONS());
+  return roleRefusal(cliToolRole(mode), cliToolRef(tool), OPTIONS(mode));
 }

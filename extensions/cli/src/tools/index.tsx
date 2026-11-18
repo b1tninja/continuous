@@ -1,14 +1,18 @@
+import { assignMcpToolNames } from "core/tools/mcpToolName.js";
+import { effectiveWebLevel } from "core/tools/permissions/webPolicy.js";
 import {
   stableToolOrder,
   stableToolOrderEnabled,
 } from "core/tools/stableToolOrder.js";
 // @ts-ignore
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
+import { getWebConfig } from "core/util/webConfig.js";
 import { ChatCompletionTool } from "openai/resources.mjs";
 
 import { isModelCapable } from "src/utils/modelCapability.js";
 
 import { loopItemRunning, loopRunGoing } from "../loop/loopSession.js";
+import { getPolicyLevels } from "../permissions/policyLevels.js";
 import {
   SERVICE_NAMES,
   serviceContainer,
@@ -30,6 +34,7 @@ import { editTool } from "./edit.js";
 import { fetchTool } from "./fetch.js";
 import { listFilesTool } from "./listFiles.js";
 import { finishItemTool, holdQuestionTool, remindMeTool } from "./loopTools.js";
+import { cliTrustedMcpServers } from "./mcpTrust.js";
 import { multiEditTool } from "./multiEdit.js";
 import { presentPlanTool } from "./presentPlan.js";
 import { readFileTool } from "./readFile.js";
@@ -68,6 +73,19 @@ const BASE_BUILTIN_TOOLS: Tool[] = [
 
 const BUILTIN_SEARCH_TOOLS: Tool[] = [searchCodeTool];
 
+/** The Web level in force is Off; a broken setting is not Off. */
+function webIsOff(): boolean {
+  try {
+    return (
+      effectiveWebLevel(getPolicyLevels(), {
+        enabled: getWebConfig().enabled,
+      }).level === "off"
+    );
+  } catch {
+    return false;
+  }
+}
+
 // Get all builtin tools including dynamic ones, with capability-based filtering
 export async function getAllAvailableTools(
   isHeadless: boolean,
@@ -105,6 +123,13 @@ export async function getAllAvailableTools(
     (headlessRun && services.toolPermissions.getCurrentMode() !== "plan")
   ) {
     tools.splice(tools.indexOf(askQuestionTool), 1);
+  }
+
+  // WB45: Web Off (levels.web: off, or web.enabled: false in any config)
+  // offers no web tool; a call that still arrives is refused by the engine
+  if (webIsOff()) {
+    const at = tools.indexOf(fetchTool);
+    if (at !== -1) tools.splice(at, 1);
   }
 
   const isRipgrepInstalled = await checkIfRipgrepIsInstalled();
@@ -159,7 +184,32 @@ export async function getAllAvailableTools(
   // MCP servers connect in no fixed order: sorting by name keeps the tool
   // list, the head of every request, the same between requests (C64).
   // CONTINUE_STABLE_TOOL_ORDER=0 keeps the connection order.
-  const mcpTools = mcpState.tools.map(convertMcpToolToContinueTool);
+  // Each MCP tool keeps its own name unless another server offers it or a
+  // built-in has it, then it is qualified by its server: two tools never share
+  // a name, so the call the person approves is the call that runs.
+  const names = assignMcpToolNames(
+    mcpState.tools.map((t) => ({
+      serverName: t.serverName ?? "",
+      toolName: t.name,
+    })),
+    {
+      bare: true,
+      reserved: new Set([
+        ...tools.map((t) => t.name),
+        ...ALL_BUILT_IN_TOOLS.map((t) => t.name),
+        ...TOOL_ALIASES.map((t) => t.name),
+      ]),
+    },
+  );
+  const trusted = cliTrustedMcpServers();
+  const mcpTools = mcpState.tools.map((t, i) => {
+    const tool = convertMcpToolToContinueTool(t, names[i], trusted);
+    // Not offered until the person approves it (TR4; the role table drops it)
+    const pending = t.serverName
+      ? services.mcp?.getPendingApproval?.(t.serverName, t.name)
+      : undefined;
+    return pending ? { ...tool, mcpPendingApproval: pending } : tool;
+  });
   tools.push(
     ...(stableToolOrderEnabled(process.env.CONTINUE_STABLE_TOOL_ORDER)
       ? stableToolOrder(
@@ -237,11 +287,14 @@ export function convertToolToChatCompletionTool(
 
 export function convertMcpToolToContinueTool(
   mcpTool: MCPTool & { serverName?: string },
+  name: string = mcpTool.name,
+  trustedServers: ReadonlySet<string> = new Set(),
 ): Tool {
+  const serverName = mcpTool.serverName;
   return {
-    name: mcpTool.name,
-    ...(mcpTool.serverName ? { mcpServer: mcpTool.serverName } : {}),
-    displayName: mcpTool.name,
+    name,
+    ...(serverName ? { mcpServer: serverName, mcpToolName: mcpTool.name } : {}),
+    displayName: serverName ? `${serverName}: ${mcpTool.name}` : mcpTool.name,
     description: mcpTool.description ?? "",
     parameters: {
       type: "object",
@@ -251,11 +304,21 @@ export function convertMcpToolToContinueTool(
       >,
       required: mcpTool.inputSchema.required,
     },
-    // A server's own word that the tool changes nothing
-    readonly: mcpTool.annotations?.readOnlyHint === true ? true : undefined,
+    // A server's own word that the tool changes nothing, believed only for a
+    // server the person trusts (a hint from any other server is ignored)
+    readonly:
+      mcpTool.annotations?.readOnlyHint === true &&
+      !!serverName &&
+      trustedServers.has(serverName)
+        ? true
+        : undefined,
     isBuiltIn: false,
     run: async (args: any) => {
-      const result = await services.mcp?.runTool(mcpTool.name, args);
+      // Runs on the server this tool was listed under, never on whichever
+      // server answers to the name
+      const result = serverName
+        ? await services.mcp?.runTool(mcpTool.name, args, serverName)
+        : await services.mcp?.runTool(mcpTool.name, args);
       return JSON.stringify(result?.content) ?? "";
     },
   };
@@ -300,6 +363,7 @@ export async function executeToolCall(
       parallelToolCallCount: options.parallelToolCallCount,
       abortSignal: options.abortSignal,
       onToolPermissionRequest: options.onToolPermissionRequest,
+      ...(options.sessionId ? { sessionId: options.sessionId } : {}),
     };
 
     // IMPORTANT: if preprocessed args are present, uses preprocessed args instead of original args

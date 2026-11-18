@@ -140,7 +140,11 @@ describe("executeSubAgent", () => {
     const [, , , , , isCompacting, options] =
       vi.mocked(streamChatResponse).mock.calls[0];
     expect(isCompacting).toBe(false);
-    expect(options).toEqual({ persistSession: false, use: "subagent" });
+    expect(options).toEqual({
+      persistSession: false,
+      use: "subagent",
+      webSessionId: expect.stringMatching(/\/subagent\/agent-/),
+    });
   });
 
   it("a failing run does not block the next one, and keeps what it wrote", async () => {
@@ -572,7 +576,11 @@ describe("executeSubAgent: context budget", () => {
     // The parent's model is not changed
     expect(budgeted.model.defaultCompletionOptions.contextLength).toBe(524_288);
     expect(isCompacting).toBe(false);
-    expect(options).toEqual({ persistSession: false, use: "subagent" });
+    expect(options).toEqual({
+      persistSession: false,
+      use: "subagent",
+      webSessionId: expect.stringMatching(/\/subagent\/agent-/),
+    });
   });
 });
 
