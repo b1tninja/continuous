@@ -148,12 +148,14 @@ let permissionPrompts: Promise<unknown> = Promise.resolve();
 export function requestUserPermission(
   toolCall: PreprocessedToolCall,
   callbacks?: StreamCallbacks,
+  /** Shown with the command, so a shell-hint ask is a warning the person reads. */
+  note?: string,
 ): Promise<boolean> {
   if (!callbacks?.onToolPermissionRequest) {
     return Promise.resolve(false);
   }
   const prompt = permissionPrompts.then(() =>
-    askWithHooks(toolCall, callbacks),
+    askWithHooks(toolCall, callbacks, note),
   );
   permissionPrompts = prompt.catch(() => undefined);
   return prompt;
@@ -168,6 +170,7 @@ export function requestUserPermission(
 async function askWithHooks(
   toolCall: PreprocessedToolCall,
   callbacks: StreamCallbacks,
+  note?: string,
 ): Promise<boolean> {
   const hooked = await firePermissionRequest(
     toolCall.name,
@@ -180,17 +183,21 @@ async function askWithHooks(
     "permission_prompt",
     "Permission needed",
   );
-  return promptForPermission(toolCall, callbacks);
+  return promptForPermission(toolCall, callbacks, note);
 }
 
 async function promptForPermission(
   toolCall: PreprocessedToolCall,
   callbacks: StreamCallbacks,
+  note?: string,
 ): Promise<boolean> {
+  const preview = toolCall.preprocessResult?.preview;
   const toolCallRequest: ToolCallRequest = {
     name: toolCall.name,
     arguments: toolCall.preprocessResult?.args ?? toolCall.arguments,
-    preview: toolCall.preprocessResult?.preview,
+    preview: note
+      ? [...(preview ?? []), { type: "text", content: note, color: "yellow" }]
+      : preview,
   };
 
   // Set up listener for permissionRequested event
@@ -565,7 +572,14 @@ async function decideToolApproval(
         };
       }
       trace.askedPerson = true;
-      const userApproved = await requestUserPermission(toolCall, callbacks);
+      const userApproved = await requestUserPermission(
+        toolCall,
+        callbacks,
+        verdict.source === "shell-hint" ||
+          verdict.reason?.includes("This looks like")
+          ? verdict.reason
+          : undefined,
+      );
       return userApproved
         ? { approved: true }
         : { approved: false, denialReason: "user" };

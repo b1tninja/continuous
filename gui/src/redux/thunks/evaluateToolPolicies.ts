@@ -319,6 +319,8 @@ async function reviewOpenCalls(
         r.source !== "tainted-session" &&
         // So is the secret-read plus network pair's (B92)
         r.source !== "secret-egress" &&
+        // A shell-hint warning is for the person to read, not the reviewer
+        r.source !== "shell-hint" &&
         // Plan mode's hold is for the user, not the reviewer
         r.source !== "plan-mode" &&
         // Manual asks every time; only an area set to Automatic has a reviewer
@@ -498,6 +500,7 @@ export async function evaluateToolPolicies(
         source === "tainted-session" ||
         source === "secret-egress" ||
         source === "ask-rule" ||
+        source === "shell-hint" ||
         source === "manual" ||
         source === "auto" ||
         source === "plan-mode")

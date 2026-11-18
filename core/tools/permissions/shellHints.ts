@@ -5,15 +5,19 @@
  * instead (plans/research/env-windows-shells-and-wsl.md, sections 3 and 6,
  * where every rule below was measured).
  *
- * Pure and not wired: nothing calls it from a tool path yet. Whether a finding
- * stops a command before it runs or is added to a result after it ran is the
- * owner's decision (EV26, EV28). It never changes the command: a suggestion
- * is text for the model to send back, not a rewrite.
+ * Called from the terminal permission path (evaluate.ts). A certain finding
+ * (severity error) is a pre-flight reject: the command is not run and the
+ * person is not asked (plans/research/env-windows-shells-and-wsl.md §6.2(b)
+ * and §6.4). A likely finding (severity warn) asks, and the person sees the
+ * warning. It never changes the command: a suggestion is text for the model
+ * to send back, not a rewrite.
  *
  * It reads the text with the target shell's quoting rules, so `&&` inside a
  * string, a here-string, a comment or the quoted script of `bash -c '...'` is
  * not a finding, and `&&` is not one at all under PowerShell 7 or bash.
  */
+
+import type { ShellKind } from "../../util/shell";
 
 export type HintFamily = "powershell" | "posix" | "cmd";
 
@@ -930,4 +934,62 @@ export function detectShellHints(
   return hints.sort(
     (a, b) => a.start - b.start || a.rule.localeCompare(b.rule),
   );
+}
+
+const SHELL_LABEL: Record<HintFamily, string> = {
+  powershell: "Windows PowerShell 5.1",
+  posix: "the POSIX shell",
+  cmd: "cmd",
+};
+
+/**
+ * The shell the executor will start. `powershell` here is Windows PowerShell
+ * 5.1 (`resolveShell` starts `powershell.exe`, not `pwsh`). An unknown shell,
+ * including a remote terminal, raises nothing: `&&` may be right there
+ * (section 6.4).
+ */
+export function shellHintTarget(
+  shell: ShellKind | undefined,
+): HintTarget | undefined {
+  if (shell === "powershell") return { family: "powershell", version: "5.1" };
+  if (shell === "bash" || shell === "zsh" || shell === "sh") {
+    return { family: "posix" };
+  }
+  if (shell === "cmd") return { family: "cmd" };
+  return undefined;
+}
+
+/**
+ * What the terminal permission path should do with a command written for
+ * another shell. `certain` is the pre-flight reject (the shell cannot parse
+ * it, or it certainly does the wrong thing). Otherwise the person is asked
+ * and shown the warning. Undefined when nothing was found.
+ */
+export function shellHintDecision(
+  command: string,
+  shell: ShellKind | undefined,
+):
+  | { certain: true; reason: string }
+  | { certain: false; reason: string }
+  | undefined {
+  const target = shellHintTarget(shell);
+  if (!target) return undefined;
+  const hints = detectShellHints(command, target);
+  if (hints.length === 0) return undefined;
+  const errors = hints.filter((h) => h.severity === "error");
+  const shown = (errors.length > 0 ? errors : hints).slice(0, 2);
+  const detail = shown
+    .map((h) => `${h.message} Instead: ${h.suggestion}`)
+    .join(" ");
+  if (errors.length > 0) {
+    return {
+      certain: true,
+      reason: `The command was not run: ${SHELL_LABEL[target.family]} cannot parse it. ${detail} Fix it and call again.`,
+    };
+  }
+  const intro =
+    target.family === "powershell"
+      ? "This looks like bash; it runs in Windows PowerShell 5.1."
+      : `This looks like a command for another shell; it runs in ${SHELL_LABEL[target.family]}.`;
+  return { certain: false, reason: `${intro} ${detail}` };
 }
