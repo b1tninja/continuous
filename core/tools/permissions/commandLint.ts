@@ -338,10 +338,7 @@ function lintDialect(
           "Run the steps with ; , or use `a; if ($?) { b }` when b depends on a succeeding.",
       });
     }
-    if (
-      !hinted.has("ps.dev-null") &&
-      /\d?>\s*\/dev\/null/.test(command)
-    ) {
+    if (!hinted.has("ps.dev-null") && /\d?>\s*\/dev\/null/.test(command)) {
       findings.push({
         code: "CL041",
         severity: "warn",

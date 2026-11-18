@@ -432,9 +432,7 @@ export function refusalMessage(
     case "shell-hint":
       return {
         description: "Command was not run",
-        content:
-          reason ??
-          "The command was not run. Fix it and call again.",
+        content: reason ?? "The command was not run. Fix it and call again.",
       };
     default:
       return {

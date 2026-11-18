@@ -483,6 +483,17 @@ export async function checkToolPermissionApproval(
   return result;
 }
 
+/** PreToolUse hooks tighten or relax ask/allow. An exclude always stands. */
+function permissionAfterHook<T extends string>(
+  permission: T,
+  hookDecision: "allow" | "ask" | undefined,
+): T {
+  if (permission === "exclude" || hookDecision === undefined) return permission;
+  if (hookDecision === "ask" && permission === "allow") return "ask" as T;
+  if (hookDecision === "allow" && permission === "ask") return "allow" as T;
+  return permission;
+}
+
 async function decideToolApproval(
   permissions: ToolPermissions,
   toolCall: PreprocessedToolCall,
@@ -547,12 +558,7 @@ async function decideToolApproval(
 
   // PreToolUse hooks adjust the CLI policy first; the CLI's own exclude
   // always stands.
-  if (permission !== "exclude") {
-    if (hookDecision === "ask" && permission === "allow") permission = "ask";
-    else if (hookDecision === "allow" && permission === "ask") {
-      permission = "allow";
-    }
-  }
+  permission = permissionAfterHook(permission, hookDecision);
 
   // Then the rules in config.yaml (deny, protected paths, ask, allow) and the
   // reviewer may tighten the result, and an allow rule may loosen an "ask",

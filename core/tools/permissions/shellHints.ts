@@ -874,9 +874,7 @@ function isClearPowerShell(trimmed: string): boolean {
   if (NEXT_COMMAND.has(first[0].toLowerCase())) return true;
   if (/^\s+-/.test(rest)) return true;
   const words = trimmed.split(/\s+/);
-  return (
-    words.length <= 2 && words.every((w) => /^[A-Za-z_][\w.-]*$/.test(w))
-  );
+  return words.length <= 2 && words.every((w) => /^[A-Za-z_][\w.-]*$/.test(w));
 }
 
 /**
