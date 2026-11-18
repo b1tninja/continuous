@@ -1,6 +1,7 @@
 import type { ShellKind } from "../../util/shell";
 import { isPosixShell } from "../../util/shell";
 import { detectCommandShell, familyOf, mismatchedShell } from "./detectShell";
+import { detectShellHints, shellHintTarget } from "./shellHints";
 import { bashSyntaxProblem } from "./treeSitterBash";
 
 /**
@@ -316,7 +317,15 @@ function lintDialect(
   if (!family) return;
   const detection = detectCommandShell(command);
   if (shell === "powershell") {
+    // The shell-hint detector already names these, and a certain one is
+    // refused before the approval card. Repeating them here would be a
+    // second gate with a different sentence.
+    const target = shellHintTarget(shell);
+    const hinted = new Set(
+      target ? detectShellHints(command, target).map((h) => h.rule) : [],
+    );
     if (
+      !hinted.has("ps.chain-operator") &&
       /&&|\|\|/.test(command) &&
       !/['"][^'"]*(?:&&|\|\|)[^'"]*['"]/.test(command)
     ) {
@@ -329,7 +338,7 @@ function lintDialect(
           "Run the steps with ; , or use `a; if ($?) { b }` when b depends on a succeeding.",
       });
     }
-    if (/\d?>\s*\/dev\/null/.test(command)) {
+    if (!hinted.has("ps.dev-null") && /\d?>\s*\/dev\/null/.test(command)) {
       findings.push({
         code: "CL041",
         severity: "warn",

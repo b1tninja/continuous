@@ -42,6 +42,7 @@ import {
   type TaintedSessionInput,
 } from "./taint/taintRule";
 import { runtimeWriteTarget } from "./runtimeWriteTarget";
+import { shellHintDecision } from "./shellHints";
 import {
   policyFileHit,
   POLICY_FILE_REASON,
@@ -242,10 +243,54 @@ export function evaluateToolPolicyWithRules(
       ),
     ),
   );
-  return annotateExemptions(
+  return applyShellHints(
     input,
-    applySecretEgressRule(input, result, () => callLevel(input) === "idgaf"),
+    annotateExemptions(
+      input,
+      applySecretEgressRule(input, result, () => callLevel(input) === "idgaf"),
+    ),
   );
+}
+
+/**
+ * A command written for another shell than the one that will read it.
+ * Certain findings are a pre-flight reject and stand at IDGAF: the shell
+ * cannot run them, and the model is told the fix instead of being asked
+ * (env-windows-shells-and-wsl.md §6.2(b), §6.4). A warning asks, so the
+ * person sees it, unless the area is IDGAF.
+ */
+function applyShellHints(
+  input: EvaluateInput,
+  result: ToolPolicyResult,
+): ToolPolicyResult {
+  if (input.toolName !== "run_terminal_command") return result;
+  const command = input.parsedArgs.command;
+  if (typeof command !== "string") return result;
+  const found = shellHintDecision(command, input.shell);
+  if (!found) return result;
+  if (found.certain) {
+    if (result.policy === "disabled") return result;
+    const { idgafOverride: _dropped, ...rest } = result;
+    return {
+      ...rest,
+      policy: "disabled",
+      source: "shell-hint",
+      reason: found.reason,
+    };
+  }
+  if (result.policy === "disabled" || result.source === "idgaf") return result;
+  const shown =
+    result.source === "protected-path" ||
+    result.source === "tainted-session" ||
+    result.source === "secret-egress" ||
+    result.source === "ask-rule" ||
+    result.source === "manual";
+  return {
+    ...result,
+    policy: "allowedWithPermission",
+    source: shown ? result.source : "shell-hint",
+    reason: result.reason ? `${result.reason} ${found.reason}` : found.reason,
+  };
 }
 
 /** The level of the call's area, from its arguments; undefined without levels. */
