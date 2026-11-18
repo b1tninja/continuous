@@ -4,9 +4,11 @@ import * as path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { tryLink } from "../tools/permissions/testLinks";
 import {
   beginTrustCheck,
   decideFromFiles,
+  folderHasTrustRecord,
   inspectProjectConfig,
   isScopeTrusted,
   pendingProjectTrust,
@@ -105,11 +107,15 @@ describe("project config trust", () => {
     expect(isScopeTrusted(project, "mcp", "abc", globalDir)).toBe(false);
   });
 
-  it("skips symlinks and matches a file URI to the same relative path", () => {
+  it("skips symlinks and matches a file URI to the same relative path", (ctx) => {
     const file = write(".continue/mcpServers/a.json", "{}\n");
     const link = path.join(project, ".continuous", "mcpServers");
     fs.mkdirSync(path.dirname(link), { recursive: true });
-    fs.symlinkSync(path.dirname(file), link);
+    // A junction on Windows, which needs no privilege; lstat reports it as a
+    // link like any other, so the case runs on every platform.
+    const made = tryLink(path.dirname(file), link);
+    if (!made.ok) return ctx.skip(made.reason);
+    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
     const found = readScopeFilesFromDisk(project, "mcp");
     expect(found.map((item) => path.basename(item.path))).toEqual(["a.json"]);
 
@@ -155,5 +161,26 @@ describe("project config trust", () => {
 
     trustProjectScopes(project, { data: before[0].fingerprint }, globalDir);
     expect(inspectProjectConfig(project, globalDir)[0].trusted).toBe(true);
+  });
+});
+
+describe("folderHasTrustRecord", () => {
+  it("is false for a folder with no trust record, true once any scope is trusted", () => {
+    expect(folderHasTrustRecord(project, globalDir)).toBe(false);
+    trustProjectScopes(project, { mcp: "fingerprint" }, globalDir);
+    expect(folderHasTrustRecord(project, globalDir)).toBe(true);
+    revokeProjectConfig(project, globalDir);
+    expect(folderHasTrustRecord(project, globalDir)).toBe(false);
+  });
+
+  it("is true while this run trusts project configuration", () => {
+    setProjectConfigTrustedForRun(true);
+    expect(folderHasTrustRecord(project, globalDir)).toBe(true);
+  });
+
+  it("is false when the global folder is inside the project", () => {
+    const inside = path.join(project, ".global");
+    fs.mkdirSync(inside, { recursive: true });
+    expect(folderHasTrustRecord(project, inside)).toBe(false);
   });
 });

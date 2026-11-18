@@ -1,9 +1,5 @@
-import * as os from "node:os";
-
 import { RangeInFileWithContents } from "core";
 import * as vscode from "vscode";
-
-import { VsCodeIdeUtils } from "./ideUtils";
 
 import type { VsCodeWebviewProtocol } from "../webviewProtocol";
 
@@ -102,49 +98,6 @@ export async function addHighlightedCodeToContext(
       rangeInFileWithContents,
     });
   }
-}
-
-export async function addEntireFileToContext(
-  uri: vscode.Uri,
-  webviewProtocol: VsCodeWebviewProtocol | undefined,
-  ideUtils: VsCodeIdeUtils,
-) {
-  // If a directory, add all files in the directory
-  const stat = await ideUtils.stat(uri);
-  if (stat?.type === vscode.FileType.Directory) {
-    const files = (await ideUtils.readDirectory(uri))!; //files can't be null if we reached this point
-    for (const [filename, type] of files) {
-      if (type === vscode.FileType.File) {
-        addEntireFileToContext(
-          vscode.Uri.joinPath(uri, filename),
-          webviewProtocol,
-          ideUtils,
-        );
-      }
-    }
-    return;
-  }
-
-  // Get the contents of the file
-  const contents = (await vscode.workspace.fs.readFile(uri)).toString();
-  const rangeInFileWithContents = {
-    filepath: uri.toString(),
-    contents: contents,
-    range: {
-      start: {
-        line: 0,
-        character: 0,
-      },
-      end: {
-        line: contents.split(os.EOL).length - 1,
-        character: 0,
-      },
-    },
-  };
-
-  webviewProtocol?.request("highlightedCode", {
-    rangeInFileWithContents,
-  });
 }
 
 export function isEmptyFile(document: vscode.TextDocument) {

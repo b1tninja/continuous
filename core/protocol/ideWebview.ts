@@ -12,8 +12,21 @@ import {
   SetCodeToEditPayload,
   ShowFilePayload,
 } from "../";
+import type { InstructionFilesState } from "../config/markdown/instructionFiles";
 
 export type ToIdeFromWebviewProtocol = ToIdeFromWebviewOrCoreProtocol & {
+  /**
+   * The areas at IDGAF for this editor session: `areas` given sets them, none
+   * reads them. A host without it answers with an error, read as none.
+   */
+  "policy/sessionIdgaf": [{ areas?: string[] }, { areas: string[] }];
+  /**
+   * What the last config load did with instruction files (hidden characters,
+   * secrets, the cap, an `AGENTS.md` withheld in Restricted Mode). `load`
+   * reads the withheld agent files for this window's session and reloads. A
+   * host without it answers with an error, read as nothing to show.
+   */
+  "instructionFiles/state": [{ load?: boolean }, InstructionFilesState];
   openUrl: [string, void];
   applyToFile: [ApplyToFilePayload, void];
   overwriteFile: [{ filepath: string; prevFileContent: string | null }, void];
@@ -79,4 +92,11 @@ export type ToWebviewFromIdeProtocol = ToWebviewFromIdeOrCoreProtocol & {
   exitEditMode: [undefined, void];
   focusEdit: [undefined, void];
   addToChat: [AddToChatPayload, void];
+  // Command Palette actions (NI13); each answers whether it applied
+  stopResponse: [undefined, boolean];
+  resumeResponse: [undefined, boolean];
+  startLoop: [undefined, "resumed" | "chosen" | "running"];
+  stopLoop: [undefined, boolean];
+  showAgents: [undefined, boolean];
+  testConnection: [undefined, boolean];
 };

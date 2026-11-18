@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 
 const script = resolve(__dirname, "../../../../scripts/reviewer-eval.mjs");
 
+const CHILD_RUN_MS = 60_000;
+
 function run(args: string[], env: Record<string, string> = {}) {
   const clean = { ...process.env };
   for (const k of Object.keys(clean)) {
@@ -18,7 +20,8 @@ function run(args: string[], env: Record<string, string> = {}) {
   });
 }
 
-describe("npm run eval:reviewer (scripts/reviewer-eval.mjs)", () => {
+// The guards answer before anything is started, so the default limit fits them.
+describe("npm run eval:reviewer (scripts/reviewer-eval.mjs): argument guards", () => {
   it("prints usage", () => {
     const r = run(["--help"]);
     expect(r.status).toBe(0);
@@ -51,38 +54,46 @@ describe("npm run eval:reviewer (scripts/reviewer-eval.mjs)", () => {
     expect(r.stderr).toContain("--yes");
     expect(r.stderr).toContain("api.anthropic.com");
   });
-
-  it("does not need --yes or a key for a local server", () => {
-    // Fails later (nothing is listening on this port), not at the guard.
-    const r = run(
-      [
-        "--provider",
-        "openai",
-        "--model",
-        "m",
-        "--base-url",
-        "http://localhost:9/v1",
-      ],
-      {},
-    );
-    expect(r.stderr).not.toContain("--yes");
-    expect(r.stderr).not.toContain("API key");
-  });
-
-  it("runs a stand-in without any network and meets the bar with the oracle", () => {
-    const r = run(["--stub", "oracle", "--strict"]);
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("Result: meets the bar.");
-  });
-
-  it("--strict gives a failing exit code when the bar is missed", () => {
-    const r = run(["--stub", "allow-all", "--strict"]);
-    expect(r.status).toBe(1);
-    expect(r.stdout).toContain("does not meet the bar");
-    expect(r.stderr).toContain("NOT met");
-  });
-
-  it("without --strict a missed bar still exits 0", () => {
-    expect(run(["--stub", "allow-all"]).status).toBe(0);
-  });
 });
+
+// Each of these starts a whole vitest run in a child process: about 1.5 s on
+// an idle machine, several times that beside the rest of the suite.
+describe(
+  "npm run eval:reviewer (scripts/reviewer-eval.mjs): runs",
+  { timeout: CHILD_RUN_MS },
+  () => {
+    it("does not need --yes or a key for a local server", () => {
+      // Fails later (nothing is listening on this port), not at the guard.
+      const r = run(
+        [
+          "--provider",
+          "openai",
+          "--model",
+          "m",
+          "--base-url",
+          "http://localhost:9/v1",
+        ],
+        {},
+      );
+      expect(r.stderr).not.toContain("--yes");
+      expect(r.stderr).not.toContain("API key");
+    });
+
+    it("runs a stand-in without any network and meets the bar with the oracle", () => {
+      const r = run(["--stub", "oracle", "--strict"]);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("Result: meets the bar.");
+    });
+
+    it("--strict gives a failing exit code when the bar is missed", () => {
+      const r = run(["--stub", "allow-all", "--strict"]);
+      expect(r.status).toBe(1);
+      expect(r.stdout).toContain("does not meet the bar");
+      expect(r.stderr).toContain("NOT met");
+    });
+
+    it("without --strict a missed bar still exits 0", () => {
+      expect(run(["--stub", "allow-all"]).status).toBe(0);
+    });
+  },
+);

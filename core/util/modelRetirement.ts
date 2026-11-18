@@ -7,7 +7,10 @@
  *     `GET /v1/models` (core/util/anthropicSurfaceTest.ts), kept locally.
  * The dates apply to Anthropic-operated platforms only: Bedrock and
  * Google-managed Vertex set their own schedules, so only provider
- * "anthropic" is matched. Pure and GUI-safe: no I/O, the caller passes `now`.
+ * "anthropic" is matched against the table. Provider "openai" gets a notice
+ * only from its own live answer (`shutdown_date` from OpenAI's models API,
+ * read by the selected model's background refresh). Pure and GUI-safe: no
+ * I/O, the caller passes `now`.
  * A notice is information; nothing is blocked.
  */
 import data from "./modelRetirements.generated.json";
@@ -83,6 +86,23 @@ function dayNumber(iso: string): number {
   return Math.floor(Date.parse(`${iso.slice(0, 10)}T00:00:00Z`) / 86_400_000);
 }
 
+/**
+ * A row's state on `now` (YYYY-MM-DD). The checked-in `state` is what the
+ * source page said on `fetchedOn`; once a firm retirement date has come, the
+ * model is retired whatever the row says, so nobody has to edit the table on
+ * the day. A "not sooner than" date never retires a model by itself.
+ */
+export function rowStateOn(row: RetirementRow, now: string): RetirementState {
+  if (
+    row.retiresAt &&
+    !row.notSoonerThan &&
+    dayNumber(row.retiresAt) <= dayNumber(now)
+  ) {
+    return "retired";
+  }
+  return row.state;
+}
+
 export interface RetirementInput {
   provider: string | undefined;
   model: string | undefined;
@@ -101,6 +121,7 @@ interface Facts {
 
 function mergeFacts(
   row: RetirementRow | undefined,
+  now: string,
   live?: LiveLifecycle,
 ): Facts {
   const liveState =
@@ -112,7 +133,7 @@ function mergeFacts(
   const retiresAt =
     live?.retiresAt?.slice(0, 10) ?? row?.retiresAt ?? undefined;
   return {
-    state: liveState ?? row?.state ?? "active",
+    state: liveState ?? (row ? rowStateOn(row, now) : "active"),
     ...(retiresAt ? { retiresAt } : {}),
     ...((live?.deprecatedAt?.slice(0, 10) ?? row?.deprecatedAt)
       ? { deprecatedAt: live?.deprecatedAt?.slice(0, 10) ?? row?.deprecatedAt! }
@@ -175,10 +196,13 @@ export function retirementNotice(
   input: RetirementInput,
 ): RetirementNotice | undefined {
   const { model } = input;
-  if (input.provider !== "anthropic" || !model) return undefined;
+  if (!model) return undefined;
+  if (input.provider !== "anthropic") {
+    if (input.provider !== "openai" || !input.live) return undefined;
+  }
   const row = findRetirementRow(input.provider, model, input.rows);
   if (!row && !input.live) return undefined;
-  const f = mergeFacts(row, input.live);
+  const f = mergeFacts(row, input.now, input.live);
   const daysLeft = f.retiresAt
     ? dayNumber(f.retiresAt) - dayNumber(input.now)
     : undefined;
@@ -200,4 +224,39 @@ export function retirementNotice(
     message: sentence(model, severity, f, daysLeft, replacement),
     key: `${model}@${f.retiresAt ?? "-"}:${severity}`,
   };
+}
+
+/**
+ * Lifecycle facts from a provider's model list as the person fetched it
+ * (`deprecated` and `retiresAt` of core/llm/fetchModels.ts), in the shape the
+ * notices read. Only the providers whose notices read live facts (Anthropic
+ * and OpenAI). A model the list reports active is kept as "active", so a
+ * stale deprecation recorded earlier does not linger; a model whose entry
+ * carries no lifecycle field and no date yields nothing.
+ */
+export function liveFromFetched(
+  provider: string,
+  fetched: {
+    modelId?: string;
+    name: string;
+    deprecated?: boolean;
+    retiresAt?: string;
+  }[],
+): { model: string; live: LiveLifecycle }[] {
+  if (provider !== "anthropic" && provider !== "openai") return [];
+  const out: { model: string; live: LiveLifecycle }[] = [];
+  for (const m of fetched) {
+    const model = m.modelId ?? m.name;
+    if (!model || (m.deprecated === undefined && !m.retiresAt)) continue;
+    out.push({
+      model,
+      live: {
+        ...(m.deprecated === undefined
+          ? {}
+          : { lifecycle: m.deprecated ? "deprecated" : "active" }),
+        ...(m.retiresAt ? { retiresAt: m.retiresAt } : {}),
+      },
+    });
+  }
+  return out;
 }

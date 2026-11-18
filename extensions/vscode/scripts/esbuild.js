@@ -1,5 +1,9 @@
 const fs = require("fs");
 
+const {
+  esbuildOptionsFromFlags,
+  minifyBundleInPlace,
+} = require("./esbuild-flags");
 const { writeBuildTimestamp } = require("./utils");
 const {
   jsdomDefaultStylesheetPlugin,
@@ -11,6 +15,7 @@ const {
 const esbuild = require("esbuild");
 
 const flags = process.argv.slice(2);
+const options = esbuildOptionsFromFlags(flags);
 
 const esbuildConfig = {
   entryPoints: ["src/extension.ts"],
@@ -19,7 +24,7 @@ const esbuildConfig = {
   external: ["vscode", "esbuild", "./xhr-sync-worker.js"],
   format: "cjs",
   platform: "node",
-  sourcemap: flags.includes("--sourcemap"),
+  ...options.bundle,
   loader: {
     // eslint-disable-next-line @typescript-eslint/naming-convention
     ".node": "file",
@@ -37,11 +42,18 @@ const esbuildConfig = {
     {
       name: "on-end-plugin",
       setup(build) {
-        build.onEnd((result) => {
+        build.onEnd(async (result) => {
           if (result.errors.length > 0) {
             console.error("Build failed with errors:", result.errors);
             throw new Error(result.errors);
           } else {
+            if (options.minifyPass) {
+              await minifyBundleInPlace(
+                esbuild,
+                esbuildConfig.outfile,
+                options.minifyPass,
+              );
+            }
             try {
               fs.writeFileSync(
                 "./build/meta.json",

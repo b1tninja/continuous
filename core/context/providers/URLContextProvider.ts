@@ -10,8 +10,9 @@ import {
   FetchFunction,
   RequestOptions,
 } from "../../index.js";
+import { decodeBytes } from "../../util/boundedBody";
 import { fetchFavicon } from "../../util/fetchFavicon";
-import { readBodyCapped, withDeadline } from "../../util/boundedBody";
+import { assertWebEnabled } from "../../util/webConfig";
 import {
   classifyContentType,
   mediaType,
@@ -28,8 +29,22 @@ import {
   assertNoUserinfo,
   classifyFetchTarget,
 } from "../../util/fetchUrlSafety";
-import { fetchWithGuardedRedirects } from "../../util/guardedFetch";
+import { withProvenance, type FetchPurpose } from "../../util/fetchRecord";
+import { guardedWebRequest } from "../../util/guardedFetch";
+import { modelToolFetch } from "../../util/modelToolFetch";
 import { readUserFetchLimits } from "../../util/userFetchLimits";
+import {
+  NotTextRefusal,
+  statusOutcomeError,
+  toOutcomeError,
+  WebOutcomeError,
+} from "../../util/web/fetchOutcome";
+import { needsJavaScript } from "../../util/web/needsJs";
+import {
+  needsJsOutcome,
+  notTextOutcome,
+  type BrowserTail,
+} from "../../util/web/outcomes";
 
 class URLContextProvider extends BaseContextProvider {
   static description: ContextProviderDescription = {
@@ -43,9 +58,16 @@ class URLContextProvider extends BaseContextProvider {
     query: string,
     extras: ContextProviderExtras,
   ): Promise<ContextItem[]> {
-    return await getUrlContextItems(query, extras.fetch, {
-      requestOptions: extras.config?.requestOptions,
-    });
+    // Not `extras.fetch`, which carries the global request headers (often a
+    // gateway token) to every host: a site the person names gets the
+    // transport settings only, as the fetch tool's sites do
+    return await getUrlContextItems(
+      query,
+      modelToolFetch(extras.config ?? {}),
+      {
+        requestOptions: extras.config?.requestOptions,
+      },
+    );
   }
 }
 
@@ -54,12 +76,11 @@ export default URLContextProvider;
 export interface UrlFetchOptions {
   /**
    * For URLs chosen by the model (the fetch tool) rather than typed by the
-   * user: follow redirects one at a time and refuse one that leads from a
-   * public address to a non-public one (loopback, private network, the cloud
-   * metadata address), skip the favicon lookup, which would fetch another
-   * URL from the page, and refuse a URL that carries a credential-shaped
-   * value. A URL that is itself non-public is the caller's decision (the
-   * tool asks for approval first).
+   * user: skip the favicon lookup, which would fetch another URL from the
+   * page, and refuse a URL that carries a credential-shaped value. Redirects
+   * are guarded for both (every hop re-checked, a public-to-non-public hop
+   * refused). A URL that is itself non-public is the caller's decision (the
+   * tool asks for approval first; a person who types one meant it).
    */
   guardRedirects?: boolean;
   /** For the favicon lookup, which does not go through `fetchFn`. */
@@ -68,63 +89,120 @@ export interface UrlFetchOptions {
   maxBytes?: number;
   /** Deadline in milliseconds for the whole request including the body. Default: 20 s. */
   deadlineMs?: number;
+  /** The tool call that asked, for the fetch record. */
+  callId?: string;
+  /** Which path is fetching. Default: `tool` with `guardRedirects`, else `url`. */
+  purpose?: FetchPurpose;
+  /**
+   * The browser the `needs-js` text points to (section 7.2 of
+   * plans/research/web-fetch-large-pages-and-policy.md). Default: none.
+   */
+  browser?: BrowserTail;
 }
 
+/**
+ * Fetch a URL as context items: the page, with its provenance line. Any other
+ * outcome (a refusal, a status that is not 2xx, a network failure, a binary
+ * or JavaScript-only page) is thrown as a `WebOutcomeError` carrying the typed
+ * outcome and its exact text (`core/util/web/outcomes.ts`); its message is the
+ * outcome's first sentence, for `@url`.
+ */
 export async function getUrlContextItems(
   query: string,
   fetchFn: FetchFunction,
   options: UrlFetchOptions = {},
 ): Promise<ContextItem[]> {
-  const url = new URL(query.trim());
-  // Before any network call, and for typed and model-chosen URLs alike
-  assertFetchableScheme(url);
-  assertNoUserinfo(url);
-  if (options.guardRedirects) assertNoSecretInUrl(url);
-
+  const startUrl = new URL(query.trim());
+  const byModel = !!options.guardRedirects;
+  // web.enabled: false turns off @url and the fetch tool alike (WB45)
+  assertWebEnabled("no web page is fetched");
   const limits = readUserFetchLimits();
   const maxBytes = options.maxBytes ?? limits.maxBytes;
   const deadlineMs = options.deadlineMs ?? limits.deadlineMs;
+  const ctx = { url: startUrl, deadlineMs };
+  try {
+    // Before any network call, and for typed and model-chosen URLs alike
+    assertFetchableScheme(startUrl);
+    assertNoUserinfo(startUrl);
+    if (byModel) assertNoSecretInUrl(startUrl);
+  } catch (e) {
+    throw toOutcomeError(e, ctx);
+  }
 
-  const icon = options.guardRedirects
+  const icon = byModel
     ? undefined
-    : await fetchFavicon(url, options.requestOptions);
-  const { text, truncated, contentType } = await withDeadline(
+    : await fetchFavicon(startUrl, options.requestOptions);
+  const resp = await guardedWebRequest(startUrl, {
+    purpose: options.purpose ?? (byModel ? "tool" : "url"),
+    origin: byModel ? "model" : "person",
+    fetchFn,
+    maxBytes,
     deadlineMs,
-    async (signal) => {
-      const resp = options.guardRedirects
-        ? await fetchWithGuardedRedirects(
-            url,
-            fetchFn,
-            { classify: classifyFetchTarget },
-            { signal },
-          )
-        : await fetchFn(url, { signal } as never);
-
-      // Check if the response is not OK
-      if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+    guard: { classify: classifyFetchTarget },
+    callId: options.callId,
+    accept: ({ headers }) => {
+      const type = headers.get("content-type");
+      if (classifyContentType(type) === "binary") {
+        throw new NotTextRefusal(mediaType(type));
       }
-      const contentType: string | null =
-        resp.headers?.get?.("content-type") ?? null;
-      if (classifyContentType(contentType) === "binary") {
-        throw binaryRefusal(contentType);
-      }
-      const body = await readBodyCapped(resp, { maxBytes, signal, deadlineMs });
-      return { ...body, contentType };
     },
-  );
+  }).catch((e: unknown) => {
+    throw toOutcomeError(e, ctx);
+  });
+  if (!resp.ok) {
+    // The status and two header values only: an error page is never read
+    throw statusOutcomeError(
+      {
+        status: resp.status,
+        statusText: resp.statusText,
+        headers: resp.headers,
+        url: resp.finalUrl,
+      },
+      resp.record,
+    );
+  }
+  // The page is labelled with where it was read, not where it was pointed:
+  // a redirect can lead to another host
+  const url = resp.finalUrl;
+  const { contentType, truncated } = resp;
+  const text = decodeBytes(resp.data, contentType, truncated);
 
   let kind: BodyKind = classifyContentType(contentType);
   if (kind === "unknown") kind = sniffBody(text);
-  if (kind === "binary") throw binaryRefusal(contentType);
+  if (kind === "binary") {
+    throw new WebOutcomeError(
+      notTextOutcome({
+        host: url.host,
+        mediaType: mediaType(contentType),
+        httpStatus: resp.status,
+      }),
+      resp.record,
+    );
+  }
 
   const { markdown, title } = convert(text, kind, url);
+  if (kind === "html") {
+    const verdict = needsJavaScript(text, contentType, markdown);
+    if (verdict.needsJs) {
+      throw new WebOutcomeError(
+        needsJsOutcome({
+          host: url.host,
+          textChars: verdict.textChars,
+          noscript: verdict.noscript,
+          browser: options.browser,
+          httpStatus: resp.status,
+        }),
+        resp.record,
+      );
+    }
+  }
 
   const items: ContextItem[] = [
     {
       icon,
       description: url.toString(),
-      content: sanitizeFetchedText(markdown),
+      // Where it was read, its status, size and hash, ahead of the page
+      content: withProvenance(resp.record, sanitizeFetchedText(markdown)),
       name:
         sanitizeFetchedText(title).replace(/\s+/g, " ").trim() || url.pathname,
       uri: {
@@ -141,12 +219,6 @@ export async function getUrlContextItems(
     });
   }
   return items;
-}
-
-function binaryRefusal(contentType: string | null): Error {
-  return new Error(
-    `Refused: the response is ${mediaType(contentType) || "binary data"}, not text. Only HTML, plain text, markdown, JSON and XML are read`,
-  );
 }
 
 /** Text of an HTML page that Readability could not use, one line per block. */

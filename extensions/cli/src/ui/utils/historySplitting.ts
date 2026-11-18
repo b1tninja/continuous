@@ -41,7 +41,13 @@ function splitChatHistoryItem(
     return [item];
   }
 
-  return splitContentIntoHistoryItems(item, content, terminalWidth);
+  // The reasoning goes with the first piece only, so it shows once
+  return splitContentIntoHistoryItems(item, content, terminalWidth).map(
+    (piece, index) =>
+      index === 0 || !piece.reasoning
+        ? piece
+        : { ...piece, reasoning: undefined },
+  );
 }
 
 /**

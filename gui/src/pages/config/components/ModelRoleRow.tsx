@@ -8,6 +8,11 @@ import { ReactNode } from "react";
 import { MissingSecretsPopover } from "../../../components/config/MissingSecretsPopover";
 import { ToolTip } from "../../../components/gui/Tooltip";
 import { Button } from "../../../components/ui";
+import {
+  retirementDetail,
+  retirementKey,
+  useRetirementNotices,
+} from "../../../hooks/useRetirementNotices";
 import { useAppSelector } from "../../../redux/hooks";
 import {
   missingSecretsForModel,
@@ -48,6 +53,14 @@ export function ModelRoleRow({
         selectedModel?.title,
       )
     : [];
+  const retirements = useRetirementNotices(
+    selectedModel ? [selectedModel] : [],
+  );
+  const retirement = selectedModel
+    ? retirements.get(
+        retirementKey(selectedModel.provider, selectedModel.model),
+      )
+    : undefined;
 
   return (
     <div className="py-6 first:pt-0 last:pb-0">
@@ -71,10 +84,11 @@ export function ModelRoleRow({
           />
         </div>
         {selectedModel && (
-          <ToolTip content="Configure">
+          <ToolTip content="Configure...">
             <Button
               variant="ghost"
               size="sm"
+              aria-label={`Configure ${selectedModel.title}`}
               onClick={() => onConfigure(selectedModel)}
               className="my-0 h-6 w-6 p-0 text-description hover:enabled:text-foreground"
             >
@@ -99,6 +113,19 @@ export function ModelRoleRow({
           </MissingSecretsPopover>
         )}
       </div>
+      {retirement && (
+        <p
+          className="mt-1.5 mb-0 flex items-start gap-1 text-xs text-warning"
+          data-testid={`model-row-retirement-${role}`}
+          title={retirementDetail(retirement)}
+        >
+          <ExclamationTriangleIcon
+            className="mt-px h-3.5 w-3.5 shrink-0"
+            aria-hidden="true"
+          />
+          <span>{retirement.message}</span>
+        </p>
+      )}
     </div>
   );
 }

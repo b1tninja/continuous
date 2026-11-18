@@ -1,12 +1,19 @@
 import {
+  BedrockClient,
+  GetFoundationModelAvailabilityCommand,
+  GetUseCaseForModelAccessCommand,
+  ListFoundationModelsCommand,
+  ListInferenceProfilesCommand,
+} from "@aws-sdk/client-bedrock";
+import {
   BedrockRuntimeClient,
   ContentBlock,
   ContentBlockDelta,
   ContentBlockStart,
   ContentBlockStartEvent,
+  ConversationRole,
   ConverseCommand,
   ConverseCommandOutput,
-  ConversationRole,
   ConverseStreamCommand,
   ConverseStreamCommandInput,
   ConverseStreamCommandOutput,
@@ -18,12 +25,9 @@ import {
   ToolUseBlockDelta,
 } from "@aws-sdk/client-bedrock-runtime";
 import {
-  BedrockClient,
-  GetFoundationModelAvailabilityCommand,
-  GetUseCaseForModelAccessCommand,
-  ListFoundationModelsCommand,
-  ListInferenceProfilesCommand,
-} from "@aws-sdk/client-bedrock";
+  ListServiceQuotasCommand,
+  ServiceQuotasClient,
+} from "@aws-sdk/client-service-quotas";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import { withToolDialect } from "@continuedev/config-yaml";
 import { getTlsErrorHint } from "@continuedev/fetch";
@@ -34,35 +38,40 @@ import {
   fillMissingToolResults,
   recoveredCallId,
   recoverFromText,
+  repairConverseTurns,
   type RecoveredCall,
   type TextToolRecovery,
 } from "@continuedev/openai-adapters";
 import type { NodeHttpHandler } from "@smithy/node-http-handler";
 
-import type { CompletionOptions, RequestOptions } from "../../index.js";
+import {
+  bedrockRefusedField,
+  converseRequestHasField,
+  converseRequestWithoutField,
+  type BedrockRefusableField,
+} from "@continuedev/llm-info";
+import type { CompletionOptions, RequestOptions, Usage } from "../../index.js";
 import { ChatMessage, Chunk, LLMOptions, MessageContent } from "../../index.js";
-import type { Usage } from "../../index.js";
 import { CANCELLED_TOOL_CALL_MESSAGE } from "../../tools/constants.js";
 import { safeParseToolCallArgs } from "../../tools/parseArgs.js";
 import { renderChatMessage, stripImages } from "../../util/messageContent.js";
+import { isTaskPlanBlockText } from "../../util/taskPlan.js";
 import {
   probeToolDialect,
   type ToolDialectProbeResult,
 } from "../../util/toolDialectProbe.js";
 import { parseDataUrl } from "../../util/url.js";
-import { BaseLLM } from "../index.js";
 import { DEFAULT_REASONING_TOKENS } from "../constants.js";
+import { BaseLLM } from "../index.js";
 import { bedrockSupportsTools } from "../toolSupport.js";
-import { createBedrockRequestHandler } from "./bedrockHttp.js";
 import { withResponseInfo } from "../utils/cacheStats.js";
-import { isTaskPlanBlockText } from "../../util/taskPlan.js";
-import {
-  type BedrockRefusableField,
-  bedrockRefusedField,
-  converseRequestHasField,
-  converseRequestWithoutField,
-} from "@continuedev/llm-info";
+import { createBedrockRequestHandler } from "./bedrockHttp.js";
 
+import {
+  modelCatalogDir,
+  readModelCatalogSettings,
+  type ModelCatalogSettings,
+} from "../modelCatalogStore.js";
 import { resolvePromptCacheTtl } from "./anthropicCache.js";
 import {
   bedrockCatalogCacheKey,
@@ -72,15 +81,15 @@ import {
 import {
   applyCrossRegionInference,
   applyModelAccess,
-  BedrockModelAccess,
-  BedrockModelOption,
   bedrockCachePartsForModel,
   bedrockCachePointAfterTextOnly,
   bedrockCacheTtl,
   bedrockMinMaxTokens,
+  BedrockModelAccess,
+  BedrockModelOption,
   bedrockOmitUnsupportedInference,
-  bedrockRepairsStreamedToolInput,
   bedrockReasoningFields,
+  bedrockRepairsStreamedToolInput,
   bedrockSamplingParams,
   bedrockStreamsToolInputCleanly,
   bedrockToolsNeedNonStreaming,
@@ -108,6 +117,13 @@ import {
   ToolInputGate,
   toolSchemaKeys,
 } from "./bedrockHelpers.js";
+import {
+  checkBedrockQuotas,
+  credentialFingerprint,
+  zeroQuotaWarning,
+  type BedrockQuotaReport,
+  type QuotaCheckTrigger,
+} from "./bedrockQuotas.js";
 
 /** The use-case lookup is advisory, so listing never waits on it for long. */
 const USE_CASE_LOOKUP_TIMEOUT_MS = 2000;
@@ -185,6 +201,14 @@ interface StreamTextState {
    */
   recovery?: TextToolRecovery;
   recovered: RecoveredCall[];
+  /**
+   * The tool call id of each toolUse block, by `contentBlockIndex`. Bedrock
+   * sends the id only with the block's start, so its input fragments are
+   * stamped with it here; the GUI then matches each fragment to its own call
+   * instead of to whichever call it saw last, which mixed parallel calls'
+   * arguments and left a call with no id.
+   */
+  toolUseIds: Map<number, string>;
 }
 
 function streamTextState(
@@ -198,6 +222,7 @@ function streamTextState(
     isNova2: /nova-2-/i.test(model),
     recovery,
     recovered: [],
+    toolUseIds: new Map(),
   };
 }
 
@@ -274,6 +299,7 @@ function recoveredCallMessage(call: RecoveredCall, index: number): ChatMessage {
 function* deltaMessages(
   delta: ContentBlockDelta,
   state: StreamTextState,
+  blockIndex?: number,
 ): Generator<ChatMessage> {
   if (delta.text) {
     let text = delta.text;
@@ -314,16 +340,20 @@ function* deltaMessages(
     yield { role: "thinking", content: "", signature: reasoning.signature };
     return;
   }
-  // A tool-call input fragment; the id and name came with the block start
+  // A tool-call input fragment; the id came with the block start (see
+  // StreamTextState.toolUseIds), the name only there
   const toolUse = delta.toolUse as
     (ToolUseBlockDelta & ToolUseBlock) | undefined;
   if (toolUse) {
+    const id =
+      toolUse.toolUseId ??
+      (blockIndex === undefined ? undefined : state.toolUseIds.get(blockIndex));
     yield {
       role: "assistant",
       content: "",
       toolCalls: [
         {
-          id: toolUse.toolUseId,
+          id,
           type: "function",
           function: { name: toolUse.name, arguments: toolUse.input },
         },
@@ -558,6 +588,104 @@ class Bedrock extends BaseLLM {
    */
   cachedCatalog(): BedrockModelOption[] | undefined {
     return readBedrockCatalogCache(this._catalogCacheKey());
+  }
+
+  /**
+   * The account's per-minute inference quotas in this region, from Service
+   * Quotas (`servicequotas:ListServiceQuotas`, optional), through a cache
+   * under the model information setting. Uses the same credentials, region,
+   * proxy and CA settings as the Bedrock client. Advisory: never throws,
+   * gives up after five seconds, and a refusal is remembered for a day (see
+   * bedrockQuotas.ts).
+   */
+  async checkQuotas(
+    trigger: QuotaCheckTrigger,
+    opts: {
+      settings?: ModelCatalogSettings;
+      dir?: string;
+      listPage?: Parameters<typeof checkBedrockQuotas>[0]["listPage"];
+      now?: () => number;
+      timeoutMs?: number;
+    } = {},
+  ): Promise<BedrockQuotaReport> {
+    const region = this.region ?? "us-east-1";
+    let client: ServiceQuotasClient | undefined;
+    // Resolved once: the fingerprint and the client use the same credentials
+    let credentials: ReturnType<Bedrock["_getCredentials"]> | undefined;
+    const getCredentials = () => (credentials ??= this._getCredentials());
+    const listPage =
+      opts.listPage ??
+      (async (nextToken: string | undefined, signal: AbortSignal) => {
+        client ??= await this._getQuotasClient(await getCredentials());
+        return client.send(
+          new ListServiceQuotasCommand({
+            ServiceCode: "bedrock",
+            MaxResults: 100,
+            NextToken: nextToken,
+          }),
+          { abortSignal: signal },
+        );
+      });
+    try {
+      return await checkBedrockQuotas({
+        key: this._catalogCacheKey(),
+        region,
+        trigger,
+        settings: opts.settings ?? readModelCatalogSettings(),
+        dir: opts.dir ?? modelCatalogDir(),
+        apiKey: !!this._resolveApiKey(),
+        credentials: async () =>
+          credentialFingerprint((await getCredentials()).accessKeyId),
+        listPage,
+        now: opts.now,
+        timeoutMs: opts.timeoutMs,
+      });
+    } catch {
+      return { status: "skipped", region };
+    } finally {
+      client?.destroy();
+    }
+  }
+
+  /**
+   * The warning for a 0 tokens- or requests-per-minute quota on the route
+   * this model's requests take, from a quota report; undefined otherwise.
+   */
+  zeroQuotaWarning(report: BedrockQuotaReport): string | undefined {
+    if (!report.quotas || !this.model) return undefined;
+    const effective = applyCrossRegionInference(
+      this.model,
+      this.crossRegionInference,
+      this.region,
+    );
+    return zeroQuotaWarning(
+      report.quotas,
+      effective,
+      report.region,
+      this.title ?? this.model,
+    );
+  }
+
+  /** Service Quotas client: IAM credentials only, one attempt, the user's network settings. */
+  private async _getQuotasClient(credentials: {
+    accessKeyId: string;
+    secretAccessKey: string;
+    sessionToken?: string;
+  }): Promise<ServiceQuotasClient> {
+    const region = this.region ?? "us-east-1";
+    const requestHandler = await this._requestHandlerFor(
+      `https://servicequotas.${region}.amazonaws.com`,
+    );
+    return new ServiceQuotasClient({
+      region,
+      ...(requestHandler ? { requestHandler } : {}),
+      credentials: {
+        accessKeyId: credentials.accessKeyId,
+        secretAccessKey: credentials.secretAccessKey,
+        sessionToken: credentials.sessionToken || undefined,
+      },
+      maxAttempts: 1,
+    });
   }
 
   /**
@@ -1018,6 +1146,7 @@ class Bedrock extends BaseLLM {
       let usage: Usage | undefined;
       let stopReason: string | undefined;
       let latencyMs: number | undefined;
+      let serviceTier: string | undefined;
       // Off unless asked for (the CONTINUE_RECOVER_TEXT_TOOL_CALLS variable or
       // extraBodyProperties.x_continue_recover_text_tool_calls): calls the
       // model wrote as text are held until the reply ends and made only when
@@ -1079,6 +1208,9 @@ class Bedrock extends BaseLLM {
         if (chunk.metadata?.metrics?.latencyMs !== undefined) {
           latencyMs = chunk.metadata.metrics.latencyMs;
         }
+        if (chunk.metadata?.serviceTier?.type) {
+          serviceTier = chunk.metadata.serviceTier.type;
+        }
         if (chunk.messageStop?.stopReason) {
           stopReason = chunk.messageStop.stopReason;
         }
@@ -1100,7 +1232,11 @@ class Bedrock extends BaseLLM {
         }
         if (chunk.contentBlockDelta?.delta) {
           const delta = chunk.contentBlockDelta.delta;
-          for (const message of deltaMessages(delta, state)) {
+          for (const message of deltaMessages(
+            delta,
+            state,
+            chunk.contentBlockDelta.contentBlockIndex,
+          )) {
             if (delta.toolUse && gate.holding) {
               gate.add(message, delta.toolUse.input);
               continue;
@@ -1113,10 +1249,13 @@ class Bedrock extends BaseLLM {
         const started = toolCallStartMessage(chunk.contentBlockStart);
         if (started) {
           sawToolUse = true;
-          toolName =
-            started.role === "assistant"
-              ? started.toolCalls?.[0]?.function?.name
-              : undefined;
+          const startedCall =
+            started.role === "assistant" ? started.toolCalls?.[0] : undefined;
+          toolName = startedCall?.function?.name;
+          const blockIndex = chunk.contentBlockStart?.contentBlockIndex;
+          if (blockIndex !== undefined && startedCall?.id) {
+            state.toolUseIds.set(blockIndex, startedCall.id);
+          }
           yield* gate.open(started);
         }
       }
@@ -1144,6 +1283,7 @@ class Bedrock extends BaseLLM {
             stopReason,
             latencyMs,
             requestId: response.$metadata?.requestId,
+            serviceTier,
           }),
         };
       }
@@ -1276,6 +1416,7 @@ class Bedrock extends BaseLLM {
           stopReason: response.stopReason,
           latencyMs: response.metrics?.latencyMs,
           requestId: response.$metadata?.requestId,
+          serviceTier: response.serviceTier?.type,
         }),
       };
     }
@@ -1451,16 +1592,15 @@ class Bedrock extends BaseLLM {
     modelId: string = this.model,
   ): Message[] {
     const replaysRedactedThinking = /claude/i.test(modelId);
+    // Claude refuses a thinking block without its signature
+    const requiresSignedThinking = replaysRedactedThinking;
     let currentRole: "user" | "assistant" = "user";
     let currentBlocks: ContentBlock[] = [];
 
     const converted: Message[] = [];
+    // A turn that converts to nothing is left out here and the turns around
+    // it are joined by repairConverseTurns below
     const pushCurrentMessage = () => {
-      if (currentBlocks.length === 0 && converted.length > 1) {
-        throw new Error(
-          `Bedrock: no content in ${currentRole} message before conversational turn change`,
-        );
-      }
       if (currentBlocks.length > 0) {
         converted.push({
           role: currentRole,
@@ -1588,11 +1728,23 @@ class Bedrock extends BaseLLM {
             };
             currentBlocks.push(block);
           } else {
+            // Claude checks a thinking block's signature: one without (the
+            // reply was stopped or cut off before its signature arrived, or
+            // the thinking came from a model that does not sign, before a
+            // switch) fails the whole request, "messages.N.content.0.thinking.
+            // signature: Field required". Left out, the request is accepted,
+            // in a past turn and in the current tool-use turn alike (measured
+            // on Bedrock with Claude Haiku 4.5, 2026-11-14).
+            // The Anthropic provider drops these the same way. Other families
+            // do not sign their reasoning and take it back as it is.
+            if (!message.signature && requiresSignedThinking) continue;
             const block: ContentBlock.ReasoningContentMember = {
               reasoningContent: {
                 reasoningText: {
                   text: (message.content as string) || "",
-                  signature: message.signature,
+                  ...(message.signature
+                    ? { signature: message.signature }
+                    : {}),
                 },
               },
             };
@@ -1604,6 +1756,12 @@ class Bedrock extends BaseLLM {
     if (currentBlocks.length > 0) {
       pushCurrentMessage();
     }
+
+    // An assistant reply stopped or failed before any text, reasoning this
+    // model can't take back, a tool call without an id: any of them leaves an
+    // empty turn, and Converse refuses two user or two assistant messages in
+    // a row
+    const repaired = repairConverseTurns(converted);
 
     // If caching is enabled, we add cache_control parameter to the last two user messages
     // The second-to-last because it retrieves potentially already cached contents,
@@ -1618,13 +1776,13 @@ class Bedrock extends BaseLLM {
       );
     if (cacheConversation) {
       this._addCachingToLastTwoUserMessages(
-        converted,
+        repaired,
         cache?.ttl,
         cache?.afterTextOnly ?? bedrockCachePointAfterTextOnly(modelId),
       );
     }
 
-    return converted;
+    return repaired;
   }
 
   /**

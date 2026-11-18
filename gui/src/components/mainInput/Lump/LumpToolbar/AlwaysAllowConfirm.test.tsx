@@ -97,6 +97,20 @@ describe("AlwaysAllowButton: confirming a rule that turns a safety check off", (
     expect(status()).toBe("generated");
   });
 
+  it("shows the rule in full, wrapped, with the reason in the page", async () => {
+    const { user } = await setup(true);
+    await user.click(button());
+    const rule = await screen.findByTestId("always-allow-confirm-tc1");
+    // never cut to one line: what is shown is what the second click saves
+    expect(rule.className).not.toContain("truncate");
+    expect(rule.className).toContain("break-all");
+    expect(rule.parentElement?.className).not.toContain("max-w-");
+    // the reason is text, not a tooltip a keyboard cannot reach
+    expect(rule.parentElement?.textContent).toContain(
+      "A safety check would still ask about this. Saves the rule:",
+    );
+  });
+
   it("second click saves that rule, then runs the call", async () => {
     const { user, saved, status } = await setup(true);
     await user.click(button());

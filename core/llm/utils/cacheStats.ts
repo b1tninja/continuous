@@ -55,6 +55,7 @@ export function withResponseInfo(
     stopReason?: string | null;
     latencyMs?: number | null;
     requestId?: string | null;
+    serviceTier?: string | null;
   },
 ): Usage {
   const response: ResponseInfo = {};
@@ -63,5 +64,6 @@ export function withResponseInfo(
     response.latencyMs = info.latencyMs;
   }
   if (info.requestId) response.requestId = info.requestId;
+  if (info.serviceTier) response.serviceTier = info.serviceTier;
   return Object.keys(response).length > 0 ? { ...usage, response } : usage;
 }

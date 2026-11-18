@@ -1,19 +1,28 @@
 import * as dotenv from "dotenv";
+import {
+  liveKey,
+  liveProviderSkipReason,
+  liveProviderTestsEnabled,
+} from "./liveProviderGuard.js";
 import { getLlmApi } from "./util.js";
 
-dotenv.config();
+// Live tests call paid provider APIs: they need RUN_LIVE_PROVIDER_TESTS=1 as
+// well as a key. Read .env only once opted in, so it cannot restore removed keys.
+if (liveProviderTestsEnabled()) {
+  dotenv.config();
+}
 
 /**
  * Test with actual CLI tool format to reproduce zod error
  */
 
-if (process.env.OPENAI_API_KEY) {
+if (liveKey("OPENAI_API_KEY")) {
   describe("CLI Tool Format Test", () => {
     test("should work with actual CLI tool format (after toChatBody conversion)", async () => {
       const api = getLlmApi({
         provider: "ai-sdk",
         model: "openai/gpt-4o-mini",
-        apiKey: process.env.OPENAI_API_KEY!,
+        apiKey: liveKey("OPENAI_API_KEY")!,
       });
 
       // This is the format AFTER toChatBody conversion (what openai-adapters receives)
@@ -69,7 +78,7 @@ if (process.env.OPENAI_API_KEY) {
       const api = getLlmApi({
         provider: "ai-sdk",
         model: "openai/gpt-4o-mini",
-        apiKey: process.env.OPENAI_API_KEY!,
+        apiKey: liveKey("OPENAI_API_KEY")!,
       });
 
       const tools: any[] = [];
@@ -101,7 +110,7 @@ if (process.env.OPENAI_API_KEY) {
       const api = getLlmApi({
         provider: "ai-sdk",
         model: "openai/gpt-4o-mini",
-        apiKey: process.env.OPENAI_API_KEY!,
+        apiKey: liveKey("OPENAI_API_KEY")!,
       });
 
       let response = "";
@@ -128,5 +137,5 @@ if (process.env.OPENAI_API_KEY) {
     });
   });
 } else {
-  test.skip("CLI tool format tests skipped - no OpenAI API key", () => {});
+  test.skip(`CLI tool format tests skipped - ${liveProviderSkipReason(["OPENAI_API_KEY"])}`, () => {});
 }

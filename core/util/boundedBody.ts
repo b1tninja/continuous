@@ -26,9 +26,12 @@ type AnyBody = {
 };
 
 export class FetchDeadlineError extends Error {
+  /** The deadline that passed, in milliseconds. */
+  readonly ms: number;
   constructor(ms: number) {
     super(`The request did not finish within ${Math.round(ms / 1000)} seconds`);
     this.name = "FetchDeadlineError";
+    this.ms = ms;
   }
 }
 
@@ -58,21 +61,26 @@ function decode(bytes: Uint8Array, charset: string, truncated: boolean) {
   return truncated ? text.replace(/�$/, "") : text;
 }
 
-export async function readBodyCapped(
-  resp: {
-    body?: unknown;
-    text(): Promise<string>;
-    headers?: { get?(name: string): string | null };
-  },
-  options: {
-    maxBytes?: number;
-    signal?: AbortSignal;
-    deadlineMs?: number;
-  } = {},
-): Promise<BoundedBody> {
+type CappedResponse = {
+  body?: unknown;
+  text(): Promise<string>;
+  arrayBuffer?(): Promise<ArrayBuffer>;
+  headers?: { get?(name: string): string | null };
+};
+
+interface CapOptions {
+  maxBytes?: number;
+  signal?: AbortSignal;
+  deadlineMs?: number;
+}
+
+/** The body as bytes, cut at the ceiling, read before the deadline. */
+export async function readBytesCapped(
+  resp: CappedResponse,
+  options: CapOptions = {},
+): Promise<{ data: Uint8Array; truncated: boolean }> {
   const max = options.maxBytes ?? DEFAULT_MAX_BODY_BYTES;
   const ms = options.deadlineMs ?? DEFAULT_FETCH_DEADLINE_MS;
-  const charset = charsetOf(resp.headers?.get?.("content-type"));
   const body = resp.body as AnyBody | null | undefined;
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -125,18 +133,41 @@ export async function readBodyCapped(
         it.return?.()?.catch?.(() => undefined);
       }
     }
-  } else {
+  } else if (typeof resp.arrayBuffer === "function") {
     // No stream to read (a minimal Response): bounded after the fact
+    take(new Uint8Array(await Promise.race([resp.arrayBuffer(), abort])));
+  } else {
     take(await Promise.race([resp.text(), abort]));
   }
 
-  const bytes = new Uint8Array(total);
+  const data = new Uint8Array(total);
   let offset = 0;
   for (const c of chunks) {
-    bytes.set(c, offset);
+    data.set(c, offset);
     offset += c.length;
   }
-  return { text: decode(bytes, charset, truncated), truncated, bytes: total };
+  return { data, truncated };
+}
+
+/** Decode body bytes by the header's charset, else UTF-8. */
+export function decodeBytes(
+  data: Uint8Array,
+  contentType: string | null | undefined,
+  truncated: boolean,
+): string {
+  return decode(data, charsetOf(contentType), truncated);
+}
+
+export async function readBodyCapped(
+  resp: CappedResponse,
+  options: CapOptions = {},
+): Promise<BoundedBody> {
+  const { data, truncated } = await readBytesCapped(resp, options);
+  return {
+    text: decodeBytes(data, resp.headers?.get?.("content-type"), truncated),
+    truncated,
+    bytes: data.length,
+  };
 }
 
 /**

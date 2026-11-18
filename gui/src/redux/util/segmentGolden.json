@@ -1,10 +1,10 @@
 {
   "ide-agent-claude": {
-    "tools.builtin@agent": "25a1d7345667",
+    "tools.builtin@agent": "853bff50eda7",
     "turn.agent@full": "85ef5288de58"
   },
   "ide-agent-claude-tasklist": {
-    "tools.builtin@agent": "e1081d8610f5",
+    "tools.builtin@agent": "72b4aaa30c5b",
     "turn.agent@full": "85ef5288de58"
   },
   "ide-plan-claude": {
@@ -16,23 +16,23 @@
     "format.agent": "f6d793648874"
   },
   "ide-agent-nova": {
-    "tools.builtin@agent": "25a1d7345667",
+    "tools.builtin@agent": "853bff50eda7",
     "turn.agent@full": "85ef5288de58"
   },
   "ide-loop-item": {
-    "tools.builtin@agent": "25a1d7345667",
+    "tools.builtin@agent": "853bff50eda7",
     "turn.agent@full": "85ef5288de58"
   },
   "ide-agent-scoped-rule": {
-    "tools.builtin@agent": "25a1d7345667",
+    "tools.builtin@agent": "853bff50eda7",
     "turn.agent@full": "85ef5288de58"
   },
   "ide-agent-scoped-first": {
-    "tools.builtin@agent": "25a1d7345667",
+    "tools.builtin@agent": "853bff50eda7",
     "turn.agent@full": "85ef5288de58"
   },
   "ide-compacted": {
-    "tools.builtin@agent": "25a1d7345667",
+    "tools.builtin@agent": "853bff50eda7",
     "turn.agent@full": "85ef5288de58"
   }
 }

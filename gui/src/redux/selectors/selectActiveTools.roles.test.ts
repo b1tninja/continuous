@@ -95,7 +95,15 @@ describe("selectActiveTools by role", () => {
 
   it("agent mode offers everything, and chat nothing", () => {
     expect(names("agent")).toHaveLength(tools.length);
-    expect(names("background")).toHaveLength(tools.length);
     expect(names("chat")).toEqual([]);
+  });
+
+  it("a background run is unattended: the built-ins, and only the MCP tools listed for it (TR25)", () => {
+    expect(names("background")).toHaveLength(3);
+    expect(
+      names("background", {
+        backgroundMcpTools: ["evil", "docs", "wiki"],
+      }),
+    ).toHaveLength(tools.length);
   });
 });

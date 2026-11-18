@@ -1,5 +1,6 @@
 import type { ContextItem } from "core/index.js";
 import { fetchUrlContentImpl } from "core/tools/implementations/fetchUrlContent.js";
+import { setHostResolver } from "core/util/networkAddress.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchTool } from "./fetch.js";
@@ -44,7 +45,7 @@ describe("fetchTool", () => {
     );
     expect(mockFetchUrlContentImpl).toHaveBeenCalledWith(
       { url: "https://example.com" },
-      { fetch },
+      { fetch: expect.any(Function) },
     );
   });
 
@@ -128,7 +129,7 @@ describe("fetchTool", () => {
 
     expect(mockFetchUrlContentImpl).toHaveBeenCalledWith(
       { url: "https://example.com" },
-      { fetch },
+      { fetch: expect.any(Function) },
     );
   });
 
@@ -153,8 +154,11 @@ describe("fetchTool", () => {
   });
 
   it("should provide correct preview in preprocess", async () => {
+    // Resolved by a stub, not DNS
+    setHostResolver(async () => ["93.184.216.34"]);
     const args = { url: "https://example.com" };
     const result = await fetchTool.preprocess?.(args);
+    setHostResolver();
 
     expect(result).toEqual({
       preview: [
@@ -164,6 +168,11 @@ describe("fetchTool", () => {
         },
       ],
       args,
+      // What the permission check is handed (WB26)
+      processedArgs: {
+        nonPublic: false,
+        resolvedAddresses: ["93.184.216.34"],
+      },
     });
   });
 });

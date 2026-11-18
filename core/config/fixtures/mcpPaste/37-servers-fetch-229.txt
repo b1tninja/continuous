@@ -1,0 +1,10 @@
+```json
+{
+  "mcpServers": {
+    "fetch": {
+      "command": "uvx",
+      "args": ["mcp-server-fetch", "--allowed-hosts", "docs.python.org", "*.wikipedia.org"]
+    }
+  }
+}
+```

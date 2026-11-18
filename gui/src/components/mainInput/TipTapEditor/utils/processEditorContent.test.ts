@@ -189,11 +189,19 @@ describe("processEditorContent", () => {
     expect(result.parts).toEqual([
       {
         type: "text",
-        text: "Check this code:\n\n```js example.js (1-1)\nfunction test() {\n  return 'hello';\n}\n```\n",
+        text: "Check this code:\n(see example.js lines 1-1, attached)",
       },
     ]);
     expect(result.selectedCode).toHaveLength(1);
     expect(result.selectedCode[0].filepath).toBe("file:///example.js");
+    // The selection is an attachment of the message, with its path and lines
+    expect(result.attachedCode).toHaveLength(1);
+    expect(result.attachedCode[0]).toMatchObject({
+      description: "example.js (lines 1-1)",
+      content:
+        "```js example.js (1-1)\nfunction test() {\n  return 'hello';\n}\n```",
+      uri: { type: "file", value: "file:///example.js" },
+    });
   });
 
   test("processEditorContent should not include editing code blocks in the text", () => {
@@ -342,17 +350,18 @@ describe("processEditorContent", () => {
     expect(result.selectedCode).toHaveLength(1);
     expect(result.selectedCode[0].filepath).toBe("file:///script.ts");
 
-    // `\n\n\`\`\`${extension} ${relativePathOrBasename}\n${contextItem.content}\n\`\`\`\n`;
-
     expect(result.parts).toEqual([
       {
         type: "text",
-        text: "Please explain this code and also check @related\n\n```ts script.ts (1-1)\nconst x = 42;\n```\n\nWhat does this constant do?",
+        text: "Please explain this code and also check @related\n(see script.ts lines 1-1, attached)\nWhat does this constant do?",
       },
       {
         type: "imageUrl",
         imageUrl: { url: "https://example.com/diagram.png" },
       },
+    ]);
+    expect(result.attachedCode.map((c) => c.content)).toEqual([
+      "```ts script.ts (1-1)\nconst x = 42;\n```",
     ]);
   });
 

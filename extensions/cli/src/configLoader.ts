@@ -215,6 +215,54 @@ async function loadLocalConfigYaml(
   );
 }
 
+/**
+ * A parser message without the lines it quotes from the file. The YAML
+ * parser ends its message with the offending lines and a caret; a config
+ * file holds keys, so only the sentence and its line and column are kept.
+ */
+function withoutQuotedSource(message: string): string {
+  const text = String(message ?? "");
+  const frame = text.search(/\r?\n\s*\r?\n/);
+  return (frame === -1 ? text : text.slice(0, frame)).trim().replace(/:$/, "");
+}
+
+/**
+ * The sentence for a config that did not load: the file, then each problem
+ * with its position when the parser gave one. Never the file's contents,
+ * and never an object printed as "[object Object]".
+ */
+export function configLoadFailure(
+  file: string | undefined,
+  messages: string[],
+): string {
+  const head = file ? `Failed to load config ${file}` : "Failed to load config";
+  return `${head}:${configLoadReason(messages)}`;
+}
+
+/** The part after the colon: " <problem>", or a list on lines of its own. */
+function configLoadReason(messages: string[]): string {
+  const problems = messages
+    .map(withoutQuotedSource)
+    .filter((message) => message.length > 0);
+  if (problems.length === 0) return " no reason was given.";
+  if (problems.length === 1) return ` ${problems[0]}`;
+  return `\n${problems.map((problem) => `- ${problem}`).join("\n")}`;
+}
+
+/**
+ * Thrown for a config that did not load. `message` is the whole sentence;
+ * `reason` is the part after the file, for a caller that names the file
+ * itself.
+ */
+export class ConfigLoadError extends Error {
+  readonly reason: string;
+  constructor(file: string | undefined, messages: string[]) {
+    super(configLoadFailure(file, messages));
+    this.name = "ConfigLoadError";
+    this.reason = configLoadReason(messages).trimStart();
+  }
+}
+
 export async function unrollPackageIdentifiersAsConfigYaml(
   packageIdentifiers: PackageIdentifier[],
   _accessToken: string | null,
@@ -240,7 +288,7 @@ export async function unrollPackageIdentifiersAsConfigYaml(
   if (unrollResult.errors) {
     const fatalError = unrollResult.errors?.find((e) => e.fatal);
     if (fatalError) {
-      throw new Error(`Failed to load config: ${fatalError.message}`);
+      throw new ConfigLoadError(undefined, [fatalError.message]);
     }
   }
   if (!unrollResult?.config) {
@@ -256,32 +304,46 @@ async function unrollAssistantWithConfig(
   organizationId: string | null,
   injectBlocks: PackageIdentifier[],
 ): Promise<AssistantUnrolled> {
-  const unrollResult = await unrollAssistant(
-    packageIdentifier,
-    new RegistryClient({
-      rootPath:
-        packageIdentifier.uriType === "file"
-          ? dirname(packageIdentifier.fileUri)
-          : undefined,
-    }),
-    {
-      currentUserSlug: "",
-      alwaysUseProxy: false,
-      renderSecrets: true,
-      platformClient: new CLIPlatformClient(),
-      injectBlocks,
-      // Accounts (providers.yaml) and the model catalog (models.yaml)
-      ...loadLocalModelFiles(),
-    },
-  );
+  const file =
+    packageIdentifier.uriType === "file"
+      ? packageIdentifier.fileUri
+      : undefined;
+  let unrollResult: Awaited<ReturnType<typeof unrollAssistant>>;
+  try {
+    unrollResult = await unrollAssistant(
+      packageIdentifier,
+      new RegistryClient({
+        rootPath:
+          packageIdentifier.uriType === "file"
+            ? dirname(packageIdentifier.fileUri)
+            : undefined,
+      }),
+      {
+        currentUserSlug: "",
+        alwaysUseProxy: false,
+        renderSecrets: true,
+        platformClient: new CLIPlatformClient(),
+        injectBlocks,
+        // Accounts (providers.yaml) and the model catalog (models.yaml)
+        ...loadLocalModelFiles(),
+      },
+    );
+  } catch (error) {
+    throw new ConfigLoadError(file, [
+      error instanceof Error ? error.message : String(error),
+    ]);
+  }
 
   const errorDetails = unrollResult.errors;
   if (!unrollResult.config) {
-    throw new Error(`Failed to load config:\n${errorDetails}`);
+    throw new ConfigLoadError(
+      file,
+      (errorDetails ?? []).map((detail) => detail.message),
+    );
   } else if (errorDetails?.length) {
     const warnings =
       errorDetails?.length > 1
-        ? errorDetails.map((d) => `\n- ${d.message}`)
+        ? errorDetails.map((d) => `\n- ${d.message}`).join("")
         : errorDetails[0].message;
     console.warn(chalk.dim(`Warning: ${warnings}`));
   }

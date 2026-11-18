@@ -3,6 +3,16 @@ import { BuiltInToolNames } from "../builtIn";
 import type { ShellKind } from "../../util/shell";
 import { canonicalRuleName } from "./names";
 import { classifyReadOnly, type ReadOnlyClaim } from "./readOnlyCommand";
+import { parsePolicyLevel, POLICY_LEVELS, type PolicyLevel } from "./levelText";
+
+export {
+  DEPRECATED_LEVEL_ALIASES,
+  isDeprecatedLevelSpelling,
+  modernizeLevelText,
+  parsePolicyLevel,
+  POLICY_LEVELS,
+} from "./levelText";
+export type { PolicyLevel } from "./levelText";
 
 /**
  * Five areas, each with its own level (plans/policy-areas.md). This replaces
@@ -18,52 +28,40 @@ export const POLICY_AREAS: readonly PolicyArea[] = [
   "questions",
 ];
 
-/** The top level, IDGAF, is the same on every area. */
-export type PolicyLevel =
-  "manual" | "cautious" | "automatic" | "permissive" | "idgaf";
+/**
+ * The Web area's levels (plans/research/web-fetch-large-pages-and-policy.md,
+ * section 8.2): the five shared levels plus two that exist for Web only.
+ * `off` offers no agent web tool; `listed` runs allowed domains and refuses
+ * the rest without asking.
+ */
+export type WebLevel = PolicyLevel | "off" | "listed";
 
-export const POLICY_LEVELS: readonly PolicyLevel[] = [
+/** Top to bottom by how few decisions reach you, as the dropdown lists them; Off is set apart. */
+export const WEB_LEVELS: readonly WebLevel[] = [
   "manual",
   "cautious",
+  "listed",
   "automatic",
   "permissive",
   "idgaf",
+  "off",
 ];
 
-export type PolicyLevels = Record<PolicyArea, PolicyLevel>;
-
 /**
- * Spellings that are read as a level and never written. 2.14.x called the top
- * level `yolo` (and `IDGAF` on Plan edits and Questions only).
+ * The level of each area. `web` is the sixth area and is optional: absent, it
+ * follows Tool use (core/tools/permissions/webPolicy.ts, effectiveWebLevel),
+ * so no setting saved before it existed changes meaning.
  */
-export const DEPRECATED_LEVEL_ALIASES: Readonly<Record<string, PolicyLevel>> = {
-  yolo: "idgaf",
+export type PolicyLevels = Record<PolicyArea, PolicyLevel> & {
+  web?: WebLevel;
 };
 
-/** A level from stored or typed text: any case, `yolo` read as `idgaf`. */
-export function parsePolicyLevel(value: unknown): PolicyLevel | undefined {
+/** A Web level from stored or typed text: any case, `yolo` read as `idgaf`. */
+export function parseWebLevel(value: unknown): WebLevel | undefined {
   if (typeof value !== "string") return undefined;
   const word = value.trim().toLowerCase();
-  const level = DEPRECATED_LEVEL_ALIASES[word] ?? word;
-  return POLICY_LEVELS.includes(level as PolicyLevel)
-    ? (level as PolicyLevel)
-    : undefined;
-}
-
-/** True when the text spells a level the way 2.14.x did (`yolo`, any case). */
-export function isDeprecatedLevelSpelling(value: unknown): boolean {
-  return (
-    typeof value === "string" &&
-    Object.hasOwn(DEPRECATED_LEVEL_ALIASES, value.trim().toLowerCase())
-  );
-}
-
-/**
- * Text written by 2.14.x (an audit reason, a saved notice) with the old name
- * of the top level replaced, for display. The stored text is not changed.
- */
-export function modernizeLevelText(text: string): string {
-  return text.replace(/\bYOLO\b/g, "IDGAF").replace(/\byolo\b/g, "idgaf");
+  if (word === "off" || word === "listed") return word;
+  return parsePolicyLevel(word);
 }
 
 /** What a question is about. The agent names it when it asks. */
@@ -174,8 +172,9 @@ export const BUILTIN_RULES: readonly {
 ];
 
 /**
- * Rules that cannot be switched off, by config, by a level or by IDGAF. They
- * are listed beside the built-in rules, without a switch.
+ * Rules that cannot be switched off by config or by a level below IDGAF. They
+ * are listed beside the built-in rules, without a switch. IDGAF runs past
+ * them and records it (evaluate.ts, idgafRunsEverything).
  */
 export const LOCKED_FLOOR_RULES: readonly {
   id: "protect-policy-files";
@@ -186,7 +185,7 @@ export const LOCKED_FLOOR_RULES: readonly {
     id: "protect-policy-files",
     label: "Never change the permission files",
     description:
-      "Every file the product loads as config, code, rules or hooks: the global folder, a project's .continue and .continuous folders, .claude settings, agents and skills, and .continuerc. A write or delete that names the path asks, and is refused at Automatic and IDGAF. A terminal command is read as it is written: a path built when it runs (a variable, a wildcard, a backtick, a cd into your home folder) cannot be seen, so at IDGAF such a command asks. A sandbox that denies writes to these folders is what holds for certain.",
+      "Every file the product loads as config, code, rules or hooks: the global folder, a project's .continue and .continuous folders, .claude settings, agents and skills, and .continuerc. A write or delete that names the path asks, and is refused at Automatic. At IDGAF it runs, and the decision records that this rule would have refused it. A sandbox that denies writes to these folders is what holds for certain.",
   },
 ];
 
@@ -203,6 +202,11 @@ export interface PolicySettings {
   };
   /** Built-in rules by id. Absent means on. */
   builtin?: Partial<Record<BuiltinRuleId, boolean>>;
+  /**
+   * The safety-check shield. Absent follows the mode: on below IDGAF, off at
+   * IDGAF. `true` or `false` is the person's choice at every level.
+   */
+  safetyChecks?: boolean;
 }
 
 export const DEFAULT_MAX_NEW_PLAN_ITEMS = 5;
@@ -264,7 +268,8 @@ export const POLICY_PRESETS: Record<
   },
   idgaf: {
     label: "IDGAF",
-    description: "Everything runs and nothing asks. Every rule is ignored.",
+    description:
+      "Everything runs and nothing asks. Safety checks stay off unless you turn them on.",
     levels: {
       context: "idgaf",
       tools: "idgaf",
@@ -279,9 +284,29 @@ export const POLICY_PRESET_ORDER = Object.keys(
   POLICY_PRESETS,
 ) as PolicyPresetName[];
 
+/**
+ * The Web level each preset sets. Every preset's Web level is its Tool use
+ * level, so a preset applied as its five levels (Web absent, following Tool
+ * use) means the same; `parsePolicySpec` and the GUI may also write it. No
+ * preset sets Off or Listed.
+ */
+export const POLICY_PRESET_WEB: Record<PolicyPresetName, WebLevel> = {
+  careful: "cautious",
+  acceptEdits: "cautious",
+  handsOff: "permissive",
+  reviewer: "automatic",
+  idgaf: "idgaf",
+};
+
+/**
+ * The preset the levels are, or undefined (Custom). An absent `web` matches,
+ * since it follows Tool use; Off or Listed on Web makes it Custom.
+ */
 export function presetOf(levels: PolicyLevels): PolicyPresetName | undefined {
-  return POLICY_PRESET_ORDER.find((name) =>
-    POLICY_AREAS.every((a) => POLICY_PRESETS[name].levels[a] === levels[a]),
+  return POLICY_PRESET_ORDER.find(
+    (name) =>
+      POLICY_AREAS.every((a) => POLICY_PRESETS[name].levels[a] === levels[a]) &&
+      (levels.web === undefined || levels.web === POLICY_PRESET_WEB[name]),
   );
 }
 
@@ -309,7 +334,7 @@ export const POLICY_LEVEL_DESCRIPTIONS: Record<
       "Reads what your Always rules and tool settings cover, asks otherwise.",
     automatic: "As Cautious, and a reviewer model decides what is left.",
     permissive: "Reads anything no rule stops.",
-    idgaf: "Reads anything. Every rule is ignored.",
+    idgaf: "Reads anything. Every rule is ignored, locked rules included.",
   },
   tools: {
     manual: "Asks before each command and tool.",
@@ -317,20 +342,20 @@ export const POLICY_LEVEL_DESCRIPTIONS: Record<
       "Runs what your Always rules and tool settings cover, asks otherwise.",
     automatic: "As Cautious, and a reviewer model decides what is left.",
     permissive: "Runs anything no rule stops.",
-    idgaf: "Runs anything. Every rule is ignored.",
+    idgaf: "Runs anything. Every rule is ignored, locked rules included.",
   },
   edits: {
     manual: "You review each diff.",
     cautious: "Accepts what your Always rules cover, you review the rest.",
     automatic: "A reviewer model accepts, refuses or sends it to you.",
     permissive: "Accepts anything no rule stops.",
-    idgaf: "Accepts everything. Every rule is ignored.",
+    idgaf: "Accepts everything. Every rule is ignored, locked rules included.",
   },
   plan: {
     manual: "In Loop, every plan and re-plan waits for you.",
     cautious: "In Loop, re-plans that add no to-do go on. A first plan waits.",
     automatic:
-      "In Loop, a reviewer model judges each plan and waits if unsure.",
+      "In Loop, as Permissive until a plan reviewer exists: plans go on, a re-plan may add a few to-dos.",
     permissive: "In Loop, plans go on. A re-plan may add a few to-dos.",
     idgaf: "In Loop, every plan goes on. Nothing is checked.",
   },
@@ -372,6 +397,16 @@ export function normalizePolicy(raw: unknown): NormalizedPolicy {
     if (level) levels[area] = level;
     else problems.push(`${area}: "${String(value)}" is not a level`);
   }
+  // Web: absent follows Tool use; an unknown value is reported and follows too
+  if (given.web !== undefined) {
+    const web = parseWebLevel(given.web);
+    if (web) levels.web = web;
+    else {
+      problems.push(
+        `web: "${String(given.web)}" is not a level, so Web follows Tool use`,
+      );
+    }
+  }
   const delivery = input.questions?.delivery;
   if (delivery !== undefined && delivery !== "inbox" && delivery !== "wait") {
     problems.push(`questions.delivery: "${String(delivery)}" is not valid`);
@@ -403,12 +438,27 @@ export function builtinRuleOn(
   return policy?.builtin?.[id] !== false;
 }
 
+/**
+ * Whether the safety checks apply to this call. Absent follows the mode: on
+ * below IDGAF, off at IDGAF. An explicit true or false is the person's choice
+ * at every level, IDGAF included.
+ */
+export function safetyChecksApply(
+  policy: { safetyChecks?: boolean } | undefined,
+  atIdgaf: boolean,
+): boolean {
+  if (policy?.safetyChecks === true) return true;
+  if (policy?.safetyChecks === false) return false;
+  return !atIdgaf;
+}
+
 /** Automatic needs a reviewer: without one, Cautious, so nothing loosens. */
 export function withoutReviewer(policy: PolicySettings): PolicySettings {
   const levels = { ...policy.levels };
   for (const area of POLICY_AREAS) {
     if (levels[area] === "automatic") levels[area] = "cautious";
   }
+  if (levels.web === "automatic") levels.web = "cautious";
   return { ...policy, levels };
 }
 
@@ -478,7 +528,16 @@ const EDIT_RULE_NAMES = new Set<string>([
 ]);
 /** Web tools can send data out, so they are never just context. */
 const WEB_RULE_NAMES = new Set<string>(["fetchUrl", "searchWeb", "Fetch"]);
+/**
+ * A message to another agent changes what that agent does, so it is a Tools
+ * call: Careful asks, Permissive and IDGAF run it. The receiver's own calls
+ * are still checked against the person's policies, so a message cannot raise
+ * what another agent may do.
+ */
+const MESSAGE_RULE_NAMES = new Set<string>([BuiltInToolNames.SendMessage]);
 const CONTEXT_RULE_NAMES = new Set<string>([
+  // Lists the agents of this session: names, tasks and states, nothing else
+  BuiltInToolNames.ListSessions,
   "readFile",
   "listDirectory",
   "grepSearch",
@@ -515,6 +574,7 @@ export function areaOfTool(
   }
   if (EDIT_RULE_NAMES.has(name)) return "edits";
   if (WEB_RULE_NAMES.has(name)) return "tools";
+  if (MESSAGE_RULE_NAMES.has(name)) return "tools";
   if (CONTEXT_RULE_NAMES.has(name)) return "context";
   return tool?.readonly ? "context" : "tools";
 }
@@ -624,15 +684,12 @@ export function planHandoff(input: PlanHandoffInput): PlanHandoff {
     case "permissive": {
       // The person opted out of plan cards: a re-plan goes on, even one that
       // changed a check (the loop's notice says so). A reviewer model for
-      // plans is not built, so Automatic goes on without a cap. At Permissive
-      // only the cap on new to-dos (the Plan edits setting) holds one back.
+      // plans is not built, so Automatic works as Permissive (UJ10): only the
+      // cap on new to-dos (the Plan edits setting) holds a re-plan back.
       const name = policyLevelLabel("plan", level);
       if (first) return { decision: "go", reason: `Plan edits is ${name}.` };
-      const max =
-        level === "permissive"
-          ? (policy.maxNewPlanItems ?? DEFAULT_MAX_NEW_PLAN_ITEMS)
-          : undefined;
-      return max !== undefined && added > max
+      const max = policy.maxNewPlanItems ?? DEFAULT_MAX_NEW_PLAN_ITEMS;
+      return added > max
         ? {
             decision: "wait",
             reason: `The re-plan adds ${count(added)}, more than ${max}.`,

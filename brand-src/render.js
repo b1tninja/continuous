@@ -88,6 +88,15 @@ async function main() {
     console.log(`wrote ${rel} (1500x500)`);
   }
 
+  // GitHub social preview (Settings > General > Social preview takes 1280x640;
+  // it cannot be set from the repository, so upload this file by hand).
+  const socialPng = await sharp(read("banner.svg"), { density: 96 })
+    .resize(1280, 640)
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+  write("media/social-preview.png", socialPng);
+  console.log("wrote media/social-preview.png (1280x640)");
+
   // Docs-site header logos: the mark and the "Continuous" wordmark.
   for (const [rel, color] of [
     ["docs-site/public/images/continuous-logo-light.svg", "#111827"],

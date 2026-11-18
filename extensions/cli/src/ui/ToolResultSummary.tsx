@@ -15,7 +15,7 @@ interface ToolResultSummaryProps {
   content: string;
 }
 
-const ToolResultSummary: React.FC<ToolResultSummaryProps> = ({
+const ToolResultBody: React.FC<ToolResultSummaryProps> = ({
   toolName,
   content,
 }) => {
@@ -246,6 +246,38 @@ const ToolResultSummary: React.FC<ToolResultSummaryProps> = ({
     <Box>
       <Text color="dim">⎿ </Text>
       <Text color="dim"> {getSummary()}</Text>
+    </Box>
+  );
+};
+
+/** What a PostToolUse hook said about a result (stream/toolHooks.ts). */
+const HOOK_FLAG = "A hook flagged this result: ";
+
+/**
+ * The reasons a hook gave for flagging a result. The summary line above them
+ * shows a count or the first characters only, so a reason is printed whole,
+ * wrapped, on lines of its own.
+ */
+export function hookFlags(content: string): string[] {
+  const marker = content.lastIndexOf("\n[Hook output]\n");
+  if (marker === -1) return [];
+  return content
+    .slice(marker)
+    .split("\n")
+    .filter((line) => line.startsWith(HOOK_FLAG));
+}
+
+const ToolResultSummary: React.FC<ToolResultSummaryProps> = (props) => {
+  const flags = hookFlags(props.content ?? "");
+  if (flags.length === 0) return <ToolResultBody {...props} />;
+  return (
+    <Box flexDirection="column">
+      <ToolResultBody {...props} />
+      {flags.map((flag, i) => (
+        <Box key={i} paddingLeft={2}>
+          <Text color="yellow">{flag}</Text>
+        </Box>
+      ))}
     </Box>
   );
 };

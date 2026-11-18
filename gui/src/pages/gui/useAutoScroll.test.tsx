@@ -1,11 +1,16 @@
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useAutoScroll } from "./useAutoScroll";
+import {
+  getAnnouncement,
+  resetAnnouncer,
+} from "../../components/a11y/announcer";
+import { NEW_CONTENT_ANNOUNCEMENT, useAutoScroll } from "./useAutoScroll";
 
 let resizeCallbacks: Array<() => void> = [];
 
 beforeEach(() => {
+  resetAnnouncer();
   resizeCallbacks = [];
   vi.stubGlobal(
     "ResizeObserver",
@@ -33,14 +38,18 @@ const history = [
 /** A box whose geometry the test sets directly. */
 function Harness({ box }: { box: { current: HTMLDivElement | null } }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  useAutoScroll(ref, history);
+  const { paused, scrollToLatest } = useAutoScroll(ref, history);
   return (
-    <div
-      ref={(el) => {
-        ref.current = el;
-        box.current = el;
-      }}
-    />
+    <>
+      <div
+        ref={(el) => {
+          ref.current = el;
+          box.current = el;
+        }}
+      />
+      <span data-testid="paused">{String(paused)}</span>
+      <button onClick={scrollToLatest}>latest</button>
+    </>
   );
 }
 
@@ -109,5 +118,51 @@ describe("useAutoScroll", () => {
     g.height = 1200;
     await resize();
     expect(el.scrollTop).toBe(1200);
+  });
+
+  describe("Jump to latest", () => {
+    it("reports paused only while the user is scrolled up", async () => {
+      const { g, scrollTo } = await setup();
+      expect(screen.getByTestId("paused").textContent).toBe("false");
+      await scrollTo(200);
+      expect(screen.getByTestId("paused").textContent).toBe("true");
+      await scrollTo(g.height - g.client);
+      expect(screen.getByTestId("paused").textContent).toBe("false");
+    });
+
+    it("announces new content once per pause, not per update", async () => {
+      const { g, scrollTo, resize } = await setup();
+      await scrollTo(200);
+      expect(getAnnouncement("polite").seq).toBe(0);
+      g.height = 1100;
+      await resize();
+      g.height = 1200;
+      await resize();
+      g.height = 1300;
+      await resize();
+      expect(getAnnouncement("polite")).toEqual({
+        text: NEW_CONTENT_ANNOUNCEMENT,
+        seq: 1,
+      });
+    });
+
+    it("says nothing when auto-scroll is following", async () => {
+      const { g, resize } = await setup();
+      g.height = 1400;
+      await resize();
+      expect(getAnnouncement("polite").seq).toBe(0);
+    });
+
+    it("scrolls to the end and resumes following when asked", async () => {
+      const { el, g, scrollTo, resize } = await setup();
+      await scrollTo(200);
+      g.height = 1400;
+      await resize();
+      await act(async () => {
+        fireEvent.click(screen.getByText("latest"));
+      });
+      expect(screen.getByTestId("paused").textContent).toBe("false");
+      expect(el.scrollTop).toBe(1400);
+    });
   });
 });

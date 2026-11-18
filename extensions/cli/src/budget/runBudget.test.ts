@@ -1,7 +1,14 @@
 import { ModelConfig } from "@continuedev/config-yaml";
 import { BaseLlmApi } from "@continuedev/openai-adapters";
+import {
+  COMMUNITY_CATALOG_SCHEMA_VERSION,
+  MODELS_DEV_URL,
+  parseModelsDev,
+} from "core/llm/communityCatalog.js";
+import { MODELS_DEV_TRIMMED } from "core/llm/communityCatalogFixtures.js";
+import { setCommunityCatalog } from "core/llm/utils/communityPricing.js";
 import { costOf } from "core/util/costOf.js";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { streamChatResponse } from "../stream/streamChatResponse.js";
 import { countTotalInputTokens } from "../util/tokenizer.js";
@@ -289,6 +296,59 @@ describe("unpriced models", () => {
     ).toBeUndefined();
   });
   it("accepts a priced model", () => {
+    expect(
+      unpricedBudgetProblem({ maxBudgetUsd: 1 }, modelId, false),
+    ).toBeUndefined();
+  });
+});
+
+describe("a price from the community catalogue only", () => {
+  const mistral = { provider: "mistral", model: "mistral-large-latest" };
+  beforeEach(() =>
+    setCommunityCatalog({
+      schemaVersion: COMMUNITY_CATALOG_SCHEMA_VERSION,
+      source: MODELS_DEV_URL,
+      fetchedAt: "2026-11-10T08:00:00.000Z",
+      prices: parseModelsDev(MODELS_DEV_TRIMMED),
+    }),
+  );
+  afterEach(() => setCommunityCatalog(undefined));
+
+  it("refuses --max-budget-usd, naming the catalogue and its date", () => {
+    const problem = unpricedBudgetProblem({ maxBudgetUsd: 1 }, mistral, false);
+    expect(problem).toMatch(
+      /only price is from the community catalogue \(models\.dev, 2026-11-10\)/,
+    );
+    expect(problem).toMatch(/--budget-allow-unpriced/);
+  });
+
+  it("holds the cap on the community estimate with --budget-allow-unpriced", () => {
+    expect(
+      unpricedBudgetProblem({ maxBudgetUsd: 1 }, mistral, true),
+    ).toBeUndefined();
+    const b = new RunBudget({
+      limits: { maxBudgetUsd: 0.000001 },
+      model: mistral,
+      allowCommunityPrice: true,
+      spentUsd: () => 0,
+    });
+    expect(b.dollarCapActive).toBe(true);
+    expect(b.priceNote).toBe(
+      "prices from the community catalogue (models.dev) as of 2026-11-10",
+    );
+    expect(b.beforeCall(1_000_000)?.reason).toBe("budget");
+  });
+
+  it("without the flag the run does not treat it as priced", () => {
+    const b = new RunBudget({
+      limits: { maxBudgetUsd: 1 },
+      model: mistral,
+      spentUsd: () => 0,
+    });
+    expect(b.dollarCapActive).toBe(false);
+  });
+
+  it("does not affect a model the tables price", () => {
     expect(
       unpricedBudgetProblem({ maxBudgetUsd: 1 }, modelId, false),
     ).toBeUndefined();

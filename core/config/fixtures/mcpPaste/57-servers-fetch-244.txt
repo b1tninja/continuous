@@ -1,0 +1,3 @@
+```
+ModelContextProtocol/1.0 (Autonomous; +https://github.com/modelcontextprotocol/servers)
+```

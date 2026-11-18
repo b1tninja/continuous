@@ -54,7 +54,7 @@ describe("UsageIndicator", () => {
     expect(screen.queryByTestId("usage-indicator")).toBeNull();
   });
 
-  it("shows context percent and estimated cost for a priced model", async () => {
+  it("shows the estimated cost for a priced model (the context meter has the percent)", async () => {
     const store = await setup();
     await act(async () => {
       store.dispatch(
@@ -66,8 +66,10 @@ describe("UsageIndicator", () => {
       );
     });
     const el = screen.getByTestId("usage-indicator");
-    expect(el.textContent).toContain("10%");
-    expect(el.textContent).toContain("$0.06");
+    expect(el.textContent).toBe("$0.06");
+    expect(el.getAttribute("aria-label")).toBe(
+      "$0.06: estimated cost $0.06. Show usage details",
+    );
   });
 
   it("shows tokens only, no cost, for an unpriced model", async () => {
@@ -82,8 +84,11 @@ describe("UsageIndicator", () => {
       );
     });
     const el = screen.getByTestId("usage-indicator");
-    expect(el.textContent).toContain("50%");
+    expect(el.textContent).toBe("4.1k tokens");
     expect(el.textContent).not.toContain("$");
+    expect(el.getAttribute("aria-label")).toBe(
+      "4.1k tokens: tokens this session, no price known. Show usage details",
+    );
   });
 
   it("is reset by a new session and restored from a saved one", async () => {

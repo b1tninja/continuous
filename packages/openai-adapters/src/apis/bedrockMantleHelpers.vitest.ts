@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   alternateMantlePrefix,
+  droppableParamFromError,
   getMantleErrorHint,
+  iamRefusalFromError,
   isMantleRegion,
   isWrongRouteError,
   mantleBaseUrl,
@@ -9,7 +11,73 @@ import {
   maxTokensParamFromError,
   normalizeMantlePrefix,
   prettyMantleModelName,
+  toolsNeedReasoningOffFromError,
 } from "./bedrockMantleHelpers.js";
+
+// The exact refusals seen live on Mantle (2026-11-14)
+const EXPLICIT_DENY =
+  "403 User: arn:aws:iam::842352768030:user/someone is not authorized to perform: bedrock-mantle:CreateInference on resource: arn:aws:bedrock-mantle:us-east-2:842352768030:project/default with an explicit deny in an identity-based policy: arn:aws:iam::842352768030:policy/bedrock-daybreak-blue";
+const NO_ALLOW =
+  "403 User: arn:aws:iam::842352768030:user/someone is not authorized to perform: bedrock-mantle:ListModels on resource: arn:aws:bedrock-mantle:us-east-1:842352768030:project/default because no identity-based policy allows the bedrock-mantle:ListModels action";
+
+describe("refusals a request can recover from", () => {
+  it("names a droppable field the model refuses", () => {
+    expect(
+      droppableParamFromError(
+        "Unsupported parameter: 'stop' is not supported with this model.",
+      ),
+    ).toBe("stop");
+    expect(droppableParamFromError("unsupported parameter: seed")).toBe("seed");
+  });
+
+  it("does not drop the token limit, the messages or an unknown field", () => {
+    expect(
+      droppableParamFromError("Unsupported parameter: 'max_tokens'"),
+    ).toBeUndefined();
+    expect(
+      droppableParamFromError("Unsupported parameter: 'messages'"),
+    ).toBeUndefined();
+    expect(droppableParamFromError("rate limited")).toBeUndefined();
+  });
+
+  it("recognises tools needing reasoning off", () => {
+    expect(
+      toolsNeedReasoningOffFromError(
+        "Function tools with reasoning_effort are not supported for gpt-daybreak-blue-5.6-sol in /v1/chat/completions.",
+      ),
+    ).toBe(true);
+    expect(toolsNeedReasoningOffFromError("tools are great")).toBe(false);
+  });
+});
+
+describe("iamRefusalFromError", () => {
+  it("reads an explicit deny and its policy name", () => {
+    expect(iamRefusalFromError(EXPLICIT_DENY)).toEqual({
+      kind: "explicit-deny",
+      policy: "bedrock-daybreak-blue",
+    });
+  });
+
+  it("reads a missing allow and its action", () => {
+    expect(iamRefusalFromError(NO_ALLOW)).toEqual({
+      kind: "no-allow",
+      action: "bedrock-mantle:ListModels",
+    });
+  });
+
+  it("returns undefined for anything else", () => {
+    expect(iamRefusalFromError("HTTP 403 Forbidden")).toBeUndefined();
+  });
+
+  it("gives each its own hint", () => {
+    expect(getMantleErrorHint(EXPLICIT_DENY, {})).toMatch(
+      /bedrock-daybreak-blue.*explicitly denies/,
+    );
+    expect(getMantleErrorHint(NO_ALLOW, { region: "us-east-1" })).toMatch(
+      /bedrock-mantle:ListModels.*region \(now us-east-1\)/,
+    );
+  });
+});
 
 describe("mantle URLs", () => {
   it("builds the base URL from region and prefix", () => {
