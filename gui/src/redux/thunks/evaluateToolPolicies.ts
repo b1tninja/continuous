@@ -320,6 +320,8 @@ async function reviewOpenCalls(
         r.source !== "tainted-session" &&
         // So is the secret-read plus network pair's (B92)
         r.source !== "secret-egress" &&
+        // A shell-hint warning is for the person to read, not the reviewer
+        r.source !== "shell-hint" &&
         // Plan mode's hold is for the user, not the reviewer
         r.source !== "plan-mode" &&
         // Manual asks every time; only an area set to Automatic has a reviewer
@@ -427,6 +429,11 @@ export function refusalMessage(
         description: "Tool turned off",
         content: `${reason ?? "This tool is turned off in the user's tool settings."}\n\n${command}\n\nDo not work around this. Do what else the request needs, then say what you could not do and why.`,
       };
+    case "shell-hint":
+      return {
+        description: "Command was not run",
+        content: reason ?? "The command was not run. Fix it and call again.",
+      };
     default:
       return {
         description: "Command Disabled",
@@ -499,6 +506,7 @@ export async function evaluateToolPolicies(
         source === "tainted-session" ||
         source === "secret-egress" ||
         source === "ask-rule" ||
+        source === "shell-hint" ||
         source === "manual" ||
         source === "auto" ||
         source === "plan-mode")
@@ -593,7 +601,10 @@ export async function evaluateToolPolicies(
         contextItems: [
           {
             icon: "problems",
-            name: "Security Policy Violation",
+            name:
+              source === "shell-hint"
+                ? description
+                : "Security Policy Violation",
             description,
             content,
             hidden: false,

@@ -9,8 +9,8 @@ import {
   MAX_IMAGE_BYTES,
   outcomeNeedsNote,
   resolveResources,
-  sanitizeDroppedText,
 } from "./resolveDrop";
+import { sanitizeDroppedText } from "./sanitizeDroppedText";
 
 /** A workspace with src/ (a.ts, b.ts), docs/ and the files listed. */
 function fakeHost(): DropHost & {

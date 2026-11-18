@@ -6,6 +6,10 @@ import { throwIfFileIsSecurityConcern } from "core/indexing/ignore.js";
 import { writeFileAtomicSync } from "core/util/atomicWrite.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
 
+import {
+  checkpointAfterWrite,
+  checkpointBeforeWrite,
+} from "../checkpoints/sessionCheckpoints.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
 import {
   calculateLinesOfCodeDiff,
@@ -170,7 +174,10 @@ WARNINGS:
     oldContent: string;
   }) => {
     try {
+      // Snapshot first, so /rewind can put the file back (checkpoints/)
+      checkpointBeforeWrite(args.resolvedPath);
       writeFileAtomicSync(args.resolvedPath, args.newContent);
+      checkpointAfterWrite(args.resolvedPath, args.newContent);
 
       // Get lines for telemetry
       const { added, removed } = calculateLinesOfCodeDiff(

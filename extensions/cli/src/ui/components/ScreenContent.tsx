@@ -14,6 +14,7 @@ import type {
 import { JobsSelector } from "../JobsSelector.js";
 import { MCPSelector } from "../MCPSelector.js";
 import { ModelSelector } from "../ModelSelector.js";
+import { RewindScreen } from "../RewindScreen.js";
 import type { ConfigOption, ModelOption } from "../types/selectorTypes.js";
 import { UpdateSelector } from "../UpdateSelector.js";
 
@@ -55,6 +56,10 @@ interface ScreenContentProps {
   chatHistory?: ChatHistoryItem[];
   handleEditMessage?: (messageIndex: number, newContent: string) => void;
   onShowEditSelector?: () => void;
+  /** `/rewind` replaced the conversation */
+  onRewindHistory?: (history: ChatHistoryItem[]) => void;
+  /** `/rewind` finished; the summary to show */
+  onRewindDone?: (summary: string) => void;
 }
 
 /**
@@ -96,6 +101,8 @@ export const ScreenContent: React.FC<ScreenContentProps> = ({
   chatHistory = [],
   handleEditMessage,
   onShowEditSelector,
+  onRewindHistory,
+  onRewindDone,
 }) => {
   if (hideScreenContent(services.update)) {
     return null;
@@ -181,6 +188,22 @@ export const ScreenContent: React.FC<ScreenContentProps> = ({
             handleEditMessage(messageIndex, newContent);
           }
           closeCurrentScreen();
+        }}
+        onExit={closeCurrentScreen}
+      />
+    );
+  }
+
+  // Checkpoint rewind picker
+  if (isScreenActive("rewind")) {
+    return (
+      <RewindScreen
+        chatHistory={chatHistory}
+        busy={isWaitingForResponse || isCompacting}
+        onHistory={(history) => onRewindHistory?.(history)}
+        onDone={(summary) => {
+          closeCurrentScreen();
+          onRewindDone?.(summary);
         }}
         onExit={closeCurrentScreen}
       />

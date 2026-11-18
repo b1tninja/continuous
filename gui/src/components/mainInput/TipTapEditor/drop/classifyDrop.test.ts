@@ -10,9 +10,13 @@ import {
   editorTabDrag,
   explorerDrag,
   fakeDataTransfer,
+  fakeDirEntry,
   fakeFile,
+  fakeFileEntry,
+  osEntryDrag,
   osFileDrag,
   textDrag,
+  textFile,
   WS,
 } from "./dropFixtures";
 
@@ -109,15 +113,43 @@ describe("classifyDrop", () => {
     );
   });
 
-  it("turns OS images into image items and other OS files into refusals", () => {
+  it("turns OS images into image items and other OS files into snapshot candidates", () => {
     const png = fakeFile("shot.png", "image/png");
     const svg = fakeFile("logo.svg", "image/svg+xml");
     const txt = fakeFile("notes.txt", "text/plain");
     const items = classifyDrop(osFileDrag(png, svg, txt));
     expect(items).toEqual([
       expect.objectContaining({ kind: "image", source: "os", file: png }),
-      expect.objectContaining({ kind: "unsupported", reason: "svg-image" }),
-      expect.objectContaining({ kind: "unsupported", reason: "no-location" }),
+      // SVG is text: it becomes a snapshot, not an image.
+      expect.objectContaining({ kind: "os-file", source: "os", file: svg }),
+      expect.objectContaining({ kind: "os-file", source: "os", file: txt }),
+    ]);
+  });
+
+  it("uses the drop's entries to tell an OS folder from a file", () => {
+    const notes = fakeDirEntry("notes", {});
+    const readme = fakeFileEntry("README.md", textFile("README.md", "hi"));
+    const items = classifyDrop(
+      osEntryDrag([
+        [fakeFile("notes", "", 0), notes],
+        [fakeFile("README.md", "text/markdown", 2), readme],
+      ]),
+    );
+    expect(items).toEqual([
+      expect.objectContaining({
+        kind: "os-folder",
+        name: "notes",
+        entry: notes,
+      }),
+      expect.objectContaining({ kind: "os-file", name: "README.md" }),
+    ]);
+  });
+
+  it("treats every OS item as a file when the host has no webkitGetAsEntry", () => {
+    const dt = osEntryDrag([[fakeFile("notes", "", 0), undefined]]);
+    const items = classifyDrop(dt);
+    expect(items).toEqual([
+      expect.objectContaining({ kind: "os-file", name: "notes" }),
     ]);
   });
 

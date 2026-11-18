@@ -119,7 +119,15 @@ export function formFromBlock(info: ModelBlockInfo): ModelForm {
   const fields: ModelForm["fields"] = {};
   for (const f of MODEL_EDIT_FIELDS) {
     if (f.kind === "secretRef") continue;
-    fields[pathKey(f.path)] = toInput(f, getPath(entry, f.path));
+    // A length written next to maxTokens is loaded. The dialog edits the
+    // root key, which is what a save writes.
+    const written = getPath(entry, f.path);
+    const value =
+      pathKey(f.path) === "contextLength" &&
+      (written === undefined || written === null)
+        ? getPath(entry, ["defaultCompletionOptions", "contextLength"])
+        : written;
+    fields[pathKey(f.path)] = toInput(f, value);
   }
   const rawHeaders = getPath(entry, ["requestOptions", "headers"]);
   const headers: HeaderRow[] =

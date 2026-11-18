@@ -76,10 +76,11 @@ export function noteHeadlessRefusal(
  * keep that default (public hosts run, as before) for this release and say
  * once per run that this changes.
  *
- * TODO(2.38): flip to true, so headless Fetch follows the Web level too
- * (Cautious then runs only allowed domains), and drop the transition line.
+ * As of 2.38 this is true: headless Fetch follows the Web level
+ * (Cautious runs only allowed domains). The transition line remains for a
+ * caller that passes headlessFollows: false.
  */
-export const HEADLESS_FETCH_FOLLOWS_WEB_LEVEL = false;
+export const HEADLESS_FETCH_FOLLOWS_WEB_LEVEL = true;
 
 /** The one stderr line of the transition, given on the run's first such fetch. */
 export const HEADLESS_FETCH_TRANSITION_NOTE =

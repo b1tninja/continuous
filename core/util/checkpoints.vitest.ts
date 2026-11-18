@@ -492,3 +492,39 @@ describe("restore", () => {
     expect(result.failed).toEqual([{ uri: `${WS}/a.ts`, error: "read-only" }]);
   });
 });
+
+describe("planning shared with the terminal agent's store", () => {
+  // The CLI stores blob ids instead of contents; the planning is the same.
+  type BlobFile = { uri: string; existed: boolean; blob?: string };
+  const turns = [
+    { turnId: "t1", files: [{ uri: "a", existed: true, blob: "a0" }] },
+    {
+      turnId: "t2",
+      files: [
+        { uri: "a", existed: true, blob: "a1" },
+        { uri: "b", existed: false },
+      ],
+    },
+  ];
+
+  it("planRestore picks the earliest snapshot per file for any file shape", () => {
+    const plan: BlobFile[] = planRestore<BlobFile>(turns, ["t1", "t2"], "t2");
+    expect(plan).toEqual([
+      { uri: "a", existed: true, blob: "a1" },
+      { uri: "b", existed: false },
+    ]);
+  });
+
+  it("pruneCheckpointsFrom keeps the turn type and retained files", () => {
+    const pruned = pruneCheckpointsFrom(
+      turns,
+      ["t1", "t2"],
+      "t2",
+      new Set(["b"]),
+    );
+    expect(pruned).toEqual([
+      turns[0],
+      { turnId: "t2", files: [{ uri: "b", existed: false }] },
+    ]);
+  });
+});

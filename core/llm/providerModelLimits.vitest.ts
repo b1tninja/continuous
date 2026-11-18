@@ -16,7 +16,11 @@ describe("resolveModelLimits", () => {
         llmInfo: { contextLength: 200_000, maxCompletionTokens: 64_000 },
         provider: { contextLength: 1_000_000, maxOutputTokens: 128_000 },
       }),
-    ).toEqual({ contextLength: 100_000, maxTokens: 2000 });
+    ).toEqual({
+      contextLength: 100_000,
+      contextLengthSource: "config",
+      maxTokens: 2000,
+    });
   });
 
   it("the provider's answer wins over llm-info, with the quarter-window rule", () => {
@@ -26,13 +30,21 @@ describe("resolveModelLimits", () => {
         llmInfo: { contextLength: 200_000, maxCompletionTokens: 64_000 },
         provider: { contextLength: 1_000_000, maxOutputTokens: 128_000 },
       }),
-    ).toEqual({ contextLength: 1_000_000, maxTokens: 128_000 });
+    ).toEqual({
+      contextLength: 1_000_000,
+      contextLengthSource: "provider",
+      maxTokens: 128_000,
+    });
     expect(
       resolveModelLimits({
         ...base,
         provider: { contextLength: 200_000, maxOutputTokens: 128_000 },
       }),
-    ).toEqual({ contextLength: 200_000, maxTokens: 50_000 });
+    ).toEqual({
+      contextLength: 200_000,
+      contextLengthSource: "provider",
+      maxTokens: 50_000,
+    });
   });
 
   it("a field the provider did not send leaves llm-info's", () => {
@@ -42,12 +54,17 @@ describe("resolveModelLimits", () => {
         llmInfo: { contextLength: 200_000, maxCompletionTokens: 64_000 },
         provider: {},
       }),
-    ).toEqual({ contextLength: 200_000, maxTokens: 50_000 });
+    ).toEqual({
+      contextLength: 200_000,
+      contextLengthSource: "published",
+      maxTokens: 50_000,
+    });
   });
 
   it("matches today's rule without a provider answer", () => {
     expect(resolveModelLimits(base)).toEqual({
       contextLength: undefined,
+      contextLengthSource: "unknown",
       maxTokens: 4096,
     });
     expect(
@@ -55,7 +72,11 @@ describe("resolveModelLimits", () => {
         ...base,
         llmInfo: { contextLength: 128_000, maxCompletionTokens: 16_384 },
       }),
-    ).toEqual({ contextLength: 128_000, maxTokens: 16_384 });
+    ).toEqual({
+      contextLength: 128_000,
+      contextLengthSource: "published",
+      maxTokens: 16_384,
+    });
   });
 
   it("a provider class default is only ever lowered by the provider's cap", () => {

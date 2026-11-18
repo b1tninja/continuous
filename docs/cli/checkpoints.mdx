@@ -1,0 +1,111 @@
+---
+title: "Checkpoints and rewind"
+---
+
+```text
+/rewind
+```
+
+Before the agent's `Edit`, `MultiEdit` or `Write` tool changes a file, the terminal agent saves a copy of that file. `/rewind` uses those copies to put files back as they were before a prompt, to rewind the conversation to before it, or both.
+
+## What is covered
+
+| Changed by                                         | Restored by `/rewind` |
+| -------------------------------------------------- | --------------------- |
+| `Edit`, `MultiEdit`, `Write` (also inside subagents) | Yes                   |
+| Shell commands (the `Bash` tool)                   | **No**                |
+| MCP tools                                          | No                    |
+| You, your editor, another program                  | No; see [Files changed outside the agent](#files-changed-outside-the-agent) |
+
+A file that only a shell command changed is not tracked and stays as it is. The picker and `continuous rewind` both say so. Use version control for those changes. Checkpoints are a quick undo for one session, not a replacement for git.
+
+## Rewind in the terminal
+
+Run `/rewind`. The picker lists the prompts of the session, newest selected, with the number of files the agent wrote in each:
+
+```text
+Rewind: pick a prompt to go back to before it
+
+    1. add a --json flag to the export command  · 3 file(s) written
+    2. why does the test still fail?
+  ➤ 3. fix the date parsing in src/export.ts  · 1 file(s) written
+```
+
+Press Enter on a prompt. The next screen lists the files a restore would change, with the lines it adds and removes, and offers only the choices that would do something:
+
+1. **Restore files (keep the conversation)**: every file the agent wrote from that prompt on goes back to its state before the prompt. A file the agent created is removed.
+2. **Rewind the conversation (keep the files)**: the prompt and everything after it leave the conversation.
+3. **Restore files and rewind the conversation**: both.
+
+Keys: `↑`/`↓` (or `j`/`k`) to move, Enter or `1`-`3` to choose, Esc to go back or close. `/rewind` is refused while the agent is working.
+
+A prompt that compaction removed from the conversation is still listed, marked `not in the conversation`, and can still restore files.
+
+## Redo
+
+After a rewind, `/rewind` shows `r to redo the last rewind`. Redo puts the files back as they were just before the rewind, and the conversation too if nothing was added to it since. Redo is available until the agent next writes a file.
+
+## Files changed outside the agent
+
+The store remembers what the agent last wrote to each file. When a file is no longer that, because you edited it or a shell command or another program did, restoring it would lose that change. The picker asks first:
+
+```text
+1 file(s) changed outside the agent since its last write
+Restoring overwrites those changes. Lines are what the restore adds and removes.
+
+  restore  src/export.ts  +4 -9  changed outside the agent since its last write
+
+y overwrite them · s skip them, restore the rest · Esc cancel
+```
+
+Redo asks the same about files changed since the rewind.
+
+## Rewind from a script
+
+```bash
+continuous rewind 1b0e6a52-9d0c-4e43-a3a8-2f7c8d5e0b11
+```
+
+lists the prompts of a session with their numbers (`continuous ls` lists sessions). Then:
+
+```bash
+continuous rewind 1b0e6a52-9d0c-4e43-a3a8-2f7c8d5e0b11 --to 3 --dry-run
+continuous rewind 1b0e6a52-9d0c-4e43-a3a8-2f7c8d5e0b11 --to 3 --mode both
+continuous rewind 1b0e6a52-9d0c-4e43-a3a8-2f7c8d5e0b11 --redo
+```
+
+| Flag             | Meaning                                                                                      |
+| ---------------- | -------------------------------------------------------------------------------------------- |
+| `--to <n>`       | Rewind to before prompt `n` from the list                                                     |
+| `--mode <mode>`  | `files` (default), `conversation` or `both`. `conversation` rewrites the saved session        |
+| `--redo`         | Undo the last rewind                                                                          |
+| `--yes`          | Overwrite files changed outside the agent                                                     |
+| `--skip-changed` | Leave files changed outside the agent and restore the rest                                    |
+| `--dry-run`      | Print what would change and change nothing                                                    |
+| `--json`         | One JSON object on standard output                                                            |
+
+Without `--yes` or `--skip-changed`, a file changed outside the agent stops the command before anything is changed, with exit code 1 and the list of those files. Exit code 2 means an unknown session, prompt number or mode. Do not run it on a session that is open in another terminal: that terminal saves its own copy of the conversation.
+
+## Storage and limits
+
+Copies are kept per session under the global folder, never in the workspace and never in git:
+
+```text
+~/.continuous/checkpoints/<session id>/index.json
+~/.continuous/checkpoints/<session id>/blobs/<sha256>
+```
+
+Each file's contents are stored once, by hash, and only the files the agent writes are copied, so the cost follows what the agent changes and not the size of the repository.
+
+- A file of 2 MiB or more is listed but not copied, and shown as `cannot restore (too large to keep)`.
+- Secret files (`.env`, keys) are never copied.
+- A session keeps at most 100 prompts with checkpoints and 64 MiB of copies. Past that the oldest prompts drop off; restoring to any prompt still listed stays exact.
+- Checkpoints of a deleted session, including one removed by `continuous clean`, are removed the next time the agent writes a file.
+- Restores write through a temporary file and a rename, so a crash leaves either the old or the new file, never half of one. Bytes are restored exactly, including line endings.
+- `CONTINUOUS_CHECKPOINTS=off` turns copies off for that process.
+
+The IDE extensions have their own per-turn restore, kept in the session file; it shares the restore planning but not this storage.
+
+## Why only named files
+
+Peers snapshot differently. Claude Code keeps per-file snapshots with the session ([Checkpointing](https://code.claude.com/docs/en/checkpointing), read 2026-11-12). Cline and Kilo commit the whole tree to a separate git repository ([Cline checkpoints](https://docs.cline.bot/core-workflows/checkpoints), [Kilo checkpoints](https://kilo.ai/docs/code-with-ai/features/checkpoints), read 2026-11-12), and Gemini CLI does the same before an approved file change ([Gemini CLI checkpointing](https://geminicli.com/docs/cli/checkpointing), read 2026-11-12). Zed removed its checkpoints in 1.27.0 (2026-11-04) because snapshotting every git repository before every message took tens of seconds in large workspaces and could hang on Windows ([zed-industries/zed#65989](https://github.com/zed-industries/zed/pull/65989), merged 2026-10-26). Codex removed its ghost-commit undo ([openai/codex#19481](https://github.com/openai/codex/pull/19481), merged 2026-04-28). This store has no step whose cost grows with the tree, needs no git, and the price is the limit stated above: shell commands are not covered.

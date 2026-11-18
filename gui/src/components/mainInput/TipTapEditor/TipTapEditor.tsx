@@ -168,6 +168,7 @@ function TipTapEditorInner(props: TipTapEditorProps) {
     ideMessenger,
     availableContextProviders: props.availableContextProviders,
     model: defaultModel,
+    inputId: props.inputId,
   });
 
   const [activeKey, setActiveKey] = useState<string | null>(null);

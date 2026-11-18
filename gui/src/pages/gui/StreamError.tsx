@@ -321,6 +321,10 @@ const StreamErrorDialog = ({ error }: StreamErrorProps) => {
           Trying again leaves out more of the oldest messages so it fits. A new
           session starts with an empty context. Your message is kept.
         </span>
+        <span className="text-description-muted">
+          The context length for this model can be raised or lowered under
+          Models → Configure → Context & cost.
+        </span>
         <div className="flex flex-row flex-wrap justify-start gap-3 py-2">
           <GhostButton className="flex items-center" onClick={resubmit}>
             <ArrowPathIcon className="mr-1.5 h-3.5 w-3.5" />

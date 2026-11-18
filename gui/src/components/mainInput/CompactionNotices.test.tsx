@@ -226,6 +226,24 @@ describe("the forced-path hold", () => {
     expect(screen.getByTestId("compaction-hold-compact")).toBeInTheDocument();
   });
 
+  it("names the window and the percent, and the 32,768 stand-in", async () => {
+    await holdSetup({
+      contextLength: 32_768,
+      percent: 91,
+      contextLengthUnknown: true,
+    } as any);
+    const notice = await screen.findByTestId("compaction-hold");
+    expect(notice.textContent).toContain(
+      "The context window in use is 32,768 tokens (about 91% full).",
+    );
+    expect(notice.textContent).toContain(
+      "No published window is known for this model, so 32,768 is in use until you set one.",
+    );
+    expect(notice.textContent).toContain(
+      "Change the context length under Models → Configure → Context & cost.",
+    );
+  });
+
   it("says what the message would cost and offers the two choices", async () => {
     await holdSetup();
     const notice = await screen.findByTestId("compaction-hold");

@@ -225,6 +225,10 @@ export const VIEWS = {
     fixture: "drop-refused",
     note: "the chat input after a drop of .env and a file outside the workspace: the refusal note",
   },
+  "drop-snapshot": {
+    fixture: "drop-snapshot",
+    note: "the chat input after a drop of a text file and a binary from the file manager: a snapshot chip with its badge, and the note",
+  },
 };
 
 export const VIEW_NAMES = Object.keys(VIEWS);

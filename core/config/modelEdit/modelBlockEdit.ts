@@ -12,6 +12,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import {
+  catalogModelRefSchema,
   connectedModelSchema,
   modelSchema,
   type ConfigYaml,
@@ -45,6 +46,12 @@ export interface ModelBlockInfo {
   editable: boolean;
   /** Why it is not editable, in a sentence. */
   reason?: string;
+  /**
+   * The entry is `from: <catalog name>`. Only the context length is written
+   * here; the rest of the model stays in models.yaml. The context length on
+   * this entry overrides the catalog.
+   */
+  catalog?: boolean;
   /** The file a save writes, when there is one. */
   file?: string;
   scope?: ConfigScope;
@@ -90,8 +97,20 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 }
 
 type Located =
-  | { ok: true; index: number; entry: Record<string, unknown> }
+  | {
+      ok: true;
+      index: number;
+      entry: Record<string, unknown>;
+      catalog: boolean;
+    }
   | { ok: false; reason: string };
+
+/** The title the chat shows: a written name, or the catalog `from:` string. */
+function entryTitle(entry: Record<string, unknown>): string | undefined {
+  if (typeof entry.name === "string" && entry.name !== "") return entry.name;
+  if (typeof entry.from === "string" && entry.from !== "") return entry.from;
+  return undefined;
+}
 
 function locate(config: unknown, title: string): Located {
   const models = isPlainObject(config) ? config.models : undefined;
@@ -100,11 +119,14 @@ function locate(config: unknown, title: string): Located {
   }
   const hits = models
     .map((m, index) => ({ m, index }))
-    .filter(({ m }) => isPlainObject(m) && m.name === title);
+    .filter(
+      (hit): hit is { m: Record<string, unknown>; index: number } =>
+        isPlainObject(hit.m) && entryTitle(hit.m) === title,
+    );
   if (hits.length === 0) {
     return {
       ok: false,
-      reason: `No model named "${title}" is written in this config. It may come from a block, a catalog or a hub assistant; open its file to change it.`,
+      reason: `No model named "${title}" is written in this config. It may come from a block or a hub assistant. A catalog model is changed on the config entry whose \`from:\` is this name, or in models.yaml.`,
     };
   }
   if (hits.length > 1) {
@@ -113,14 +135,19 @@ function locate(config: unknown, title: string): Located {
       reason: `${hits.length} models are named "${title}" in this config. Give each a different name first.`,
     };
   }
-  const entry = hits[0].m as Record<string, unknown>;
-  if (typeof entry.uses === "string" || typeof entry.from === "string") {
+  const entry = hits[0].m;
+  if (typeof entry.uses === "string") {
     return {
       ok: false,
-      reason: `"${title}" is used from ${String(entry.uses ?? entry.from)}; its settings are written there.`,
+      reason: `"${title}" is used from ${entry.uses}; its settings are written there.`,
     };
   }
-  return { ok: true, index: hits[0].index, entry };
+  return {
+    ok: true,
+    index: hits[0].index,
+    entry,
+    catalog: typeof entry.from === "string",
+  };
 }
 
 function parseConfig(text: string): { config?: unknown; error?: string } {
@@ -159,15 +186,22 @@ export function readModelBlock(text: string, title: string): ModelBlockInfo {
   const entry = maskEntry(found.entry) as Record<string, unknown>;
   return {
     editable: true,
+    catalog: found.catalog,
     entry,
     entryYaml: entryYamlText(text, found.index, entry),
     credentials: credentialsOf(found.entry),
   };
 }
 
-function schemaErrors(entry: Record<string, unknown>): FieldError[] {
-  const schema =
-    typeof entry.connection === "string" ? connectedModelSchema : modelSchema;
+function schemaErrors(
+  entry: Record<string, unknown>,
+  catalog: boolean,
+): FieldError[] {
+  const schema = catalog
+    ? catalogModelRefSchema
+    : typeof entry.connection === "string"
+      ? connectedModelSchema
+      : modelSchema;
   const parsed = schema.safeParse(entry);
   if (parsed.success) return [];
   return parsed.error.issues.map((i) => ({
@@ -196,13 +230,36 @@ function planEdit(
   }
   const found = locate(config, title);
   if (!found.ok) return { ok: false, errors: [], error: found.reason };
+  if (found.catalog) {
+    const other = ops.filter((op) => op.path.join(".") !== "contextLength");
+    if (other.length > 0) {
+      return {
+        ok: false,
+        errors: [],
+        error: `"${title}" comes from the catalog. Only the context length can be set on this config entry. Other settings are in models.yaml.`,
+      };
+    }
+  }
   const { entry, errors } = applyModelPatch(found.entry, ops);
   if (errors.length > 0) return { ok: false, errors };
-  const own = validateEntry(entry);
+  // One place for the window: a length written next to maxTokens is honored
+  // on load, and a save of the root key removes that copy so they cannot disagree.
+  if (
+    ops.some((op) => op.path.length === 1 && op.path[0] === "contextLength")
+  ) {
+    const dco = entry.defaultCompletionOptions;
+    if (isPlainObject(dco) && "contextLength" in dco) {
+      delete dco.contextLength;
+      if (Object.keys(dco).length === 0) delete entry.defaultCompletionOptions;
+    }
+  }
+  const own = found.catalog ? [] : validateEntry(entry);
   const reported = new Set(own.map((e) => e.path.join(".")));
   const entryErrors = [
     ...own,
-    ...schemaErrors(entry).filter((e) => !reported.has(e.path.join("."))),
+    ...schemaErrors(entry, found.catalog).filter(
+      (e) => !reported.has(e.path.join(".")),
+    ),
   ];
   if (entryErrors.length > 0) return { ok: false, errors: entryErrors };
   return { ok: true, index: found.index, entry };

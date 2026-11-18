@@ -332,7 +332,7 @@ describe("compactAtToolRound", () => {
     expect(t.getState().session.compactionLoading).toEqual({});
   });
 
-  it("leaves the drop as the fallback when the summary fails", async () => {
+  it("reports a failed summary and saves nothing", async () => {
     const t = setup(loopState(21));
     t.answerWith(async () => ({ error: "server gone", aborted: false }));
     expect(await t.run()).toBe("failed");
@@ -362,6 +362,38 @@ describe("the tool loop compacts instead of dropping (C117)", () => {
     expect(nextRequests[0].history.some((h) => h.conversationSummary)).toBe(
       false,
     );
+  });
+
+  it("does not prune in silence when a cloud model is over the force line and no summary is prepared", async () => {
+    const t = setup(loopState(23, cloud, { open: true }));
+    await t.dispatch(streamResponseAfterToolCall({ toolCallId: "c22" }));
+    expect(t.calls).toHaveLength(0);
+    expect(nextRequests).toHaveLength(0);
+    const shown = t.getState().session.inlineErrorMessage;
+    expect(shown).toMatchObject({ kind: "out-of-context" });
+    const detail = typeof shown === "object" ? shown.detail : "";
+    expect(detail).toContain("cloud model");
+    expect(detail).toContain("no summary is prepared");
+    expect(detail).toContain("did not free enough room");
+    expect(detail).toContain("100,000");
+    expect(detail).toContain("Context & cost");
+    const last = t.getState().session.history.at(-1);
+    expect(last?.message.role).not.toBe("assistant");
+  });
+
+  it("says why when the summary fails, and does not send the pruned prompt", async () => {
+    const t = setup(loopState(21, strata, { open: true }));
+    t.answerWith(async () => ({ error: "server gone", aborted: false }));
+    await t.dispatch(streamResponseAfterToolCall({ toolCallId: "c20" }));
+    expect(nextRequests).toHaveLength(0);
+    const shown = t.getState().session.inlineErrorMessage;
+    expect(shown).toMatchObject({ kind: "out-of-context" });
+    const detail = typeof shown === "object" ? shown.detail : "";
+    expect(detail).toContain("Compaction failed");
+    expect(detail).toContain("did not free enough room");
+    expect(detail).toContain("could not be built");
+    expect(detail).toContain("100,000");
+    expect(detail).toContain("Context & cost");
   });
 
   it("does not send the next request after Stop during the summary", async () => {

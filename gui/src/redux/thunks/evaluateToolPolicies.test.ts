@@ -51,6 +51,19 @@ describe("refusalMessage", () => {
     expect(m.content).toMatch(/Do not retry/);
   });
 
+  it("passes a shell-hint parse failure through, and does not say to stop", () => {
+    const reason =
+      "The command was not run: Windows PowerShell 5.1 cannot parse it. && is not a statement separator in Windows PowerShell 5.1: the whole command fails to parse and nothing runs. Instead: echo A; if ($?) { echo B } Fix it and call again.";
+    const m = refusalMessage("echo A && echo B", "shell-hint", reason);
+    expect(m.description).toBe("Command was not run");
+    expect(m.content).toBe(reason);
+    expect(m.content).toContain("Instead:");
+    expect(m.content).toContain("Fix it and call again");
+    expect(m.content).toContain("Windows PowerShell 5.1");
+    expect(m.content).not.toMatch(/security policy/i);
+    expect(m.content).not.toMatch(/Do not retry/);
+  });
+
   it("says a tool was turned off by the user", () => {
     const m = refusalMessage("run_terminal_command", "tool-setting", undefined);
     expect(m.description).toBe("Tool turned off");

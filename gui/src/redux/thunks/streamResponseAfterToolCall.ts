@@ -14,6 +14,7 @@ import { ThunkApiType } from "../store";
 import { addUserInputToHistory } from "./addUserInputToHistory";
 import {
   compactAtToolRound,
+  explainCompactionBlocked,
   toolRoundCompactionNeed,
 } from "./compactAtToolRound";
 import { addItemBudgetNote } from "./loopHolds";
@@ -136,6 +137,10 @@ export const streamResponseAfterToolCall = createAsyncThunk<
               signal: getState().session.streamAborter.signal,
             });
             if (compacted === "aborted") return;
+            if (compacted === "failed" || compacted === "none") {
+              explainCompactionBlocked(dispatch, compacted, need);
+              return;
+            }
           }
           unwrapResult(await dispatch(streamNormalInput({ depth: depth + 1 })));
         } else if (

@@ -1,6 +1,7 @@
 import { JSONContent } from "@tiptap/react";
 import { ContextItemWithId } from "core";
 import { expect, test, vi } from "vitest";
+import { snapshotContextItem } from "../drop/osSnapshot";
 import { processEditorContent } from "./processEditorContent";
 
 describe("processEditorContent", () => {
@@ -541,5 +542,33 @@ describe("processEditorContent", () => {
     );
 
     warnSpy.mockRestore();
+  });
+
+  test("sends a dropped-file snapshot as its content, with no path or selected range", () => {
+    const item = snapshotContextItem({
+      name: "notes.md",
+      text: "has ``` inside",
+      bytes: 14,
+      hiddenRemoved: 0,
+    });
+    const editorState: JSONContent = {
+      type: "doc",
+      content: [
+        { type: "code-block", attrs: { item } },
+        { type: "paragraph", content: [{ type: "text", text: "Summarise" }] },
+      ],
+    };
+
+    const result = processEditorContent(editorState);
+
+    expect(result.selectedCode).toEqual([]);
+    expect(result.parts).toEqual([
+      {
+        type: "text",
+        text:
+          "\n````markdown notes.md (snapshot of a file dropped from outside the editor; not kept in sync)\nhas ``` inside\n````\n" +
+          "\nSummarise",
+      },
+    ]);
   });
 });

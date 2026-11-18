@@ -5,6 +5,10 @@ import { writeFileAtomicSync } from "core/util/atomicWrite.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
 import { createTwoFilesPatch } from "diff";
 
+import {
+  checkpointAfterWrite,
+  checkpointBeforeWrite,
+} from "../checkpoints/sessionCheckpoints.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
 import {
   calculateLinesOfCodeDiff,
@@ -149,7 +153,10 @@ export const writeFileTool: Tool = {
       }
 
       // Write new content
+      // Snapshot first, so /rewind can put the file back (checkpoints/)
+      checkpointBeforeWrite(args.filepath);
       writeFileAtomicSync(args.filepath, args.content);
+      checkpointAfterWrite(args.filepath, args.content);
 
       // Track lines of code changes if file existed before
       if (oldContent) {

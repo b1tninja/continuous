@@ -225,6 +225,7 @@
               "guides/ollama-guide",
               "guides/cn-serve",
               "cli/run-limits",
+              "cli/checkpoints",
               "cli/headless-output",
               "cli/exit-codes",
               "cli/export",

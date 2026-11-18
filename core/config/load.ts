@@ -616,6 +616,7 @@ function llmToSerializedModelDescription(llm: ILLM): ModelDescription {
     apiKey: llm.apiKey,
     apiBase: llm.apiBase,
     contextLength: llm.contextLength,
+    contextLengthSource: llm.contextLengthSource,
     template: llm.template,
     completionOptions: llm.completionOptions,
     baseAgentSystemMessage: llm.baseAgentSystemMessage,

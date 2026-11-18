@@ -19,6 +19,7 @@ import {
   type ModelPatchOp,
   type TriState,
 } from "core/config/modelEdit/modelEditFields";
+import { DEFAULT_CONTEXT_LENGTH } from "core/llm/constants";
 import { modelSupportsNativeTools } from "core/llm/toolSupport";
 import { formatPriceSource } from "core/llm/utils/priceSourceText";
 import { applyToolOverrides } from "core/tools/applyToolOverrides";
@@ -229,7 +230,11 @@ export function ModelConfigDialog({
   async function startReview() {
     if (!form || !initial) return;
     setNotice(undefined);
-    const { ops: formOps, errors: errs } = formToOps(initial, form);
+    const built = formToOps(initial, form);
+    let formOps = info?.catalog
+      ? built.ops.filter((op) => pathKey(op.path) === "contextLength")
+      : built.ops;
+    const errs = built.errors;
     if (Object.keys(errs).length > 0) {
       setErrors(errs);
       setTab(tabOf(Object.keys(errs)[0]));
@@ -428,6 +433,14 @@ export function ModelConfigDialog({
       <>
         {review ? (
           <ReviewPanel diff={review.diff} stores={review.stores} />
+        ) : info.catalog ? (
+          <CatalogContext
+            form={form}
+            update={update}
+            error={errors.contextLength}
+            published={loaded?.contextLength}
+            source={loaded?.contextLengthSource}
+          />
         ) : (
           <>
             <div
@@ -517,10 +530,19 @@ export function ModelConfigDialog({
               )}
               {tab === "context" && (
                 <>
+                  <ContextLengthControl
+                    form={form}
+                    update={update}
+                    error={errors.contextLength}
+                    published={loaded?.contextLength}
+                    source={loaded?.contextLengthSource}
+                  />
                   <FieldList
                     section="context"
                     {...fieldProps}
-                    only={(f) => f.path[0] !== "pricing"}
+                    only={(f) =>
+                      f.path[0] !== "pricing" && f.path[0] !== "contextLength"
+                    }
                   />
                   <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
                     <legend className="mb-1 text-xs font-medium">
@@ -613,6 +635,138 @@ export function ModelConfigDialog({
     >
       {header}
       {body}
+    </div>
+  );
+}
+
+const CONTEXT_KEY = "contextLength";
+const SLIDER_MIN = 4_096;
+const SLIDER_STEP = 1_024;
+
+function sliderCeiling(tokens: number): number {
+  return Math.max(2_000_000, tokens * 2);
+}
+
+function parseTokens(
+  raw: string | string[] | null | undefined,
+): number | undefined {
+  if (typeof raw !== "string" || raw.trim() === "") return undefined;
+  const n = Number(raw.trim());
+  return Number.isInteger(n) && n >= 1 ? n : undefined;
+}
+
+function windowNote(
+  source: ModelDescription["contextLengthSource"] | undefined,
+  published: number,
+): string {
+  const n = published.toLocaleString();
+  if (source === "unknown") {
+    return `No published window is known for this model. ${DEFAULT_CONTEXT_LENGTH.toLocaleString()} is in use until you set one.`;
+  }
+  if (source === "provider") {
+    return `The provider reported a window of ${n} tokens. The slider starts there. Raise or lower it to set your own.`;
+  }
+  if (source === "published") {
+    return `Published window for this model: ${n} tokens. The slider starts there. Raise or lower it to set your own.`;
+  }
+  if (source === "config") {
+    return `This window is set in your configuration (${n} tokens). Move the slider to change it.`;
+  }
+  return `Window in use: ${n} tokens. ${DEFAULT_CONTEXT_LENGTH.toLocaleString()} is used only when no window is known.`;
+}
+
+function ContextLengthControl({
+  form,
+  update,
+  error,
+  published,
+  source,
+}: {
+  form: ModelForm;
+  update: (key: string, value: string | string[] | null) => void;
+  error?: string;
+  published?: number;
+  source?: ModelDescription["contextLengthSource"];
+}) {
+  const written = parseTokens(form.fields[CONTEXT_KEY]);
+  const fallback =
+    published && published > 0 ? published : DEFAULT_CONTEXT_LENGTH;
+  const shown = written ?? fallback;
+  const max = Math.max(sliderCeiling(fallback), shown);
+  const usingDefault = written === undefined;
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor="context-length-number" className="text-xs font-medium">
+        Context length (tokens)
+      </label>
+      <span className="text-2xs text-description-muted">
+        {windowNote(source, fallback)}
+      </span>
+      <input
+        type="range"
+        data-testid="context-length-slider"
+        aria-label="Context length"
+        min={SLIDER_MIN}
+        max={max}
+        step={SLIDER_STEP}
+        value={Math.min(max, Math.max(SLIDER_MIN, shown))}
+        onChange={(e) => update(CONTEXT_KEY, e.target.value)}
+      />
+      <div className="flex items-center gap-2">
+        <input
+          id="context-length-number"
+          data-testid="context-length-number"
+          type="text"
+          inputMode="numeric"
+          className={inputClass}
+          aria-invalid={error ? true : undefined}
+          value={
+            typeof form.fields[CONTEXT_KEY] === "string"
+              ? form.fields[CONTEXT_KEY]
+              : ""
+          }
+          placeholder={String(fallback)}
+          onChange={(e) => update(CONTEXT_KEY, e.target.value)}
+        />
+        {!usingDefault && (
+          <button
+            type="button"
+            className="cursor-pointer border-none bg-transparent p-0 text-2xs whitespace-nowrap text-link underline"
+            onClick={() => update(CONTEXT_KEY, "")}
+          >
+            Use default
+          </button>
+        )}
+      </div>
+      {usingDefault && (
+        <span className="text-2xs text-description-muted">
+          {`Showing ${fallback.toLocaleString()} tokens. Move the slider or type a number to save your own.`}
+        </span>
+      )}
+      {error && (
+        <span className="text-2xs text-error" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function CatalogContext(props: {
+  form: ModelForm;
+  update: (key: string, value: string | string[] | null) => void;
+  error?: string;
+  published?: number;
+  source?: ModelDescription["contextLengthSource"];
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="m-0 text-sm">
+        This model is used from the catalog (<code>from:</code> in this config).
+        Other settings stay in models.yaml. The context length set here is
+        written on this entry and overrides the catalog.
+      </p>
+      <ContextLengthControl {...props} />
     </div>
   );
 }

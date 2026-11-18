@@ -136,8 +136,8 @@ describe("interactive cn: Fetch follows the Web level", () => {
   });
 });
 
-describe("headless cn: the one-release transition (flag false)", () => {
-  it("a public host still runs at Cautious, and one stderr line says this changes", async () => {
+describe("headless cn follows the Web level", () => {
+  it("a public host nobody allowed is refused at Cautious, with no transition line", async () => {
     const lines: string[] = [];
     vi.spyOn(process.stderr, "write").mockImplementation((l: any) => {
       lines.push(String(l));
@@ -150,11 +150,9 @@ describe("headless cn: the one-release transition (flag false)", () => {
         {},
         true,
       );
-      expect(r, url).toEqual({ approved: true });
+      expect(r.approved, url).toBe(false);
     }
-    expect(lines.filter((l) => l.includes("from 2.38"))).toEqual([
-      "continuous: Headless fetches follow your Web level from 2.38: keep this with --allow Fetch, --policy web=permissive, or allow the domains in permissions.yaml.\n",
-    ]);
+    expect(lines.some((l) => l.includes("from 2.38"))).toBe(false);
   });
 
   it("Listed still refuses an unlisted host headless", async () => {
