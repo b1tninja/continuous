@@ -428,6 +428,13 @@ export function refusalMessage(
         description: "Tool turned off",
         content: `${reason ?? "This tool is turned off in the user's tool settings."}\n\n${command}\n\nDo not work around this. Do what else the request needs, then say what you could not do and why.`,
       };
+    case "shell-hint":
+      return {
+        description: "Command was not run",
+        content:
+          reason ??
+          "The command was not run. Fix it and call again.",
+      };
     default:
       return {
         description: "Command Disabled",
@@ -594,7 +601,10 @@ export async function evaluateToolPolicies(
         contextItems: [
           {
             icon: "problems",
-            name: "Security Policy Violation",
+            name:
+              source === "shell-hint"
+                ? description
+                : "Security Policy Violation",
             description,
             content,
             hidden: false,

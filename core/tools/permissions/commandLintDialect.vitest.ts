@@ -7,8 +7,6 @@ const codes = (command: string, shell: ShellKind) =>
 
 describe("lint: text written for another shell", () => {
   it.each([
-    ["ls -la 2>/dev/null", "CL041"],
-    ["cd src && npm test", "CL040"],
     ["ls -la src | grep foo", "CL042"],
     ["rm -rf build && mkdir -p build", "CL042"],
     ["sudo apt-get install -y jq", "CL042"],
@@ -60,6 +58,13 @@ describe("lint: text written for another shell", () => {
       expect(codes("git status", shell)).toEqual([]);
       expect(codes("npm test", shell)).toEqual([]);
     }
+  });
+
+  it("does not repeat a shell-hint parse error as CL040 or CL041", () => {
+    expect(codes("cd src && npm test", "powershell")).not.toContain("CL040");
+    const devNull = codes("ls -la 2>/dev/null", "powershell");
+    expect(devNull).not.toContain("CL041");
+    expect(devNull).toContain("CL042");
   });
 
   it("does not take && inside a string for a chain", () => {

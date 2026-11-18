@@ -60,8 +60,14 @@ interface Masked {
   literal: string;
   /** Spans of double-quoted strings, delimiters included. */
   doubles: [number, number][];
+  /** Closed single-quoted strings, delimiters included. */
+  singles: [number, number][];
   /** Double-quoted strings that never end. */
   unterminated: [number, number][];
+  /** Single-quoted strings that never end. */
+  unterminatedSingle: [number, number][];
+  /** Here-strings (`@'` / `@"`) whose closer never arrives. */
+  unclosedHere: [number, number][];
   /** Heredoc operators seen (POSIX reading only). */
   heredocs: [number, number][];
 }
@@ -79,7 +85,10 @@ interface ScanState {
   all: string[];
   literal: string[];
   doubles: [number, number][];
+  singles: [number, number][];
   unterminated: [number, number][];
+  unterminatedSingle: [number, number][];
+  unclosedHere: [number, number][];
   heredocs: [number, number][];
   pendingHeredoc?: string;
 }
@@ -121,6 +130,7 @@ function stepPowerShell(s: ScanState, i: number): number | undefined {
     /^\r?\n/.test(command.slice(i + 2))
   ) {
     const close = command.indexOf(`\n${next}@`, i + 2);
+    if (close < 0) s.unclosedHere.push([i, n]);
     return literalSpan(s, i, close < 0 ? n : close + 3);
   }
   if (c === "<" && next === "#") {
@@ -138,7 +148,10 @@ function stepPowerShell(s: ScanState, i: number): number | undefined {
     let j = i + 1;
     while (j < n && !(command[j] === "'" && command[j + 1] !== "'"))
       j += command[j] === "'" ? 2 : 1;
-    return literalSpan(s, i, Math.min(j + 1, n));
+    const end = Math.min(j + 1, n);
+    if (j >= n) s.unterminatedSingle.push([i, end]);
+    else s.singles.push([i, end]);
+    return literalSpan(s, i, end);
   }
   if (c === '"') {
     let j = i + 1;
@@ -228,7 +241,10 @@ function mask(command: string, family: HintFamily): Masked {
     all: command.split(""),
     literal: command.split(""),
     doubles: [],
+    singles: [],
     unterminated: [],
+    unterminatedSingle: [],
+    unclosedHere: [],
     heredocs: [],
   };
   const step =
@@ -243,7 +259,10 @@ function mask(command: string, family: HintFamily): Masked {
     all: s.all.join(""),
     literal: s.literal.join(""),
     doubles: s.doubles,
+    singles: s.singles,
     unterminated: s.unterminated,
+    unterminatedSingle: s.unterminatedSingle,
+    unclosedHere: s.unclosedHere,
     heredocs: s.heredocs,
   };
 }
@@ -352,18 +371,17 @@ const UNIX_TOOLS: Record<string, string> = {
   tr: "the -replace operator",
 };
 
-/** Aliases that exist in PowerShell but reject the Unix flags models give them. */
+/**
+ * Aliases that exist in PowerShell but reject the Unix flags models give them.
+ * `rm -rf` / `rm -r` is not here: that is a destructive-command safety check,
+ * so the shield asks, and IDGAF runs it when the shield is off.
+ */
 const ALIAS_FLAGS: { name: RegExp; flags: RegExp; instead: string }[] = [
   // `ls -la`, `-al`, `-lah`, `-1`: short Unix flags, not `-Name` or `-Force`
   {
     name: /^ls$/,
     flags: /^-(?=[a-z1]{1,4}$)[a-z1]*[al1][a-z1]*$/,
     instead: "Get-ChildItem -Force (add -Recurse for -R)",
-  },
-  {
-    name: /^rm$/,
-    flags: /^-[rfRv]{1,3}$/,
-    instead: "Remove-Item -Recurse -Force <path>",
   },
   { name: /^ps$/, flags: /^(aux|-ef|-e|-A)$/, instead: "Get-Process" },
   {
@@ -783,6 +801,162 @@ function psArguments(rest: Word[], { version, add }: PsContext): void {
   }
 }
 
+function lineCol(
+  command: string,
+  index: number,
+): { line: number; column: number } {
+  let line = 1;
+  let lineStart = 0;
+  for (let i = 0; i < index && i < command.length; i++) {
+    if (command[i] === "\n") {
+      line++;
+      lineStart = i + 1;
+    }
+  }
+  return { line, column: index - lineStart + 1 };
+}
+
+/**
+ * Commands a following line may legitimately be. A line that starts with one
+ * of these, a cmdlet, or a flag is a new statement. Anything else after a
+ * quote that closed at the end of the line is the body the model closed early.
+ */
+const NEXT_COMMAND = new Set([
+  "echo",
+  "npm",
+  "npx",
+  "node",
+  "git",
+  "pnpm",
+  "yarn",
+  "python",
+  "python3",
+  "pip",
+  "cargo",
+  "go",
+  "dotnet",
+  "cd",
+  "ls",
+  "dir",
+  "cat",
+  "cp",
+  "mv",
+  "mkdir",
+  "rm",
+  "del",
+  "curl",
+  "wget",
+  "pwsh",
+  "powershell",
+  "cmd",
+  "bash",
+  "sh",
+  "docker",
+  "podman",
+  "make",
+  "write-output",
+  "write-host",
+]);
+
+const PS_KEYWORD =
+  /^(if|else|elseif|foreach|for|while|do|switch|try|catch|finally|function|filter|param|return|throw|break|continue|exit|trap|begin|process|end|class|enum|using|data|dynamicparam|in|until)\b/i;
+
+/** A line PowerShell would be asked to run on purpose, not leftover body text. */
+function isClearPowerShell(trimmed: string): boolean {
+  if (/^[$&@.#{}()[\]]/.test(trimmed)) return true;
+  if (PS_KEYWORD.test(trimmed)) return true;
+  if (/^[A-Za-z]+-[A-Za-z]/.test(trimmed)) return true;
+  const first = /^[A-Za-z_][\w.-]*/.exec(trimmed);
+  if (!first) return false;
+  const rest = trimmed.slice(first[0].length);
+  // `print("hi")` is another language's call, glued on with no space
+  if (rest.startsWith("(")) return false;
+  if (NEXT_COMMAND.has(first[0].toLowerCase())) return true;
+  if (/^\s+-/.test(rest)) return true;
+  const words = trimmed.split(/\s+/);
+  return (
+    words.length <= 2 && words.every((w) => /^[A-Za-z_][\w.-]*$/.test(w))
+  );
+}
+
+/**
+ * The next line after a quote that closed at the end of its own line. A
+ * newline outside quotes is already a statement separator. Indented text, or
+ * several words that are not a command, is the body the model meant to keep
+ * inside the string.
+ */
+function looksLikeQuotedBody(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed || isClearPowerShell(trimmed)) return false;
+  if (/^\s+\S/.test(line)) return true;
+  return trimmed.split(/\s+/).length >= 3;
+}
+
+/** Quotes and here-strings the shell will not finish, and a body left outside one. */
+function psQuoteProblems({ command, m, add }: PsContext): void {
+  for (const [start, end] of m.unclosedHere) {
+    const at = lineCol(command, start);
+    add(
+      "ps.unclosed-here-string",
+      "error",
+      start,
+      end,
+      `A here-string was opened in Windows PowerShell at line ${at.line}, column ${at.column} and never closed, so the rest was not a new command.`,
+      "Close it with '@ or \"@ at the start of a line, or put a long body in the edit tool.",
+    );
+  }
+  const open = [
+    ...m.unterminated.map((span) => ({ span, quote: '"' as const })),
+    ...m.unterminatedSingle.map((span) => ({ span, quote: "'" as const })),
+  ];
+  for (const { span, quote } of open) {
+    const [start, end] = span;
+    // A backtick that ate the closer is ps.backtick-substitution, one finding
+    if (quote === '"' && command.slice(start, end).includes("`")) continue;
+    const at = lineCol(command, start);
+    const kind = quote === '"' ? "double quote" : "single quote";
+    add(
+      "ps.unclosed-quote",
+      "error",
+      start,
+      end,
+      `A ${kind} was opened in Windows PowerShell at line ${at.line}, column ${at.column} and never closed, so the rest was not a new command.`,
+      "Close the quote, or put a long body in the edit tool.",
+    );
+  }
+  const openAt = new Set([
+    ...m.unterminated.map(([start]) => start),
+    ...m.unterminatedSingle.map(([start]) => start),
+  ]);
+  const closed = [...m.doubles, ...m.singles].filter(
+    ([start, end]) =>
+      !openAt.has(start) && !command.slice(start, end).includes("\n"),
+  );
+  for (const [, end] of closed) {
+    const tail = command.slice(end);
+    const nl = /^[ \t]*\r?\n/.exec(tail);
+    if (!nl) continue;
+    const lineStart = end + nl[0].length;
+    const nextBreak = command.indexOf("\n", lineStart);
+    const line = command.slice(
+      lineStart,
+      nextBreak < 0 ? command.length : nextBreak,
+    );
+    // A newline still inside a balanced quote or a here-string never reaches
+    // here: those spans contain the newline, or the body was masked.
+    if (!looksLikeQuotedBody(line)) continue;
+    const at = lineCol(command, lineStart);
+    add(
+      "ps.early-close",
+      "error",
+      end - 1,
+      lineStart + line.length,
+      `A newline after a closed quote is a statement separator in Windows PowerShell, so line ${at.line} runs as its own command. The quote was closed before the body finished.`,
+      "Leave the quote open until the body ends, or put a long body in the edit tool.",
+    );
+  }
+}
+
 function powershellHints(
   command: string,
   target: HintTarget,
@@ -798,6 +972,7 @@ function powershellHints(
   };
   psOperators(ctx);
   psSyntax(ctx);
+  psQuoteProblems(ctx);
   psVariables(ctx);
   for (const s of statements(command, ctx.m.all, "powershell")) {
     const [first, ...rest] = s.words;

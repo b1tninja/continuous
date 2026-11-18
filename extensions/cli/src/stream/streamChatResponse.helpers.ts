@@ -104,6 +104,26 @@ export interface ToolResultWithStatus extends ChatCompletionToolMessageParam {
   status: ToolStatus;
 }
 
+/**
+ * The tool result for a policy denial. A shell-hint parse failure already
+ * says the command was not run and how to fix it. Wrapping that as a
+ * security-policy refusal tells the model not to retry, which is the
+ * opposite of the hint.
+ */
+export function policyDenialContent(
+  denialMessage: string | undefined,
+  source?: string,
+): string {
+  if (
+    source === "shell-hint" ||
+    (denialMessage?.includes("The command was not run") ?? false)
+  ) {
+    return denialMessage ?? "";
+  }
+  if (!denialMessage) return `Command blocked by security policy`;
+  return `Command blocked by security policy: ${denialMessage} Do not retry it or reach the same result another way. Do what else the request needs, then say what you could not do and why.`;
+}
+
 // Helper function to handle permission denied
 export function handlePermissionDenied(
   toolCall: PreprocessedToolCall,
@@ -479,6 +499,8 @@ async function decideToolApproval(
   denialReason?: "user" | "policy" | "loop";
   /** Why a rule, protected path or the reviewer refused it, to tell the model. */
   denialMessage?: string;
+  /** Set when the refusal is a shell-hint parse failure. */
+  denialSource?: string;
 }> {
   const { callbacks, isHeadless, hookDecision } = options;
   // The role table first: a call the mode's role may not make never reaches a
@@ -554,6 +576,9 @@ async function decideToolApproval(
           approved: false,
           denialReason: "policy",
           denialMessage: verdict.reason,
+          ...(verdict.source === "shell-hint"
+            ? { denialSource: verdict.source }
+            : {}),
         };
       }
       // "ask" (or an allow rule over a hook's ask): Loop mode holds it as a
@@ -1188,9 +1213,10 @@ export async function executeStreamedToolCalls(
           denialReason === "loop"
             ? (permissionResult.denialMessage ?? "Held for the person.")
             : denialReason === "policy"
-              ? permissionResult.denialMessage
-                ? `Command blocked by security policy: ${permissionResult.denialMessage} Do not retry it or reach the same result another way. Do what else the request needs, then say what you could not do and why.`
-                : `Command blocked by security policy`
+              ? policyDenialContent(
+                  permissionResult.denialMessage,
+                  permissionResult.denialSource,
+                )
               : `Permission denied by user`;
 
         const deniedEntry: ToolResultWithStatus = {
