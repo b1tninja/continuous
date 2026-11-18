@@ -2,6 +2,7 @@ import type { ContextItem, FetchFunction } from "core/index.js";
 import { fetchUrlContentTool } from "core/tools/definitions/fetchUrlContent.js";
 import { fetchUrlContentImpl } from "core/tools/implementations/fetchUrlContent.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
+import { urlReviewReason } from "core/util/fetchUrlSafety.js";
 import { modelToolFetch } from "core/util/modelToolFetch.js";
 
 import { getServiceSync, SERVICE_NAMES } from "../services/index.js";
@@ -23,6 +24,39 @@ function getFetchMaxChars(): number {
   );
 }
 
+/** The loaded config, or null when there is none in this process. */
+function loadedConfig(): ConfigServiceState["config"] {
+  try {
+    return (
+      getServiceSync<ConfigServiceState>(SERVICE_NAMES.CONFIG).value?.config ??
+      null
+    );
+  } catch {
+    // no config service in this process
+    return null;
+  }
+}
+
+/**
+ * Whether the config turns spotlighting on: `web.spotlight` (the `web:`
+ * section of plans/research/web-fetch-deep-dive.md §8.1) or the older
+ * `experimental.spotlightUntrusted`, which it replaces. Neither key is in the
+ * YAML schema yet, so both are read loosely. CONTINUOUS_SPOTLIGHT_UNTRUSTED=1
+ * still turns it on (core's `spotlightEnabled`).
+ */
+export function spotlightSetting(config: unknown): boolean | undefined {
+  const c = config as
+    | {
+        web?: { spotlight?: unknown };
+        experimental?: { spotlightUntrusted?: unknown };
+      }
+    | null
+    | undefined;
+  if (typeof c?.web?.spotlight === "boolean") return c.web.spotlight;
+  const legacy = c?.experimental?.spotlightUntrusted;
+  return typeof legacy === "boolean" ? legacy : undefined;
+}
+
 /**
  * The fetch the IDE gives this tool (`modelToolFetch`): the pinned `lookup`
  * of a checked address is honoured, and proxy, CA bundle, certificate and
@@ -30,15 +64,9 @@ function getFetchMaxChars(): number {
  * only to the origins of the configured models. Without a loaded config the
  * transport defaults (HTTPS_PROXY, the system CA store) still apply.
  */
-export function guardedToolFetch(): FetchFunction {
-  let config: ConfigServiceState["config"] = null;
-  try {
-    config =
-      getServiceSync<ConfigServiceState>(SERVICE_NAMES.CONFIG).value?.config ??
-      null;
-  } catch {
-    // no config service in this process
-  }
+export function guardedToolFetch(
+  config: ConfigServiceState["config"] = loadedConfig(),
+): FetchFunction {
   return modelToolFetch({
     requestOptions: config?.requestOptions,
     modelsByRole: { chat: (config?.models ?? []) as never[] },
@@ -62,13 +90,30 @@ export const fetchTool: Tool = {
   },
   readonly: true,
   isBuiltIn: true,
-  evaluateToolCallPolicy: (basePolicy, args) =>
-    fetchUrlContentTool.evaluateToolCallPolicy?.(basePolicy, args) ??
-    basePolicy,
+  evaluateToolCallPolicy: (basePolicy, args, processedArgs) =>
+    fetchUrlContentTool.evaluateToolCallPolicy?.(
+      basePolicy,
+      args,
+      processedArgs,
+    ) ?? basePolicy,
+  // A URL carrying credentials or a long encoded value asks at the default
+  // levels and is refused headless, as in the IDE: the CLI's own `allow` for
+  // Fetch does not lift the tool's own ask.
+  ownAskReason: (args) => {
+    const why = urlReviewReason(args.url);
+    return why
+      ? `This URL carries ${why}, the shape of data being sent out through the address, so it asks first.`
+      : undefined;
+  },
   preprocess: async (args) => {
-    // Resolve before the permission check so a private address asks.
-    await fetchUrlContentTool.preprocessArgs?.(args, { ide: {} as never });
+    // Resolve before the permission check so a private address asks. The
+    // result (`nonPublic`: also a name that resolves to nothing here and has
+    // no delegated top-level domain, such as `wiki`) goes to the check.
+    const processedArgs = await fetchUrlContentTool.preprocessArgs?.(args, {
+      ide: {} as never,
+    });
     return {
+      ...(processedArgs ? { processedArgs } : {}),
       preview: [
         {
           type: "text",
@@ -78,52 +123,83 @@ export const fetchTool: Tool = {
       args,
     };
   },
-  run: async (args: { url: string }): Promise<string> => {
-    const { url } = args;
+  run: async (args: { url: string }): Promise<string> =>
+    (await fetchWithOutcome(args)).output,
+};
 
-    try {
-      // Suppress console errors from JSDOM CSS parsing
-      const originalConsoleError = console.error;
-      console.error = () => {};
+/** What `Fetch` returns, and the outcome code the IDE puts on its item's `status`. */
+export interface FetchResult {
+  output: string;
+  /**
+   * `ok`, or the typed outcome (`not-found`, `rate-limited`, ...) of
+   * core/util/web/outcomes.ts. The CLI's `Tool.run` returns text only, so the
+   * text carries everything the model needs; the code is for callers and
+   * tests that match it without parsing text.
+   */
+  status: string;
+}
 
-      // Use the core fetchUrlContent implementation
-      const contextItems = await fetchUrlContentImpl(
-        { url },
-        { fetch: guardedToolFetch() },
-      );
+/**
+ * The CLI `Fetch`: the core fetch_url_content implementation, so a typed
+ * outcome (a 404, a 429 with its Retry-After, a DNS failure) comes back as
+ * the same text the IDE gives, a normal result rather than a thrown error.
+ */
+export async function fetchWithOutcome(args: {
+  url: string;
+}): Promise<FetchResult> {
+  const { url } = args;
 
-      // Restore console.error
-      console.error = originalConsoleError;
+  // Suppress console errors from JSDOM CSS parsing
+  const originalConsoleError = console.error;
+  console.error = () => {};
+  try {
+    // Use the core fetchUrlContent implementation. It reads the spotlight
+    // setting from `config.experimental.spotlightUntrusted`.
+    const config = loadedConfig();
+    const spotlight = spotlightSetting(config);
+    const contextItems = await fetchUrlContentImpl(
+      { url },
+      {
+        fetch: guardedToolFetch(config),
+        ...(spotlight === undefined
+          ? {}
+          : { config: { experimental: { spotlightUntrusted: spotlight } } }),
+      },
+    );
 
-      if (contextItems.length === 0) {
-        throw new ContinueError(
-          ContinueErrorReason.Unspecified,
-          `Could not fetch content from ${url}`,
-        );
-      }
-
-      // Format the results for CLI display
-      const combinedContent = contextItems
-        .filter((item: ContextItem) => item.name !== "Truncation warning")
-        .map((item: ContextItem) => item.content)
-        .join("\n\n");
-
-      // Apply CLI-level truncation
-      const maxChars = getFetchMaxChars();
-      const { output: truncatedOutput } = truncateOutputFromEnd(
-        combinedContent,
-        maxChars,
-        "fetched content",
-      );
-
-      return truncatedOutput;
-    } catch (error) {
-      if (error instanceof ContinueError) {
-        throw error;
-      }
-      throw new Error(
-        `Error: ${error instanceof Error ? error.message : String(error)}`,
+    if (contextItems.length === 0) {
+      throw new ContinueError(
+        ContinueErrorReason.Unspecified,
+        `Could not fetch content from ${url}`,
       );
     }
-  },
-};
+
+    // Format the results for CLI display
+    const combinedContent = contextItems
+      .filter((item: ContextItem) => item.name !== "Truncation warning")
+      .map((item: ContextItem) => item.content)
+      .join("\n\n");
+    const status =
+      contextItems.find((item: ContextItem) => item.status)?.status ?? "ok";
+
+    // Apply CLI-level truncation
+    const maxChars = getFetchMaxChars();
+    const { output: truncatedOutput } = truncateOutputFromEnd(
+      combinedContent,
+      maxChars,
+      "fetched content",
+    );
+
+    return { output: truncatedOutput, status };
+  } catch (error) {
+    if (error instanceof ContinueError) {
+      throw error;
+    }
+    throw new Error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  } finally {
+    // Restore console.error, on a failure too
+    console.error = originalConsoleError;
+  }
+}

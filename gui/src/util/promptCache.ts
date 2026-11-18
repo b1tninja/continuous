@@ -49,6 +49,11 @@ export interface PromptCacheMiss {
   expectedTokens: number;
   /** What changed since the last request, in words; empty when unknown. */
   causes: string[];
+  /**
+   * The request followed a tool result (an agent's tool round), where nobody
+   * is asked before the oldest messages are dropped (C117).
+   */
+  inToolRound?: boolean;
 }
 
 /** Per-session facts the Auto lifetime learns from. Not persisted. */

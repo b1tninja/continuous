@@ -2,14 +2,16 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { getCommandExecutor } from "./commandExecutor";
 
-const output = (
-  child: ReturnType<ReturnType<typeof getCommandExecutor>["spawn"]>,
-) =>
-  new Promise<{ code: number | null; out: string }>((resolve) => {
+const output = async (
+  started: ReturnType<ReturnType<typeof getCommandExecutor>["spawn"]>,
+) => {
+  const child = await started;
+  return new Promise<{ code: number | null; out: string }>((resolve) => {
     let out = "";
     child.stdout?.on("data", (d) => (out += d.toString()));
     child.on("close", (code) => resolve({ code, out }));
   });
+};
 
 describe("getCommandExecutor", () => {
   it("is the machine's own shell by default", () => {
@@ -80,7 +82,7 @@ describe.runIf(hasWsl)("the WSL executor (this machine's distribution)", () => {
 
   it("stops the process inside the distribution when the Windows side is killed", async () => {
     const marker = `sleep 4${Math.floor(Math.random() * 900 + 100)}`;
-    const child = wsl().spawn(marker, { stdio: "ignore" });
+    const child = await wsl().spawn(marker, { stdio: "ignore" });
     // The checker's own shell mentions the marker once, so a running command is 2
     const running = () =>
       Number(

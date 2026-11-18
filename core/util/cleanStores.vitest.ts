@@ -24,6 +24,38 @@ afterEach(() => {
   }
 });
 
+describe("clean: session logs and their blobs", () => {
+  it("ages a .jsonl session and takes its blob folder with it", () => {
+    const root = tree();
+    const sessions = path.join(root, "sessions");
+    const oldLog = path.join(sessions, "old.jsonl");
+    const liveLog = path.join(sessions, "live.jsonl");
+    fs.writeFileSync(oldLog, "{}\n");
+    fs.writeFileSync(liveLog, "{}\n");
+    for (const id of ["old", "live"]) {
+      fs.mkdirSync(path.join(sessions, id, "blobs"), { recursive: true });
+      const blob = path.join(sessions, id, "blobs", "a".repeat(64));
+      fs.writeFileSync(blob, "x".repeat(100));
+      // Blobs are written once and never touched again
+      aged(blob, 400);
+    }
+    aged(oldLog, 40);
+
+    const plan = planClean(root);
+    expect(plan.entries.map((e) => path.basename(e.file))).toEqual([
+      "old.jsonl",
+    ]);
+    // the blob folder is counted with its session
+    expect(plan.entries[0].bytes).toBe(3 + 100);
+
+    runClean(plan);
+    expect(fs.existsSync(oldLog)).toBe(false);
+    expect(fs.existsSync(path.join(sessions, "old"))).toBe(false);
+    // An active session keeps its old blobs
+    expect(fs.existsSync(path.join(sessions, "live", "blobs"))).toBe(true);
+  });
+});
+
 describe("clean", () => {
   it("parses ages", () => {
     expect(parseAge("30d")).toBe(30 * DAY_MS);

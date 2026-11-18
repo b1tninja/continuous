@@ -1,22 +1,13 @@
 import type { RetirementNotice } from "core/util/modelRetirement";
 import { useContext, useEffect, useState } from "react";
 import { IdeMessengerContext } from "../../context/IdeMessenger";
+import { retirementLabel } from "../../hooks/useRetirementNotices";
+import { useWebviewListener } from "../../hooks/useWebviewListener";
 import { useAppSelector } from "../../redux/hooks";
 import { selectSelectedChatModel } from "../../redux/slices/configSlice";
 
 /** The chip's words: short, with the date when there is one. */
-export function retirementChipText(n: RetirementNotice): string {
-  switch (n.severity) {
-    case "retired":
-      return "retired";
-    case "retiring":
-      return `retires ${n.retiresAt}`;
-    case "possible":
-      return `may retire ${n.retiresAt}`;
-    default:
-      return "deprecated";
-  }
-}
+export const retirementChipText = retirementLabel;
 
 function tooltip(n: RetirementNotice): string {
   const source =
@@ -28,20 +19,34 @@ function tooltip(n: RetirementNotice): string {
 
 /**
  * A warning chip beside the model picker when the selected Anthropic model is
- * deprecated, retired or retiring within 60 days (core/util/modelRetirement.ts).
- * Offline: the checked-in table and the lifecycle your key last returned from
- * Test connection. Click hides it for that notice; it never blocks anything.
+ * deprecated, retired or retiring within 60 days, or the selected OpenAI model
+ * has a shutdown date (core/util/modelRetirement.ts). The checked-in table and
+ * the lifecycle your key last returned (Test connection, or the background
+ * refresh of the selected model under "Model information updates:
+ * Automatic"). Click hides it for that notice; it never blocks anything.
  */
 export function ModelRetirementChip() {
   const ideMessenger = useContext(IdeMessengerContext);
   const model = useAppSelector(selectSelectedChatModel);
   const [notice, setNotice] = useState<RetirementNotice>();
+  // Bumped when the background refresh brought newer facts for this model
+  const [refreshed, setRefreshed] = useState(0);
   const provider = model?.provider;
   const id = model?.model;
 
+  useWebviewListener(
+    "model/infoUpdated",
+    async (data) => {
+      if (data.provider === provider && data.model === id) {
+        setRefreshed((n) => n + 1);
+      }
+    },
+    [provider, id],
+  );
+
   useEffect(() => {
     setNotice(undefined);
-    if (provider !== "anthropic" || !id) return;
+    if ((provider !== "anthropic" && provider !== "openai") || !id) return;
     let live = true;
     ideMessenger
       .request("model/retirementNotice", { provider, model: id })
@@ -52,7 +57,7 @@ export function ModelRetirementChip() {
     return () => {
       live = false;
     };
-  }, [provider, id]);
+  }, [provider, id, refreshed]);
 
   if (!notice || !provider || !id) return null;
   return (

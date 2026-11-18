@@ -37,7 +37,7 @@ import {
   DEFAULT_POLICY_LEVELS,
   POLICY_AREA_LABELS,
   type PolicyArea,
-  type PolicyLevel,
+  type WebLevel,
   type PolicyLevels,
 } from "./policy";
 import type { ProtectedKind } from "./protected";
@@ -123,8 +123,8 @@ export interface ToolCallTestResult {
   reason: string;
   /** The tool as the evaluator knows it, and what it was given */
   toolName: string;
-  area?: PolicyArea;
-  level?: PolicyLevel;
+  area?: PolicyArea | "web";
+  level?: WebLevel;
   readOnly?: string;
   protection?: ProtectedKind;
   /** Every rule in effect that matches this call, the deciding one marked */
@@ -307,8 +307,8 @@ function decisionOf(policy: ToolPolicy): TestDecision {
 interface Facts {
   matches: MatchedRule[];
   lint: LintFinding[];
-  area?: PolicyArea;
-  level?: PolicyLevel;
+  area?: PolicyArea | "web";
+  level?: WebLevel;
   reviewer: boolean;
   settledAt: TestStep["id"] | "mode";
   protection?: ProtectedKind;
@@ -334,7 +334,7 @@ function buildSteps(facts: Facts, result: ToolCallTestResult): TestStep[] {
   const labels: Record<string, string> = {
     lint: "Command check",
     safety: "Built-in rule check",
-    floor: "Always-on rules",
+    floor: "Locked rules",
     deny: "Never rules",
     protected: "Protected paths",
     ask: "Ask rules",
@@ -389,7 +389,7 @@ function buildSteps(facts: Facts, result: ToolCallTestResult): TestStep[] {
           break;
         case "level":
           detail = facts.level
-            ? `${facts.area ? POLICY_AREA_LABELS[facts.area] : "This call"} is ${facts.level}.`
+            ? `${facts.area ? (facts.area === "web" ? "Web" : POLICY_AREA_LABELS[facts.area]) : "This call"} is ${facts.level}.`
             : "This call belongs to no area.";
           break;
         case "reviewer":
@@ -540,7 +540,7 @@ interface Verdict {
 function verdictOf(
   evaluated: ReturnType<typeof evaluateToolPolicyWithRules>,
   input: TestToolCallInput,
-  facts: { basePolicy: ToolPolicy; tool?: ToolLike; level?: PolicyLevel },
+  facts: { basePolicy: ToolPolicy; tool?: ToolLike; level?: WebLevel },
 ): Verdict {
   let policy = evaluated.policy;
   let source: Verdict["source"] = evaluated.source;

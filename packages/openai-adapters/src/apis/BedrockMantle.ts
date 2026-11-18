@@ -8,17 +8,41 @@ import {
 import { BedrockMantleConfig } from "../types.js";
 import {
   alternateMantlePrefix,
+  DroppableMantleParam,
+  droppableParamFromError,
   getMantleErrorHint,
   isWrongRouteError,
-  mantleBaseUrl,
   MANTLE_PATH_PREFIXES,
+  mantleBaseUrl,
   MaxTokensParam,
   maxTokensParamFromError,
   normalizeMantlePrefix,
+  toolsNeedReasoningOffFromError,
 } from "./bedrockMantleHelpers.js";
 import { OpenAIApi } from "./OpenAI.js";
 
-const MAX_ADAPT_RETRIES = 2;
+/** Enough for the token parameter, a dropped field and reasoning off. */
+const MAX_ADAPT_RETRIES = 4;
+
+/** What a model refused, learned from its errors. */
+interface MantleQuirks {
+  prefix?: string;
+  maxTokensParam?: MaxTokensParam;
+  dropped: Set<DroppableMantleParam>;
+  /** Send reasoning_effort "none" with function tools (Daybreak Blue). */
+  toolsNeedReasoningOff: boolean;
+}
+
+/**
+ * Per region and model, for the life of the process. The adapter is created
+ * again for each request in some paths, and relearning cost one refused
+ * request per quirk every time.
+ */
+const learnedQuirks = new Map<string, MantleQuirks>();
+
+export function resetLearnedMantleQuirks(): void {
+  learnedQuirks.clear();
+}
 
 /**
  * Amazon Bedrock "Mantle": an OpenAI-compatible endpoint at
@@ -29,7 +53,12 @@ const MAX_ADAPT_RETRIES = 2;
  *    on the wrong one is rejected with a recognisable error and retried on the
  *    other prefix
  *  - the token-limit parameter (some models reject `max_tokens`)
- * Both can also be set explicitly (`mantlePathPrefix`, `maxTokensParam`).
+ *  - fields a model refuses outright (Daybreak Blue refuses `stop`), which
+ *    are left out from then on
+ *  - that function tools need `reasoning_effort: "none"` (Daybreak Blue)
+ * The path and token parameter can also be set explicitly
+ * (`mantlePathPrefix`, `maxTokensParam`). What is learned is kept per region
+ * and model for the life of the process.
  */
 export class BedrockMantleApi extends OpenAIApi {
   private region: string;
@@ -65,24 +94,57 @@ export class BedrockMantleApi extends OpenAIApi {
 
   modifyChatBody<T extends ChatCompletionCreateParams>(body: T): T {
     const modified = super.modifyChatBody(body);
-    if (
-      this.maxTokensParam === "max_completion_tokens" &&
-      modified.max_tokens != null
-    ) {
+    const quirks = this.quirksFor(modified.model);
+    const tokenParam = this.maxTokensParam ?? quirks?.maxTokensParam;
+    if (tokenParam === "max_completion_tokens" && modified.max_tokens != null) {
       modified.max_completion_tokens = modified.max_tokens;
       modified.max_tokens = undefined;
     } else if (
-      this.maxTokensParam === "max_tokens" &&
+      tokenParam === "max_tokens" &&
       modified.max_completion_tokens != null
     ) {
       modified.max_tokens = modified.max_completion_tokens;
       modified.max_completion_tokens = undefined;
     }
+    const fields = modified as unknown as Record<string, unknown>;
+    for (const field of quirks?.dropped ?? []) {
+      delete fields[field];
+    }
+    if (quirks?.toolsNeedReasoningOff && modified.tools?.length) {
+      fields.reasoning_effort = "none";
+    }
     return modified;
   }
 
+  private quirksKey(model: string): string {
+    return `${this.region}|${model}`;
+  }
+
+  private quirksFor(model: string): MantleQuirks | undefined {
+    return learnedQuirks.get(this.quirksKey(model));
+  }
+
+  private learn(model: string): MantleQuirks {
+    const key = this.quirksKey(model);
+    let quirks = learnedQuirks.get(key);
+    if (!quirks) {
+      quirks = { dropped: new Set(), toolsNeedReasoningOff: false };
+      learnedQuirks.set(key, quirks);
+    }
+    return quirks;
+  }
+
+  /** Use the path a model was found on, so a new adapter skips the wrong one. */
+  private useLearnedPrefix(model: string): void {
+    const learned = this.quirksFor(model)?.prefix;
+    if (!learned || this.prefixIsFixed || learned === this.prefix) return;
+    this.prefix = learned;
+    this.apiBase = mantleBaseUrl(this.region, this.prefix);
+    this.openai = this.createOpenAIClient();
+  }
+
   /** Adjust settings in response to a recognised rejection. True means "retry". */
-  private adaptToError(e: unknown): boolean {
+  private adaptToError(e: unknown, model: string): boolean {
     const message = e instanceof Error ? e.message : String(e);
 
     if (isWrongRouteError(message) && !this.prefixIsFixed) {
@@ -92,12 +154,35 @@ export class BedrockMantleApi extends OpenAIApi {
       // Two rejections in a row means neither prefix works for this model.
       this.prefixSwaps += 1;
       this.prefixIsFixed = this.prefixSwaps >= 2;
+      this.learn(model).prefix = this.prefix;
       return true;
     }
 
     const tokenParam = maxTokensParamFromError(message);
-    if (tokenParam && tokenParam !== this.maxTokensParam) {
+    if (
+      tokenParam &&
+      tokenParam !==
+        (this.maxTokensParam ?? this.quirksFor(model)?.maxTokensParam)
+    ) {
       this.maxTokensParam = tokenParam;
+      this.learn(model).maxTokensParam = tokenParam;
+      return true;
+    }
+
+    const dropped = droppableParamFromError(message);
+    if (dropped && !this.quirksFor(model)?.dropped.has(dropped)) {
+      this.learn(model).dropped.add(dropped);
+      console.debug(
+        `Bedrock Mantle: ${model} refuses "${dropped}"; leaving it out of requests`,
+      );
+      return true;
+    }
+
+    if (
+      toolsNeedReasoningOffFromError(message) &&
+      !this.quirksFor(model)?.toolsNeedReasoningOff
+    ) {
+      this.learn(model).toolsNeedReasoningOff = true;
       return true;
     }
 
@@ -117,11 +202,12 @@ export class BedrockMantleApi extends OpenAIApi {
     body: ChatCompletionCreateParamsNonStreaming,
     signal: AbortSignal,
   ): Promise<ChatCompletion> {
+    this.useLearnedPrefix(body.model);
     for (let attempt = 0; ; attempt++) {
       try {
         return await super.chatCompletionNonStream(body, signal);
       } catch (e) {
-        if (attempt >= MAX_ADAPT_RETRIES || !this.adaptToError(e)) {
+        if (attempt >= MAX_ADAPT_RETRIES || !this.adaptToError(e, body.model)) {
           throw this.withHint(e);
         }
       }
@@ -132,6 +218,7 @@ export class BedrockMantleApi extends OpenAIApi {
     body: ChatCompletionCreateParamsStreaming,
     signal: AbortSignal,
   ): AsyncGenerator<ChatCompletionChunk, any, unknown> {
+    this.useLearnedPrefix(body.model);
     for (let attempt = 0; ; attempt++) {
       let yielded = false;
       try {
@@ -142,7 +229,11 @@ export class BedrockMantleApi extends OpenAIApi {
         return;
       } catch (e) {
         // Never retry once output has started: it would duplicate text.
-        if (yielded || attempt >= MAX_ADAPT_RETRIES || !this.adaptToError(e)) {
+        if (
+          yielded ||
+          attempt >= MAX_ADAPT_RETRIES ||
+          !this.adaptToError(e, body.model)
+        ) {
           throw this.withHint(e);
         }
       }

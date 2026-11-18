@@ -325,11 +325,13 @@ export function treeSummary(loop: LoopState, diff?: ReplanDiff): string {
 function foldLabel(items: TreeItem[]): string {
   const replaced = items.filter((i) => i.status === "replaced").length;
   const skipped = items.filter((i) => i.status === "skipped").length;
-  const done = items.length - replaced - skipped;
+  const dropped = items.filter((i) => i.status === "dropped").length;
+  const done = items.length - replaced - skipped - dropped;
   const parts: string[] = [];
   if (done > 0) parts.push(`${done} done`);
   if (skipped > 0) parts.push(`${skipped} skipped`);
   if (replaced > 0) parts.push(`${replaced} replaced`);
+  if (dropped > 0) parts.push(`${dropped} dropped`);
   return parts.join(" · ");
 }
 
@@ -357,6 +359,7 @@ export function planTreeModel(input: PlanTreeInput): PlanTreeModel {
     .find((d) => d.kind === "plan");
   const numberOf = new Map(plan.items.map((t, i) => [t.id, i + 1] as const));
   const replacedIds = extras.replacedBy ?? {};
+  const planIds = new Set(plan.items.map((t) => t.id));
 
   // The current item: the one the loop works on, else one that waits or failed
   let currentId = workingIds(loop).find((id) => {
@@ -381,7 +384,7 @@ export function planTreeModel(input: PlanTreeInput): PlanTreeModel {
       status,
       answers: questionDecisions,
     });
-    const round = extras.addedInRound?.[task.id];
+    const round = state?.addedInRound ?? extras.addedInRound?.[task.id];
     const target = replacedBy ? numberOf.get(replacedBy) : undefined;
     return {
       type: "item",
@@ -398,6 +401,27 @@ export function planTreeModel(input: PlanTreeInput): PlanTreeModel {
       openByDefault: lines.length > 0 && (isCurrent || status === "failed"),
     };
   });
+
+  // To-dos accepted re-plans took out (LoopState.replacedItems), struck through:
+  // "replaced by N" when a repair left exactly one new to-do, else "dropped"
+  const taken: TreeItem[] = (loop.replacedItems ?? [])
+    .filter((r) => !planIds.has(r.id))
+    .map((r) => {
+      const target = r.replacedBy ? numberOf.get(r.replacedBy) : undefined;
+      return {
+        type: "item" as const,
+        id: `replaced:${r.id}`,
+        text: r.text ?? `To-do ${r.id}`,
+        status: r.replacedBy ? ("replaced" as const) : ("dropped" as const),
+        current: false,
+        isNew: false,
+        ...(r.replacedBy && target
+          ? { replacedById: r.replacedBy, replacedByNumber: target }
+          : {}),
+        lines: [],
+        openByDefault: false,
+      };
+    });
 
   const done = items.filter((i) => i.status === "done").length;
   const total = items.length;
@@ -424,10 +448,15 @@ export function planTreeModel(input: PlanTreeInput): PlanTreeModel {
   }
   nodes.push(...dropped);
 
-  const finished = items.filter(
-    (i) =>
-      i.status === "done" || i.status === "skipped" || i.status === "replaced",
-  );
+  const finished = [
+    ...taken,
+    ...items.filter(
+      (i) =>
+        i.status === "done" ||
+        i.status === "skipped" ||
+        i.status === "replaced",
+    ),
+  ];
   if (finished.length > 0) {
     nodes.push({
       type: "fold",

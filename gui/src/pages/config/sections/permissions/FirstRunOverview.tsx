@@ -122,7 +122,7 @@ export function FirstRunOverview({ onDismiss }: { onDismiss: () => void }) {
       </ul>
       <p className="mt-2 mb-0 text-2xs text-description-muted">
         On top of the level you can add rules: Never, Ask or Always. Built-in
-        rules and always-on rules apply first, and no rule of yours can loosen
+        rules and locked rules apply first, and no rule of yours can loosen
         them. This card is shown once; the tabs below are the page.
       </p>
     </section>

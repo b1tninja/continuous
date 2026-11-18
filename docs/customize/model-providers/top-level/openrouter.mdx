@@ -145,13 +145,35 @@ If you're experiencing issues with Agent mode or tools not working, you can add 
 
 ## Model information and prices
 
-OpenRouter publishes a public list of its models: names, ids, context sizes, whether a model takes tools, and prices per token. Continuous can keep a copy of that list, but it never downloads it on its own.
+OpenRouter publishes a public list of its models: names, ids, context sizes, whether a model takes tools, and prices per token. Continuous keeps a dated copy of that list on this computer and, by default, keeps it current on its own. The setting **Model information updates** decides when `openrouter.ai` is contacted:
 
-The first time you choose OpenRouter in provider setup, Continuous asks "Pull the latest model information from OpenRouter?". The request goes to `openrouter.ai/api/v1/models`. It is a plain GET: no account, key or prompt is sent.
+| Value | What happens |
+| --- | --- |
+| **Automatic** (default) | When the copy is missing or older than the refresh interval (24 hours unless you change it), Continuous downloads the list in the background: about 15 to 60 seconds after the IDE starts (1 to 3 seconds for the terminal agent), then again once the interval has passed while it keeps running. Nothing waits for it, and provider setup does not ask first. |
+| **Only when I ask** | The behaviour of 2.16.0 and 2.16.1: the list is downloaded only when you choose **Pull now** or **Refresh now**, or run `continuous models refresh`. Provider setup asks "Pull the latest model information from OpenRouter?". |
+| **Off** | `openrouter.ai` is never contacted. A downloaded copy is not used either: model names, sizes and prices come from the data bundled with Continuous. |
 
-- **Pull now** downloads the list once. **Not now** sends nothing, and the question is not asked again in that session. Tick **Don't ask again** to save `modelCatalog: never` in your `config.yaml`; remove that line to be asked again.
-- **Refresh from openrouter.ai** on the model step downloads the list again whenever you want it.
-- The list is stored on this computer in `model-catalog/openrouter.json` in your global folder (`~/.continuous` by default), with the date it was downloaded. Providers other than OpenRouter are not affected. If the file is missing, damaged or from an older format it is ignored.
-- If openrouter.ai cannot be reached, the model step says so and keeps the list you already had.
+Every request is the same: one GET to `openrouter.ai/api/v1/models` with no account, key, prompt or body. The only headers are `accept: application/json` and `user-agent: continuous`; the `headers` of your `requestOptions` are not sent to this host, though its proxy and certificate settings apply.
+
+Where to set it:
+
+- **VS Code**: `continuous.modelInformationUpdates` (`automatic`, `manual`, `off`) and `continuous.modelInformationRefreshHours` in the settings, or the **Model information updates** card at the bottom of the Models settings page.
+- **Any IDE and the terminal agent**: `modelCatalog: automatic | manual | off` and `modelCatalogRefreshHours: 24` in the user-level `config.yaml` (`~/.continuous/config.yaml`). The VS Code setting and the settings page write these lines, so JetBrains and `continuous` follow the same choice. `modelCatalog: never`, saved by **Don't ask again** in earlier builds, still means "only when I ask, without the question".
+- **Environment**: `CONTINUOUS_MODEL_INFO_UPDATES=automatic|manual|off` and `CONTINUOUS_MODEL_INFO_REFRESH_HOURS=<hours>` override `config.yaml`, for example in CI.
+
+Other details:
+
+- With **Only when I ask**, **Pull now** downloads the list once. **Not now** sends nothing, and the question is not asked again in that session. Tick **Don't ask again** to stop the question for good.
+- The model step, the Models settings page and the console's Total Usage show "OpenRouter model information last updated &lt;time&gt; · Refresh now". **Refresh now** downloads the list straight away (not offered when updates are off). If the last automatic update failed, the line says so.
+- The list is stored on this computer in `model-catalog/openrouter.json` in your global folder (`~/.continuous` by default), with the date it was downloaded. It is written to a temporary file first and then renamed, so a reader never sees half a list. If the file is missing, damaged or from an older format it is ignored.
+- If `openrouter.ai` cannot be reached (offline, a proxy that refuses it), the list you already had stays in use. An automatic update tries again after 5 minutes, then 10, 20 and so on, up to every 6 hours.
+- Ollama is not covered by this setting. Its model list on `ollama.com` is fetched only from Ollama's own setup, when you choose **Download** or **Refresh** there.
 
 Prices in the list are estimates and are stored with their date. You can set up OpenRouter without ever pulling the list: type a model id instead.
+
+Once the list is downloaded:
+
+- The model step shows each model's price per million tokens with the date ("prices as of 2026-11-12").
+- The cost shown for OpenRouter requests (the usage tooltip and the console's Total Usage) is computed from these prices, including cache read and write rates, tiered prices for long prompts and reasoning tokens when the response reports them, and is labelled as an estimate with the date. Models the list does not hold keep the previous behaviour.
+- In the terminal, `continuous models refresh` is the same download as **Refresh now** (refused when updates are off), and `continuous models list` shows what was kept. `--max-budget-usd` works on priced models; see [run limits](/cli/run-limits).
+

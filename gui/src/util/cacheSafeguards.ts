@@ -349,6 +349,9 @@ export function expectedRoute(
   return routes[0];
 }
 
+/** The cause named when the request was pruned to fit the window. */
+export const PRUNED_CAUSE = "the oldest messages were dropped to fit";
+
 /** The cause named when the model differs from the previous request's. */
 export const MODEL_CHANGED = "the model changed";
 
@@ -377,7 +380,9 @@ export function keyChanges(
   if (before.model !== after.model) changes.push(MODEL_CHANGED);
   if (before.tools !== after.tools) changes.push("the tools changed");
   if (before.system !== after.system) {
-    changes.push("the system prompt changed (a rule or a summary)");
+    // A compaction summary is not in it any more (C104): only the base prompt
+    // and the rules that apply to the whole conversation are
+    changes.push("the system prompt changed (the base prompt or a rule)");
   }
   if (before.messages && after.messages) {
     const i = firstChangedMessage(before.messages, after.messages);
@@ -456,7 +461,7 @@ export function detectCacheMiss(args: {
   // Once the window is full, every request drops the oldest messages, so the
   // start of the prompt moves and nothing can be read. That is not a fault in
   // the cache; it is the conversation not fitting.
-  if (args.pruned) causes.push("the oldest messages were dropped to fit");
+  if (args.pruned) causes.push(PRUNED_CAUSE);
   return { readTokens, expectedTokens: expected, causes };
 }
 
@@ -465,7 +470,7 @@ export const MODEL_SWITCH_CAUSE = MODEL_CHANGED;
 export const AGEING_CAUSE =
   "old tool results were replaced by placeholders (history ageing)";
 export const SHORTER_PROMPT_CAUSE =
-  "the conversation was shortened (compaction or truncation)";
+  "the conversation was shortened (a compaction, or the oldest messages left out to fit)";
 
 /**
  * A request whose cache could not be read because of something the user or the

@@ -98,8 +98,9 @@ models:
 
     // The CLI auto-creates an explicit Anthropic model from ANTHROPIC_API_KEY,
     // so it now reaches the provider and fails on the invalid key rather than
-    // failing earlier with "no model specified".
-    expect(result.exitCode).toBe(1);
+    // failing earlier with "no model specified". A provider error exits 4
+    // (docs/cli/exit-codes.mdx).
+    expect(result.exitCode).toBe(4);
 
     // Should contain an authentication error from the invalid API key
     expect(result.stderr).toContain("invalid x-api-key");

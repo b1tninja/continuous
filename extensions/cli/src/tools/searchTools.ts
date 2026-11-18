@@ -1,5 +1,7 @@
+import type { ChatHistoryItem } from "core/index.js";
 import {
   DEFAULT_TOOL_BUDGET_TOKENS,
+  activatedFromResults,
   formatSearchResult,
   oneLine,
   resolveToolSearchMode,
@@ -27,19 +29,30 @@ export const cliToolAdapter: ToolAdapter<Tool> = {
   isCore: (t) => t.isBuiltIn,
 };
 
-/** Names found by searches in this process, in the order found; only grows. */
-const activated: string[] = [];
-
 /** The tools of the last selection that were left out, for the search to read. */
 let lastDeferred: Tool[] = [];
 
 export function resetToolSearchState(): void {
-  activated.length = 0;
   lastDeferred = [];
 }
 
-export function getActivatedToolNames(): readonly string[] {
-  return activated;
+/**
+ * The tools the conversation's searches activated, in the order found, read
+ * back out of the search results in the history (as the editor does). Nothing
+ * is kept between requests, so a resumed session lists the tools its history
+ * already called and a second session in one process starts with none.
+ */
+export function activatedToolNamesFromHistory(
+  history: readonly ChatHistoryItem[],
+): string[] {
+  const texts: string[] = [];
+  for (const item of history) {
+    for (const state of item.toolCallStates ?? []) {
+      if (state.toolCall.function.name !== SEARCH_TOOLS_CLI_NAME) continue;
+      for (const o of state.output ?? []) texts.push(o.content);
+    }
+  }
+  return activatedFromResults(texts);
 }
 
 export function makeSearchToolsCliTool(
@@ -73,9 +86,6 @@ export function makeSearchToolsCliTool(
         line: oneLine(t.description),
       }));
       const matches = searchIndex(index, query, args?.limit ?? 5);
-      for (const m of matches) {
-        if (!activated.includes(m.name)) activated.push(m.name);
-      }
       return formatSearchResult(matches, query);
     },
   };
@@ -92,6 +102,8 @@ export function applyCliToolSearch(
     family?: string;
     setting?: ToolSearchMode;
     budgetTokens?: number;
+    /** The conversation so far; the activated tools are read from it. */
+    history?: readonly ChatHistoryItem[];
   },
 ): Tool[] {
   const setting = options.setting ?? resolveToolSearchMode();
@@ -106,7 +118,7 @@ export function applyCliToolSearch(
     budgetTokens: options.budgetTokens ?? DEFAULT_TOOL_BUDGET_TOKENS,
     metaTool: makeSearchToolsCliTool,
     adapter: cliToolAdapter,
-    activatedNames: activated,
+    activatedNames: activatedToolNamesFromHistory(options.history ?? []),
   });
   if (!result.engaged) {
     lastDeferred = [];

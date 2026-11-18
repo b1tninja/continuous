@@ -167,6 +167,69 @@ describe("runTerminalCommandImpl", () => {
     }
   });
 
+  it("gives a command a pager that prints and ends, unless passEnv names it", async () => {
+    vi.stubEnv("PAGER", "less");
+    vi.stubEnv("GIT_PAGER", "less");
+    const command = `node -e "console.log('P=' + process.env.PAGER + ' G=' + process.env.GIT_PAGER + ' M=' + process.env.MANPAGER)"`;
+    try {
+      for (const onPartialOutput of [undefined, vi.fn()]) {
+        setTerminalEnvironmentSettings(undefined);
+        const result = await runTerminalCommandImpl(
+          { command, waitForCompletion: true },
+          createMockExtras({ onPartialOutput }),
+        );
+        expect(result[0].content).toContain("P=cat G=cat M=cat");
+        setTerminalEnvironmentSettings({ passEnv: ["GIT_PAGER"] });
+        const passed = await runTerminalCommandImpl(
+          { command, waitForCompletion: true },
+          createMockExtras({ onPartialOutput }),
+        );
+        expect(passed[0].content).toContain("P=cat G=less M=cat");
+      }
+    } finally {
+      setTerminalEnvironmentSettings(undefined);
+      vi.unstubAllEnvs();
+    }
+  }, 60_000);
+
+  // Windows PowerShell used to report 1 for any failing native program
+  it("reports the exit code the program chose", async () => {
+    const command = `node -e "console.log('before exit'); process.exit(3)"`;
+    const streamed = await runTerminalCommandImpl(
+      { command, waitForCompletion: true },
+      createMockExtras({ onPartialOutput: vi.fn() }),
+    );
+    expect(streamed[0].status).toBe("Command failed with exit code 3");
+    expect(streamed[0].content.trim()).toBe("before exit");
+    const plain = await runTerminalCommandImpl(
+      { command, waitForCompletion: true },
+      createMockExtras(),
+    );
+    expect(plain[0].status).toBe(
+      "Command failed with: Command failed with exit code 3",
+    );
+  }, 60_000);
+
+  // Before, a command that asks a question waited for the two-minute timeout
+  it("a command that prompts fails or reads nothing, and does not wait", async () => {
+    const windows = process.platform === "win32";
+    const command = windows ? "Read-Host 'name'" : "read x; echo got=$x";
+    for (const onPartialOutput of [undefined, vi.fn()]) {
+      const started = Date.now();
+      const result = await runTerminalCommandImpl(
+        { command, waitForCompletion: true },
+        createMockExtras({ onPartialOutput }),
+      );
+      expect(Date.now() - started).toBeLessThan(20_000);
+      if (windows) {
+        expect(result[0].content).toMatch(/NonInteractive/);
+        expect(result[0].status).toMatch(/Command failed/);
+      } else if (onPartialOutput) {
+        expect(result[0].content).toContain("got=");
+      }
+    }
+  }, 60_000);
+
   it("should stream output when onPartialOutput is provided", async () => {
     // This test uses Node to create a command that outputs data incrementally
     const command = `node -e "
@@ -298,6 +361,28 @@ describe("runTerminalCommandImpl", () => {
     expect(mockRunCommand).toHaveBeenCalledWith("echo 'test'");
     expect(result[0].content).toContain("Command executed in remote terminal");
     expect(result[0].status).toBe("Command executed");
+  });
+
+  it("in a remote window, does not judge the command by this machine's shell", async () => {
+    // && is an error to Windows PowerShell 5.1 (the lint stops it locally on
+    // Windows) and fine to the bash that reads it on the remote host
+    const chained = "cd app && npm test";
+    const first = await runTerminalCommandImpl(
+      { command: chained, waitForCompletion: true },
+      createMockExtras({ remoteName: "ssh-remote" }),
+    );
+    expect(mockRunCommand).toHaveBeenCalledWith(chained);
+    expect(first[0].status).toBe("Command executed");
+
+    // a program that is not on this machine may well be on the other one
+    const second = await runTerminalCommandImpl(
+      { command: "nonexistentcommandxyz --version", waitForCompletion: true },
+      createMockExtras({ remoteName: "dev-container" }),
+    );
+    expect(mockRunCommand).toHaveBeenCalledWith(
+      "nonexistentcommandxyz --version",
+    );
+    expect(second[0].description).not.toBe("Command not run");
   });
 
   it("does not run a command whose program does not exist", async () => {

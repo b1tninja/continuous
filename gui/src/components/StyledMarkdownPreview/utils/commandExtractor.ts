@@ -1,7 +1,62 @@
 /**
- * Extracts and processes command strings, handling comments and line continuations.
- * @param cmd The command string to process
- * @returns The processed command string
+ * A shell prompt at the start of a line: `$ `, `> `, or PowerShell's
+ * `PS C:\path> `. A `$` must be followed by whitespace, or `$env:TEMP` (a
+ * PowerShell variable) would be read as a prompt.
+ */
+const PROMPT = /^\s*(?:PS [^>\n]*>|\$|>)\s+/;
+
+/** A line that goes on onto the next: `\` (POSIX shells) or a backtick (PowerShell). */
+const EXPLICIT_CONTINUATION = /\s*(?:\\|`)$/;
+
+/** A line whose command needs the next line: it ends in `&&`, `||` or `|`. */
+const OPERATOR_CONTINUATION = /(?:&&|\|\||\|)$/;
+
+/**
+ * Separates commands that were on lines of their own. Sending a newline runs
+ * a line at once, so a block of several commands is joined into one line.
+ * `;` separates commands in PowerShell, bash, zsh and fish.
+ */
+export const COMMAND_SEPARATOR = "; ";
+
+/**
+ * Collapses runs of spaces and tabs to one space, except inside single or
+ * double quotes, where spacing is part of the argument.
+ */
+export function collapseSpacesOutsideQuotes(text: string): string {
+  let out = "";
+  let quote: string | undefined;
+  let lastWasSpace = false;
+  for (const ch of text) {
+    if (quote) {
+      out += ch;
+      if (ch === quote) quote = undefined;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      out += ch;
+      lastWasSpace = false;
+      continue;
+    }
+    if (ch === " " || ch === "\t") {
+      if (!lastWasSpace) out += " ";
+      lastWasSpace = true;
+      continue;
+    }
+    out += ch;
+    lastWasSpace = false;
+  }
+  return out;
+}
+
+/**
+ * The command a code block runs when its Run button is pressed, as one line.
+ * Removes comment lines, block comments and shell prompts, joins continued
+ * lines, and joins separate commands with `; `. The text of each command is
+ * kept as written (spaces inside quotes included).
+ *
+ * @param cmd The code block's text
+ * @returns The command to type into the terminal, or "" when there is none
  */
 export function extractCommand(cmd: string): string {
   if (!cmd || cmd.trim() === "") {
@@ -9,43 +64,39 @@ export function extractCommand(cmd: string): string {
   }
 
   // Remove multi-line comments (/* ... */) and replace with a single space
-  cmd = cmd.replace(/\/\*[\s\S]*?\*\//g, " ");
+  const withoutBlockComments = cmd.replace(/\/\*[\s\S]*?\*\//g, " ");
 
-  // Handle the $ prompt case first
-  if (cmd.includes("$")) {
-    const match = cmd.match(/\$\s*([^\n]+)/);
-    if (match) {
-      // Return just the command after $ without further processing
-      return match[1].trim();
-    }
-  }
-
-  // Process lines - remove single-line comments only at beginning of lines
-  const lines = cmd
-    .split("\n")
-    .map((line) => line.replace(/^\s*#.*$/, "").replace(/^\s*\/\/.*$/, ""))
+  const lines = withoutBlockComments
+    .split(/\r?\n/)
+    .map((line) => line.replace(PROMPT, ""))
+    .filter((line) => !/^\s*(?:#|\/\/)/.test(line))
     .map((line) => line.trim())
     .filter((line) => line);
 
-  // Join lines with proper handling of continuations
-  let result = "";
-  for (let i = 0; i < lines.length; i++) {
-    let line = lines[i];
-
-    // Remove trailing continuation characters and join with next line
-    while (
-      (line.endsWith("&&") || line.endsWith("|") || line.endsWith("\\")) &&
-      i < lines.length - 1
-    ) {
-      // Remove the continuation character(s) and any trailing spaces
-      line = line.replace(/(&&|\||\\)\s*$/, "").trim();
-      // Join with the next line
-      i++;
-      line += " " + lines[i];
+  const commands: string[] = [];
+  let current = "";
+  for (const line of lines) {
+    current = current ? `${current} ${line}` : line;
+    if (EXPLICIT_CONTINUATION.test(current)) {
+      current = current.replace(EXPLICIT_CONTINUATION, "");
+      continue;
     }
-
-    result += line + " ";
+    if (OPERATOR_CONTINUATION.test(current)) {
+      continue;
+    }
+    commands.push(current.replace(/[ \t]+$/, ""));
+    current = "";
+  }
+  if (current) {
+    commands.push(current.replace(/[ \t]+$/, ""));
   }
 
-  return result.trim().replace(/\s+/g, " ");
+  return commands
+    .map((c) =>
+      collapseSpacesOutsideQuotes(
+        c.replace(/(?:\s*(?:&&|\|\||\|))+$/, ""),
+      ).trim(),
+    )
+    .filter((c) => c)
+    .join(COMMAND_SEPARATOR);
 }

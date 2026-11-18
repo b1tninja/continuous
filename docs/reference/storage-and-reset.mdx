@@ -13,7 +13,7 @@ The VS Code extension and the terminal agent keep everything on your machine: on
 | Name                       | What it holds                                                                        |
 | -------------------------- | ------------------------------------------------------------------------------------ |
 | `config.yaml`              | Models, MCP servers, rules, `toolPermissions`. Created with `models: []` if missing  |
-| `permissions.yaml`         | Levels, built-in rule switches, always-on rules. See [`permissions.yaml`](/reference/permissions-yaml) |
+| `permissions.yaml`         | Levels, built-in rule switches, locked rules. See [`permissions.yaml`](/reference/permissions-yaml) |
 | `settings.json`            | Run limits, attribution, hooks. See [`settings.json`](/reference/settings-json)      |
 | `providers.yaml`, `models.yaml` | Provider accounts and the model catalog                                         |
 | `.env`                     | Keys and API bases, when you chose to keep them in a file                            |
@@ -25,22 +25,92 @@ The VS Code extension and the terminal agent keep everything on your machine: on
 
 | Name                       | What it holds                                                               | Reset                                                       |
 | -------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `sessions/`                | Chat sessions of both products, and the loops saved with them               | `continuous clean` (older than 30 days by default), or delete |
-| `logs/`                    | `cn.log` (terminal agent), `core.log`, `prompt.log`                         | `continuous clean` (14 days), or delete                     |
+| `sessions/`                | Chat sessions of both products, and the loops saved with them: `<id>.jsonl` (the extension's append-only log, with tool outputs and images in `<id>/blobs/`) or `<id>.json` (the CLI, or the extension with "Save chats as an append-only log" off)               | `continuous sessions prune --older-than <age>` or `continuous clean` (older than 30 days by default), both to the trash; `continuous sessions clean`; or delete |
+| `sessions-trash/`          | Deleted sessions, kept 7 days so they can be restored: `<id>/trashed.json` (when, and the list entry) and `<id>/files/` (the `.jsonl` with its `blobs/`, or the `.json`). See [Deleted sessions](#deleted-sessions) | Removed by itself after 7 days; **Empty trash** on the History page, `continuous sessions trash --empty --yes`, or delete |
+| `command-output/`          | The full output of agent terminal commands whose output was longer than the model sees, as written by the command (not masked); read back by `read_command_output` | Removed by itself after 7 days, or delete |
+| `logs/`                    | `cn.log` (terminal agent), `core.log`, `prompt.log`, and `prompts/` when the debug prompt log is on | `continuous clean` (14 days), or delete |
 | `dev_data/`                | Local development data                                                      | `continuous clean` (90 days), or delete                     |
+| `cleanup-backups/`         | The originals of files changed by **Clean up old sessions**, one folder a day | Delete, or `--delete-backups-older-than`                  |
+| `sessions-open/`           | Which sessions each running window or agent has open, so a cleanup leaves them alone | Delete; it is rewritten                             |
 | `audit/`                   | The audit trail of tool decisions                                           | `continuous audit prune`; kept 30 days by default           |
 | `index/`                   | The codebase and docs indexes, and `globalContext.json` (selected config and other choices) | Delete; it is rebuilt                       |
 | `trusted-project.json`     | Projects whose own configuration you trusted                                | `continuous project revoke` in that project, or delete      |
 | `trusted-hooks.json`       | Projects whose hooks you trusted                                            | `continuous hooks revoke` in that project, or delete        |
+| `hook-notices.json`        | One-time hook notices already shown (`~/.claude` hooks are opt-in)          | delete, and the notice shows again                          |
 | `mcp-tool-pins.json`       | The MCP tool definitions you approved                                       | Delete; each tool asks again                                |
 | `measured-facts.json`      | What `test-connection` saw on your endpoints                                | Delete                                                      |
 | `retirement-notices.json`  | Which model retirement notices were shown or dismissed                      | Delete                                                      |
 | `input_history.json`       | The terminal agent's input history                                          | Delete. `continuous clean` does not touch it                |
 | `.onboarding_complete`     | The terminal agent's first-start question was answered                      | Delete to be asked again                                    |
 | `worktrees/`               | Git worktrees of parallel loop workers                                      | See below                                                   |
+| `cache/`                   | The terminal agent's compiled-code cache (`cache/compile`), which makes later starts faster | Delete; it is rebuilt                       |
 | `bedrock-catalog`, `.utils`, `.diffs`, `.migrations`, `.configs` | Caches, downloaded tools, pending diffs, migration markers | Delete                              |
 
-`continuous clean` is a dry run unless you add `--yes`, and it touches only `sessions`, `logs` and `dev_data`. Deleting a file is not secure erasure: an SSD, a backup or a snapshot can keep the bytes, so rotate any key that was in a file you removed.
+`continuous clean` is a dry run unless you add `--yes`, and it touches only `sessions`, `logs` and `dev_data`. It moves sessions to the trash instead of deleting them, so they can be restored with `continuous sessions restore <id>` for 7 days, and leaves sessions open in another window or agent alone; logs and `dev_data` are deleted. Deleting a file is not secure erasure: an SSD, a backup or a snapshot can keep the bytes, so rotate any key that was in a file you removed.
+
+### Clean up old sessions
+
+Earlier releases kept every request's full prompt in the session, and each prompt repeats the conversation before it, so a long session could reach hundreds of MB. The same prompts went to `dev_data/0.2.0/chatInteraction.jsonl`. To reclaim the space, run **Continuous: Clean up old sessions** from the Command Palette, or:
+
+```bash
+continuous sessions clean        # report only
+continuous sessions clean --yes  # clean up
+```
+
+The report reads like this:
+
+```text
+Sessions: 3 session(s) with old prompt logs, 418.2 MB of old prompt logs, largest session file 432.0 MB.
+Dev data: 0.0 MB older than 90 days, 431.5 MB of full prompts in chatInteraction records (kept as sizes and a hash).
+Logs: 2 file(s) older than 14 days, 1.3 MB.
+Reclaimable: 851.0 MB.
+```
+
+What it changes:
+
+- **Sessions**: each stored prompt is replaced by `[prompt not kept: older request]`, which is what a session is saved with now; the conversation, models and completions stay. Files are read in pieces, so a session too large to open is cleaned too.
+- **Stored outputs**: a chat saved as an append-only log (`<id>.jsonl`) has no prompts to remove, but a tool output or image whose message was edited or cut stays in `sessions/<id>/blobs/` until the chat is deleted. Outputs the chat no longer refers to, and blob folders whose chat is gone, are moved to the backup folder. An output the chat refers to is never moved, and neither is one written in the last 10 minutes. The report adds a `Stored outputs:` line when there are any, and the largest session counts its log and its stored outputs.
+- **Dev data**: lines older than 90 days are dropped (`--dev-data-days`), and `chatInteraction` records keep sizes and a hash in place of the prompt and completion. `--no-dev-data` leaves it alone.
+- **Logs**: files older than 14 days are moved out (`--logs-days`). `--no-logs` leaves them alone.
+
+Each file is written to a temporary file, checked (a session must parse and hold the same messages, in order), and then put in place; the original goes to `cleanup-backups/<date>/`. The space is freed when you delete that folder, or when `--delete-backups-older-than 30d` (the `continuous.sessionCleanup.deleteBackupsAfterDays` setting in VS Code) deletes old backup folders after a cleanup. A session open in another window or used by a running agent, or written in the last 10 minutes, is left alone and reported.
+
+It never runs by itself. After an update, VS Code scans once in the background and offers the command only when more than 100 MB can be reclaimed; **Don't ask again** is remembered.
+
+### Deleted sessions
+
+Deleting a chat on the History page, or in the terminal agent's session picker (`continuous ls`, `--resume`, `/resume`: select it, press Del, then `y`), moves it to `sessions-trash/` instead of removing it. Its stored outputs move with it. The History page shows an **Undo** line right away, and the picker puts it back with Ctrl+U.
+
+- A deleted chat stays in the trash for 7 days. Restore it from the **Trash** group at the bottom of the History page, or with `continuous sessions trash` (lists the trash) and `continuous sessions restore <id>`. **Delete permanently** removes one chat at once.
+- After 7 days it is removed the next time the session list or the trash is read, or when **Clean up old sessions** runs.
+- The trash is beside `sessions/`, so cleanup, the session list and the pickers never see a deleted chat as a live one.
+- A chat that another window or a running terminal agent has open (see `sessions-open/`) is not moved until you confirm, because that window may save it again. The session the terminal agent is in cannot be deleted from its own picker.
+- **Clear chats** on the History page deletes every chat and empties the trash; it cannot be undone.
+
+### Prune old sessions
+
+Nothing deletes a session by itself: there is no retention period, and a session stays until you remove it. To thin the list, move every session last used before an age to the trash:
+
+```bash
+continuous sessions prune --older-than 90d          # list them, then ask
+continuous sessions prune --older-than 90d --yes    # move them without asking
+continuous sessions prune --older-than 6w --dry-run # list only
+```
+
+- "Last used" is the last write to the session file (or its creation date, if that is later).
+- It lists each session with its id, title, date and size first, then asks. Without a terminal to ask in (a script, CI), it moves nothing unless `--yes` is given. With `--json` it reports and moves only with `--yes`.
+- Each session goes to `sessions-trash/` with its stored outputs, exactly as a deletion on the History page does, so it can be restored for 7 days with `continuous sessions restore <id>`. After that the trash removes it, as for any deleted chat.
+- A session open in another window or used by a running agent (see `sessions-open/`) is left alone and reported, also one that is opened between the list and the move.
+
+### Sessions that are not saved
+
+`continuous -p --no-session-persistence` keeps the run's session in memory only: nothing is written to `sessions/`, so the run cannot be resumed. A session it resumes with `--resume` is read and left unchanged. The flag works only with `-p`.
+
+### What a session holds
+
+A session holds the conversation as it was, secrets included, because it must load back exactly for `--resume` and the History page. It is not masked on disk; `/export` and `continuous export` mask what they write (see [Export a session](/cli/export)).
+
+A session file holds no request prompts. In memory only the newest request keeps its full prompt, for the thumbs up and down buttons; when a newer request replaces it, the older one keeps its size and SHA-256 instead. Feedback on a reply sends the full prompt only for the newest request, and for every other request a `[prompt not sent: older request, <bytes> bytes, sha256 <hash>]` line in its place. The debug prompt log (`--debug-prompt-log`, off by default) is the only place every prompt is kept in full.
 
 ## In each project
 
@@ -67,7 +137,7 @@ Uninstalling the extension (`code --uninstall-extension b1tninja.continuous`) or
 
 There is no single reset command. Pick what you need:
 
-- **Start over, keep your models**: delete `sessions/`, `index/` and the `trusted-*.json` and `mcp-tool-pins.json` files, and keep `config.yaml`, `providers.yaml`, `models.yaml` and `.env`.
+- **Start over, keep your models**: delete `sessions/`, `sessions-trash/`, `index/` and the `trusted-*.json` and `mcp-tool-pins.json` files, and keep `config.yaml`, `providers.yaml`, `models.yaml` and `.env`.
 - **Forget every trust grant**: delete `trusted-project.json`, `trusted-hooks.json` and `mcp-tool-pins.json`.
 - **Default permissions**: delete `permissions.yaml`. Your own `toolPermissions` rules in `config.yaml` stay.
 - **As if never installed**: uninstall both, then delete `~/.continuous`, the projects' `.continuous/` folders, and the keys in VS Code's secret storage. `~/.continue` belongs to the upstream product and is not this product's to delete. If you added hooks for this product to `~/.claude/settings.json`, remove them there.

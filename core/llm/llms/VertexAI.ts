@@ -13,6 +13,7 @@ import Gemini from "./Gemini.js";
 import { resolveCacheParts, resolvePromptCacheTtl } from "./anthropicCache.js";
 import { anthropicStyleCacheTtl } from "./bedrockHelpers.js";
 import { applyCacheControlToOpenAIBody } from "./openaiCacheControl.js";
+import { withReasoningEffort } from "../reasoningEffort.js";
 
 class VertexAI extends BaseLLM {
   static providerName = "vertexai";
@@ -222,9 +223,15 @@ class VertexAI extends BaseLLM {
     body: ChatCompletionCreateParams,
     options?: CompletionOptions,
   ): ChatCompletionCreateParams {
+    // The reasoning toggle and budget as the adapter's switch: Claude's
+    // `thinking` (as on Anthropic's API) or Gemini's thinking level or budget
+    if (this.vertexProvider === "gemini") {
+      return withReasoningEffort(body, options ?? {});
+    }
     if (this.vertexProvider !== "anthropic") {
       return body;
     }
+    body = withReasoningEffort(body, options ?? {});
     // `options` includes the model's configured default, so an explicit
     // `promptCaching: false` (for example from the toolbar) wins.
     const hasSystem = body.messages.some(
@@ -302,6 +309,8 @@ class VertexAI extends BaseLLM {
         messages: this.anthropicInstance.convertMessages(
           messages,
           shouldCachePrompt,
+          undefined,
+          options.model,
         ),
         system: shouldCacheSystemMessage
           ? [

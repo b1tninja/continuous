@@ -1,9 +1,9 @@
 # Unreleased
 
-Staging note for the next release. Fold it into that release's `<tag>.md` (the release job reads `.github/release-notes/<tag>.md`) and delete this file.
+Staging note for the next release. New entries go in `unreleased/<branch>.md` (see `unreleased/README.md`); this file keeps entries that were added before fragments. At release time, fold this file and every fragment into that release's `<tag>.md` (the release job reads `.github/release-notes/<tag>.md`; `node scripts/release-notes-fragments.mjs` prints them combined), then delete this file and the fragments.
 
 ## New
 
-- **Drop Files for Chat** (VS Code): a small view under the chat that takes files and folders dropped from the Explorer, editor tabs and your file manager and adds them to the chat input as `@` mentions. From VS Code 1.140, drags no longer reach the chat itself ([microsoft/vscode#339036](https://github.com/microsoft/vscode/issues/339036)), so the view is shown there by default (`continuous.chatDropZone`: `auto`, `always`, `never`). Items outside the workspace and files that look like secrets are refused with the reason. Press Enter on its row, or run **Continuous: Pick Files or Folders for Chat**, to pick items from the keyboard.
-
 ## Behaviour changes
+
+## Fixes

@@ -2,6 +2,14 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
+import {
+  COMMUNITY_CATALOG_SCHEMA_VERSION,
+  MODELS_DEV_URL,
+  parseModelsDev,
+} from "core/llm/communityCatalog.js";
+import { MODELS_DEV_TRIMMED } from "core/llm/communityCatalogFixtures.js";
+import { writeCommunityCatalog } from "core/llm/communityCatalogStore.js";
+import { setCommunityCatalog } from "core/llm/utils/communityPricing.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { RUN_STOP_EXIT_CODE } from "./runBudget.js";
@@ -83,6 +91,61 @@ describe("user settings", () => {
         homeDir: home,
       }),
     ).toBeDefined();
+  });
+
+  describe("a model only the community catalogue prices", () => {
+    const mistral = { provider: "mistral", model: "mistral-large-latest" };
+    let communityFile: string;
+    const saved = process.env.CONTINUOUS_MODEL_INFO_UPDATES;
+    beforeEach(() => {
+      communityFile = path.join(home, "models-dev.json");
+      writeCommunityCatalog(
+        {
+          schemaVersion: COMMUNITY_CATALOG_SCHEMA_VERSION,
+          source: MODELS_DEV_URL,
+          fetchedAt: "2026-11-10T08:00:00.000Z",
+          prices: parseModelsDev(MODELS_DEV_TRIMMED),
+        },
+        communityFile,
+      );
+    });
+    afterEach(() => {
+      if (saved === undefined) delete process.env.CONTINUOUS_MODEL_INFO_UPDATES;
+      else process.env.CONTINUOUS_MODEL_INFO_UPDATES = saved;
+      setCommunityCatalog(undefined);
+    });
+
+    it("refuses --max-budget-usd on the community price, allows it with the flag", () => {
+      process.env.CONTINUOUS_MODEL_INFO_UPDATES = "automatic";
+      expect(() =>
+        startRunLimits({ maxBudgetUsd: "1" }, mistral, {
+          homeDir: home,
+          communityFile,
+        }),
+      ).toThrow(/community catalogue \(models\.dev, 2026-11-10\)/);
+      const b = startRunLimits(
+        { maxBudgetUsd: "1", budgetAllowUnpriced: true },
+        mistral,
+        { homeDir: home, communityFile },
+      );
+      expect(b?.dollarCapActive).toBe(true);
+    });
+
+    it("with model information updates off the copy is not read at all", () => {
+      process.env.CONTINUOUS_MODEL_INFO_UPDATES = "off";
+      expect(() =>
+        startRunLimits({ maxBudgetUsd: "1" }, mistral, {
+          homeDir: home,
+          communityFile,
+        }),
+      ).toThrow(/the cost table has no price for it/);
+      const b = startRunLimits(
+        { maxBudgetUsd: "1", budgetAllowUnpriced: true },
+        mistral,
+        { homeDir: home, communityFile },
+      );
+      expect(b?.dollarCapActive).toBe(false);
+    });
   });
 });
 

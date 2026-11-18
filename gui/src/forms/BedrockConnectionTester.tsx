@@ -10,6 +10,12 @@ import { IdeMessengerContext } from "../context/IdeMessenger";
 import { BedrockAllModelsResult, listBedrockModelsFor } from "./bedrockModels";
 import type { BedrockEndpointModel } from "./modelListUtils";
 
+/** "text: https://..." as the text and the link, for a link button. */
+function splitTrailingUrl(text: string): { text: string; url?: string } {
+  const m = /^(.*?):?\s+(https:\/\/\S+)$/.exec(text);
+  return m ? { text: m[1], url: m[2] } : { text };
+}
+
 const ANTHROPIC_USE_CASE_NOTICE =
   "Anthropic models on this account need the Anthropic use-case form completed before they will work (Bedrock console, Model access).";
 
@@ -148,6 +154,11 @@ export function BedrockConnectionTester({
   const needAccess = models.filter(
     (m) => m.access === "needs-access" || m.access === "pending",
   ).length;
+  const quota = listResult?.ok ? listResult.quota : undefined;
+  const selectedQuotaWarning = models.find((m) => m.id === model)?.quotaWarning;
+  const quotaWarning = selectedQuotaWarning
+    ? splitTrailingUrl(selectedQuotaWarning)
+    : undefined;
 
   return (
     <div className="flex flex-col gap-2">
@@ -224,6 +235,47 @@ export function BedrockConnectionTester({
             </span>
           )}
         </Alert>
+      )}
+
+      {quotaWarning && (
+        <Alert type="warning" size="sm" role="status">
+          <span className="text-xs" data-testid="quota-warning">
+            {quotaWarning.text}
+          </span>
+          {quotaWarning.url && (
+            <button
+              type="button"
+              className="mt-1 block min-h-6 cursor-pointer rounded border border-solid border-border bg-transparent px-2 text-xs text-foreground hover:brightness-125"
+              onClick={() => ideMessenger.post("openUrl", quotaWarning.url!)}
+            >
+              Open Service Quotas
+            </button>
+          )}
+        </Alert>
+      )}
+
+      {quota?.note && (
+        <span
+          className="text-xs text-description"
+          data-testid="quota-check-note"
+        >
+          {quota.note}
+          {quota.docsUrl && (
+            <>
+              {" "}
+              <a
+                href={quota.docsUrl}
+                className="cursor-pointer text-link underline"
+                onClick={(e) => {
+                  e.preventDefault();
+                  ideMessenger.post("openUrl", quota.docsUrl!);
+                }}
+              >
+                (why)
+              </a>
+            </>
+          )}
+        </span>
       )}
 
       {models.some((m) => m.needsAnthropicUseCase) && (

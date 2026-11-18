@@ -58,8 +58,19 @@ import {
   getOauthCallbackUrl,
 } from "./MCPOauth";
 import { oauthOptionsFromSettings } from "./mcpOauthSettings";
+import type { McpPendingApproval } from "../../tools/roleTools";
+import { getContinueGlobalPath } from "../../util/paths";
 import {
+  calledTools,
+  pendingApprovalText,
+  serverAutoApproves,
+  trustedServersFromPolicyFile,
+} from "./mcpApprovalHold";
+import {
+  adoptFromHistory,
   adoptLegacyPin,
+  approveTools,
+  approveTrustedPending,
   evaluatePins,
   getToolPinStore,
   launchSpec,
@@ -67,7 +78,7 @@ import {
   recordApproval,
   type ApprovalEvents,
 } from "./mcpToolPins";
-import { announcePins } from "./mcpPinNotices";
+import { announcePins, announceTrustedApproval } from "./mcpPinNotices";
 import { oauthScopeForMcpServer } from "./workspaceMcpPolicy";
 
 const DEFAULT_MCP_TIMEOUT = 20_000; // 20 seconds
@@ -127,6 +138,11 @@ class MCPConnection {
     string,
     { kind: "changed" | "added" | "launch"; summary: string }
   > = new Map();
+  /**
+   * Tools the person has not approved (TR4): not offered to the model until
+   * they are (`approveTools`), except at IDGAF.
+   */
+  public pendingTools: Map<string, McpPendingApproval> = new Map();
   /** Told when the tool list or its pin state changed after connect. */
   public onToolsChanged?: () => void;
   public resources: MCPResource[] = [];
@@ -203,13 +219,50 @@ class MCPConnection {
   async refreshPins(): Promise<void> {
     try {
       await adoptLegacyPin(this.options, getToolPinStore());
-      const { flagged } = await evaluatePins(
+      // Upgrade: a server someone used before this release stays approved
+      if (
+        await adoptFromHistory(
+          pinKey(this.options),
+          { name: this.options.name, id: this.options.id },
+          this.tools,
+          getToolPinStore(),
+          await calledTools(getContinueGlobalPath()),
+          launchSpec(this.options),
+        )
+      ) {
+        this.infos.push(
+          `MCP server ${this.options.name} was used before this version, so its current tools stay approved. A tool it adds or changes later waits for your approval.`,
+        );
+      }
+      let { flagged, pending } = await evaluatePins(
         pinKey(this.options),
         this.tools,
         getToolPinStore(),
         launchSpec(this.options),
       );
+      // TR24: a server the person trusts pins what it lists on sight
+      const trustedPinned = await approveTrustedPending(
+        pinKey(this.options),
+        this.tools,
+        getToolPinStore(),
+        pending,
+        serverAutoApproves(
+          this.options,
+          trustedServersFromPolicyFile(getContinueGlobalPath()),
+        ),
+        launchSpec(this.options),
+      );
+      if (trustedPinned.length) {
+        announceTrustedApproval(this.options.name, trustedPinned, this.infos);
+        ({ flagged, pending } = await evaluatePins(
+          pinKey(this.options),
+          this.tools,
+          getToolPinStore(),
+          launchSpec(this.options),
+        ));
+      }
       this.changedTools = flagged;
+      this.pendingTools = pending;
     } catch (e) {
       // The comparison failed (file system error): no new information.
       this.errors.push(
@@ -245,6 +298,41 @@ class MCPConnection {
     } catch (e) {
       console.error("Could not save the MCP tool pin", e);
     }
+  }
+
+  /**
+   * What a stdio server has written to stderr since it was last started,
+   * bounded by `StdioOutputBuffer` and masked with the server's own
+   * environment. Empty for a remote server. The add wizard's probe reads it.
+   */
+  getCapturedStderr(): string {
+    return this.stdioStderr.isEmpty
+      ? ""
+      : this.stdioStderr.render(this.stdioEnv);
+  }
+
+  /**
+   * The person approved these tools (or all of them): pin them and tell the
+   * manager, which reloads the config. The new tool list then goes through
+   * the warm-cache hold like any other change (core/tools/toolListHold.ts).
+   */
+  async approveTools(names: readonly string[] | "all"): Promise<string[]> {
+    const pinned = await approveTools(
+      pinKey(this.options),
+      this.tools,
+      getToolPinStore(),
+      names,
+      new Date(),
+      launchSpec(this.options),
+    );
+    await this.refreshPins();
+    if (pinned.length) this.onToolsChanged?.();
+    return pinned;
+  }
+
+  /** What the server card shows while tools wait for approval. */
+  pendingApprovalNotice(): string | undefined {
+    return pendingApprovalText(this.options.name, this.pendingTools);
   }
 
   getStatus(): MCPServerStatus {
@@ -285,6 +373,7 @@ class MCPConnection {
     this.status = "connecting";
     this.tools = [];
     this.changedTools = new Map();
+    this.pendingTools = new Map();
     this.prompts = [];
     this.resources = [];
     this.resourceTemplates = [];

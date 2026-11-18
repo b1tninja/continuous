@@ -1,7 +1,7 @@
 import { evaluateTerminalCommandSecurity } from "@continuedev/terminal-security";
 import { describe, expect, it } from "vitest";
 
-import { evaluateToolPolicyWithRules, IDGAF_NO_ASK_REASON } from "./evaluate";
+import { evaluateToolPolicyWithRules } from "./evaluate";
 import {
   DEFAULT_POLICY_LEVELS,
   questionDecider,
@@ -59,9 +59,9 @@ describe("Questions: who decides", () => {
   });
 });
 
-describe("a call that still asks at a IDGAF area is refused when Questions is IDGAF", () => {
+describe("a call a guard would hold at a IDGAF area runs, whatever Questions is", () => {
   const ASK = "allowedWithPermission" as const;
-  const OFF = "disabled" as const;
+  const ALLOW = "allowedWithoutPermission" as const;
   const terminalTool = {
     group: "Built-In",
     evaluateToolCallPolicy: (base: any, args: Record<string, unknown>) =>
@@ -78,16 +78,14 @@ describe("a call that still asks at a IDGAF area is refused when Questions is ID
       approval: { levels: { ...DEFAULT_POLICY_LEVELS, tools, questions } },
     });
 
-  it("IDGAF tools with Questions below IDGAF still asks (the floor)", () => {
-    expect(run("idgaf", "cautious").policy).toBe(ASK);
-  });
-
-  it.each(["idgaf"] as const)(
-    "IDGAF tools with Questions %s is refused with the reason, never asked",
+  it.each(["cautious", "idgaf"] as const)(
+    "IDGAF tools with Questions %s runs it, never asks or refuses, and records the guard",
     (questions) => {
       const r = run("idgaf", questions);
-      expect(r.policy).toBe(OFF);
-      expect(r.reason).toContain(IDGAF_NO_ASK_REASON);
+      expect(r.policy).toBe(ALLOW);
+      expect(r.source).toBe("idgaf");
+      expect(r.idgafOverride?.policy).toBe(ASK);
+      expect(r.idgafOverride?.reason).toContain("built when it runs");
     },
   );
 

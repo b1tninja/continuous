@@ -23,6 +23,10 @@ import {
 } from "./vertexNonStream.js";
 import { AnthropicApi } from "./Anthropic.js";
 import {
+  withoutReasoningEffort,
+  withRequestedReasoningEffort,
+} from "./reasoningSwitch.js";
+import {
   BaseLlmApi,
   CreateRerankResponse,
   FimCreateParamsStreaming,
@@ -230,9 +234,15 @@ export class VertexAIApi implements BaseLlmApi {
   }
 
   async chatCompletionNonStream(
-    body: ChatCompletionCreateParamsNonStreaming,
+    requested: ChatCompletionCreateParamsNonStreaming,
     signal: AbortSignal,
   ): Promise<ChatCompletion> {
+    // The converters below do not see this config: the use's or variant's
+    // effort goes on the body, and not to Google as an unknown field
+    const body = withRequestedReasoningEffort(
+      requested,
+      this.config.requestOptions?.extraBodyProperties,
+    );
     const vertexProvider = this.determineVertexProvider(body.model);
 
     if (this.config.apiKey && vertexProvider !== "gemini") {
@@ -265,21 +275,22 @@ export class VertexAIApi implements BaseLlmApi {
         url = this.buildUrl(
           `publishers/mistralai/models/${body.model}:rawPredict`,
         );
-        requestBody = body;
+        requestBody = requested;
         break;
       default:
         throw new Error(`Unsupported model: ${body.model}`);
     }
 
-    const response = await customFetch(this.config.requestOptions)(
-      url.toString(),
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify(requestBody),
-        signal,
-      },
-    );
+    const response = await customFetch(
+      vertexProvider === "mistral"
+        ? this.config.requestOptions
+        : withoutReasoningEffort(this.config.requestOptions),
+    )(url.toString(), {
+      method: "POST",
+      headers,
+      body: JSON.stringify(requestBody),
+      signal,
+    });
 
     const data = await response.json();
 
@@ -304,9 +315,14 @@ export class VertexAIApi implements BaseLlmApi {
   }
 
   async *chatCompletionStream(
-    body: ChatCompletionCreateParamsStreaming,
+    requested: ChatCompletionCreateParamsStreaming,
     signal: AbortSignal,
   ): AsyncGenerator<ChatCompletionChunk> {
+    // As in chatCompletionNonStream: the effort goes on the body
+    const body = withRequestedReasoningEffort(
+      requested,
+      this.config.requestOptions?.extraBodyProperties,
+    );
     const vertexProvider = this.determineVertexProvider(body.model);
 
     if (this.config.apiKey && vertexProvider !== "gemini") {
@@ -323,15 +339,14 @@ export class VertexAIApi implements BaseLlmApi {
         );
         const requestBody = this.convertAnthropicBody(body);
 
-        const response = await customFetch(this.config.requestOptions)(
-          url.toString(),
-          {
-            method: "POST",
-            headers: anthropicHeaders,
-            body: JSON.stringify(requestBody),
-            signal,
-          },
-        );
+        const response = await customFetch(
+          withoutReasoningEffort(this.config.requestOptions),
+        )(url.toString(), {
+          method: "POST",
+          headers: anthropicHeaders,
+          body: JSON.stringify(requestBody),
+          signal,
+        });
 
         if (!response.ok) {
           const data = await response.json();
@@ -359,7 +374,7 @@ export class VertexAIApi implements BaseLlmApi {
         const headers = await this.getAuthHeaders();
         const mistralResponse =
           await this.mistralInstance.openai.chat.completions.create(
-            this.mistralInstance.modifyChatBody(body),
+            this.mistralInstance.modifyChatBody(requested),
             {
               signal,
               headers,

@@ -60,6 +60,16 @@ export interface MaskOptions {
     message: ToolResultChatMessage,
     toolName: string | undefined,
   ) => boolean;
+  /**
+   * The stub text for a masked result. Default `stubText` (which names the
+   * recall tool). Must be deterministic, so the same input gives the same bytes.
+   */
+  stub?: (
+    message: ToolResultChatMessage,
+    toolName: string | undefined,
+    chars: number,
+    handle: string,
+  ) => string;
 }
 
 export interface MaskedResult {
@@ -168,7 +178,9 @@ export function maskOldToolResults(
       return;
     }
     const handle = recallHandle(m.toolCallId, m.content);
-    const content = stubText(handle, toolName, chars);
+    const content = options.stub
+      ? options.stub(m, toolName, chars, handle)
+      : stubText(handle, toolName, chars);
     out.push({
       ...m,
       content,

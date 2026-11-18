@@ -14,6 +14,7 @@ A working-directory `.env` file is never copied into the process, by either prod
 | -------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | `CONTINUOUS_GLOBAL_DIR`                      | a folder                  | Use this folder instead of `~/.continuous`. A relative path is resolved against the working directory. Wins over `CONTINUE_GLOBAL_DIR`                       | `core/util/paths.ts`, `extensions/cli/src/env.ts`, `hooks/hookTrust.ts`       |
 | `CONTINUE_GLOBAL_DIR`                        | a folder                  | The older name of the same setting                                                                                                                          | the same files                                                                |
+| `CONTINUOUS_HEADLESS_LEGACY_ALLOW`           | `1`                       | One release only (2.18.0), removed in the next: headless runs (`-p`, `serve`) allow `Bash` and every unlisted tool again, as before 2.18.0. Pass `--auto` or `--policy` instead | `extensions/cli/src/permissions/headlessPolicy.ts` |
 | `CONTINUOUS_SERVE_TOKEN`                     | 16 characters or more     | The bearer token of `continuous serve`, and the token `continuous agents` and the remote interface send. `--token` wins                                     | `extensions/cli/src/commands/serve.auth.ts`, `commands/agents.ts`             |
 | `CONTINUOUS_<PROVIDER>_API_KEY`              | a key                     | The default name a provider's key is stored and looked up under, for example `CONTINUOUS_ANTHROPIC_API_KEY`. Secrets are also looked up in the environment | `core/config/providerSecretName.ts`, `core/config/yaml/LocalPlatformClient.ts` |
 | `CONTINUOUS_WEB_SEARCH_URL`                  | a URL                     | The web search endpoint. Unset, the `search_web` tool and `@web` are not offered                                                                            | `core/context/providers/webSearchBackend.ts`                                  |
@@ -31,6 +32,12 @@ See [Web search](/customize/web-search) and [cn serve](/guides/cn-serve).
 | `CONTINUE_MISSING_BINARY_CHECK`  | `off`                                                      | Turn off the check for a program that is not installed                                                                                             | `core/tools/permissions/missingBinaryGate.ts`   |
 | `CONTINUE_AUDIT`                 | `off`, `0`, `false`, `no`, `disabled` / `on`, `1`, `true`, `yes`, `enabled` | Turn the audit trail off or on. Wins over `audit.enabled` in `config.yaml`. See [Audit trail](/ide-extensions/agent/audit-trail) | `core/tools/permissions/audit/global.ts`        |
 | `CONTINUOUS_SPOTLIGHT_UNTRUSTED` | `1`                                                        | Wrap fetched web pages in spotlight markers, as the setting does                                                                                   | `core/tools/implementations/fetchUrlContent.ts` |
+
+## Prompt caching
+
+| Variable                    | Values | What it does                                                                                                                                                                        | Read by                                                                                         |
+| --------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `CONTINUOUS_FORCE_CACHE_5M` | `1`    | Debug override: every prompt cache entry gets the 5-minute lifetime, over the toolbar, `cacheBehavior.ttl` and `cacheBehavior.subagentTtl`. See [Prompt caching](/customize/deep-dives/prompt-caching#precedence) | `core/llm/llms/anthropicCache.ts`, `packages/openai-adapters/src/apis/cacheTtl.ts` |
 
 ## Terminal agent output caps
 
@@ -96,7 +103,7 @@ In a hook's command, `$CONTINUE_PROJECT_DIR`, `${CONTINUE_PROJECT_DIR}` and `%CO
 | `CONTINUE_USE_BEDROCK`                            | `1` makes the terminal agent's first start print `Using AWS Bedrock` and skip the API key question. Nothing else reads it: it configures no model |
 | `CONTINUOUS_IGNORE_CWD_ENV`                       | Set by the terminal agent at start, so shared code does not read a working-directory `.env`                                   |
 | `CONTINUE_CLI_AUTO_UPDATED`                       | Set by the update code on the process it restarts. Self-update is off in Continuous                                           |
-| `CONTINUE_CLI_TEST_SESSION_ID`                    | Used by `continuous ls` to open the session you picked, and by tests                                                          |
+| `CONTINUE_CLI_TEST_SESSION_ID`                    | Tests only: the id a new terminal session gets                                                                                |
 | `CONTINUE_CLI_TEST`                               | Tests only                                                                                                                    |
 | `CONTINUE_USER_ID`                                | Replaces the machine id the terminal agent uses as its user id                                                                |
 | `CONTINUE_REMOTE`                                 | Reported as an attribute of the terminal agent's optional metrics                                                             |

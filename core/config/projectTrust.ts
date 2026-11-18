@@ -269,6 +269,29 @@ export function isScopeTrusted(
   return entry?.scopes?.[scope]?.fingerprint === fingerprint;
 }
 
+/**
+ * Whether the person has trusted any part of this folder's configuration
+ * (a record for any scope in their global folder), or this run trusts
+ * project configuration (--trust-project-config). The tainted-session rule
+ * reads it to label a read from a folder nobody vouched for
+ * (`untrusted-workspace`). A global folder inside the project counts as no
+ * record, as everywhere else here.
+ */
+export function folderHasTrustRecord(
+  projectDir: string,
+  globalDir?: string,
+): boolean {
+  if (isProjectConfigTrustedForRun()) return true;
+  try {
+    const file = trustPath(projectDir, globalDir);
+    if (!file) return false;
+    const scopes = readTrust(file).projects[projectKeyFor(projectDir)]?.scopes;
+    return !!scopes && Object.keys(scopes).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function trustProjectScopes(
   projectDir: string,
   fingerprints: Partial<Record<ProjectConfigScope, string>>,

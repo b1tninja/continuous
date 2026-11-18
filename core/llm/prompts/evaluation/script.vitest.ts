@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 
 const script = resolve(__dirname, "../../../scripts/turns-eval.mjs");
 
+const CHILD_RUN_MS = 60_000;
+
 function run(args: string[], env: Record<string, string> = {}) {
   const clean = { ...process.env };
   for (const k of Object.keys(clean)) {
@@ -18,7 +20,8 @@ function run(args: string[], env: Record<string, string> = {}) {
   });
 }
 
-describe("npm run eval:turns (scripts/turns-eval.mjs)", () => {
+// The guards answer before anything is started, so the default limit fits them.
+describe("npm run eval:turns (scripts/turns-eval.mjs): argument guards", () => {
   it("prints usage", () => {
     const r = run(["--help"]);
     expect(r.status).toBe(0);
@@ -43,13 +46,6 @@ describe("npm run eval:turns (scripts/turns-eval.mjs)", () => {
     expect(run(["--stub", "oracle", "--max-tokens", "10"]).status).toBe(2);
   });
 
-  it("--profile tailored runs the Qwen coder text alone", () => {
-    const r = run(["--stub", "oracle", "--profile", "tailored"]);
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("### Profile: tailored");
-    expect(r.stdout).not.toContain("### Profile: full");
-  });
-
   it("will not call a hosted API without a key", () => {
     const r = run(["--provider", "openai", "--model", "m", "--yes"]);
     expect(r.status).toBe(2);
@@ -64,47 +60,62 @@ describe("npm run eval:turns (scripts/turns-eval.mjs)", () => {
     expect(r.stderr).toContain("--yes");
     expect(r.stderr).toContain("api.anthropic.com");
   });
-
-  it("does not need --yes or a key for a local server", () => {
-    // Fails later (nothing is listening on this port), not at the guard.
-    const r = run([
-      "--provider",
-      "openai",
-      "--model",
-      "m",
-      "--base-url",
-      "http://localhost:9/v1",
-    ]);
-    expect(r.stderr).not.toContain("--yes");
-    expect(r.stderr).not.toContain("API key");
-  });
-
-  it("runs the oracle without any network and meets the bar", () => {
-    const r = run(["--stub", "oracle", "--strict"]);
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("### Profile: full");
-    expect(r.stdout).toContain("### Profile: short");
-    expect(r.stdout).toContain("Result: meets the bar.");
-  });
-
-  it("--strict gives a failing exit code when the bar is missed", () => {
-    const r = run(["--stub", "text-only", "--strict"]);
-    expect(r.status).toBe(1);
-    expect(r.stdout).toContain("Result: does not meet the bar.");
-    expect(r.stderr).toContain("NOT met");
-  });
-
-  it("--runs repeats every scenario and reports passes per scenario", () => {
-    const r = run(["--stub", "oracle", "--runs", "3", "--profile", "full"]);
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("3 runs of every scenario");
-    expect(r.stdout).toMatch(/\| act-calls-tool \| act \| 3\/3 \|/);
-  });
-
-  it("without --strict a missed bar still exits 0, and --profile narrows the run", () => {
-    const r = run(["--stub", "text-only", "--profile", "short"]);
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("### Profile: short");
-    expect(r.stdout).not.toContain("### Profile: full");
-  });
 });
+
+// Each of these starts a whole vitest run in a child process: about 1.5 s on
+// an idle machine, several times that beside the rest of the suite.
+describe(
+  "npm run eval:turns (scripts/turns-eval.mjs): runs",
+  { timeout: CHILD_RUN_MS },
+  () => {
+    it("--profile tailored runs the Qwen coder text alone", () => {
+      const r = run(["--stub", "oracle", "--profile", "tailored"]);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("### Profile: tailored");
+      expect(r.stdout).not.toContain("### Profile: full");
+    });
+
+    it("does not need --yes or a key for a local server", () => {
+      // Fails later (nothing is listening on this port), not at the guard.
+      const r = run([
+        "--provider",
+        "openai",
+        "--model",
+        "m",
+        "--base-url",
+        "http://localhost:9/v1",
+      ]);
+      expect(r.stderr).not.toContain("--yes");
+      expect(r.stderr).not.toContain("API key");
+    });
+
+    it("runs the oracle without any network and meets the bar", () => {
+      const r = run(["--stub", "oracle", "--strict"]);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("### Profile: full");
+      expect(r.stdout).toContain("### Profile: short");
+      expect(r.stdout).toContain("Result: meets the bar.");
+    });
+
+    it("--strict gives a failing exit code when the bar is missed", () => {
+      const r = run(["--stub", "text-only", "--strict"]);
+      expect(r.status).toBe(1);
+      expect(r.stdout).toContain("Result: does not meet the bar.");
+      expect(r.stderr).toContain("NOT met");
+    });
+
+    it("--runs repeats every scenario and reports passes per scenario", () => {
+      const r = run(["--stub", "oracle", "--runs", "3", "--profile", "full"]);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("3 runs of every scenario");
+      expect(r.stdout).toMatch(/\| act-calls-tool \| act \| 3\/3 \|/);
+    });
+
+    it("without --strict a missed bar still exits 0, and --profile narrows the run", () => {
+      const r = run(["--stub", "text-only", "--profile", "short"]);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("### Profile: short");
+      expect(r.stdout).not.toContain("### Profile: full");
+    });
+  },
+);

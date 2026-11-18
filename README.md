@@ -38,7 +38,7 @@ VS Code keeps the extension up to date. The Marketplace extension ID is `b1tninj
 Or, with the GitHub CLI (change `win32-x64` to your platform):
 
 ```bash
-gh release download --repo b1tninja/continuous --pattern "continuous-win32-x64-*.vsix" --pattern SHA256SUMS.txt --dir continuous-vsix
+gh release download --repo b1tninja/continuous --pattern "continuous-win32-x64-*[0-9].vsix" --pattern SHA256SUMS.txt --dir continuous-vsix
 ```
 
 Continuous installs alongside the original Continue extension. Its configuration is in `~/.continuous`, which the first start copies from an existing `~/.continue`. If you installed one of the early releases, which used the ID `b1tninja.continued`, uninstall that one after installing Continuous ([details](docs/continuous-install.md#4-reload-vs-code)).
@@ -61,9 +61,10 @@ Continuous adds what upstream stopped before reaching. The release notes list ev
 
 - **Plan mode** ends with a saved plan file and **Build** or **Keep planning**; choices you kept for yourself become decisions on the plan.
 - **Loop mode** builds a plan's to-dos one at a time, each in a fresh context, with a check that must pass for an item to count as done, an inbox for the model's questions, budgets, and three autonomy levels (Supervised, Auto, Unattended). It runs in the IDE, in the CLI and headless through `cn serve`.
-- **Subagents** from `.continue/agents/` (and Claude Code's `.claude/agents/`), each with its own card, model, tokens and Stop.
+- **Subagents** from `.continuous/agents/` (the older `.continue/agents/` and Claude Code's `.claude/agents/` are read too), each with its own card, model, tokens and Stop.
 - **Task lists** kept with the session, so compaction does not lose the agent's place, and a queue for messages typed while it works.
-- **A terminal agent**, `continuous`, installable from each release. `continuous acp` runs it as an Agent Client Protocol agent for editors such as Zed and JetBrains IDEs.
+- **Resume** a stopped or failed response, also after a reload or from history: a partial answer is kept, and tool calls that already ran are not run again.
+- **A terminal agent**, `continuous`, installable from each release. `continuous acp` runs it as an Agent Client Protocol agent for editors such as Zed and JetBrains IDEs. `continuous doctor config`, `--safe` and `continuous reset` help when it will not start.
 
 **Safety and control**
 
@@ -79,6 +80,7 @@ Continuous adds what upstream stopped before reaching. The release notes list ev
 **VS Code**
 
 - **The agent uses the language servers** (symbols, definitions, references, problems), your models and MCP servers appear in VS Code's own pickers, and Continuous adds itself to the Agents window.
+- **Files into the chat**: drag files, folders, images and text onto the chat input (hold Shift in VS Code), or choose **Add to Continuous Chat** in the Explorer and on editor tabs.
 
 ## What each release added
 
@@ -97,6 +99,8 @@ Continuous adds what upstream stopped before reaching. The release notes list ev
 | 2.12.1  | More built-in ask rules (destructive commands, large edits, dependencies, hosts), Test connection for OpenAI-compatible endpoints                                       |
 | 2.14.0  | `continuous serve` token and request checks, MCP OAuth hardening, no calls to Continue servers, opt-in web search, run limits                                           |
 | 2.16.0  | IDGAF never asks, loops go on when permissive, CLI trust gates and hardened fetch, model lists only on request, the plan tree                                           |
+| 2.16.1  | Broken settings and hook files fail closed, agent files only narrow permissions, `continuous doctor config`, `--safe` and `reset`, drag files into the chat             |
+| 2.16.2  | Resume a stopped or failed response, a reply stopped mid-reasoning no longer breaks Bedrock, Ctrl+Backspace no longer cancels                                           |
 
 ## Where it is heading
 

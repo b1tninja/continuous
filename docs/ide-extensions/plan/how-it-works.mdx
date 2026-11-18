@@ -74,6 +74,16 @@ plan:
   MCP tools are left out of Plan mode and refused if called.
 </Info>
 
+### Who may say a tool only reads
+
+The read-only hint a server sends about its own tool is a claim, not a fact. Continuous believes it only for a server you vouch for:
+
+- one you marked `trusted` under `mcpServers` in your own `permissions.yaml` (above),
+- one written inline in your own `config.yaml`, or
+- one defined by a file in your global folder (`~/.continue/mcpServers`).
+
+For any other server, including one that came with the open folder, a `--mcp` flag or an agent file, the hint is ignored. Its tools ask before they run, and in a tainted session they count as a send. Name a server `trusted` once to believe its hints. In the terminal agent, two servers that offer a tool with the same name are shown as `<server>_<tool>`, and a call runs on exactly the server shown.
+
 ## The Planning Workflow
 
 A typical Plan mode workflow follows these steps:

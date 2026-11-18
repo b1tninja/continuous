@@ -25,7 +25,9 @@ export function OpenRouterCataloguePrompt({
       <span>
         This contacts openrouter.ai once to get the public model list: names,
         context sizes and prices. No account, key or prompt is sent. Prices are
-        estimates and are stored on this computer with the date.
+        estimates and are stored on this computer with the date. To keep it
+        current without being asked, set Model information updates to Automatic
+        in the Models settings.
       </span>
       <label className="flex cursor-pointer items-center gap-2">
         <input

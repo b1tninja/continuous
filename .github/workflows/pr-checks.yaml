@@ -1,20 +1,42 @@
 name: PR Checks
 
-# PR Checks run on all PRs to the main branch and must pass before merging.
-# Runs on PRs (not drafts, not docs-only changes) and nightly on main. It does not run again on
-# every push to main: the PR already ran these checks, and the nightly run catches the rest.
+# Called by the Merge Gate workflow (merge-gate.yml) for every non-draft PR that changes code, with
+# one `run_*` input per area from its `changes` job; also runs nightly on main and on dispatch,
+# where every input is empty and every area runs. The merge-gate aggregate, not a job here, is the
+# required check (docs/ci-merge-gate.md). It does not run again on every push to main: the PR
+# already ran these checks, and the nightly run catches the rest.
 on:
-  pull_request:
-    branches:
-      - main
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths-ignore:
-      - "docs/**"
-      - "docs-site/**"
-      - "plans/**"
-      - "**/*.md"
-      - "**/*.mdx"
-      - "LICENSE"
+  workflow_call:
+    inputs:
+      run_prettier:
+        type: string
+        default: "true"
+      run_core:
+        type: string
+        default: "true"
+      run_gui:
+        type: string
+        default: "true"
+      run_binary:
+        type: string
+        default: "true"
+      run_vscode:
+        type: string
+        default: "true"
+      run_packages:
+        type: string
+        default: "true"
+      run_e2e:
+        type: string
+        default: "true"
+      run_jetbrains:
+        type: string
+        default: "true"
+      # JSON array of the changed files, from the merge gate's `changes` job, for affected-only unit
+      # tests on pull requests (scripts/ci/affected-tests.mjs); empty means run everything.
+      changed_files:
+        type: string
+        default: ""
   schedule:
     - cron: "23 5 * * *"
   workflow_dispatch:
@@ -23,9 +45,11 @@ permissions:
   contents: read
 
 # A newer push to the same branch/PR supersedes the run in flight; without this
-# the fork's runner pool fills with stale runs and nothing starts.
+# the fork's runner pool fills with stale runs and nothing starts. The group name is a literal,
+# not github.workflow: in a called workflow that is the CALLER's name, which would put this and
+# the CLI checks into one group and cancel each other.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: pr-checks-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 # onnxruntime-node's postinstall fetches its CUDA libraries from GitHub releases on Linux. Packaging drops them and nothing here uses a GPU, so don't let that download fail the job.
@@ -35,6 +59,7 @@ env:
 jobs:
   track-rerun:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: (github.run_attempt > 1) && github.event.pull_request.draft != true
     steps:
       - uses: actions/checkout@v7
@@ -42,19 +67,36 @@ jobs:
         uses: ./.github/actions/track-rerun
 
   prettier-check:
-    if: github.event.pull_request.draft != true
+    if: inputs.run_prettier != 'false'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
+      # Two commits deep: the merge commit and its first parent (the base), so the step below can
+      # tell whether this PR touches the extension version.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
       - uses: actions/setup-node@v7
+        id: node
         with:
           node-version-file: ".nvmrc"
 
+      # main.yaml refuses to publish an odd minor version, which is found only at release time.
+      # Run the same script at review time when a PR changes the extension's package.json.
+      - name: Check the VS Code extension version has an even minor
+        if: github.event_name == 'pull_request'
+        run: |
+          if git diff --name-only HEAD^1 HEAD | grep -qx 'extensions/vscode/package.json'; then
+            cd extensions/vscode
+            node scripts/versionCheck.js
+          fi
+
+      # Same key as the setup-component action's root cache (same `npm ci`), so a hit is shared.
       - uses: actions/cache@v6
         id: root-cache
         with:
           path: node_modules
-          key: ${{ runner.os }}-root-node-modules-${{ hashFiles('package-lock.json') }}
+          key: ${{ runner.os }}-root-node-modules-node${{ steps.node.outputs.node-version }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install root dependencies
         if: steps.root-cache.outputs.cache-hit != 'true'
@@ -63,11 +105,13 @@ jobs:
       # prettier-plugin-tailwindcss loads gui/tailwind.config.cjs, which needs the gui
       # dependencies (tailwindcss, ...). Without them 0.8+ fails on every gui file, and
       # it sorts classes differently than a normal checkout does.
+      # Its own key: this is `npm ci --ignore-scripts`, which is not what the gui checks install,
+      # so it must not be restored there (or the other way round).
       - uses: actions/cache@v6
         id: gui-cache
         with:
           path: gui/node_modules
-          key: ${{ runner.os }}-gui-node-modules-${{ hashFiles('gui/package-lock.json') }}
+          key: ${{ runner.os }}-gui-node-modules-noscripts-node${{ steps.node.outputs.node-version }}-${{ hashFiles('gui/package-lock.json') }}
 
       - name: Install gui dependencies
         if: steps.gui-cache.outputs.cache-hit != 'true'
@@ -77,8 +121,9 @@ jobs:
         run: npx prettier --check "**/*.{js,jsx,ts,tsx,json,css,md}" --ignore-path .gitignore --ignore-path .prettierignore
 
   core-checks:
-    if: github.event.pull_request.draft != true
+    if: inputs.run_core != 'false'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
         with:
@@ -106,12 +151,20 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
+      # Jest always runs in full. Vitest: on pull requests, the tests related to the changed core
+      # modules plus a smoke set, or everything when narrowing is not safe; in shadow mode (the
+      # default) the selection is only reported (docs/ci-merge-gate.md section 9).
       - name: Run tests
         run: |
-          cd core
-          npm test
-          npm run vitest
+          (cd core && npm test)
+          node scripts/ci/affected-tests.mjs --suite core-vitest
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHANGED_FILES: ${{ inputs.changed_files }}
+          # Unset: shadow mode (select, report, run everything). `on`: run the selection.
+          AFFECTED_TESTS: ${{ vars.CI_AFFECTED_TESTS }}
+          # Live provider tests run only with this flag; without it the test setup removes the keys.
+          RUN_LIVE_PROVIDER_TESTS: "1"
           IGNORE_API_KEY_TESTS: ${{ steps.llm-changes.outputs.ignore_api_tests }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -126,8 +179,9 @@ jobs:
           INCEPTION_API_KEY: ${{ secrets.INCEPTION_API_KEY }}
 
   gui-checks:
-    if: github.event.pull_request.draft != true
+    if: inputs.run_gui != 'false'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - name: Setup packages
@@ -152,13 +206,17 @@ jobs:
           npm run lint
 
       - name: Run tests
-        run: |
-          cd gui
-          npm test
+        run: node scripts/ci/affected-tests.mjs --suite gui
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHANGED_FILES: ${{ inputs.changed_files }}
+          # Unset: shadow mode (select, report, run everything). `on`: run the selection.
+          AFFECTED_TESTS: ${{ vars.CI_AFFECTED_TESTS }}
 
   binary-checks:
-    if: github.event.pull_request.draft != true
+    if: inputs.run_binary != 'false'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - name: Setup packages
@@ -180,8 +238,9 @@ jobs:
           npx tsc --noEmit
 
   vscode-checks:
-    if: github.event.pull_request.draft != true
+    if: inputs.run_vscode != 'false'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - name: Setup packages
@@ -219,27 +278,14 @@ jobs:
           npm run esbuild
           npm run check:native-modules-deferred
 
-  get-packages-matrix:
-    if: github.event.pull_request.draft != true
-    runs-on: ubuntu-latest
-    outputs:
-      packages: ${{ steps.get-packages.outputs.packages }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: Get package list
-        id: get-packages
-        run: |
-          packages=$(find packages/ -maxdepth 1 -type d -not -path packages/ -exec basename {} \; | sort | jq -R -s -c 'split("\n")[:-1]')
-          echo "packages=$packages" >> $GITHUB_OUTPUT
-          echo "Found packages: $packages"
-
+  # One job for the six packages (was a list job plus one leg per package). Measured (docs/ci-merge-gate.md
+  # section 8): each leg spent about 87 % of its 0.9 minutes on checkout and setup to run 2 to 17 s of
+  # tests. A first step toward the `unit` job of plans/research/ci-pipeline-redesign.md (phase 2 b).
+  # Every package is still tested when an earlier one fails; the job fails if any did.
   packages-checks:
-    if: github.event.pull_request.draft != true
-    needs: get-packages-matrix
+    if: inputs.run_packages != 'false'
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        package: ${{ fromJson(needs.get-packages-matrix.outputs.packages) }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
@@ -254,12 +300,29 @@ jobs:
           is_fork: ${{ github.event.pull_request.head.repo.fork == true }}
           is_dependabot: ${{ github.actor == 'dependabot[bot]' }}
 
-      - name: Test and check ${{ matrix.package }}
+      # node_modules and dist come from setup-packages (a clean `npm ci` and build of this source),
+      # which is what each leg's own `npm ci` reinstalled.
+      - name: Test every package
         run: |
-          cd packages/${{ matrix.package }}
-          npm ci
-          npm test
+          failed=""
+          for dir in packages/*/; do
+            pkg=$(basename "$dir")
+            echo "::group::$pkg"
+            if (cd "$dir" && npm test); then
+              echo "::endgroup::"
+            else
+              echo "::endgroup::"
+              echo "::error::packages/$pkg: npm test failed"
+              failed="$failed $pkg"
+            fi
+          done
+          if [ -n "$failed" ]; then
+            echo "Failed packages:$failed" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
         env:
+          # Live provider tests run only with this flag; without it the test setup removes the keys.
+          RUN_LIVE_PROVIDER_TESTS: "1"
           IGNORE_API_KEY_TESTS: ${{ steps.llm-changes.outputs.ignore_api_tests }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -273,76 +336,50 @@ jobs:
           RELACE_API_KEY: ${{ secrets.RELACE_API_KEY }}
           INCEPTION_API_KEY: ${{ secrets.INCEPTION_API_KEY }}
 
-  vscode-get-test-file-matrix:
-    if: github.event.pull_request.draft != true
-    runs-on: ubuntu-latest
-    outputs:
-      test_file_matrix: ${{ steps.vscode-get-test-file-matrix.outputs.test_file_matrix }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: ".nvmrc"
-
-      - name: Cache npm
-        uses: actions/cache@v6
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-cache-matrix-${{ hashFiles('core/package-lock.json', 'extensions/vscode/package-lock.json') }}
-
-      - name: Cache packages node_modules
-        uses: actions/cache@v6
-        with:
-          path: |
-            packages/*/node_modules
-          key: ${{ runner.os }}-packages-node-modules-${{ hashFiles('packages/*/package-lock.json') }}
-
-      - name: Cache core node modules
-        uses: actions/cache@v6
-        with:
-          path: core/node_modules
-          key: ${{ runner.os }}-core-node-modules-${{ hashFiles('core/package-lock.json') }}
-
-      - name: Cache vscode extension node modules
-        uses: actions/cache@v6
-        id: vscode-cache
-        with:
-          path: extensions/vscode/node_modules
-          key: ${{ runner.os }}-vscode-node-modules-${{ hashFiles('extensions/vscode/package-lock.json') }}
-
-      - name: Build packages and get test files
-        id: vscode-get-test-file-matrix
-        run: |
-          node ./scripts/build-packages.js
-          cd extensions/vscode
-          npm ci
-          npm run e2e:compile
-          if [[ "${{ github.event.pull_request.head.repo.fork }}" == "true" || "${{ github.actor }}" == "dependabot[bot]" ]]; then
-            # Exclude SSH tests for forks
-            FILES=$(ls -1 e2e/_output/tests/*.test.js | grep -v "SSH" | jq -R . | jq -s .)
-          else
-            # Include all tests for non-forks
-            FILES=$(ls -1 e2e/_output/tests/*.test.js | jq -R . | jq -s .)
-          fi
-          echo "test_file_matrix<<EOF" >> $GITHUB_OUTPUT
-          echo "$FILES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-        env:
-          # https://github.com/microsoft/vscode-ripgrep/issues/9#issuecomment-643965333
-          GITHUB_TOKEN: ${{ secrets.CI_GITHUB_TOKEN }}
-
-      - name: Debug Outputs
-        run: |
-          echo "Test files: ${{ steps.vscode-get-test-file-matrix.outputs.test_file_matrix }}"
-
   vscode-package-extension-linux:
-    if: github.event.pull_request.draft != true
+    if: inputs.run_e2e != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      test_file_matrix: ${{ steps.e2e-files.outputs.test_file_matrix }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      # The e2e test files, listed from the source tree: e2e/tests/X.test.ts compiles to
+      # e2e/_output/tests/X.test.js (tsconfig.e2e.json: rootDir e2e, outDir e2e/_output), the path each
+      # leg passes as TEST_FILE. A separate job used to install and build packages, core and the
+      # extension and compile the tests only to list them (1.1 minutes, docs/ci-merge-gate.md
+      # section 8); every leg compiles them again itself (`e2e:ci:run` starts with `e2e:compile`), so a
+      # compile error still fails the run. Runs first, so a listing error stops the build early.
+      - name: List the e2e test files
+        id: e2e-files
+        env:
+          EXCLUDE_SSH: ${{ github.event.pull_request.head.repo.fork == true || github.actor == 'dependabot[bot]' }}
+        run: |
+          cd extensions/vscode
+          shopt -s nullglob
+          # The mapping above holds for X.test.ts only. A test named any other way (X.test.tsx,
+          # X.test.js, a subdirectory) would be missed here, so it stops the run instead.
+          others=$(find e2e/tests -type f -regex '.*\.test\.[a-z]+$' ! -regex '^e2e/tests/[^/]*\.test\.ts$')
+          if [ -n "$others" ]; then
+            echo "::error::e2e test files the listing does not handle: $others"
+            exit 1
+          fi
+          files=(e2e/tests/*.test.ts)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::no e2e test files found"
+            exit 1
+          fi
+          list=$(printf '%s\n' "${files[@]}" | sed -e 's#^e2e/tests/#e2e/_output/tests/#' -e 's#\.ts$#.js#')
+          if [ "$EXCLUDE_SSH" = "true" ]; then
+            # Exclude SSH tests for forks and Dependabot (no SSH secrets)
+            list=$(printf '%s\n' "$list" | grep -v "SSH" || true)
+          fi
+          FILES=$(printf '%s\n' "$list" | jq -R . | jq -s -c 'map(select(length > 0))')
+          echo "test_file_matrix=$FILES" >> "$GITHUB_OUTPUT"
+          echo "Test files: $FILES"
 
       - name: Build VS Code extension
         uses: ./.github/actions/build-vscode-extension
@@ -361,16 +398,16 @@ jobs:
           path: extensions/vscode/build
 
   vscode-e2e-tests:
-    if: github.event.pull_request.draft != true
+    if: inputs.run_e2e != 'false'
     name: ${{ matrix.test_file || 'unknown' }} (${{ matrix.command }})
-    needs: [vscode-get-test-file-matrix, vscode-package-extension-linux]
+    needs: vscode-package-extension-linux
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Tests requiring secrets need approval from maintainers
     strategy:
       fail-fast: false
       matrix:
-        test_file: ${{ fromJson(needs.vscode-get-test-file-matrix.outputs.test_file_matrix) }}
+        test_file: ${{ fromJson(needs.vscode-package-extension-linux.outputs.test_file_matrix) }}
         command: ["e2e:ci:run", "e2e:ci:run-yaml"]
     steps:
       - uses: actions/checkout@v7
@@ -385,7 +422,7 @@ jobs:
           github_token: ${{ secrets.CI_GITHUB_TOKEN }}
 
   jetbrains-tests:
-    if: github.event.pull_request.draft != true
+    if: inputs.run_jetbrains != 'false'
     runs-on: ubuntu-latest
     # Cold Gradle/npm caches make a run take ~13 min; the Gradle step itself is bounded
     # (10 min, see the run-jetbrains-tests action) so a hang cannot reach this limit.
@@ -414,17 +451,18 @@ jobs:
 
   # so that creators of new jobs can add them to this list
   require-all-checks-to-pass:
-    if: (always()) && github.event.pull_request.draft != true
+    # Nightly and dispatch runs only. Under the Merge Gate (pull_request, merge_group) the called
+    # workflow's own result is what the gate evaluates, and this job would be one more runner slot.
+    if: always() && github.event_name != 'pull_request' && github.event_name != 'merge_group'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs:
       - prettier-check
       - core-checks
       - gui-checks
       - binary-checks
       - vscode-checks
-      - get-packages-matrix
       - packages-checks
-      - vscode-get-test-file-matrix
       - vscode-package-extension-linux
       - vscode-e2e-tests
       - jetbrains-tests

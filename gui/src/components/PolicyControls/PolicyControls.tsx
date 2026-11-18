@@ -1,4 +1,5 @@
 import {
+  AdjustmentsHorizontalIcon,
   BoltIcon,
   CheckIcon,
   ChevronDownIcon,
@@ -20,7 +21,9 @@ import {
   type PolicyLevel,
 } from "core/tools/permissions/policy";
 import { useId, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
+import { customPolicyRoute } from "../../util/navigation";
 import {
   REVIEWABLE_AREAS,
   selectAutoApproval,
@@ -32,7 +35,7 @@ import {
   changePolicyLevel,
 } from "../../redux/thunks/policySettings";
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "../ui";
-import { CHIP, LEVEL_GLYPHS, LEVEL_TONES, idgafSentence } from "./levelStyle";
+import { CHIP, LEVEL_GLYPHS, LEVEL_TONES, IDGAF_SENTENCE } from "./levelStyle";
 import { PresetSelect } from "./PresetSelect";
 
 const AREA_ICONS: Record<PolicyArea, typeof EyeIcon> = {
@@ -75,7 +78,9 @@ interface AreaLevelSelectProps {
 /** One area's dropdown. The same control in the toolbar and in Settings. */
 export function AreaLevelSelect({ area, variant }: AreaLevelSelectProps) {
   const dispatch = useAppDispatch();
-  const saved = useAppSelector((s) => s.ui.policyLevels[area]);
+  const navigate = useNavigate();
+  const levels = useAppSelector((s) => s.ui.policyLevels);
+  const saved = levels[area];
   const effective = useAppSelector((s) => selectEffectiveLevels(s)[area]);
   const status = useAppSelector(selectAutoApproval);
   const Icon = AREA_ICONS[area];
@@ -88,8 +93,12 @@ export function AreaLevelSelect({ area, variant }: AreaLevelSelectProps) {
   return (
     <Listbox
       value={shown}
-      onChange={(level: PolicyLevel) =>
-        void dispatch(changePolicyLevel({ area, level }))
+      onChange={(level: PolicyLevel | "custom") =>
+        level === "custom"
+          ? void navigate(
+              customPolicyRoute({ base: presetOf(levels) ?? "current", area }),
+            )
+          : void dispatch(changePolicyLevel({ area, level }))
       }
     >
       <div
@@ -180,6 +189,23 @@ export function AreaLevelSelect({ area, variant }: AreaLevelSelectProps) {
               </ListboxOption>
             );
           })}
+          <ListboxOption
+            value="custom"
+            data-testid={`policy-option-${area}-custom`}
+            className="items-start gap-1"
+          >
+            <AdjustmentsHorizontalIcon
+              className="mt-0.5 h-3 w-3 shrink-0"
+              aria-hidden="true"
+            />
+            <div className="flex flex-col">
+              <span>Custom…</span>
+              <span className="text-2xs whitespace-normal text-description">
+                Open the policy editor: levels, rules and settings, starting
+                from what is set now.
+              </span>
+            </div>
+          </ListboxOption>
         </ListboxOptions>
       </div>
     </Listbox>
@@ -244,7 +270,7 @@ export function IdgafChip() {
   const preset = presetOf(useAppSelector((s) => s.ui.policyLevels));
   // At the IDGAF preset the preset chip already says so, and carries the sentence
   if (areas.length === 0 || preset === "idgaf") return null;
-  const sentence = idgafSentence(areas);
+  const sentence = IDGAF_SENTENCE;
   return (
     <>
       <button

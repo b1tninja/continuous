@@ -1432,20 +1432,6 @@ export const models: { [key: string]: ModelPackage } = {
     icon: "anthropic.png",
     isOpenSource: false,
   },
-  claude45Sonnet: {
-    title: "Claude Sonnet 4.5",
-    description:
-      "Previous generation Sonnet model with strong performance in reasoning and multilingual tasks.",
-    params: {
-      model: "claude-sonnet-4-5-20250929",
-      contextLength: 200_000,
-      title: "Claude Sonnet 4.5",
-      apiKey: "",
-    },
-    providerOptions: ["anthropic", "replicate"],
-    icon: "anthropic.png",
-    isOpenSource: false,
-  },
   claude45Haiku: {
     title: "Claude Haiku 4.5",
     description:
@@ -1619,32 +1605,6 @@ export const models: { [key: string]: ModelPackage } = {
       model: "claude-4-sonnet-latest",
       contextLength: 200_000,
       title: "Claude 4 Sonnet",
-      apiKey: "",
-    },
-    providerOptions: ["anthropic"],
-    icon: "anthropic.png",
-    isOpenSource: false,
-  },
-  claude4_5Opus: {
-    title: "Claude Opus 4.5",
-    description: "The most capable model in the Claude 4.5 series",
-    params: {
-      model: "claude-opus-4-5",
-      contextLength: 200_000,
-      title: "Claude Opus 4.5",
-      apiKey: "",
-    },
-    providerOptions: ["anthropic"],
-    icon: "anthropic.png",
-    isOpenSource: false,
-  },
-  claude41Opus: {
-    title: "Claude Opus 4.1",
-    description: "The most capable model in the Claude 4 series",
-    params: {
-      model: "claude-opus-4-1-20250805",
-      contextLength: 200_000,
-      title: "Claude Opus 4.1",
       apiKey: "",
     },
     providerOptions: ["anthropic"],
@@ -3242,90 +3202,6 @@ export const models: { [key: string]: ModelPackage } = {
   },
 
   // Claude series models via CometAPI
-  cometapiClaudeOpus41: {
-    title: "Claude Opus 4.1",
-    description:
-      "Claude Opus 4.1 via CometAPI - Anthropic's most capable model with advanced reasoning.",
-    params: {
-      model: "claude-opus-4-1-20250805",
-      contextLength: 200_000,
-      title: "Claude Opus 4.1",
-      apiKey: "",
-    },
-    providerOptions: ["cometapi"],
-    icon: "cometapi.png",
-    isOpenSource: false,
-  },
-  cometapiClaudeOpus41Thinking: {
-    title: "Claude Opus 4.1 Thinking",
-    description:
-      "Claude Opus 4.1 Thinking via CometAPI - version with enhanced thinking capabilities.",
-    params: {
-      model: "claude-opus-4-1-20250805-thinking",
-      contextLength: 200_000,
-      title: "Claude Opus 4.1 Thinking",
-      apiKey: "",
-    },
-    providerOptions: ["cometapi"],
-    icon: "cometapi.png",
-    isOpenSource: false,
-  },
-  cometapiClaudeSonnet4: {
-    title: "Claude Sonnet 4",
-    description:
-      "Claude Sonnet 4 via CometAPI - balanced performance and efficiency from Anthropic.",
-    params: {
-      model: "claude-sonnet-4-20250514",
-      contextLength: 200_000,
-      title: "Claude Sonnet 4",
-      apiKey: "",
-    },
-    providerOptions: ["cometapi"],
-    icon: "cometapi.png",
-    isOpenSource: false,
-  },
-  cometapiClaudeSonnet4Thinking: {
-    title: "Claude Sonnet 4 Thinking",
-    description:
-      "Claude Sonnet 4 Thinking via CometAPI - version with enhanced reasoning capabilities.",
-    params: {
-      model: "claude-sonnet-4-20250514-thinking",
-      contextLength: 200_000,
-      title: "Claude Sonnet 4 Thinking",
-      apiKey: "",
-    },
-    providerOptions: ["cometapi"],
-    icon: "cometapi.png",
-    isOpenSource: false,
-  },
-  cometapiClaude37SonnetLatest: {
-    title: "Claude 3.7 Sonnet Latest",
-    description:
-      "Claude 3.7 Sonnet Latest via CometAPI - latest version of Claude 3.7 Sonnet.",
-    params: {
-      model: "claude-3-7-sonnet-latest",
-      contextLength: 200_000,
-      title: "Claude 3.7 Sonnet Latest",
-      apiKey: "",
-    },
-    providerOptions: ["cometapi"],
-    icon: "cometapi.png",
-    isOpenSource: false,
-  },
-  cometapiClaude45Sonnet: {
-    title: "Claude Sonnet 4.5 Latest",
-    description:
-      "Claude Sonnet 4.5 Latest via CometAPI - Anthropic's smartest model for complex agents and coding.",
-    params: {
-      model: "claude-sonnet-4-5-20250929",
-      contextLength: 200_000,
-      title: "Claude Sonnet 4.5 Latest",
-      apiKey: "",
-    },
-    providerOptions: ["cometapi"],
-    icon: "cometapi.png",
-    isOpenSource: false,
-  },
   cometapiClaude45Haiku: {
     title: "Claude Haiku 4.5 Latest",
     description:

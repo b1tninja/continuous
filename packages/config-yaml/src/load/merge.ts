@@ -4,6 +4,7 @@ import {
   ConfigYaml,
   ToolPermissions,
 } from "../schemas/index.js";
+import { mergeWebConfig } from "../schemas/web.js";
 import { BlockDuplicationDetector } from "./blockDuplicationDetector.js";
 
 export function mergePackages(
@@ -27,8 +28,16 @@ export function mergePackages(
       ? { rulesByMode: { ...current.rulesByMode, ...incoming.rulesByMode } }
       : {}),
     ...mergeToolPermissionsField(current, incoming),
+    ...mergeWebField(current, incoming),
     ...((incoming.modelCatalog ?? current.modelCatalog)
       ? { modelCatalog: incoming.modelCatalog ?? current.modelCatalog }
+      : {}),
+    ...((incoming.modelCatalogRefreshHours ?? current.modelCatalogRefreshHours)
+      ? {
+          modelCatalogRefreshHours:
+            incoming.modelCatalogRefreshHours ??
+            current.modelCatalogRefreshHours,
+        }
       : {}),
     requestOptions: mergeConfigYamlRequestOptions(
       current.requestOptions,
@@ -116,6 +125,14 @@ function mergeAuto(
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+function mergeWebField(
+  current: { web?: ConfigYaml["web"] },
+  incoming: { web?: ConfigYaml["web"] },
+): { web?: ConfigYaml["web"] } {
+  const web = mergeWebConfig(current.web, incoming.web);
+  return web ? { web } : {};
+}
+
 function mergeToolPermissionsField(
   current: { toolPermissions?: ToolPermissions },
   incoming: { toolPermissions?: ToolPermissions },
@@ -141,8 +158,16 @@ export function mergeUnrolledAssistants(
       ? { rulesByMode: { ...current.rulesByMode, ...incoming.rulesByMode } }
       : {}),
     ...mergeToolPermissionsField(current, incoming),
+    ...mergeWebField(current, incoming),
     ...((incoming.modelCatalog ?? current.modelCatalog)
       ? { modelCatalog: incoming.modelCatalog ?? current.modelCatalog }
+      : {}),
+    ...((incoming.modelCatalogRefreshHours ?? current.modelCatalogRefreshHours)
+      ? {
+          modelCatalogRefreshHours:
+            incoming.modelCatalogRefreshHours ??
+            current.modelCatalogRefreshHours,
+        }
       : {}),
     requestOptions: mergeConfigYamlRequestOptions(
       current.requestOptions,

@@ -97,6 +97,19 @@ describe("injectSteeringMessage", () => {
     ).toEqual({ chatHistory: history, injected: false });
   });
 
+  it("appends to the caller's array when the service is off, as a subagent's executor holds it", async () => {
+    // The executor disables ChatHistoryService and keeps its own array; the
+    // history it reads after the run must hold the steered message
+    const history = historyAtToolBoundary();
+    const { chatHistory } = await injectSteeringMessage(
+      { onToolBoundary: async () => steer },
+      history,
+    );
+    expect(chatHistory).toBe(history);
+    expect(history).toHaveLength(3);
+    expect(history.at(-1)).toBe(steer);
+  });
+
   it("writes through ChatHistoryService when it is ready", async () => {
     chatHistorySvc.ready = true;
     chatHistorySvc.history = historyAtToolBoundary();
