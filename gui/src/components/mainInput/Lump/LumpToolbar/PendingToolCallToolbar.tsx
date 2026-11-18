@@ -1,3 +1,4 @@
+import { BuiltInToolNames } from "core/tools/builtIn";
 import { useRef } from "react";
 
 import { useAppDispatch, useAppSelector } from "../../../../redux/hooks";
@@ -6,7 +7,7 @@ import { callToolById } from "../../../../redux/thunks/callToolById";
 import { cancelToolCallThunk } from "../../../../redux/thunks/cancelToolCall";
 import { useApprovalFocus } from "../../../a11y/useApprovalFocus";
 import { useRestoreFocusOnResolve } from "../../../a11y/useRestoreFocusOnResolve";
-import { getAltKeyLabel, getMetaKeyLabel, isJetBrains } from "../../../../util";
+import { getMetaKeyLabel, isJetBrains } from "../../../../util";
 import { Button } from "../../../ui";
 import { useMainEditor } from "../../TipTapEditor";
 import { AlwaysAllowButton } from "./AlwaysAllowButton";
@@ -19,6 +20,12 @@ export const generateToolCallButtonTestId = (
   return `${action}-tool-call-button-${toolCallId}`;
 };
 
+/** "command" for a terminal call, "action" for an edit, a fetch or an MCP tool. */
+const itemNoun = (t: { toolCall: { function: { name: string } } }) =>
+  t.toolCall.function.name === BuiltInToolNames.RunTerminalCommand
+    ? "command"
+    : "action";
+
 const actionId = (toolCallId: string) => `pending-action-${toolCallId}`;
 
 export function PendingToolCallToolbar() {
@@ -26,6 +33,12 @@ export function PendingToolCallToolbar() {
   const metaKey = getMetaKeyLabel() === "⌘" ? "Meta" : "Control";
   const pendingToolCalls = useAppSelector(selectPendingToolCalls);
   const editor = useMainEditor();
+  // "command" only when every waiting call is one: an edit, a fetch or an MCP
+  // tool is not a command, and the card above already names each kind.
+  const allCommands = pendingToolCalls.every(
+    (t) => t.toolCall.function.name === BuiltInToolNames.RunTerminalCommand,
+  );
+  const noun = allCommands ? "command" : "action";
   const acceptRef = useRef<HTMLButtonElement>(null);
   useApprovalFocus(pendingToolCalls[0]?.toolCallId, acceptRef);
   // When the last pending action resolves the toolbar disappears; give focus
@@ -57,7 +70,7 @@ export function PendingToolCallToolbar() {
       role="group"
       aria-label={
         pendingToolCalls.length > 1
-          ? `Approval needed for ${pendingToolCalls.length} commands`
+          ? `Approval needed for ${pendingToolCalls.length} ${noun}s`
           : "Approval needed"
       }
       data-testid="pending-tool-call-toolbar"
@@ -66,7 +79,7 @@ export function PendingToolCallToolbar() {
       <div className="flex flex-wrap items-center justify-between gap-x-2 px-1 pb-0.5">
         <span className="min-w-0 basis-full text-2xs text-description xs:basis-auto">
           Sending a new message cancels{" "}
-          {pendingToolCalls.length > 1 ? "these commands" : "this command"}.
+          {pendingToolCalls.length > 1 ? `these ${noun}s` : `this ${noun}`}.
         </span>
         {pendingToolCalls.length > 1 && (
           <Button
@@ -76,6 +89,7 @@ export function PendingToolCallToolbar() {
             onClick={() =>
               pendingToolCalls.forEach((t) => handleAccept(t.toolCallId))
             }
+            title={`Run all ${pendingToolCalls.length} waiting ${noun}s once. Scroll the list to check each one first`}
             data-testid="accept-all-tool-calls"
           >
             Accept all ({pendingToolCalls.length})
@@ -111,7 +125,7 @@ export function PendingToolCallToolbar() {
                 variant="ghost"
                 size="sm"
                 className="my-0.5 min-h-6 min-w-6 font-medium text-description"
-                title="Reject this command"
+                title={`Reject this ${itemNoun(toolCall)}`}
                 aria-describedby={actionId(toolCall.toolCallId)}
                 onClick={() => handleReject(toolCall.toolCallId)}
                 data-testid={generateToolCallButtonTestId(
@@ -128,7 +142,7 @@ export function PendingToolCallToolbar() {
                 size="sm"
                 className="my-0.5 min-h-6 min-w-6 font-medium"
                 aria-keyshortcuts={`${metaKey}+Enter`}
-                title="Run this command"
+                title={`Run this ${itemNoun(toolCall)} once`}
                 aria-describedby={actionId(toolCall.toolCallId)}
                 onClick={() => handleAccept(toolCall.toolCallId)}
                 data-testid={generateToolCallButtonTestId(
