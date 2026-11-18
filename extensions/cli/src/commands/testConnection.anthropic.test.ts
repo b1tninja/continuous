@@ -96,4 +96,39 @@ describe("test-connection --provider anthropic", () => {
     expect(parsed.retirement[0].retiresAt).toBe("2026-11-30");
     expect(out.join("")).not.toContain(KEY);
   });
+
+  it("names an id the key cannot reach, with close matches", async () => {
+    const out = capture();
+    const dir = mkdtempSync(join(tmpdir(), "cli-anthropic-"));
+    const routed = (async (url: string) =>
+      url.includes("/models/")
+        ? {
+            ok: false,
+            status: 404,
+            json: async () => ({}),
+            text: async () => "{}",
+          }
+        : {
+            ok: true,
+            status: 200,
+            json: async () => ({ data: [{ id: "claude-sonnet-5-5" }] }),
+            text: async () => "",
+          }) as never;
+    const code = await testConnectionCommand({
+      provider: "anthropic",
+      model: "claude-sonet-5-5",
+      env: { ANTHROPIC_API_KEY: KEY },
+      fetchFn: routed,
+      record: false,
+      noticeFile: join(dir, "n.json"),
+      now: "2026-11-11",
+    });
+    const text = out.join("");
+    expect(code).toBe(0);
+    expect(text).toContain(
+      'Warning: Anthropic does not know a model "claude-sonet-5-5"',
+    );
+    expect(text).toContain("Did you mean claude-sonnet-5-5?");
+    expect(text).not.toContain(KEY);
+  });
 });

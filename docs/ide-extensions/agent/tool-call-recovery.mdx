@@ -27,14 +27,14 @@ Set the variable in the environment that starts the editor or the CLI. It takes 
 | `dsml`               | DeepSeek V3.2 and V4 DSML: `<｜DSML｜function_calls>` (V4: `<｜DSML｜tool_calls>`) with `<｜DSML｜invoke name="...">` and `<｜DSML｜parameter name="..." string="true\|false">` | `deepseek` |
 | `deepseek-v31`       | DeepSeek V3.1's tokens: `<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>NAME<｜tool▁sep｜>{...}<｜tool▁call▁end｜><｜tool▁calls▁end｜>` | `deepseek` |
 | `deepseek-r1`        | The fenced layout of DeepSeek R1 and V3-0324: `<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>NAME`, a `json` code fence holding the arguments, then `<｜tool▁call▁end｜><｜tool▁calls▁end｜>` | `deepseek` |
-| `granite-tokens` | IBM Granite 3.x: `<|tool_call|>[{"name": "...", "arguments": {...}}]` | `granite` |
-| `lfm-tokens` | Liquid LFM2: `<|tool_call_start|>[name(arg=...)]<|tool_call_end|>` | `lfm`, `liquid` |
+| `granite-tokens` | IBM Granite 3.x: `<\|tool_call\|>[{"name": "...", "arguments": {...}}]` | `granite` |
+| `lfm-tokens` | Liquid LFM2: `<\|tool_call_start\|>[name(arg=...)]<\|tool_call_end\|>` | `lfm`, `liquid` |
 | `hy3-tags` | Tencent Hy3: `<tool_calls:opensource><tool_call:opensource>NAME<tool_sep:opensource>` and suffixed `<arg_key>` / `<arg_value>` tags | `hy3` |
-| `solar-tokens` | Upstage Solar Open: `<|tool_call:begin|>ID<|tool_call:name|>NAME<|tool_call:args|>{...}<|tool_call:end|>` | `solar` |
+| `solar-tokens` | Upstage Solar Open: `<\|tool_call:begin\|>ID<\|tool_call:name\|>NAME<\|tool_call:args\|>{...}<\|tool_call:end\|>` | `solar` |
 | `longcat-json` | Meituan LongCat: `<longcat_tool_call>{"name": "...", "arguments": {...}}</longcat_tool_call>` | `longcat` |
 | `olmo-function-calls` | AI2 Olmo 3: `<function_calls>name(arg=...)</function_calls>` | `olmo` |
 | `seed-xml` | ByteDance Seed-OSS: `<seed:tool_call><function=NAME><parameter=KEY>...</parameter></function></seed:tool_call>` | `seed` |
-| `cohere-action` | Cohere Command: `<|START_ACTION|>[{"tool_name": "...", "parameters": {...}}]<|END_ACTION|>` | `command`, `cohere` |
+| `cohere-action` | Cohere Command: `<\|START_ACTION\|>[{"tool_name": "...", "parameters": {...}}]<\|END_ACTION\|>` | `command`, `cohere` |
 | `qwen-xml,pythonic`  | Both                                                                  | each by its own match         |
 
 The same setting can be given per model as `x_continue_recover_text_tool_calls` in `requestOptions.extraBodyProperties`; it takes the same values. Recovery applies to Amazon Bedrock models only, and a model whose id does not match gets no recovery whatever the setting says.
@@ -75,7 +75,7 @@ models:
 | `dsml`        | Recover DeepSeek V3.2 and V4 DSML calls for this model, whatever its id is.             |
 | `deepseek-v31` | Recover DeepSeek V3.1 token calls for this model, whatever its id is.                  |
 | `deepseek-r1` | Recover DeepSeek R1 and V3-0324 fenced token calls for this model, whatever its id is. |
-| `granite-tokens` | Recover Granite 3.x `<|tool_call|>` JSON-list calls for this model, whatever its id is. |
+| `granite-tokens` | Recover Granite 3.x `<\|tool_call\|>` JSON-list calls for this model, whatever its id is. |
 | `lfm-tokens` | Recover LFM2 token-wrapped Python-list calls for this model, whatever its id is. |
 | `hy3-tags` | Recover Hy3 tag calls for this model, whatever its id is. |
 | `solar-tokens` | Recover Solar Open token calls for this model, whatever its id is. |
@@ -175,16 +175,16 @@ The preset never turns recovery on. To recover a family's text calls, set `toolD
 | DeepSeek V3.2, V4                         | DSML `function_calls` / `tool_calls` block | `dsml`                |
 | DeepSeek V3.1                             | `<｜tool▁calls▁begin｜>` tokens          | `deepseek-v31`           |
 | DeepSeek R1, V3-0324                      | `<｜tool▁calls▁begin｜>` tokens with a `json` code fence | `deepseek-r1` |
-| Granite 3.x | `<|tool_call|>` JSON list | `granite-tokens` |
+| Granite 3.x | `<\|tool_call\|>` JSON list | `granite-tokens` |
 | Granite 4.0, SmolLM3 | `<tool_call>` JSON, as Hermes | `hermes-json` |
 | Granite 4.2 | `<tool_call><function=...>` XML | `qwen-xml` |
-| Liquid LFM2, LFM2.5 | `<|tool_call_start|>` Python list | `lfm-tokens` |
+| Liquid LFM2, LFM2.5 | `<\|tool_call_start\|>` Python list | `lfm-tokens` |
 | Tencent Hy3 | `:opensource`-suffixed tags | `hy3-tags` |
-| Upstage Solar Open | `<|tool_call:begin|>` tokens | `solar-tokens` |
+| Upstage Solar Open | `<\|tool_call:begin\|>` tokens | `solar-tokens` |
 | Meituan LongCat | `<longcat_tool_call>` JSON | `longcat-json` |
 | AI2 Olmo 3 | `<function_calls>` Python calls | `olmo-function-calls` |
 | ByteDance Seed-OSS | `<seed:tool_call>` XML | `seed-xml` |
-| Cohere Command A, R7B | `<|START_ACTION|>` JSON | `cohere-action` |
+| Cohere Command A, R7B | `<\|START_ACTION\|>` JSON | `cohere-action` |
 | Gemma 4, DeepSeek R1 | their own forms | none yet (native only) |
 | Gemma 3                                   | none: it made no tool calls             | none                     |
 

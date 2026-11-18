@@ -67,4 +67,23 @@ describe('session flags survive an "always allow" reload', () => {
     );
     expect(reloaded.isHeadless()).toBe(true);
   });
+
+  test("a headless Loop worker with the interactive defaults keeps them after a reload", async () => {
+    const service = new ToolPermissionService();
+    service.initializeSync({ isHeadless: true, interactiveDefaults: true });
+    expect(firstPolicyFor(service, "Bash")).toBe("ask");
+
+    yaml.config = { allow: ["Read"] };
+    await service.reloadPermissions();
+
+    // The headless default lists would allow Bash; the worker never had them
+    expect(firstPolicyFor(service, "Read")).toBe("allow");
+    expect(firstPolicyFor(service, "Bash")).toBe("ask");
+
+    const fresh = new ToolPermissionService();
+    fresh.initializeSync({ isHeadless: true, interactiveDefaults: true });
+    expect(service.getPermissions().policies).toEqual(
+      fresh.getPermissions().policies,
+    );
+  });
 });

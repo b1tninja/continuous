@@ -2,6 +2,7 @@ import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
+import type { Readable } from "stream";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
 
@@ -20,6 +21,7 @@ import {
   listToolsPaged,
 } from "./mcpClientLists";
 import { connectModernIfSupported } from "./mcpModernConnect";
+import { StdioOutputBuffer } from "./stdioOutput";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import {
   StreamableHTTPClientTransport,
@@ -56,8 +58,19 @@ import {
   getOauthCallbackUrl,
 } from "./MCPOauth";
 import { oauthOptionsFromSettings } from "./mcpOauthSettings";
+import type { McpPendingApproval } from "../../tools/roleTools";
+import { getContinueGlobalPath } from "../../util/paths";
 import {
+  calledTools,
+  pendingApprovalText,
+  serverAutoApproves,
+  trustedServersFromPolicyFile,
+} from "./mcpApprovalHold";
+import {
+  adoptFromHistory,
   adoptLegacyPin,
+  approveTools,
+  approveTrustedPending,
   evaluatePins,
   getToolPinStore,
   launchSpec,
@@ -65,21 +78,10 @@ import {
   recordApproval,
   type ApprovalEvents,
 } from "./mcpToolPins";
-import { announcePins } from "./mcpPinNotices";
+import { announcePins, announceTrustedApproval } from "./mcpPinNotices";
 import { oauthScopeForMcpServer } from "./workspaceMcpPolicy";
 
 const DEFAULT_MCP_TIMEOUT = 20_000; // 20 seconds
-
-// Commands that are batch scripts on Windows and need cmd.exe to execute
-const WINDOWS_BATCH_COMMANDS = [
-  "npx",
-  "uv",
-  "uvx",
-  "pnpx",
-  "dlx",
-  "nx",
-  "bunx",
-];
 
 const COMMONS_ENV_VARS = ["HOME", "USER", "USERPROFILE", "LOGNAME", "USERNAME"];
 
@@ -136,16 +138,22 @@ class MCPConnection {
     string,
     { kind: "changed" | "added" | "launch"; summary: string }
   > = new Map();
+  /**
+   * Tools the person has not approved (TR4): not offered to the model until
+   * they are (`approveTools`), except at IDGAF.
+   */
+  public pendingTools: Map<string, McpPendingApproval> = new Map();
   /** Told when the tool list or its pin state changed after connect. */
   public onToolsChanged?: () => void;
   public resources: MCPResource[] = [];
   public resourceTemplates: MCPResourceTemplate[] = [];
   private transport: Transport;
   private connectionPromise: Promise<unknown> | null = null;
-  private stdioOutput: { stdout: string; stderr: string } = {
-    stdout: "",
-    stderr: "",
-  };
+  private stdioStderr = new StdioOutputBuffer();
+  // The stream the child's stderr is read from, so the failure message can
+  // check that it was read to the end.
+  private stdioStderrStream: Readable | null = null;
+  private stdioEnv: Record<string, string> = {};
 
   constructor(
     public options: InternalMcpOptions,
@@ -211,13 +219,50 @@ class MCPConnection {
   async refreshPins(): Promise<void> {
     try {
       await adoptLegacyPin(this.options, getToolPinStore());
-      const { flagged } = await evaluatePins(
+      // Upgrade: a server someone used before this release stays approved
+      if (
+        await adoptFromHistory(
+          pinKey(this.options),
+          { name: this.options.name, id: this.options.id },
+          this.tools,
+          getToolPinStore(),
+          await calledTools(getContinueGlobalPath()),
+          launchSpec(this.options),
+        )
+      ) {
+        this.infos.push(
+          `MCP server ${this.options.name} was used before this version, so its current tools stay approved. A tool it adds or changes later waits for your approval.`,
+        );
+      }
+      let { flagged, pending } = await evaluatePins(
         pinKey(this.options),
         this.tools,
         getToolPinStore(),
         launchSpec(this.options),
       );
+      // TR24: a server the person trusts pins what it lists on sight
+      const trustedPinned = await approveTrustedPending(
+        pinKey(this.options),
+        this.tools,
+        getToolPinStore(),
+        pending,
+        serverAutoApproves(
+          this.options,
+          trustedServersFromPolicyFile(getContinueGlobalPath()),
+        ),
+        launchSpec(this.options),
+      );
+      if (trustedPinned.length) {
+        announceTrustedApproval(this.options.name, trustedPinned, this.infos);
+        ({ flagged, pending } = await evaluatePins(
+          pinKey(this.options),
+          this.tools,
+          getToolPinStore(),
+          launchSpec(this.options),
+        ));
+      }
       this.changedTools = flagged;
+      this.pendingTools = pending;
     } catch (e) {
       // The comparison failed (file system error): no new information.
       this.errors.push(
@@ -253,6 +298,41 @@ class MCPConnection {
     } catch (e) {
       console.error("Could not save the MCP tool pin", e);
     }
+  }
+
+  /**
+   * What a stdio server has written to stderr since it was last started,
+   * bounded by `StdioOutputBuffer` and masked with the server's own
+   * environment. Empty for a remote server. The add wizard's probe reads it.
+   */
+  getCapturedStderr(): string {
+    return this.stdioStderr.isEmpty
+      ? ""
+      : this.stdioStderr.render(this.stdioEnv);
+  }
+
+  /**
+   * The person approved these tools (or all of them): pin them and tell the
+   * manager, which reloads the config. The new tool list then goes through
+   * the warm-cache hold like any other change (core/tools/toolListHold.ts).
+   */
+  async approveTools(names: readonly string[] | "all"): Promise<string[]> {
+    const pinned = await approveTools(
+      pinKey(this.options),
+      this.tools,
+      getToolPinStore(),
+      names,
+      new Date(),
+      launchSpec(this.options),
+    );
+    await this.refreshPins();
+    if (pinned.length) this.onToolsChanged?.();
+    return pinned;
+  }
+
+  /** What the server card shows while tools wait for approval. */
+  pendingApprovalNotice(): string | undefined {
+    return pendingApprovalText(this.options.name, this.pendingTools);
   }
 
   getStatus(): MCPServerStatus {
@@ -293,12 +373,14 @@ class MCPConnection {
     this.status = "connecting";
     this.tools = [];
     this.changedTools = new Map();
+    this.pendingTools = new Map();
     this.prompts = [];
     this.resources = [];
     this.resourceTemplates = [];
     this.errors = [];
     this.infos = [];
-    this.stdioOutput = { stdout: "", stderr: "" };
+    this.stdioStderr = new StdioOutputBuffer();
+    this.stdioStderrStream = null;
 
     this.abortController.abort();
     this.abortController = new AbortController();
@@ -568,18 +650,35 @@ Set each one in ~/.continuous/.env, <workspace>/.continuous/.env or <workspace>/
             this.infos.push(this.signInGuidance(!!authProvider));
           }
 
-          // Include stdio output if available for stdio transport
+          // Include stderr if the stdio server wrote any. Capped, and masked
+          // with the shared secret scanner. stdout is the protocol channel
+          // and is not captured.
+          const stderrStream = this.stdioStderrStream;
           if (
-            this.options.type === "stdio" &&
-            (this.stdioOutput.stdout || this.stdioOutput.stderr)
+            stderrStream &&
+            !stderrStream.readableEnded &&
+            !stderrStream.destroyed
           ) {
-            errorMessage += "\n\nProcess output:";
-            if (this.stdioOutput.stdout) {
-              errorMessage += `\nSTDOUT:\n${this.stdioOutput.stdout}`;
-            }
-            if (this.stdioOutput.stderr) {
-              errorMessage += `\nSTDERR:\n${this.stdioOutput.stderr}`;
-            }
+            // The transport closes on the child's "close" event, which Node
+            // emits after the child's stdio has reached end of file, so a
+            // child that exited has normally been read to the end already.
+            // This covers the hop through the transport's own stream. A child
+            // that is still running (a timeout) never ends its stderr, hence
+            // the cap.
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            await Promise.race([
+              new Promise<void>((resolve) => {
+                stderrStream.once("end", resolve);
+                stderrStream.once("close", resolve);
+              }),
+              new Promise<void>((resolve) => {
+                timer = setTimeout(resolve, 250);
+              }),
+            ]);
+            clearTimeout(timer);
+          }
+          if (this.options.type === "stdio" && !this.stdioStderr.isEmpty) {
+            errorMessage += `\n\nProcess output:\nSTDERR:\n${this.stdioStderr.render(this.stdioEnv)}`;
           }
 
           this.status = "error";
@@ -647,40 +746,6 @@ Set each one in ~/.continuous/.env, <workspace>/.continuous/.env or <workspace>/
     return hadSignIn
       ? `Your sign-in to ${this.options.name} has expired or was revoked. Use Sign in to authenticate again. (OAuth callback: ${callback})`
       : `${this.options.name} requires sign-in. Use Sign in to authenticate. (OAuth callback: ${callback})`;
-  }
-
-  /**
-   * Resolves the command and arguments for the current platform
-   * On Windows, batch script commands need to be executed via cmd.exe
-   * UNLESS we're connected to a WSL remote (where Linux commands should run)
-   * @param originalCommand The original command
-   * @param originalArgs The original command arguments
-   * @returns An object with the resolved command and arguments
-   */
-  private async resolveCommandForPlatform(
-    originalCommand: string,
-    originalArgs: string[],
-  ): Promise<{ command: string; args: string[] }> {
-    // Check if we're on Windows host connected to WSL remote
-    const ideInfo = await this.extras?.ide?.getIdeInfo();
-    const isWindowsHostWithWslRemote =
-      process.platform === "win32" && ideInfo?.remoteName === "wsl";
-
-    // If not on Windows, or connected to WSL, or not a batch command, return as-is
-    if (
-      process.platform !== "win32" ||
-      isWindowsHostWithWslRemote ||
-      !WINDOWS_BATCH_COMMANDS.includes(originalCommand)
-    ) {
-      return { command: originalCommand, args: originalArgs };
-    }
-
-    // On Windows (local), we need to execute batch commands via cmd.exe
-    // Format: cmd.exe /c command [args]
-    return {
-      command: "cmd.exe",
-      args: ["/c", originalCommand, ...originalArgs],
-    };
   }
 
   /**
@@ -872,10 +937,14 @@ Set each one in ~/.continuous/.env, <workspace>/.continuous/.env or <workspace>/
       useSystemCa ? await nodeSupportsSystemCa(env) : false,
     );
 
-    const { command, args } = await this.resolveCommandForPlatform(
-      options.command,
-      options.args || [],
-    );
+    // The command and its arguments go to the transport untouched. On Windows
+    // the transport spawns through cross-spawn, which finds `.cmd` shims
+    // (npx, npm, pnpm, yarn, bunx and the rest) on PATH and escapes each
+    // argument for cmd.exe itself. Wrapping the command as `cmd.exe /c ...`
+    // here made cmd interpret `& | ^ % < >` in arguments, because Node's
+    // argv quoting is not cmd quoting.
+    const command = options.command;
+    const args = options.args || [];
 
     const cwd = await this.resolveCwd(options.cwd);
 
@@ -888,8 +957,11 @@ Set each one in ~/.continuous/.env, <workspace>/.continuous/.env or <workspace>/
     });
 
     // Capture stdio output for better error reporting
-    transport.stderr?.on("data", (data: Buffer) => {
-      this.stdioOutput.stderr += data.toString();
+    this.stdioEnv = env;
+    const stderrStream = transport.stderr as Readable | null;
+    this.stdioStderrStream = stderrStream;
+    stderrStream?.on("data", (data: Buffer) => {
+      this.stdioStderr.append(data.toString());
     });
 
     return transport;

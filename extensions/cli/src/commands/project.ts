@@ -14,6 +14,8 @@ import {
 } from "core/config/projectTrust.js";
 import type { ProjectScopeStatus } from "core/config/projectTrust.js";
 
+import { auditTrust } from "../permissions/policyAudit.js";
+
 export interface ProjectCommandOptions {
   /** Skip the question; for scripts. */
   yes?: boolean;
@@ -95,6 +97,11 @@ export async function projectCommand(
         for (const scope of scopes)
           fingerprints[scope.scope] = scope.fingerprint;
         trustProjectScopes(cwd, fingerprints);
+        auditTrust("project-trust", "grant", cwd, {
+          source: "cli-command",
+          confirmed: options.yes ? "flag" : "prompt",
+          scopes: Object.keys(fingerprints),
+        });
       } catch (error) {
         process.stderr.write(
           `${error instanceof Error ? error.message : String(error)}\n`,
@@ -106,8 +113,12 @@ export async function projectCommand(
     }
 
     case "revoke": {
+      const removed = revokeProjectConfig(cwd);
+      if (removed) {
+        auditTrust("project-trust", "revoke", cwd, { source: "cli-command" });
+      }
       out(
-        revokeProjectConfig(cwd)
+        removed
           ? "Trust removed. This project's Continuous configuration is not applied."
           : "This project was not trusted.",
       );

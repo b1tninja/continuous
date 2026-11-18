@@ -4,19 +4,21 @@
  * Validates that the systemAndTools caching strategy produces real cache hits
  * when making sequential requests with the same prefix to the Anthropic API.
  *
- * Guarded by ANTHROPIC_API_KEY env var — skipped if not set.
+ * Guarded by RUN_LIVE_PROVIDER_TESTS=1 and ANTHROPIC_API_KEY — skipped unless both are set.
  * Uses claude-haiku-4-5-20251001 to minimize cost.
  *
  * IMPORTANT: Haiku 4.5 requires a minimum of 4096 tokens for caching.
  * The system message + tools in this test are sized to exceed that threshold.
  *
- * Run: ANTHROPIC_API_KEY=sk-ant-... npx vitest packages/openai-adapters/src/test/anthropic-caching.live.test.ts
+ * Run: RUN_LIVE_PROVIDER_TESTS=1 ANTHROPIC_API_KEY=sk-ant-... npx vitest packages/openai-adapters/src/test/anthropic-caching.live.test.ts
  */
 import { describe, expect, test } from "vitest";
 
 import { constructLlmApi } from "../index.js";
+import { liveKey, liveProviderSkipReason } from "./liveProviderGuard.js";
 
-const API_KEY = process.env.ANTHROPIC_API_KEY;
+const API_KEY = liveKey("ANTHROPIC_API_KEY");
+const SKIP_REASON = liveProviderSkipReason(["ANTHROPIC_API_KEY"]);
 const MODEL = "claude-haiku-4-5-20251001";
 
 // Realistic tool definitions mimicking CLI's builtin tools
@@ -549,176 +551,184 @@ function totalInputTokens(usage: any): number {
   return cacheRead + cacheWrite + usage.prompt_tokens;
 }
 
-describe.skipIf(!API_KEY)("Anthropic Prompt Caching - Live API", () => {
-  const api = constructLlmApi({
-    provider: "anthropic",
-    apiKey: API_KEY!,
-    // Default cachingStrategy is "systemAndTools"
-  })!;
+describe.skipIf(!API_KEY)(
+  `Anthropic Prompt Caching - Live API${SKIP_REASON ? ` (skipped: ${SKIP_REASON})` : ""}`,
+  () => {
+    const api = constructLlmApi({
+      provider: "anthropic",
+      apiKey: API_KEY!,
+      // Default cachingStrategy is "systemAndTools"
+    })!;
 
-  const signal = new AbortController().signal;
+    const signal = new AbortController().signal;
 
-  // Shared conversation state across sequential tests
-  let turn1AssistantContent = "";
-  let turn2AssistantContent = "";
+    // Shared conversation state across sequential tests
+    let turn1AssistantContent = "";
+    let turn2AssistantContent = "";
 
-  test("Turn 1: first request creates cache", { timeout: 30_000 }, async () => {
-    const response = await api.chatCompletionNonStream(
-      {
-        model: MODEL,
-        messages: [
+    test(
+      "Turn 1: first request creates cache",
+      { timeout: 30_000 },
+      async () => {
+        const response = await api.chatCompletionNonStream(
           {
-            role: "system",
-            content: REALISTIC_SYSTEM_MESSAGE,
+            model: MODEL,
+            messages: [
+              {
+                role: "system",
+                content: REALISTIC_SYSTEM_MESSAGE,
+              },
+              {
+                role: "user",
+                content:
+                  "What is the project structure of this workspace? Give a brief summary.",
+              },
+            ],
+            tools: REALISTIC_TOOLS,
+            max_tokens: 256,
           },
-          {
-            role: "user",
-            content:
-              "What is the project structure of this workspace? Give a brief summary.",
-          },
-        ],
-        tools: REALISTIC_TOOLS,
-        max_tokens: 256,
+          signal,
+        );
+
+        expect(response.choices.length).toBeGreaterThan(0);
+        turn1AssistantContent =
+          response.choices[0].message.content ??
+          "I can see the project structure.";
+
+        const usage = response.usage!;
+        const details = usage.prompt_tokens_details as any;
+        const total = totalInputTokens(usage);
+
+        // First request should write to cache
+        expect(details?.cache_write_tokens).toBeGreaterThan(0);
+        // First request should have no cache reads
+        expect(details?.cache_read_tokens ?? 0).toBe(0);
+
+        console.log("Turn 1 usage:", {
+          prompt_tokens: usage.prompt_tokens,
+          cache_write_tokens: details?.cache_write_tokens,
+          cache_read_tokens: details?.cache_read_tokens,
+          total_input_tokens: total,
+        });
       },
-      signal,
     );
 
-    expect(response.choices.length).toBeGreaterThan(0);
-    turn1AssistantContent =
-      response.choices[0].message.content ?? "I can see the project structure.";
+    test(
+      "Turn 2: second request hits cache on shared prefix",
+      { timeout: 30_000 },
+      async () => {
+        const response = await api.chatCompletionNonStream(
+          {
+            model: MODEL,
+            messages: [
+              {
+                role: "system",
+                content: REALISTIC_SYSTEM_MESSAGE,
+              },
+              {
+                role: "user",
+                content:
+                  "What is the project structure of this workspace? Give a brief summary.",
+              },
+              {
+                role: "assistant",
+                content: turn1AssistantContent,
+              },
+              {
+                role: "user",
+                content:
+                  "Now explain the authentication system in the core package.",
+              },
+            ],
+            tools: REALISTIC_TOOLS,
+            max_tokens: 256,
+          },
+          signal,
+        );
 
-    const usage = response.usage!;
-    const details = usage.prompt_tokens_details as any;
-    const total = totalInputTokens(usage);
+        expect(response.choices.length).toBeGreaterThan(0);
+        turn2AssistantContent =
+          response.choices[0].message.content ?? "The auth system uses JWT.";
 
-    // First request should write to cache
-    expect(details?.cache_write_tokens).toBeGreaterThan(0);
-    // First request should have no cache reads
-    expect(details?.cache_read_tokens ?? 0).toBe(0);
+        const usage = response.usage!;
+        const details = usage.prompt_tokens_details as any;
+        const cacheReadTokens = details?.cache_read_tokens ?? 0;
+        const total = totalInputTokens(usage);
 
-    console.log("Turn 1 usage:", {
-      prompt_tokens: usage.prompt_tokens,
-      cache_write_tokens: details?.cache_write_tokens,
-      cache_read_tokens: details?.cache_read_tokens,
-      total_input_tokens: total,
-    });
-  });
+        // Second request should read from cache
+        expect(cacheReadTokens).toBeGreaterThan(0);
 
-  test(
-    "Turn 2: second request hits cache on shared prefix",
-    { timeout: 30_000 },
-    async () => {
-      const response = await api.chatCompletionNonStream(
-        {
-          model: MODEL,
-          messages: [
-            {
-              role: "system",
-              content: REALISTIC_SYSTEM_MESSAGE,
-            },
-            {
-              role: "user",
-              content:
-                "What is the project structure of this workspace? Give a brief summary.",
-            },
-            {
-              role: "assistant",
-              content: turn1AssistantContent,
-            },
-            {
-              role: "user",
-              content:
-                "Now explain the authentication system in the core package.",
-            },
-          ],
-          tools: REALISTIC_TOOLS,
-          max_tokens: 256,
-        },
-        signal,
-      );
+        console.log("Turn 2 usage:", {
+          prompt_tokens: usage.prompt_tokens,
+          cache_write_tokens: details?.cache_write_tokens,
+          cache_read_tokens: cacheReadTokens,
+          total_input_tokens: total,
+          cache_hit_rate: total > 0 ? (cacheReadTokens / total).toFixed(3) : 0,
+        });
+      },
+    );
 
-      expect(response.choices.length).toBeGreaterThan(0);
-      turn2AssistantContent =
-        response.choices[0].message.content ?? "The auth system uses JWT.";
+    test(
+      "Turn 3: cache hit rate stays high with growing conversation",
+      { timeout: 30_000 },
+      async () => {
+        const response = await api.chatCompletionNonStream(
+          {
+            model: MODEL,
+            messages: [
+              {
+                role: "system",
+                content: REALISTIC_SYSTEM_MESSAGE,
+              },
+              {
+                role: "user",
+                content:
+                  "What is the project structure of this workspace? Give a brief summary.",
+              },
+              {
+                role: "assistant",
+                content: turn1AssistantContent,
+              },
+              {
+                role: "user",
+                content:
+                  "Now explain the authentication system in the core package.",
+              },
+              {
+                role: "assistant",
+                content: turn2AssistantContent,
+              },
+              {
+                role: "user",
+                content:
+                  "How would you add a new API route for managing team memberships? Walk me through the steps.",
+              },
+            ],
+            tools: REALISTIC_TOOLS,
+            max_tokens: 256,
+          },
+          signal,
+        );
 
-      const usage = response.usage!;
-      const details = usage.prompt_tokens_details as any;
-      const cacheReadTokens = details?.cache_read_tokens ?? 0;
-      const total = totalInputTokens(usage);
+        expect(response.choices.length).toBeGreaterThan(0);
 
-      // Second request should read from cache
-      expect(cacheReadTokens).toBeGreaterThan(0);
+        const usage = response.usage!;
+        const details = usage.prompt_tokens_details as any;
+        const cacheReadTokens = details?.cache_read_tokens ?? 0;
+        const total = totalInputTokens(usage);
+        const hitRate = total > 0 ? cacheReadTokens / total : 0;
 
-      console.log("Turn 2 usage:", {
-        prompt_tokens: usage.prompt_tokens,
-        cache_write_tokens: details?.cache_write_tokens,
-        cache_read_tokens: cacheReadTokens,
-        total_input_tokens: total,
-        cache_hit_rate: total > 0 ? (cacheReadTokens / total).toFixed(3) : 0,
-      });
-    },
-  );
+        // At least 30% of total input tokens should come from cache
+        expect(hitRate).toBeGreaterThan(0.3);
 
-  test(
-    "Turn 3: cache hit rate stays high with growing conversation",
-    { timeout: 30_000 },
-    async () => {
-      const response = await api.chatCompletionNonStream(
-        {
-          model: MODEL,
-          messages: [
-            {
-              role: "system",
-              content: REALISTIC_SYSTEM_MESSAGE,
-            },
-            {
-              role: "user",
-              content:
-                "What is the project structure of this workspace? Give a brief summary.",
-            },
-            {
-              role: "assistant",
-              content: turn1AssistantContent,
-            },
-            {
-              role: "user",
-              content:
-                "Now explain the authentication system in the core package.",
-            },
-            {
-              role: "assistant",
-              content: turn2AssistantContent,
-            },
-            {
-              role: "user",
-              content:
-                "How would you add a new API route for managing team memberships? Walk me through the steps.",
-            },
-          ],
-          tools: REALISTIC_TOOLS,
-          max_tokens: 256,
-        },
-        signal,
-      );
-
-      expect(response.choices.length).toBeGreaterThan(0);
-
-      const usage = response.usage!;
-      const details = usage.prompt_tokens_details as any;
-      const cacheReadTokens = details?.cache_read_tokens ?? 0;
-      const total = totalInputTokens(usage);
-      const hitRate = total > 0 ? cacheReadTokens / total : 0;
-
-      // At least 30% of total input tokens should come from cache
-      expect(hitRate).toBeGreaterThan(0.3);
-
-      console.log("Turn 3 usage:", {
-        prompt_tokens: usage.prompt_tokens,
-        cache_write_tokens: details?.cache_write_tokens,
-        cache_read_tokens: cacheReadTokens,
-        total_input_tokens: total,
-        cache_hit_rate: hitRate.toFixed(3),
-      });
-    },
-  );
-});
+        console.log("Turn 3 usage:", {
+          prompt_tokens: usage.prompt_tokens,
+          cache_write_tokens: details?.cache_write_tokens,
+          cache_read_tokens: cacheReadTokens,
+          total_input_tokens: total,
+          cache_hit_rate: hitRate.toFixed(3),
+        });
+      },
+    );
+  },
+);

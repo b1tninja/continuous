@@ -265,7 +265,7 @@ export function trustProject(
   const file = trustFile(cwd, homeDir);
   if (!file) {
     throw new Error(
-      "The Continue directory is inside this project, so trust cannot be saved. Unset CONTINUE_GLOBAL_DIR or point it outside the project.",
+      "The Continuous directory is inside this project, so trust cannot be saved. Unset CONTINUOUS_GLOBAL_DIR (or the older CONTINUE_GLOBAL_DIR) or point it outside the project.",
     );
   }
   const record = readTrust(file);

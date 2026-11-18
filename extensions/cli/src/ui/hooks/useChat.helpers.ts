@@ -49,7 +49,7 @@ interface ProcessSlashCommandResultOptions {
   onShowMCPSelector?: () => void;
   onShowSessionSelector?: () => void;
   onShowJobsSelector?: () => void;
-  onShowExportSelector?: () => void;
+  onShowExportSelector?: (options?: { raw?: boolean }) => void;
   onShowLoopInbox?: () => void;
   onShowRewindSelector?: () => void;
   onClear?: () => void;
@@ -108,7 +108,11 @@ export function processSlashCommandResult({
   }
 
   if (result.openExportSelector && onShowExportSelector) {
-    onShowExportSelector();
+    onShowExportSelector(
+      typeof result.openExportSelector === "object"
+        ? result.openExportSelector
+        : undefined,
+    );
     return null;
   }
 

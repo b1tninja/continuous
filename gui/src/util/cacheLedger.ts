@@ -45,6 +45,14 @@ export interface CacheLedgerEntry {
   latencyMs?: number;
   /** The call's ID in the provider's logs; ties an entry to a billing line. */
   requestId?: string;
+  /**
+   * How many of the session's history items the request sent, from the
+   * first: its prompt ends after item `historyItems - 1`, and so does the
+   * cache entry it wrote. Ties the entry to a fork point (forkCost).
+   * Undefined when the request did not start at the first item (a Loop run
+   * in a fresh context).
+   */
+  historyItems?: number;
 }
 
 export const LEDGER_MAX = 200;
@@ -66,6 +74,7 @@ export function buildLedgerEntry(args: {
   usage: Usage;
   pruned?: boolean;
   missCauses?: string[];
+  historyItems?: number;
 }): CacheLedgerEntry {
   const d = args.usage.promptTokensDetails;
   const write = d?.cacheWriteTokens ?? 0;
@@ -94,6 +103,9 @@ export function buildLedgerEntry(args: {
     }),
     ...(args.usage.response?.requestId && {
       requestId: args.usage.response.requestId,
+    }),
+    ...(args.historyItems !== undefined && {
+      historyItems: args.historyItems,
     }),
   };
 }

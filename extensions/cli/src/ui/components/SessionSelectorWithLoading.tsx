@@ -3,7 +3,10 @@ import React from "react";
 
 import { logger } from "src/util/logger.js";
 
-import { listSessions, type ExtendedSessionMetadata } from "../../session.js";
+import {
+  listSessionsForWorkspace,
+  type ExtendedSessionMetadata,
+} from "../../session.js";
 import { SessionSelector } from "../SessionSelector.js";
 
 interface SessionSelectorWithLoadingProps {
@@ -24,7 +27,7 @@ export const SessionSelectorWithLoading: React.FC<
       try {
         if (!isMounted) return;
         setIsLoading(true);
-        const sessionList = await listSessions();
+        const sessionList = await listSessionsForWorkspace();
         if (!isMounted) return;
         setSessions(sessionList);
       } catch (error) {

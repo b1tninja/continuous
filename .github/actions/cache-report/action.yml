@@ -1,0 +1,34 @@
+name: "Cache report"
+description: "Write the outcome of cache restores (hit, partial, miss, skipped) to the job summary, so the first runs show whether the caches work"
+
+inputs:
+  entries:
+    description: "One line per cache: name|restore step outcome|cache-hit output|cache-matched-key output"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Write cache report
+      shell: bash
+      env:
+        ENTRIES: ${{ inputs.entries }}
+      run: |
+        marker="$RUNNER_TEMP/cache-report-header"
+        if [ ! -f "$marker" ]; then
+          echo "### Cache report" >> "$GITHUB_STEP_SUMMARY"
+          touch "$marker"
+        fi
+        while IFS='|' read -r name outcome hit matched; do
+          [ -n "$name" ] || continue
+          if [ "$outcome" = "skipped" ] || [ -z "$outcome" ]; then
+            result="not used"
+          elif [ "$hit" = "true" ]; then
+            result="hit"
+          elif [ -n "$matched" ]; then
+            result="partial (restore-key)"
+          else
+            result="miss"
+          fi
+          echo "- \`$name\`: $result" >> "$GITHUB_STEP_SUMMARY"
+        done <<< "$ENTRIES"

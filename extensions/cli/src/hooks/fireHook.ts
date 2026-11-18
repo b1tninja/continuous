@@ -72,6 +72,7 @@ export async function firePreToolUse(
   toolName: string,
   toolInput: unknown,
   toolUseId: string,
+  server?: string,
 ): Promise<HookEventResult> {
   if (!isHookServiceReady()) return NOOP_RESULT;
 
@@ -80,6 +81,7 @@ export async function firePreToolUse(
     hook_event_name: "PreToolUse",
     tool_name: toolName,
     tool_input: toolInput,
+    ...(server ? { server } : {}),
     tool_use_id: toolUseId,
   };
 
@@ -91,6 +93,7 @@ export async function firePostToolUse(
   toolInput: unknown,
   toolResponse: unknown,
   toolUseId: string,
+  server?: string,
 ): Promise<HookEventResult> {
   if (!isHookServiceReady()) return NOOP_RESULT;
 
@@ -99,6 +102,7 @@ export async function firePostToolUse(
     hook_event_name: "PostToolUse",
     tool_name: toolName,
     tool_input: toolInput,
+    ...(server ? { server } : {}),
     tool_response: toolResponse,
     tool_use_id: toolUseId,
   };
@@ -111,7 +115,7 @@ export async function firePostToolUseFailure(
   toolInput: unknown,
   toolUseId: string,
   error: string,
-  isInterrupt?: boolean,
+  options: { isInterrupt?: boolean; server?: string } = {},
 ): Promise<HookEventResult> {
   if (!isHookServiceReady()) return NOOP_RESULT;
 
@@ -120,9 +124,10 @@ export async function firePostToolUseFailure(
     hook_event_name: "PostToolUseFailure",
     tool_name: toolName,
     tool_input: toolInput,
+    ...(options.server ? { server: options.server } : {}),
     tool_use_id: toolUseId,
     error,
-    is_interrupt: isInterrupt,
+    is_interrupt: options.isInterrupt,
   };
 
   return services.hooks.fireEvent(input);
@@ -199,6 +204,7 @@ export async function fireStop(
 export async function firePermissionRequest(
   toolName: string,
   toolInput: unknown,
+  server?: string,
 ): Promise<HookEventResult> {
   if (!isHookServiceReady()) return NOOP_RESULT;
 
@@ -207,6 +213,7 @@ export async function firePermissionRequest(
     hook_event_name: "PermissionRequest",
     tool_name: toolName,
     tool_input: toolInput,
+    ...(server ? { server } : {}),
   };
 
   return services.hooks.fireEvent(input);

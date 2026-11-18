@@ -2,11 +2,14 @@ import type { ReactNode } from "react";
 
 /**
  * A one-line, dismissible notice above the chat input. Notices here never
- * block sending: they say what is about to cost money and offer a cheaper way.
+ * block sending: they say what is about to cost money and offer a cheaper way,
+ * or state once what a level lets through (the IDGAF line). None asks.
  */
 export function NoticeBar(props: {
   testId: string;
   onDismiss: () => void;
+  /** The dismiss button's text; "Dismiss" unless the notice has a better word. */
+  dismissLabel?: string;
   children: ReactNode;
 }) {
   return (
@@ -19,11 +22,11 @@ export function NoticeBar(props: {
       <button
         type="button"
         data-testid={`${props.testId}-dismiss`}
-        aria-label="Dismiss"
+        aria-label={props.dismissLabel ?? "Dismiss"}
         onClick={props.onDismiss}
-        className="ml-auto min-h-6 cursor-pointer border-none bg-transparent px-2 text-description hover:text-foreground"
+        className="ml-auto min-h-6 cursor-pointer border-none bg-transparent px-2 text-xs text-description hover:text-foreground"
       >
-        Dismiss
+        {props.dismissLabel ?? "Dismiss"}
       </button>
     </div>
   );

@@ -6,11 +6,10 @@ import type { Usage } from "../..";
 import {
   bedrockRegionalPriceFactor,
   calculateRequestCost,
-  CostBreakdown,
-  findModelPricing,
-  normalizeClaudeModelId,
   findBedrockPricing,
+  findModelPricing,
   findNovaPricing,
+  normalizeClaudeModelId,
 } from "./calculateRequestCost";
 
 interface TestCase {
@@ -571,8 +570,17 @@ describe("Bedrock regional endpoint price factor", () => {
     ["us.anthropic.claude-sonnet-4-20250514-v1:0", 1],
     ["us.anthropic.claude-3-7-sonnet-20250219-v1:0", 1],
     ["us.anthropic.claude-3-5-haiku-20241022-v1:0", 1],
-    // Not Claude
-    ["us.openai.gpt-6.1-sol", 1],
+    // OpenAI GPT 5.x/6.x and xAI Grok profiles carry it too (the gateway's
+    // table: us.openai.gpt-5.6-sol at $4.40/$22 against $4/$20; AWS Price
+    // List: Grok standard is 1.1 times global-standard)
+    ["us.openai.gpt-6.1-sol", 1.1],
+    ["us.openai.gpt-5.6-terra", 1.1],
+    ["eu.openai.gpt-5.6-luna", 1.1],
+    ["us.xai.grok-4.6", 1.1],
+    ["global.openai.gpt-6.1-sol", 1],
+    ["openai.gpt-oss-120b-1:0", 1],
+    // Llama and the other families bill at the AWS list
+    ["us.meta.llama3-3-70b-instruct-v1:0", 1],
   ])("%s has factor %s", (id, factor) => {
     expect(bedrockRegionalPriceFactor(id)).toBe(factor);
   });

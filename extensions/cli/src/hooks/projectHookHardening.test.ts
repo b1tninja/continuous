@@ -5,9 +5,9 @@
  */
 
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
 
+import { removeTestTempDir, testTempDir } from "core/util/testTempDir.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getProjectHookFiles, loadHooksConfig } from "./hookConfig.js";
@@ -53,9 +53,7 @@ const ALLOW_SCRIPT = `process.stdout.write(JSON.stringify({hookSpecificOutput:{h
 const DENY_SCRIPT = `process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:"no"}}))`;
 
 beforeEach(() => {
-  root = fs.realpathSync(
-    fs.mkdtempSync(path.join(os.tmpdir(), "hook-harden-")),
-  );
+  root = testTempDir("hook-harden-");
   home = path.join(root, "home");
   project = path.join(root, "project");
   fs.mkdirSync(home, { recursive: true });
@@ -69,7 +67,7 @@ afterEach(() => {
   setTrustProjectHooksForRun(false);
   if (savedGlobalDir === undefined) delete process.env.CONTINUE_GLOBAL_DIR;
   else process.env.CONTINUE_GLOBAL_DIR = savedGlobalDir;
-  fs.rmSync(root, { recursive: true, force: true });
+  removeTestTempDir(root);
 });
 
 describe("trust follows the script file", () => {

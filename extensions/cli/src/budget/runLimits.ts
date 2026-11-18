@@ -2,14 +2,18 @@ import * as fs from "fs";
 import * as path from "path";
 
 import type { Command } from "commander";
+import { loadCommunityPrices } from "core/llm/communityCatalogStore.js";
 import { costSince, costMarkOf } from "core/util/loopCost.js";
+import { userPriceOf, type PricedModel } from "core/util/modelPrice.js";
 
 import { cliAuditSession, cliAuditTrail } from "../audit/cliAudit.js";
+import { configError } from "../headless/exitCodes.js";
 import { getGlobalDir } from "../hooks/hookTrust.js";
 import { safeStderr } from "../init.js";
 import { getSessionUsage } from "../session.js";
 import { logger } from "../util/logger.js";
 
+import { loadPricesForRun, stalePriceWarning } from "./openRouterPrices.js";
 import {
   RunBudget,
   RUN_STOP_EXIT_CODE,
@@ -126,11 +130,15 @@ export function setActiveRunBudget(budget: RunBudget | undefined): void {
  */
 export function startRunLimits(
   options: RunLimitOptions,
-  model: { provider: string; model: string },
+  model: { provider: string; model: string } & PricedModel,
   opts: {
     homeDir?: string;
     now?: () => number;
     warn?: (m: string) => void;
+    /** The downloaded price list (tests pass a temporary file). */
+    priceFile?: string;
+    /** The community catalogue copy (tests pass a temporary file). */
+    communityFile?: string;
   } = {},
 ): RunBudget | undefined {
   const { limits, ignored } = tightenLimits(
@@ -142,18 +150,42 @@ export function startRunLimits(
     setActiveRunBudget(undefined);
     return undefined;
   }
+  // OpenRouter models are priced from the downloaded list (a file read). A
+  // list over 90 days old does not price a budgeted run.
+  const prices = loadPricesForRun({
+    forBudget: limits.maxBudgetUsd !== undefined,
+    file: opts.priceFile,
+  });
+  // The community catalogue (models.dev), the last price source: a file read.
+  // A budget is held on it only with --budget-allow-unpriced.
+  loadCommunityPrices({ file: opts.communityFile });
+  if (model.provider.toLowerCase() === "openrouter") {
+    const warning = stalePriceWarning(prices);
+    if (warning) (opts.warn ?? logger.warn.bind(logger))(warning);
+  }
+  // A price on the model's own entry (`pricing:`) prices it ahead of the tables
+  const userPrice = userPriceOf(model);
+  const costModel = { provider: model.provider, model: model.model };
   const problem = unpricedBudgetProblem(
     limits,
-    model,
+    costModel,
     options.budgetAllowUnpriced,
+    prices,
+    userPrice,
   );
-  if (problem) throw new Error(problem);
+  if (problem) throw configError(problem);
   const start = costMarkOf(getSessionUsage());
+  const userPrices = userPrice
+    ? { [`${model.provider}/${model.model}`]: userPrice }
+    : undefined;
   const budget = new RunBudget({
     limits,
-    model,
+    model: costModel,
+    userPrice,
+    allowCommunityPrice: options.budgetAllowUnpriced === true,
     now: opts.now,
-    spentUsd: () => costSince(start, costMarkOf(getSessionUsage())).amount,
+    spentUsd: () =>
+      costSince(start, costMarkOf(getSessionUsage()), { userPrices }).amount,
   });
   setActiveRunBudget(budget);
   return budget;
@@ -202,6 +234,12 @@ export function currentRunStop(): RunStop | undefined {
   return active?.stop;
 }
 
+/** " (prices from openrouter.ai as of <date>)" after a budget stop on downloaded prices. */
+function priceNoteFor(stop: RunStop): string {
+  const note = stop.reason === "budget" ? active?.priceNote : undefined;
+  return note ? ` (${note}; estimates)` : "";
+}
+
 /**
  * Records the stop in the audit trail, writes the final message to stderr
  * (JSON with --format json) and returns the exit code for it.
@@ -237,7 +275,7 @@ export function reportRunStop(
           exitCode: exit,
           ...(stop.spentUsd === undefined ? {} : { spentUsd: stop.spentUsd }),
         }) + "\n"
-      : `${stop.detail} (exit ${exit})\n`,
+      : `${stop.detail}${priceNoteFor(stop)} (exit ${exit})\n`,
   );
   return exit;
 }
@@ -248,5 +286,10 @@ export function reportRunStop(
  */
 export function exitCodeOfRun(format?: string): number {
   const stop = active?.stop;
-  return stop ? reportRunStop(stop, safeStderr, format) : 0;
+  if (stop) return reportRunStop(stop, safeStderr, format);
+  // A cap held on downloaded prices says where they came from
+  const note = active?.dollarCapActive ? active.priceNote : undefined;
+  if (note && format !== "json")
+    safeStderr(`Run budget: ${note} (estimates).\n`);
+  return 0;
 }

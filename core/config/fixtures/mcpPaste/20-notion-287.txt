@@ -1,0 +1,17 @@
+```json
+{
+  "mcpServers": {
+    "notionApi": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-e",
+        "NOTION_TOKEN=ntn_****",
+        "notion-mcp-server"
+      ]
+    }
+  }
+}
+```

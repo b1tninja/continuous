@@ -7,6 +7,7 @@ import {
   finishParallelRun,
   itemCheck,
   loopBudgetStop,
+  loopElapsedMs,
   loopTokensFromUsage,
   runItemInline,
   startParallelRun,
@@ -20,8 +21,8 @@ import {
   createWorktree,
 } from "../commands/review/worktree.js";
 import {
+  effectiveLevels,
   getCommandPermissionFlags,
-  getPolicyLevels,
 } from "../permissions/policyLevels.js";
 import type { PermissionMode } from "../permissions/types.js";
 import {
@@ -67,8 +68,38 @@ import { nextWorkerAgent } from "./workerIdentity.js";
  * the wave is done (decideNext). Design: plans/loop-mode.md.
  */
 
-/** How long one worker may run before it is stopped and counts as an attempt. */
+/** The longest one worker may run before it is stopped and counts as an attempt. */
 export const LOOP_WORKER_TIMEOUT_MS = 30 * 60 * 1000;
+
+/** A worker is never given less than this, so a nearly spent budget still gets a start. */
+const LOOP_WORKER_MIN_TIMEOUT_MS = 1000;
+
+/**
+ * How long this worker may run: the fixed ceiling, or less when the item's
+ * own time limit (what its earlier runs left of it) or the loop's time budget
+ * (waiting on the person not counted) runs out sooner. The budgets stop the
+ * loop or the item on their own; this keeps a worker from outliving them.
+ */
+export function workerTimeoutMs(
+  input: Pick<LoopWorkerInput, "loop" | "plan">,
+  now: Date = new Date(),
+): number {
+  const { loop, plan } = input;
+  let timeout = LOOP_WORKER_TIMEOUT_MS;
+  const itemId = loop.current?.itemId ?? loop.parallel?.[0]?.itemId;
+  const minutes = plan.items.find((t) => t.id === itemId)?.budget?.minutes;
+  if (itemId && minutes && minutes > 0) {
+    const spent = loop.items.find((i) => i.id === itemId)?.usage?.ms ?? 0;
+    timeout = Math.min(timeout, minutes * 60_000 - spent);
+  }
+  if (loop.budget.maxWallMs > 0) {
+    timeout = Math.min(
+      timeout,
+      loop.budget.maxWallMs - loopElapsedMs(loop, now),
+    );
+  }
+  return Math.max(LOOP_WORKER_MIN_TIMEOUT_MS, timeout);
+}
 
 export interface LoopWorktreeOps {
   /** A worktree for the item, with the main checkout's uncommitted changes */
@@ -144,14 +175,15 @@ const defaultRunWorker: LoopWorkerRunner = (input, signal) =>
       signal.removeEventListener("abort", onAbort);
       resolve(output);
     };
+    const timeoutMs = workerTimeoutMs(input);
     const timer = setTimeout(() => {
       child.kill("SIGTERM");
       settle(
         emptyOutput(
-          `The worker ran for ${LOOP_WORKER_TIMEOUT_MS / 60000} minutes and was stopped.`,
+          `The worker ran for ${Math.max(1, Math.round(timeoutMs / 60000))} minutes and was stopped.`,
         ),
       );
-    }, LOOP_WORKER_TIMEOUT_MS);
+    }, timeoutMs);
     const onAbort = () => {
       child.kill("SIGTERM");
       settle(emptyOutput("The worker was stopped."));
@@ -255,20 +287,31 @@ function abortWave(): void {
   for (const controller of controllers.values()) controller.abort();
 }
 
-function workerOptions(): LoopWorkerInput["options"] {
+/**
+ * The parent's permission choices for a worker. The levels are the ones in
+ * force (`--auto` raises the tool areas to IDGAF): the worker never runs in
+ * auto mode, so without them a worker of an `--auto` parent asked, and was
+ * held, where its parent would have run the call.
+ */
+export function workerOptions(): LoopWorkerInput["options"] {
   let mode: PermissionMode = "normal";
+  // Unknown counts as interactive: the stricter default lists, whose asks
+  // the worker holds as questions rather than running
+  let parentHeadless = false;
   try {
     const permissions = getServiceSync<ToolPermissionServiceState>(
       SERVICE_NAMES.TOOL_PERMISSIONS,
     );
     mode = permissions.value?.currentMode ?? "normal";
+    parentHeadless = permissions.value?.isHeadless ?? false;
   } catch {
     // The worker still loads the settings file.
   }
   const policy = {
     mode,
+    parentHeadless,
     ...getCommandPermissionFlags(),
-    levels: getPolicyLevels(),
+    levels: effectiveLevels(mode),
   };
   try {
     const config = getServiceSync<ConfigServiceState>(SERVICE_NAMES.CONFIG);
@@ -388,7 +431,7 @@ function stopWaveIfOverBudget(): void {
     sessionTokens: sessionTokens(),
   });
   if (!stop) return;
-  commitLoop(stopLoop(loop, stop.reason, stop.detail));
+  commitLoop(stopLoop(loop, stop.reason, stop.detail, stop.budget));
   for (const id of workerAgents.values()) {
     emitAgent({ type: "ended", id, state: "over-budget", at: Date.now() });
   }

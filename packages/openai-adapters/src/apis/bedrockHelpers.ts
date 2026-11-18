@@ -11,12 +11,12 @@ import {
   noteSamplingOmitted,
   omitsSampling,
 } from "./anthropicSamplingGuard.js";
-import type { CacheTtl } from "./cacheTtl.js";
 import {
   familyRuleFor,
   minMaxTokensFor,
   unsupportedInferenceFor,
 } from "./bedrockFamilyRules.js";
+import type { CacheTtl } from "./cacheTtl.js";
 
 // The text-stream filters moved to ../dialects/textFilters.ts; re-exported so
 // existing imports of this file keep working.
@@ -29,8 +29,8 @@ export {
   leaksDsmlMarker,
   stripDsmlMarker,
   ThinkingTagSplitter,
-  type ThinkingSplit,
   writesThinkingTags,
+  type ThinkingSplit,
 } from "../dialects/textFilters.js";
 
 /** Geographic prefixes Bedrock uses for cross-region inference profile IDs. */
@@ -414,9 +414,13 @@ export function normalizeToolUseIds<
 
 /**
  * Gives every toolUse a toolResult in the message right after it, with `text`
- * as the result of any that has none. Claude refuses a conversation with an
- * unanswered tool call ("tool_use ids were found without tool_result blocks
- * immediately after"), and the rest of the history can't be sent without it.
+ * as the result of any that has none, and puts those results first in that
+ * message. Claude refuses both a conversation with an unanswered tool call
+ * and one whose results come after other content ("tool_use ids were found
+ * without tool_result blocks immediately after"; Anthropic's tool-use docs:
+ * "the tool_result blocks must come FIRST in the content array"). A turn cut
+ * off mid-call can leave either: a call with no id turned into text ahead of
+ * the next real result is how a resumed session was refused.
  */
 export function fillMissingToolResults<
   M extends {
@@ -428,34 +432,145 @@ export function fillMissingToolResults<
     }>;
   },
 >(messages: M[], text: string): M[] {
+  type Block = NonNullable<M["content"]>[number];
+  const resultId = (block: Block) =>
+    (block.toolResult as { toolUseId?: string } | undefined)?.toolUseId;
   const filled: M[] = [];
   messages.forEach((message, index) => {
     filled.push(message);
     if (message.role !== "assistant") return;
-    const next = messages[index + 1];
-    const answered = new Set(
-      next?.role === "user"
-        ? (next.content ?? []).map(
-            (block) =>
-              (block.toolResult as { toolUseId?: string } | undefined)
-                ?.toolUseId,
-          )
-        : [],
+    const callIds = new Set(
+      (message.content ?? [])
+        .map((block) => block.toolUse?.toolUseId)
+        .filter((id): id is string => id !== undefined),
     );
-    const results = (message.content ?? [])
-      .map((block) => block.toolUse?.toolUseId)
-      .filter((id) => id !== undefined && !answered.has(id))
-      .map((toolUseId) => ({
-        toolResult: { toolUseId, content: [{ text }] },
-      }));
-    if (results.length === 0) return;
-    if (next?.role === "user") {
-      next.content = [...results, ...(next.content ?? [])];
-    } else {
-      filled.push({ role: "user", content: results } as M);
+    if (callIds.size === 0) return;
+    const next = messages[index + 1];
+    const nextContent = next?.role === "user" ? (next.content ?? []) : [];
+    const answered = new Set(nextContent.map(resultId));
+    const results = [...callIds]
+      .filter((id) => !answered.has(id))
+      .map(
+        (toolUseId) =>
+          ({ toolResult: { toolUseId, content: [{ text }] } }) as Block,
+      );
+    if (next?.role !== "user") {
+      if (results.length) filled.push({ role: "user", content: results } as M);
+      return;
+    }
+    const isAnswer = (block: Block) => {
+      const id = resultId(block);
+      return id !== undefined && callIds.has(id);
+    };
+    const answers = nextContent.filter(isAnswer);
+    const rest = nextContent.filter((block) => !isAnswer(block));
+    const ordered = [...results, ...answers, ...rest];
+    if (ordered.some((block, i) => block !== nextContent[i])) {
+      next.content = ordered;
     }
   });
   return filled;
+}
+
+/** The text of a user turn added only because a conversation must start with one. */
+export const CONVERSE_LEADING_USER_TEXT = ".";
+
+type ConverseBlockLike = {
+  text?: unknown;
+  toolUse?: { toolUseId?: string };
+  toolResult?: { toolUseId?: string; content?: Array<{ text?: unknown }> };
+  cachePoint?: unknown;
+};
+
+function isBlankText(block: ConverseBlockLike): boolean {
+  return typeof block.text === "string" && block.text.trim() === "";
+}
+
+/**
+ * Makes converted Converse messages a conversation Bedrock accepts, without
+ * touching one that already is. Converse wants roles that alternate, a user
+ * message first, no message without content and no blank text block, and a
+ * toolResult only in the message right after its toolUse.
+ *
+ * A history breaks that when a turn converts to nothing: an assistant reply
+ * that was stopped or failed before any text, one that held only reasoning
+ * the model can't take back, a tool call without an id or name, a user
+ * message whose context rendered empty. Such a turn is dropped and the
+ * turns around it, now of the same role, are joined in order. A toolResult
+ * that no longer follows its toolUse becomes text, as one without any
+ * toolUse already does. A cache point is kept only where it follows content.
+ */
+export function repairConverseTurns<
+  M extends { role?: string; content?: ConverseBlockLike[] },
+>(messages: M[]): M[] {
+  const kept: M[] = [];
+  for (const message of messages) {
+    const content = message.content ?? [];
+    let changed = false;
+    const blocks: ConverseBlockLike[] = [];
+    for (const block of content) {
+      const afterContent =
+        blocks.length > 0 && blocks[blocks.length - 1].cachePoint === undefined;
+      if (
+        isBlankText(block) ||
+        (block.cachePoint !== undefined && !afterContent)
+      ) {
+        changed = true;
+        continue;
+      }
+      blocks.push(block);
+    }
+    if (blocks.length === 0) continue;
+    const previous = kept[kept.length - 1];
+    if (previous && previous.role === message.role) {
+      kept[kept.length - 1] = {
+        ...previous,
+        content: [...(previous.content ?? []), ...blocks],
+      } as M;
+    } else {
+      kept.push(changed ? ({ ...message, content: blocks } as M) : message);
+    }
+  }
+
+  // A toolResult must answer a toolUse of the message just before it
+  for (let i = 0; i < kept.length; i++) {
+    const message = kept[i];
+    const content = message.content ?? [];
+    if (message.role !== "user" || !content.some((b) => b.toolResult)) {
+      continue;
+    }
+    const previous = kept[i - 1];
+    const used = new Set(
+      previous?.role === "assistant"
+        ? (previous.content ?? []).map((b) => b.toolUse?.toolUseId)
+        : [],
+    );
+    const unmatched = (b: ConverseBlockLike) =>
+      b.toolResult !== undefined && !used.has(b.toolResult.toolUseId);
+    if (!content.some(unmatched)) continue;
+    kept[i] = {
+      ...message,
+      content: content.map((block) => {
+        if (!unmatched(block)) return block;
+        const output =
+          (block.toolResult!.content ?? [])
+            .map((part) => (typeof part.text === "string" ? part.text : ""))
+            .filter((text) => text !== "")
+            .join("\n") || "No tool output";
+        return {
+          text: `Tool call output for Tool Call ID ${block.toolResult!.toolUseId}:\n\n${output}`,
+        };
+      }),
+    } as M;
+  }
+
+  if (kept.length > 0 && kept[0].role !== "user") {
+    kept.unshift({
+      role: "user",
+      content: [{ text: CONVERSE_LEADING_USER_TEXT }],
+    } as M);
+  }
+  return kept;
 }
 
 /**
@@ -513,6 +628,67 @@ export function effortToBudgetTokens(effort: BedrockReasoningEffort): number {
 const ADAPTIVE_THINKING_MODEL =
   /claude-(opus|sonnet|haiku|fable|mythos)-(4-[6-9]|[5-9])/;
 
+/**
+ * Claude models whose `thinking.display` defaults to "omitted" (empty thinking
+ * text), and those that think with no `thinking` field. Same as
+ * `thinkingDisplayDefaultsToOmitted` and `thinksByDefault` in
+ * core/llm/llms/anthropicThinking.ts.
+ */
+const OMITTED_DISPLAY_MODEL =
+  /claude-(?:(?:opus|sonnet|haiku)-(?:4-[7-9]|[5-9])|fable|mythos)/;
+const THINKS_BY_DEFAULT_MODEL =
+  /claude-(?:(?:opus|sonnet|haiku)-[5-9]|fable|mythos)/;
+
+/** Claude's thinking request fields, as `getAnthropicThinkingParams` builds them. */
+export interface ClaudeThinkingFields {
+  thinking?:
+    | { type: "enabled"; budget_tokens: number }
+    | { type: "adaptive"; display?: "summarized" };
+  output_config?: { effort: BedrockReasoningEffort };
+}
+
+/**
+ * Claude's `thinking` and `output_config` for a reasoning switch, the same on
+ * Anthropic's API, Vertex and Bedrock: `display: "summarized"` where the
+ * thinking would otherwise arrive empty, and a model that thinks anyway gets
+ * that field with reasoning off too; adaptive thinking with an effort on 4.6
+ * and later, a token budget before. Same as `getAnthropicThinkingParams` in
+ * core/llm/llms/anthropicThinking.ts, which
+ * core/llm/llms/anthropicThinkingParity.vitest.ts compares with this one.
+ */
+export function claudeThinkingFields(
+  modelId: string,
+  reasoning: boolean | undefined,
+  budgetTokens: number,
+): ClaudeThinkingFields {
+  const summarize = OMITTED_DISPLAY_MODEL.test(modelId);
+  if (!reasoning) {
+    return summarize && THINKS_BY_DEFAULT_MODEL.test(modelId)
+      ? { thinking: { type: "adaptive", display: "summarized" } }
+      : {};
+  }
+  if (ADAPTIVE_THINKING_MODEL.test(modelId)) {
+    return {
+      thinking: summarize
+        ? { type: "adaptive", display: "summarized" }
+        : { type: "adaptive" },
+      output_config: { effort: budgetTokensToEffort(budgetTokens) },
+    };
+  }
+  return { thinking: { type: "enabled", budget_tokens: budgetTokens } };
+}
+
+/**
+ * Claude models whose thinking display defaults to "omitted": their thinking
+ * summaries are not sent back to Anthropic's API (see
+ * `thinkingDisplayDefaultsToOmitted` in core/llm/llms/anthropicThinking.ts).
+ */
+export function claudeThinkingDisplayDefaultsToOmitted(
+  modelId: string,
+): boolean {
+  return OMITTED_DISPLAY_MODEL.test(modelId);
+}
+
 /** What a Converse request sends to turn a model's reasoning on or off. */
 export interface BedrockReasoningRequest {
   /** Spread into `additionalModelRequestFields`; empty when nothing is sent. */
@@ -529,7 +705,8 @@ const REASONING_EFFORT_MODEL = /(^|\.)(qwen\.|deepseek\.v3)/i;
 
 /**
  * The reasoning switch per model family, measured live on 2026-11-08: Claude
- * takes Anthropic's `thinking`; Nova 2 takes `reasoningConfig` with a
+ * takes Anthropic's `thinking` (with `display: "summarized"` where the
+ * thinking would otherwise arrive empty); Nova 2 takes `reasoningConfig` with a
  * `maxReasoningEffort` and no `maxTokens` at `high`; Qwen3 and DeepSeek V3.2
  * take `reasoning_effort` (low, medium, high to turn on, `"none"` to turn off,
  * sent only when reasoning is explicitly off); DeepSeek R1, the other Nova
@@ -544,19 +721,9 @@ export function bedrockReasoningFields(
 ): BedrockReasoningRequest {
   const none = { additionalModelRequestFields: {}, omitMaxTokens: false };
   if (/claude/i.test(modelId)) {
-    if (!reasoning) return none;
-    if (ADAPTIVE_THINKING_MODEL.test(modelId)) {
-      return {
-        additionalModelRequestFields: {
-          thinking: { type: "adaptive" },
-          output_config: { effort: budgetTokensToEffort(budgetTokens) },
-        },
-        omitMaxTokens: false,
-      };
-    }
     return {
       additionalModelRequestFields: {
-        thinking: { type: "enabled", budget_tokens: budgetTokens },
+        ...claudeThinkingFields(modelId, reasoning, budgetTokens),
       },
       omitMaxTokens: false,
     };

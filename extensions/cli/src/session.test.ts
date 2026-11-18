@@ -66,6 +66,11 @@ vi.mock("core/util/history.js", () => ({
   default: mockHistoryManager,
   damagedSessionNotice: () => "damaged",
   isQuarantinedSessionFile: (name: string) => name.includes(".corrupt-"),
+  isSessionFileName: (name: string) =>
+    /\.jsonl?$/.test(name) &&
+    name !== "sessions.json" &&
+    !name.includes(".tmp") &&
+    !name.includes(".corrupt-"),
   // fs is mocked in this file; the real reader and its set-aside step are
   // covered with real files in session.resume.test.ts
   readSessionFile: (file: string) => {

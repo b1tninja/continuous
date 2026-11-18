@@ -32,9 +32,6 @@
       "color-contrast": 1
     },
     "loop": {},
-    "overflow-open": {
-      "aria-hidden-focus": 3
-    },
     "permissions-editor": {
       "color-contrast": 5
     },
@@ -71,6 +68,17 @@
       "color-contrast": 1,
       "scrollable-region-focusable": 1
     },
+    "loop-running": {
+      "color-contrast": 1
+    },
+    "loop-failed": {
+      "color-contrast": 1
+    },
+    "loop-finished": {},
+    "loop-stopped": {},
+    "loop-settings-open": {},
+    "loop-questions": {},
+    "loop-replan": {},
     "loop-plan-failed": {
       "color-contrast": 3,
       "label-content-name-mismatch": 2
@@ -78,7 +86,7 @@
     "loop-plan-finished": {},
     "loop-plan-running": {
       "color-contrast": 3,
-      "label-content-name-mismatch": 2
+      "label-content-name-mismatch": 3
     },
     "loop-plan-tile": {
       "color-contrast": 1
@@ -98,6 +106,20 @@
     "onboarding-local-server": {
       "button-name": 1,
       "select-name": 1
+    },
+    "status-row": {
+      "color-contrast": 13,
+      "scrollable-region-focusable": 1
+    },
+    "usage-open": {
+      "aria-hidden-focus": 3,
+      "color-contrast": 13,
+      "scrollable-region-focusable": 1
+    },
+    "context-open": {
+      "aria-hidden-focus": 3,
+      "color-contrast": 14,
+      "scrollable-region-focusable": 2
     }
   }
 }

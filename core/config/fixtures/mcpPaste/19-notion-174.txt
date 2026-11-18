@@ -1,0 +1,16 @@
+```json
+{
+  "context_servers": {
+    "some-context-server": {
+      "command": {
+        "path": "npx",
+        "args": ["-y", "@notionhq/notion-mcp-server"],
+        "env": {
+          "OPENAPI_MCP_HEADERS": "{\"Authorization\": \"Bearer ntn_****\", \"Notion-Version\": \"2025-09-03\" }"
+        }
+      },
+      "settings": {}
+    }
+  }
+}
+```

@@ -260,10 +260,10 @@ export function nextLoopTurn(
         return undefined;
       case "proceed":
         // Unattended and nobody answered in time: the items go on
-        commitLoop(proceedUnanswered(loop));
+        commitLoop(proceedUnanswered(loop, now));
         continue;
       case "stop":
-        commitLoop(stopLoop(loop, action.reason, action.detail));
+        commitLoop(stopLoop(loop, action.reason, action.detail, action.budget));
         return undefined;
       case "check":
         // The harness runs the item's check (runLoopCheck); no model turn

@@ -1,0 +1,127 @@
+---
+title: "First session"
+---
+
+```bash
+cd my-project
+continuous
+```
+
+`continuous` with no arguments starts an interactive session in the current folder. `cn` is the same command. This page walks through the first one: the model, a message, an approval, and how to come back to a session later.
+
+## Before the first message: a model
+
+The terminal agent reads the same `~/.continuous/config.yaml` as the VS Code extension. If the extension is already set up, its models are there.
+
+The first interactive start asks for an Anthropic API key:
+
+```text
+To get started, enter your Anthropic API key.
+```
+
+- A key that starts with `sk-ant-` is written to `~/.continuous/config.yaml` as the `apiKey` of two Anthropic chat models, in plain text. No request is sent to check it.
+- Anything else ends the program with `API key must start with "sk-ant-"`, and the next start asks again.
+- The question is asked until a key has been entered once, even when `config.yaml` already has working models from another provider.
+
+To use another provider, or to keep the key out of `config.yaml`, write the config yourself and pass it with `--config`. The question is skipped whenever `--config` is given:
+
+```bash
+continuous --config ~/.continuous/config.yaml
+```
+
+[Model setup](/customize/model-setup) covers providers and where keys are kept. To check an endpoint before starting a session:
+
+```bash
+continuous test-connection --provider ollama
+```
+
+It lists the models the endpoint offers; with `--model <id>` it also sends one tool-call probe to that model.
+
+When input is not a terminal (a pipe, a CI job) nothing is asked. If `ANTHROPIC_API_KEY` is set in that case, the key is written into `config.yaml` and the run says `Using ANTHROPIC_API_KEY from environment`.
+
+## Send a message
+
+Type a request and press Enter. The input line takes three prefixes:
+
+| Prefix | What it does                                                                |
+| ------ | --------------------------------------------------------------------------- |
+| `@`    | Search for a file and attach it as context                                  |
+| `/`    | Run a [slash command](/cli/slash-commands)                                  |
+| `!`    | Run the rest of the line as a shell command yourself, without asking the model |
+
+`/help` prints the keys. The ones worth knowing on day one:
+
+| Key         | What it does                                      |
+| ----------- | ------------------------------------------------- |
+| Enter       | Send the message                                  |
+| Shift+Enter | New line (or end a line with `\`)                 |
+| Up, Down    | Move through suggestions or your input history    |
+| Tab         | Complete the selected command or file             |
+| Esc         | Cancel the reply in progress, or close suggestions |
+| Shift+Tab   | Cycle the mode: normal, plan, loop, auto          |
+| Ctrl+C      | Clear the input                                   |
+| Ctrl+D      | Exit                                              |
+
+## Approve a tool call
+
+In an interactive session the terminal agent reads, lists and searches files without asking. An edit (`Edit`, `MultiEdit`, `Write`), a shell command (`Bash`) and any MCP tool stop and ask first. The prompt has three choices:
+
+- **Continue** runs this one call. `y` does the same.
+- **Continue + always allow** runs it and saves a rule to the `allow:` list in `~/.continuous/permissions.yaml`. For a shell command the rule is that exact command; for any other tool it is the tool's name, so "always allow" on one edit covers every later edit.
+- **No, and tell Continue what to do differently** refuses the call and stops the reply so you can redirect. `n` does the same.
+
+`/policy` shows how far each area is trusted. `/policy <preset>` changes it for this session and saves it for the next one, except IDGAF, which is never saved. The levels and presets are the ones on the [Permissions page](/ide-extensions/agent/permissions-page); the file is described in the [`permissions.yaml` reference](/reference/permissions-yaml).
+
+## Modes
+
+Shift+Tab moves through four entries. The mode indicator shows the current one.
+
+| Entry  | What it is                                                                                                                                            | Flag at start |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| normal | The default: reads run, edits and commands ask                                                                                                        |               |
+| plan   | Read-only. The edit tools are not offered; shell commands and MCP tools ask. The agent writes a plan file and offers **Build**, **Build in a loop** or **Keep planning** (at Questions IDGAF the turn ends with the plan saved instead) | `--readonly`  |
+| loop   | Plan mode for the first message, then the plan is built in a loop without the Build question. See [Loop mode](/ide-extensions/agent/loop-mode)        |               |
+| auto   | Everything runs without asking. This is the IDGAF level on Context use, Tool use and File edits                                                       | `--auto`      |
+
+`--readonly` and `--auto` cannot be combined.
+
+## One-shot runs
+
+`-p` (`--print`) sends one prompt, prints the answer and exits. This is a headless run: there is no interface and nobody to ask.
+
+```bash
+continuous -p "Summarise what changed in the last commit"
+git diff | continuous -p "Review this diff for mistakes"
+```
+
+Piped input is placed before the prompt. `--format json` prints JSON instead of text, and `--silent` strips `<think>` blocks and extra whitespace; both work only with `-p`.
+
+A headless run uses your own levels, the same as an interactive session. Nobody can answer a question, so a call that would ask is refused: the model is told why, and a line on stderr names the flag that allows it. Pass `--auto` or `--policy` (for example `--policy handsOff`) to let more run without asking. Read [what a headless run allows](/reference#toolpermissions) before running one on a machine that matters, and give it [run limits](/cli/run-limits).
+
+## Come back to a session
+
+Sessions are saved as you go, under `~/.continuous/sessions`, each with the folder it was started in.
+
+| Command                      | What it does                                             |
+| ---------------------------- | -------------------------------------------------------- |
+| `continuous --resume`        | Pick a session to continue. The newest session of this folder is selected, so Enter continues it |
+| `continuous --resume <id>`   | Continue the session with that id                        |
+| `continuous -p --resume`     | Headless: continue the newest session of this folder without asking |
+| `continuous ls`              | List sessions grouped by folder and pick one to resume   |
+| `/resume`                    | The same list, from inside a session                     |
+| `continuous --fork <id>`     | Start a new session from a copy of an existing one (history, mode, model, task plan) |
+| `/fork`                      | Fork this session and continue in the copy; the original is unchanged |
+
+The lists show the sessions of the current folder first, newest on top, then each other folder under its own heading, ordered by its newest session, then sessions saved without a folder. A session belongs to the current folder when it was started there, in a folder inside or above it (a home folder or a folder fewer than three levels deep never counts as above), or elsewhere in the same git repository. When a headless `--resume` finds no session of this folder, it continues the newest session of any folder and prints a line on stderr naming that folder.
+
+`continuous ls --json` keeps its fields and adds `inWorkspace` (the session belongs to the current folder) and `workspaceGroup` (the heading it is listed under), in the same order.
+
+## When something is wrong
+
+`continuous --verbose` turns on debug logging and prints the log file's path and a `grep` line that filters this run. The log is `~/.continuous/logs/cn.log`. [Getting help](/reference/storage-and-reset#getting-help) lists the other places to look.
+
+## Related
+
+- [Command reference](/cli/reference)
+- [Slash commands](/cli/slash-commands)
+- [Loop mode](/ide-extensions/agent/loop-mode)

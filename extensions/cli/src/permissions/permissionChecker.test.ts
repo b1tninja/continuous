@@ -929,8 +929,10 @@ describe("Permission Checker", () => {
 
     it("allows a compound line only when every part matches", () => {
       mockEvaluateToolCallPolicy.mockReturnValue("allowedWithoutPermission");
+      // `;` and not `&&`: Windows PowerShell 5.1, the shell on Windows, has no
+      // `&&`, so there the line is not a command an allow rule can cover
       const result = checkToolPermission(
-        { name: "Bash", arguments: { command: "git status && git status" } },
+        { name: "Bash", arguments: { command: "git status; git status" } },
         { policies: [{ tool: "Bash(git status*)", permission: "allow" }] },
       );
       expect(result.permission).toBe("allow");

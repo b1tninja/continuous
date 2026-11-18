@@ -453,3 +453,92 @@ export function listCallsBounded(
     );
   return { rows, stats };
 }
+
+/** A change to the permission settings or rules, as `continuous audit changes` lists it. */
+export interface AuditChangeRow {
+  ts: string;
+  session: string;
+  /** "setting", "policy" or "taint": the record's own `ev` */
+  ev: string;
+  /** What changed: a kind such as `level`, or `rule` for a rule edit; an unknown kind shows as written */
+  kind: string;
+  /** The surface: cli-policy, flag, gui-settings, file, cli-command, or a rule edit's source */
+  source: string;
+  summary: string;
+  loosens: boolean;
+}
+
+function changeRow(r: AuditRecord): AuditChangeRow | undefined {
+  const rec = r as unknown as Record<string, unknown>;
+  const str = (v: unknown): string | undefined =>
+    typeof v === "string" ? v : undefined;
+  if (r.ev === "setting") {
+    const arrow =
+      rec.from !== undefined || rec.to !== undefined
+        ? `: ${str(rec.from) ?? "-"} -> ${str(rec.to) ?? "-"}`
+        : "";
+    const how = rec.confirmed ? ` (confirmed: ${String(rec.confirmed)})` : "";
+    return {
+      ts: r.ts,
+      session: r.session,
+      ev: r.ev,
+      kind: str(rec.kind) ?? "unknown",
+      source: str(rec.source) ?? "unknown",
+      summary: `${str(rec.op) ?? "set"} ${str(rec.name) ?? "?"}${arrow}${how}`,
+      loosens: rec.loosens === true,
+    };
+  }
+  if (r.ev === "taint") {
+    const why = str(rec.reason) ? ` (${str(rec.reason)})` : "";
+    return {
+      ts: r.ts,
+      session: r.session,
+      ev: r.ev,
+      kind: "taint",
+      source: str(rec.source) ?? "unknown",
+      summary: `${str(rec.op) ?? "change"} ${str(rec.label) ?? "?"}${why}`,
+      // A clear lets calls run unasked that asked before
+      loosens: rec.op === "clear",
+    };
+  }
+  if (r.ev === "policy") {
+    return {
+      ts: r.ts,
+      session: r.session,
+      ev: r.ev,
+      kind: "rule",
+      source: str(rec.source) ?? "unknown",
+      summary:
+        `${str(rec.op) ?? "change"} ${str(rec.decision) ?? ""} ${str(rec.rule) ?? ""}`.trim(),
+      loosens: rec.loosens === true,
+    };
+  }
+  return undefined;
+}
+
+/**
+ * Setting and rule changes, and taint labels added and cleared, across all
+ * sessions, oldest first. Records of a
+ * kind this reader does not know are skipped by the `ev` check, the way every
+ * reader here skips them; a `setting` record with a kind it does not know is
+ * listed with that kind as written.
+ */
+export function listChanges(
+  dir: string,
+  filter: { since?: string; until?: string } = {},
+): AuditChangeRow[] {
+  const since = filter.since ? Date.parse(filter.since) : undefined;
+  const until = filter.until ? endOfDay(filter.until) : undefined;
+  const rows: AuditChangeRow[] = [];
+  for (const f of listAuditFiles(dir)) {
+    for (const r of readAuditFile(f.file)) {
+      const row = changeRow(r);
+      if (!row) continue;
+      const t = Date.parse(row.ts);
+      if (since !== undefined && t < since) continue;
+      if (until !== undefined && t > until) continue;
+      rows.push(row);
+    }
+  }
+  return rows.sort((a, b) => a.ts.localeCompare(b.ts));
+}

@@ -11,6 +11,16 @@ export interface ToolPermissionPolicy {
   permission: PermissionPolicy;
   /** Optional argument matching patterns. If not specified, applies to all calls to this tool */
   argumentMatches?: Record<string, any>;
+  /**
+   * A limit of the run's shape, not a permission (a subagent cannot start a
+   * subagent or write the parent's task list): IDGAF does not lift it.
+   */
+  structural?: boolean;
+  /**
+   * One of the product's own default entries, not the person's: the Web
+   * level decides over a default `Fetch: allow` (WB45, webFetchDefault).
+   */
+  productDefault?: boolean;
 }
 
 export interface ToolPermissions {

@@ -29,6 +29,10 @@
 - **Live model lists**: after **Test connection**, the model picker shows the models your account can use, newest first.
 - **Current models**: up-to-date lists and limits for Anthropic, OpenAI, Gemini and Bedrock.
 - **Sturdier streaming**: a dropped connection is retried before the reply starts, and a reply that is cut off says so.
+- **Plan and Loop modes**: plan into a saved plan file, then build its to-dos one at a time, each with a check that must pass.
+- **Tool permissions**: allow, ask and deny rules, policy levels per area, and protected paths that always ask.
+- **Resume**: carry on a stopped or failed response without retyping; tool calls that already ran are not run again.
+- **A terminal agent**, `continuous`, attached to each GitHub release.
 
 ## Install and set up
 

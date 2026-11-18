@@ -2,10 +2,15 @@ import fs from "fs";
 import path from "path";
 
 import { POLICY_FILE_KEYS } from "core/tools/permissions/settingsFile.js";
-import YAML from "yaml";
 
 import { env } from "../env.js";
 import { logger } from "../util/logger.js";
+import {
+  ignoreBrokenConfigForRun,
+  noticeBrokenConfig,
+  type PolicyFileResult,
+  readPolicyFile,
+} from "../util/readPolicyFile.js";
 
 import { PermissionPolicy, ToolPermissionPolicy } from "./types.js";
 
@@ -46,47 +51,47 @@ export function permissionsYamlProblem(parsed: unknown): string | undefined {
 }
 
 /**
+ * Reads ~/.continue/permissions.yaml, telling a missing file from a broken
+ * one. A broken file must not be read as "no policy": the caller decides what
+ * to do (headless runs refuse to start, see configFileGate).
+ */
+export function readPermissionsYaml(
+  file: string = PERMISSIONS_YAML_PATH,
+): PolicyFileResult<PermissionsYamlConfig> {
+  const result = readPolicyFile<PermissionsYamlConfig | null>(
+    file,
+    "yaml",
+    permissionsYamlProblem,
+  );
+  if (result.status === "ok") {
+    return { status: "ok", value: result.value ?? {} };
+  }
+  return result as PolicyFileResult<PermissionsYamlConfig>;
+}
+
+/**
  * Loads permissions from ~/.continue/permissions.yaml
- * Returns null if file doesn't exist or can't be parsed
+ * Returns null if file doesn't exist or is broken. A broken file is reported
+ * once on stderr; use readPermissionsYaml to tell the two apart.
  */
 export function loadPermissionsYaml(
   file: string = PERMISSIONS_YAML_PATH,
 ): PermissionsYamlConfig | null {
-  try {
-    if (!fs.existsSync(file)) {
-      logger.debug("Permissions YAML file does not exist", {
-        path: file,
-      });
-      return null;
-    }
-
-    const content = fs.readFileSync(file, "utf-8");
-    const parsed = YAML.parse(content) as PermissionsYamlConfig;
-
-    // Validate the structure
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      const problem = permissionsYamlProblem(parsed);
-      if (!problem) {
-        logger.debug("Loaded permissions from YAML", {
-          allow: parsed.allow?.length || 0,
-          ask: parsed.ask?.length || 0,
-          exclude: parsed.exclude?.length || 0,
-        });
-        return parsed;
-      }
-    }
-
-    logger.warn("Invalid permissions YAML structure", {
-      path: file,
-    });
-    return null;
-  } catch (error) {
-    logger.error("Failed to load permissions YAML", {
-      error,
-      path: file,
-    });
+  const result = readPermissionsYaml(file);
+  if (result.status === "absent") {
+    logger.debug("Permissions YAML file does not exist", { path: file });
     return null;
   }
+  if (result.status === "broken") {
+    noticeBrokenConfig(result, ignoreBrokenConfigForRun());
+    return null;
+  }
+  logger.debug("Loaded permissions from YAML", {
+    allow: result.value.allow?.length || 0,
+    ask: result.value.ask?.length || 0,
+    exclude: result.value.exclude?.length || 0,
+  });
+  return result.value;
 }
 
 /**
@@ -195,16 +200,7 @@ ask: []
 exclude: []
 `;
 
-    try {
-      // "wx": never replace a file another process created in the meantime
-      await fs.promises.writeFile(PERMISSIONS_YAML_PATH, defaultContent, {
-        encoding: "utf-8",
-        flag: "wx",
-      });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") return;
-      throw error;
-    }
+    await fs.promises.writeFile(PERMISSIONS_YAML_PATH, defaultContent, "utf-8");
     logger.info("Created default permissions.yaml", {
       path: PERMISSIONS_YAML_PATH,
     });

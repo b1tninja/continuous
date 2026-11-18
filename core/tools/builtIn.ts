@@ -28,6 +28,10 @@ export enum BuiltInToolNames {
   RecallMaskedResult = "recall_masked_result",
   // Only offered when tool search is on (experimental.toolSearch: auto)
   SearchTools = "search_tools",
+  // Only offered to subagents started together, by the gui; never in the
+  // config's tool list (core/tools/definitions/sessionMessaging.ts)
+  ListSessions = "list_sessions",
+  SendMessage = "send_message",
 
   // excluded from allTools for now
   ViewRepoMap = "view_repo_map",

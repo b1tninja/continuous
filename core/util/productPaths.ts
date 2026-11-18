@@ -34,7 +34,9 @@ export const PRODUCT_LOADED_FILES = {
   "config.js": "user code, run at start",
   "permissions.yaml": "the permission settings",
   "trusted-hooks.json": "which hooks the user trusted",
+  "trusted-project.json": "which project configuration the user trusted",
   "mcp-tool-pins.json": "the pinned MCP tool definitions",
+  "mcp-tool-hold.json": "when hiding unapproved MCP tools started",
   "settings.json": "hook settings",
   "settings.local.json": "hook settings (project-local)",
   ".env": "keys and the API base",
@@ -95,11 +97,18 @@ export const PRODUCT_STATE_PATHS = [
   "worktrees",
   "bedrock-catalog",
   "model-catalog",
+  // the full output of long commands (commandOutputStore.ts); written, never read as config
+  "command-output",
+  // the terminal agent's compiled-code cache, `cache/compile`
+  "cache",
   "input_history.json",
   "retirement-notices.json",
   ".onboarding_complete",
   "node_modules",
   "plans",
+  "reset-backups",
+  // deleted sessions, restorable for 7 days (sessionTrash.ts)
+  "sessions-trash",
 ] as const;
 
 export type LoadedDirName = keyof typeof PRODUCT_LOADED_DIRS;

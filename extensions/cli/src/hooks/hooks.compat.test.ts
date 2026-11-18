@@ -32,7 +32,7 @@ import {
   runPreCompactHooks,
   runSessionEndHooks,
   runSessionStartHooks,
-  runStopHooks,
+  runTurnWithStopHooks,
 } from "./lifecycleHooks.js";
 import { MAX_ADDITIONAL_CONTEXT_CHARS } from "./types.js";
 import type { HookHandler, HookInput, HooksConfig } from "./types.js";
@@ -293,6 +293,10 @@ describe("managedHooksOnly", () => {
     write(path.join(project, ".continue", "settings.json"), {
       hooks: hook("project-hook"),
     });
+    // The user file here is ~/.claude/settings.json: opted in (D-023)
+    write(path.join(home, ".continuous", "settings.json"), {
+      hooks: { readClaudeSettings: true },
+    });
   });
 
   afterAll(() => {
@@ -404,14 +408,18 @@ describe("lifecycle events send Claude Code's input", () => {
 
   it("Stop: stop_hook_active false and the last message", async () => {
     liveConfig = on("Stop", { type: "command", command: recorder("st") });
-    await runStopHooks("all done");
+    await runTurnWithStopHooks({
+      runTurn: async () => "all done",
+      addUserMessage: () => {},
+      notice: () => {},
+    });
     const json = recorded("st");
     common(json, "Stop");
     expect(json.stop_hook_active).toBe(false);
     expect(json.last_assistant_message).toBe("all done");
   });
 
-  it("Stop: a hook that asks to continue does not throw", async () => {
+  it("Stop: a hook that keeps asking to continue ends with a notice", async () => {
     liveConfig = on("Stop", {
       type: "command",
       command: script(
@@ -419,7 +427,15 @@ describe("lifecycle events send Claude Code's input", () => {
         'console.error("keep going"); process.exit(2)',
       ),
     });
-    await expect(runStopHooks("x")).resolves.toBeUndefined();
+    const notices: string[] = [];
+    await expect(
+      runTurnWithStopHooks({
+        runTurn: async () => "x",
+        addUserMessage: () => {},
+        notice: (text) => notices.push(text),
+      }),
+    ).resolves.toBe("x");
+    expect(notices).toHaveLength(1);
   });
 
   it("Notification: message, title and notification_type", async () => {

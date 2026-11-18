@@ -27,6 +27,14 @@ export interface InitializeToolServiceOverrides {
   exclude?: string[];
   mode?: PermissionMode;
   isHeadless?: boolean;
+  /**
+   * Use the interactive default lists (Bash and unlisted tools ask) even
+   * though this process is headless. A Loop worker of a terminal-UI parent
+   * sets it: nobody types into the worker, but its asks become held
+   * questions for the parent's person, so it must not take the headless
+   * defaults (Bash and every unlisted tool allowed) its parent never had.
+   */
+  interactiveDefaults?: boolean;
 }
 
 export interface ToolPermissionServiceState {
@@ -35,6 +43,24 @@ export interface ToolPermissionServiceState {
   isHeadless: boolean;
   modePolicyCount?: number; // Track how many policies are from mode vs other sources
   originalPolicies?: ToolPermissions; // Store original policies when switching modes
+  /**
+   * What an `--agent` file takes away: an exclude for every tool its
+   * `tools:` key leaves out. They go in front of every policy list this
+   * service builds (normal, plan, auto, after a reload), so the agent file
+   * narrows the person's policy and never replaces or widens it.
+   */
+  agentFilePolicies?: ToolPermissionPolicy[];
+}
+
+/** `restrictions` first, then `policies` without the entries already there. */
+function withAgentRestrictions(
+  restrictions: ToolPermissionPolicy[] | undefined,
+  policies: ToolPermissionPolicy[],
+): ToolPermissionPolicy[] {
+  if (!restrictions?.length) return policies;
+  const key = (p: ToolPermissionPolicy) => `${p.permission}:${p.tool}`;
+  const seen = new Set(restrictions.map(key));
+  return [...restrictions, ...policies.filter((p) => !seen.has(key(p)))];
 }
 
 /**
@@ -61,6 +87,14 @@ export class ToolPermissionService
       isHeadless: false,
       modePolicyCount: 0,
     });
+  }
+
+  /** Set from InitializeToolServiceOverrides.interactiveDefaults */
+  private interactiveDefaults = false;
+
+  /** Which default lists apply: the headless ones only for a headless run that did not ask for the interactive ones. */
+  private headlessDefaults(): boolean {
+    return this.currentState.isHeadless && !this.interactiveDefaults;
   }
 
   /**
@@ -177,6 +211,27 @@ export class ToolPermissionService
   }
 
   /**
+   * The part of an agent file's tool selection that applies: its excludes.
+   * The file's allows, and the `*: allow` that closes its list, are not
+   * applied: a tool it keeps is decided by the person's own lists and
+   * levels, as it would be without the file (plans/research CO4). An agent
+   * file is third-party text, a hub slug or a repository file, so it may
+   * take tools away but never skip a question the person's policy asks.
+   */
+  agentFileRestrictions(
+    agentFileServiceState?: AgentFileServiceState,
+    mcpServiceState?: MCPServiceState,
+  ): ToolPermissionPolicy[] {
+    if (!agentFileServiceState?.agentFile) return [];
+    return (
+      this.generateAgentFilePolicies(agentFileServiceState, mcpServiceState)
+        .filter((p) => p.permission === "exclude")
+        // Which tools an agent has is its role, not a permission: IDGAF keeps it
+        .map((p) => ({ ...p, structural: true }))
+    );
+  }
+
+  /**
    * Generate mode-specific policies based on the current mode
    */
   private generateModePolicies(): ToolPermissionPolicy[] {
@@ -220,17 +275,23 @@ export class ToolPermissionService
     if (runtimeOverrides?.isHeadless !== undefined) {
       this.setState({ isHeadless: runtimeOverrides.isHeadless });
     }
+    if (runtimeOverrides?.interactiveDefaults !== undefined) {
+      this.interactiveDefaults = runtimeOverrides.interactiveDefaults;
+    }
 
     const modePolicies = this.generateModePolicies();
+    // An agent file only narrows: its excludes go in front of whatever the
+    // person's flags, permissions.yaml, the defaults or the mode decide.
+    const restrictions = this.agentFileRestrictions(
+      agentFileServiceState,
+      mcpServiceState,
+    );
+    if (restrictions.length) {
+      this.setState({ agentFilePolicies: restrictions });
+    }
 
     let allPolicies: ToolPermissionPolicy[];
-    if (agentFileServiceState?.agentFile) {
-      // Agent file policies take full precedence on init
-      allPolicies = this.generateAgentFilePolicies(
-        agentFileServiceState,
-        mcpServiceState,
-      );
-    } else if (
+    if (
       this.currentState.currentMode === "plan" ||
       this.currentState.currentMode === "auto"
     ) {
@@ -242,12 +303,15 @@ export class ToolPermissionService
       if (!this.currentState.originalPolicies) {
         this.setState({
           originalPolicies: {
-            policies: resolvePermissionPrecedence({
-              commandLineFlags: runtimeOverrides,
-              personalSettings: true,
-              useDefaults: true,
-              isHeadless: this.currentState.isHeadless,
-            }),
+            policies: withAgentRestrictions(
+              restrictions,
+              resolvePermissionPrecedence({
+                commandLineFlags: runtimeOverrides,
+                personalSettings: true,
+                useDefaults: true,
+                isHeadless: this.headlessDefaults(),
+              }),
+            ),
           },
         });
       }
@@ -257,16 +321,20 @@ export class ToolPermissionService
         commandLineFlags: runtimeOverrides,
         personalSettings: true, // Enable loading from ~/.continue/permissions.yaml
         useDefaults: true,
-        isHeadless: this.currentState.isHeadless,
+        isHeadless: this.headlessDefaults(),
       });
       allPolicies = [...compiledPolicies];
     }
+    allPolicies = withAgentRestrictions(restrictions, allPolicies);
 
     this.setState({
       permissions: { policies: allPolicies },
       currentMode: this.currentState.currentMode,
       isHeadless: this.currentState.isHeadless,
-      modePolicyCount: modePolicies.length,
+      // The agent file's excludes are in front of the mode's policies
+      modePolicyCount: modePolicies.length
+        ? restrictions.length + modePolicies.length
+        : 0,
     });
 
     (this as any).isInitialized = true;
@@ -375,11 +443,20 @@ export class ToolPermissionService
         allPolicies = [...nonModePolicies];
       }
     }
+    // Plan and auto replace the person's lists, but not an agent file's
+    // excludes: a tool the agent file took away stays away in every mode.
+    allPolicies = withAgentRestrictions(
+      this.currentState.agentFilePolicies,
+      allPolicies,
+    );
 
     this.setState({
       permissions: { policies: allPolicies },
       currentMode: newMode,
-      modePolicyCount: modePolicies.length,
+      modePolicyCount: modePolicies.length
+        ? (this.currentState.agentFilePolicies?.length ?? 0) +
+          modePolicies.length
+        : 0,
     });
 
     logger.debug(
@@ -422,11 +499,15 @@ export class ToolPermissionService
       commandLineFlags: this.sessionFlags,
       personalSettings: true, // Enable loading from ~/.continue/permissions.yaml
       useDefaults: true,
-      isHeadless: this.currentState.isHeadless,
+      isHeadless: this.headlessDefaults(),
     });
 
-    // Combine mode policies with freshly loaded user policies
-    const allPolicies = [...freshPolicies];
+    // Combine mode policies with freshly loaded user policies; an agent
+    // file's excludes still come first
+    const allPolicies = withAgentRestrictions(
+      this.currentState.agentFilePolicies,
+      freshPolicies,
+    );
 
     this.setState({
       permissions: { policies: allPolicies },

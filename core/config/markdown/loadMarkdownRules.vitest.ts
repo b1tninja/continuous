@@ -1,5 +1,17 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { IDE } from "../..";
+import { getAllDotContinueDefinitionFiles } from "../loadLocalAssistants";
+import {
+  fakeAnthropicKey,
+  hiddenFixture,
+  hiddenFixtureLoaded,
+} from "./instructionFileFixture";
+import {
+  getInstructionFilesState,
+  loadAgentFilesThisSession,
+  resetInstructionFilesSession,
+  setAgentFileGate,
+} from "./instructionFiles";
 import { loadMarkdownRules } from "./loadMarkdownRules";
 
 vi.mock("../loadLocalAssistants", () => ({
@@ -63,5 +75,51 @@ describe("loadMarkdownRules agent files", () => {
     ]);
     const { rules } = await loadMarkdownRules(ide);
     expect(rules.map((r) => r.sourceFile)).toEqual(["file:///b/CLAUDE.md"]);
+  });
+});
+
+describe("loadMarkdownRules instruction file guards (X20, X29, cap)", () => {
+  afterEach(resetInstructionFilesSession);
+
+  it("loads the shared fixture without its hidden characters and reports them", async () => {
+    const key = fakeAnthropicKey();
+    const ide = makeIde({ "file:///ws/AGENTS.md": hiddenFixture(key) }, [
+      "file:///ws",
+    ]);
+    const { rules } = await loadMarkdownRules(ide);
+    expect(rules[0].rule).toBe(hiddenFixtureLoaded(key));
+    const { notices, withheld } = getInstructionFilesState();
+    expect(withheld).toEqual([]);
+    expect(notices.map((n) => [n.kind, n.name])).toEqual([
+      ["hidden-characters", "AGENTS.md"],
+      ["secret", "AGENTS.md"],
+    ]);
+  });
+
+  it("guards rule files too", async () => {
+    vi.mocked(getAllDotContinueDefinitionFiles).mockResolvedValueOnce([
+      { path: "file:///ws/.continuous/rules/a.md", content: "a\u200Bb" },
+    ]);
+    const { rules } = await loadMarkdownRules(makeIde({}, ["file:///ws"]));
+    expect(rules.map((r) => r.rule)).toEqual(["ab"]);
+    expect(getInstructionFilesState().notices[0].name).toBe("a.md");
+  });
+
+  it("in Restricted Mode reads no AGENTS.md until Load", async () => {
+    setAgentFileGate(() => true);
+    const ide = makeIde({ "file:///ws/AGENTS.md": "secret plan" }, [
+      "file:///ws",
+    ]);
+    const first = await loadMarkdownRules(ide);
+    expect(first.rules).toEqual([]);
+    expect(ide.readFile).not.toHaveBeenCalled();
+    expect(getInstructionFilesState().withheld).toEqual([
+      "file:///ws/AGENTS.md",
+    ]);
+
+    loadAgentFilesThisSession();
+    const second = await loadMarkdownRules(ide);
+    expect(second.rules.map((r) => r.rule)).toEqual(["secret plan"]);
+    expect(getInstructionFilesState().withheld).toEqual([]);
   });
 });

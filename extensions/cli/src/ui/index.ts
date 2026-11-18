@@ -2,6 +2,7 @@ import { render, RenderOptions } from "ink";
 import React from "react";
 
 import { enableSigintHandler, setTUIUnmount } from "../index.js";
+import { enableAttentionNotifications } from "../notify/attention.js";
 import { PermissionMode } from "../permissions/types.js";
 import { initializeServices } from "../services/index.js";
 import { ServiceContainerProvider } from "../services/ServiceContainerContext.js";
@@ -53,6 +54,9 @@ export async function startTUIChat(
         "startTUIChat should not be called when -p/--print flag is used.",
     );
   }
+
+  // Bell and OS notifications, when the person's settings turn them on
+  enableAttentionNotifications();
 
   // Critical safeguard: Prevent TUI initialization in TTY-less environment
   if (isTTYless() && !customStdin) {

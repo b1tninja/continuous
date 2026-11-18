@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -10,6 +11,9 @@ import { resetUserNotices, setUserNoticeSink } from "./util/userNotice.js";
 
 // Real files in the test run's own global folder (vitest.global-dir-setup.ts)
 const dir = path.join(env.continueHome, "sessions");
+
+// The folder the sessions below were saved in, as the folder --resume runs in
+const here = { cwd: "/work/project" };
 
 function writeSession(id: string, title: string, mtime: Date): string {
   const session: Session = {
@@ -56,7 +60,7 @@ describe("--resume and a damaged session file", () => {
   it("resumes the newest session without a notice when it is readable", () => {
     writeSession("older", "Older", new Date("2026-01-01"));
     writeSession("newest", "Newest", new Date("2026-01-03"));
-    expect(loadSession()?.sessionId).toBe("newest");
+    expect(loadSession(here)?.sessionId).toBe("newest");
     expect(notices).toEqual([]);
   });
 
@@ -65,7 +69,7 @@ describe("--resume and a damaged session file", () => {
     const damaged = writeDamaged("newest", new Date("2026-01-03"));
     const bytes = fs.readFileSync(damaged, "utf8");
 
-    const session = loadSession();
+    const session = loadSession(here);
 
     expect(session?.sessionId).toBe("older");
     const kept = fs.readdirSync(dir).filter((n) => n.includes(".corrupt-"));
@@ -85,7 +89,7 @@ describe("--resume and a damaged session file", () => {
     notices.length = 0;
     resetUserNotices();
     setUserNoticeSink((text) => notices.push(text));
-    expect(loadSession()?.sessionId).toBe("older");
+    expect(loadSession(here)?.sessionId).toBe("older");
     expect(notices).toEqual([]);
     expect(
       fs.readdirSync(dir).filter((n) => n.includes(".corrupt-")),
@@ -94,7 +98,7 @@ describe("--resume and a damaged session file", () => {
 
   it("says so when the only session is damaged", () => {
     writeDamaged("only", new Date("2026-01-03"));
-    expect(loadSession()).toBeNull();
+    expect(loadSession(here)).toBeNull();
     expect(notices).toHaveLength(1);
     expect(notices[0]).toContain("The newest session could not be read");
     expect(notices[0]).toContain("starting a new one");
@@ -121,7 +125,7 @@ describe("--resume and a damaged session file", () => {
     const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     try {
       writeDamaged("only", new Date("2026-01-03"));
-      loadSession();
+      loadSession(here);
       expect(err).toHaveBeenCalledTimes(1);
       expect(String(err.mock.calls[0][0])).toContain(
         "The newest session could not be read",
@@ -131,5 +135,66 @@ describe("--resume and a damaged session file", () => {
       err.mockRestore();
       out.mockRestore();
     }
+  });
+});
+
+describe("--resume and the extension's session log", () => {
+  const savedTestFlag = process.env.CONTINUE_CLI_TEST;
+
+  beforeEach(() => {
+    delete process.env.CONTINUE_CLI_TEST;
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(dir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+    if (savedTestFlag !== undefined) {
+      process.env.CONTINUE_CLI_TEST = savedTestFlag;
+    }
+  });
+
+  it("resumes a .jsonl session, reading its blobs", () => {
+    writeSession("older", "Older", new Date("2026-01-01"));
+    const output = "x".repeat(20_000);
+    const hash = createHash("sha256").update(output).digest("hex");
+    fs.mkdirSync(path.join(dir, "from-ide", "blobs"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "from-ide", "blobs", hash), output);
+    const lines = [
+      {
+        t: "header",
+        format: "continuous-session",
+        v: 1,
+        sessionId: "from-ide",
+      },
+      { t: "meta", k: "title", v: "From the IDE" },
+      { t: "meta", k: "workspaceDirectory", v: "/work/project" },
+      {
+        t: "item",
+        i: 0,
+        v: { message: { role: "user", content: "read it" }, contextItems: [] },
+      },
+      {
+        t: "item",
+        i: 1,
+        v: {
+          message: {
+            role: "tool",
+            content: { $blob: hash, n: output.length },
+            toolCallId: "c",
+          },
+          contextItems: [],
+        },
+      },
+    ];
+    const file = path.join(dir, "from-ide.jsonl");
+    fs.writeFileSync(file, lines.map((l) => `${JSON.stringify(l)}\n`).join(""));
+    const newest = new Date("2026-01-03");
+    fs.utimesSync(file, newest, newest);
+
+    const session = loadSession(here);
+    expect(session?.sessionId).toBe("from-ide");
+    expect(session?.title).toBe("From the IDE");
+    expect(session?.history[1].message.content).toBe(output);
   });
 });
