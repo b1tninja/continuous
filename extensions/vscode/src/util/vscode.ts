@@ -79,12 +79,11 @@ export function openEditorAndRevealRange(
     vscode.workspace.openTextDocument(uri).then(async (doc) => {
       try {
         // An error is thrown mysteriously if you open two documents in parallel, hence this
+        // A timeout, not an interval: an interval here was never cleared and
+        // kept firing every 200 ms for the life of the extension host, one
+        // more for each pass of the loop
         while (showTextDocumentInProcess) {
-          await new Promise((resolve) => {
-            setInterval(() => {
-              resolve(null);
-            }, 200);
-          });
+          await new Promise((resolve) => setTimeout(resolve, 200));
         }
         showTextDocumentInProcess = true;
         vscode.window

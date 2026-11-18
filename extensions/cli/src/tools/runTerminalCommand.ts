@@ -1,5 +1,6 @@
-import { ChildProcess, spawn } from "child_process";
+import type { ChildProcess, ChildProcessByStdio } from "child_process";
 import fs from "fs";
+import type { Readable } from "stream";
 
 import {
   evaluateTerminalCommandSecurity,
@@ -8,6 +9,12 @@ import {
 import { commandLintGate } from "core/tools/permissions/commandLint.js";
 import { missingBinaryGate } from "core/tools/permissions/missingBinaryGate.js";
 import { getCommandExecutor } from "core/util/commandExecutor.js";
+import { decodeCommandOutput } from "core/util/commandOutput.js";
+import {
+  COMMAND_STDIO,
+  commandEnvironment,
+  spawnAgentCommand,
+} from "core/util/commandSpawn.js";
 import { getTerminalShellPreference } from "core/util/shell.js";
 import {
   TERMINAL_ENV_NOTICE,
@@ -113,16 +120,24 @@ function commandBlocked(command: string): string | undefined {
   );
 }
 
-// Windows PowerShell on Windows, the login shell elsewhere, or bash in WSL
-function getShellCommand(command: string): { shell: string; args: string[] } {
-  return getCommandExecutor().invocation(command);
+// Windows PowerShell on Windows, the login shell elsewhere, or bash in WSL or
+// a container, started through the executor (the same place as the IDE's
+// tool); PowerShell is asked for the exit code the command's own program chose
+function startCommand(
+  command: string,
+): Promise<ChildProcessByStdio<null, Readable, Readable>> {
+  return spawnAgentCommand(getCommandExecutor(), command, {
+    env: commandEnvironment(terminalEnvironment(shellChildEnv())),
+    // No open standard input: a prompt must fail, not wait for the timeout
+    stdio: COMMAND_STDIO,
+  }) as Promise<ChildProcessByStdio<null, Readable, Readable>>;
 }
 
-export function runCommandInBackground(command: string): {
+export async function runCommandInBackground(command: string): Promise<{
   success: boolean;
   jobId?: string;
   error?: string;
-} {
+}> {
   const job = backgroundJobService.createJob(command);
   if (!job) {
     return {
@@ -131,8 +146,7 @@ export function runCommandInBackground(command: string): {
     };
   }
 
-  const { shell, args } = getShellCommand(command);
-  const child = backgroundJobService.startJob(job.id, shell, args);
+  const child = await backgroundJobService.startJob(job.id);
 
   if (!child) {
     return {
@@ -225,12 +239,16 @@ IMPORTANT: To edit files, use Edit/MultiEdit tools instead of bash commands (sed
 
     emitBashToolStarted();
 
+    // Same start as the core implementation. A shell that cannot start is
+    // reported as its "error" event was
+    let child: Awaited<ReturnType<typeof startCommand>>;
+    try {
+      child = await startCommand(command);
+    } catch (error) {
+      throw `Error: ${error instanceof Error ? error.message : String(error)}`;
+    }
+
     const terminalOutput: string = await new Promise((resolve, reject) => {
-      // Use same shell logic as core implementation
-      const { shell, args } = getShellCommand(command);
-      const child = spawn(shell, args, {
-        env: terminalEnvironment(shellChildEnv()),
-      });
       let stdout = "";
       let stderr = "";
       let timeoutId: NodeJS.Timeout;
@@ -344,13 +362,14 @@ IMPORTANT: To edit files, use Edit/MultiEdit tools instead of bash commands (sed
       resetTimeout();
 
       const onStdout = (data: Buffer) => {
-        stdout += data.toString();
+        // On Windows, PowerShell's code page when the bytes are not UTF-8
+        stdout += decodeCommandOutput(data);
         resetTimeout();
         showCurrentOutput();
       };
 
       const onStderr = (data: Buffer) => {
-        stderr += data.toString();
+        stderr += decodeCommandOutput(data);
         resetTimeout();
         showCurrentOutput();
       };

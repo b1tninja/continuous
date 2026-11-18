@@ -10,6 +10,7 @@ import {
 } from "../../permissions/policyLevels.js";
 import { services } from "../../services/index.js";
 import { getSessionPlanFile, getSessionTaskPlan } from "../../session.js";
+import { CONFIRM_ARM_MS } from "../hooks/useInterruptConfirm.js";
 
 import {
   ENTER,
@@ -191,8 +192,10 @@ describe("TUIChat - plan mode", () => {
         "Bash",
       );
 
-      // "n" refuses and stops the turn
+      // "n" refuses and stops the turn, after the stop question
       await type(ui.stdin, "n");
+      await tick(CONFIRM_ARM_MS);
+      await type(ui.stdin, ENTER);
       await waitUntil(
         () => ui.allOutput().includes("Tool canceled"),
         "the refusal",
@@ -301,7 +304,11 @@ describe("TUIChat - plan mode", () => {
         "the request after the MCP call",
         ui.lastFrame,
       );
-      expect(runTool).toHaveBeenCalledWith("lookup_issue", { id: "42" });
+      expect(runTool).toHaveBeenCalledWith(
+        "lookup_issue",
+        { id: "42" },
+        "docs",
+      );
       const result = llm.requests[1].messages.find((m) => m.role === "tool");
       expect(messageText(result!)).toContain("mcp ran");
     } finally {

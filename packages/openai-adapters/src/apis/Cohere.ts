@@ -23,6 +23,24 @@ import {
   RerankCreateParams,
 } from "./base.js";
 
+/** Cohere v1 takes text only: an array of parts is sent as its text. */
+function cohereText(
+  content: OpenAI.Chat.Completions.ChatCompletionMessageParam["content"],
+): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) =>
+      part.type === "text"
+        ? part.text
+        : part.type === "refusal"
+          ? part.refusal
+          : "",
+    )
+    .filter((text) => text !== "")
+    .join("\n");
+}
+
 export class CohereApi implements BaseLlmApi {
   apiBase: string = "https://api.cohere.com/v1";
 
@@ -37,17 +55,24 @@ export class CohereApi implements BaseLlmApi {
   ): any[] {
     return msgs.map((m) => ({
       role: m.role === "assistant" ? "CHATBOT" : "USER",
-      message: m.content,
+      message: cohereText(m.content),
     }));
   }
 
+  /**
+   * The v1 chat body. Reads `oaiBody` without changing it: the last message
+   * is the `message`, the ones before it the history, so a retry with the
+   * same body sends the same request.
+   */
   private _convertBody(oaiBody: ChatCompletionCreateParams) {
+    const history = oaiBody.messages.slice(0, -1);
+    const last = oaiBody.messages.at(-1);
     return {
-      message: oaiBody.messages.pop()?.content,
+      message: last ? cohereText(last.content) : undefined,
       chat_history: this._convertMessages(
-        oaiBody.messages.filter((msg) => msg.role !== "system"),
+        history.filter((msg) => msg.role !== "system"),
       ),
-      preamble: oaiBody.messages.find((msg) => msg.role === "system")?.content,
+      preamble: history.find((msg) => msg.role === "system")?.content,
       model: oaiBody.model,
       stream: oaiBody.stream,
       temperature: oaiBody.temperature,

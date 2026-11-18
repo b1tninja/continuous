@@ -1,0 +1,12 @@
+```json
+{
+  "mcpServers": {
+    "sentry": {
+      "url": "https://mcp.sentry.dev/mcp",
+      "headers": {
+        "Authorization": "Sentry-Bearer ${SENTRY_ACCESS_TOKEN}"
+      }
+    }
+  }
+}
+```

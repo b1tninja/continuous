@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "my-server": {
+      "url": "https://mcp.example.com/mcp",
+      "transport": "http",
+      "oauthClientId": "Iv1.abc123def456",
+      "oauthClientSecret": "${env:MY_MCP_CLIENT_SECRET}"
+    }
+  }
+}

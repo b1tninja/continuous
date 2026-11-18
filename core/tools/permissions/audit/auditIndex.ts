@@ -4,6 +4,7 @@ import path from "node:path";
 import { ensurePrivateDir, writePrivate } from "../../../util/privateFiles";
 import {
   EMPTY_DAY,
+  IDGAF_OBJECTION_KEY,
   keysOfEvent,
   type DayCounts,
   type EventKeys,
@@ -198,6 +199,11 @@ function bump(
 function apply(index: AuditIndex, ts: string, keys: EventKeys): void {
   if (!index.since || keys.day < index.since) index.since = keys.day;
   if (keys.ruleKey) bump(index.rules, keys.ruleKey, keys.day, ts, keys.counts);
+  if (keys.idgafObjected) {
+    const one = EMPTY_DAY();
+    one[1] = 1;
+    bump(index.rules, IDGAF_OBJECTION_KEY, keys.day, ts, one);
+  }
   if (keys.callKey && keys.callCounts) {
     bump(index.calls, keys.callKey, keys.day, ts, keys.callCounts);
   }

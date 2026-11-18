@@ -16,9 +16,51 @@ The highlighted code you've selected by pressing cmd/ctrl + L (VS Code) will be 
 
 You can include the currently open file as context by pressing opt/alt + enter when you send your request.
 
+## Add files from the Explorer or tabs
+
+In VS Code, right-click to add files and folders to the chat input:
+
+- **Explorer**: select one or more files or folders, right-click, and choose **Add to Continuous Chat**.
+- **Editor tab**: right-click the tab and choose **Add to Continuous Chat**, or **Add All Open Tabs to Continuous Chat** for every open tab.
+- **Editor**: with nothing selected, right-click in the file and choose **Continuous** > **Add to Continuous Chat**. With code selected, **Add to Chat** adds the selection instead.
+- **Command Palette**: **Continuous: Add to Continuous Chat** adds the active file; **Continuous: Add All Open Tabs to Continuous Chat** adds every open tab.
+
+A file becomes an `@` file chip, the same as picking it from '@Files': it is read when you send, not when you add it. A folder becomes an `@` folder chip, which is a search scope rather than the folder's whole contents, and needs the `folder` context provider in your configuration. The chat opens if it is closed, the input is focused, and a chip already in the message is not added again.
+
+Some files are not added, and a notification says which and why:
+
+- Files that look like they hold secrets: `.env` files, keys and certificates (`*.pem`, `*.key`, `id_rsa`), and folders such as `.ssh` and `.aws`. This is the same list the '@Files' picker leaves out.
+- Files outside the workspace folders, such as a tab opened from another folder.
+- Unsaved editors.
+
+This works with remote (SSH, WSL, containers) and virtual workspaces. There is no default keyboard shortcut; to add one, bind `continuous.addToChat` or `continuous.addOpenTabsToChat` in **Keyboard Shortcuts**.
+
 ## How to Include a Specific File
 
 You can include a specific file in your current workspace by typing '@Files' and selecting the file.
+
+## How to Drag Files and Folders In
+
+Drop files, folders, images or text on the chat input. In VS Code, hold Shift while dragging: without it, VS Code takes the drop itself and the chat input never sees it.
+
+| You drop                                     | It becomes                                                                                                         |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| A workspace file, from the Explorer or a tab | An `@` file chip, the same as picking the file from '@Files'. The file is read when you send, not when you drop it |
+| A workspace folder                           | An `@` folder chip. A folder is a search scope: its relevant parts are retrieved, not every file in it             |
+| An image                                     | An image in the message, if the selected model reads images. At most 10 images per message, 5 MB each              |
+| Text                                         | Text at the cursor, with hidden characters (bidi controls, zero-width spaces, tag characters) removed              |
+| A link                                       | The link as text. Nothing is fetched                                                                               |
+
+Some drops are refused, and the input says which file and why:
+
+- Files that look like they hold secrets: `.env` files, keys and certificates (`*.pem`, `*.key`, `id_rsa`), and folders such as `.ssh` and `.aws`. This is the same list the '@Files' picker leaves out. Nothing reads a refused file.
+- Files outside the workspace folders.
+- Files dragged from the operating system's file manager, other than images. The chat gets the file's name but not its location, so it cannot add it by reference; add it with '@Files' instead.
+- Images when the selected model does not read them, and SVG files as images (add an SVG from the workspace to send it as text).
+
+Dragging is a shortcut, not the only way: the `+` button at the left of the input has "Add context (@)" and an image picker.
+
+Since VS Code 1.140, drops from the Explorer and from editor tabs do not reach extension webviews even with Shift held ([microsoft/vscode#339036](https://github.com/microsoft/vscode/issues/339036)); files dragged from the operating system still arrive. Until VS Code fixes it, use '@Files' for workspace files. In JetBrains IDEs the chat runs in an off-screen browser, which is reported not to receive drops; use '@Files' and the `+` button there.
 
 ## Codebase Search
 

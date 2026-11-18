@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 
 import type { TaskPlan } from "core/index.js";
+import { writeFileAtomicSync } from "core/util/atomicWrite.js";
 import {
   parsePlanFile,
   PLANS_DIR,
@@ -159,7 +160,7 @@ export function resolvePlan(
 
 /** Plan files never hold a secret: the at-rest scrubber runs on every write. */
 export function writePlanText(file: string, text: string): void {
-  fs.writeFileSync(file, scrubForDisk(text));
+  writeFileAtomicSync(file, scrubForDisk(text));
 }
 
 const CHECKBOX = /^(\s*(?:[-*+]|\d+\.)\s*)\[([ xX>!-])\](.*)$/;

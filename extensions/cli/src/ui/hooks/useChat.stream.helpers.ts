@@ -1,9 +1,15 @@
-import type { ChatHistoryItem, ToolCallState, ToolStatus } from "core/index.js";
+import type {
+  ChatHistoryItem,
+  PromptProgress,
+  ToolCallState,
+  ToolStatus,
+} from "core/index.js";
 
 import { ALL_BUILT_IN_TOOLS } from "src/tools/allBuiltIns.js";
 import { logger } from "src/util/logger.js";
 
-import { runStopHooks } from "../../hooks/lifecycleHooks.js";
+import { runTurnWithStopHooks } from "../../hooks/lifecycleHooks.js";
+import { notifyPerson } from "../../notify/attention.js";
 import { services } from "../../services/index.js";
 import { getCurrentSession, updateSessionTitle } from "../../session.js";
 
@@ -18,6 +24,12 @@ interface CreateStreamCallbacksOptions {
   onShowStatusMessage?: (message: string) => void;
   /** The TUI's spinner text while a reply is held for tool call recovery */
   onRecoveryHold?: (holding: boolean) => void;
+  /** The spinner row's prompt-reading line; undefined once the reading is over */
+  onPromptProgress?: (progress: PromptProgress | undefined) => void;
+  /** The reply's reasoning as it streams, for the live thinking view */
+  onReasoning?: (text: string) => void;
+  /** The reply's reasoning has ended (it is kept on the reply's item) */
+  onReasoningDone?: () => void;
 }
 
 /**
@@ -33,13 +45,28 @@ export function createStreamCallbacks(
     model,
     onShowStatusMessage,
     onRecoveryHold,
+    onPromptProgress,
+    onReasoning,
+    onReasoningDone,
   } = options;
 
   return {
     onContent: (_: string) => {},
 
+    onReasoning: (text: string) => {
+      onReasoning?.(text);
+    },
+
+    onReasoningComplete: () => {
+      onReasoningDone?.();
+    },
+
     onRecoveryHold: (holding: boolean) => {
       onRecoveryHold?.(holding);
+    },
+
+    onPromptProgress: (progress: PromptProgress | undefined) => {
+      onPromptProgress?.(progress);
     },
 
     // A notice about the request (a reply cut off at the output limit, say)
@@ -261,6 +288,22 @@ export function createStreamCallbacks(
   };
 }
 
+/**
+ * A Stop hook's feedback as the next user turn, in the service's history (the
+ * stream refreshes from it before each request). False when the service is
+ * not up: there is then no history to continue from.
+ */
+function addStopHookMessage(text: string): boolean {
+  try {
+    const svc = services.chatHistory;
+    if (typeof svc?.isReady === "function" && svc.isReady()) {
+      svc.addUserMessage(text);
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
 interface ExecuteStreamingOptions {
   chatHistory: ChatHistoryItem[];
   model: any;
@@ -281,39 +324,53 @@ export async function executeStreaming({
   streamCallbacks,
   currentCompactionIndex,
 }: ExecuteStreamingOptions): Promise<void> {
+  const startedAt = Date.now();
   const { getHistoryForLLM } = await import("../../compaction.js");
   const { streamChatResponse } =
     await import("../../stream/streamChatResponse.js");
 
   if (model && llmApi) {
-    if (
-      currentCompactionIndex !== null &&
-      currentCompactionIndex !== undefined
-    ) {
-      const historyForLLM = getHistoryForLLM(
-        chatHistory,
-        currentCompactionIndex,
-      );
+    const runTurn = async (): Promise<string | undefined> => {
+      if (
+        currentCompactionIndex !== null &&
+        currentCompactionIndex !== undefined
+      ) {
+        const historyForLLM = getHistoryForLLM(
+          chatHistory,
+          currentCompactionIndex,
+        );
 
-      await streamChatResponse(
-        historyForLLM,
+        // Service-driven streaming; history updates occur via ChatHistoryService
+        return streamChatResponse(
+          historyForLLM,
+          model,
+          llmApi,
+          controller,
+          streamCallbacks,
+        );
+      }
+      return streamChatResponse(
+        chatHistory,
         model,
         llmApi,
         controller,
         streamCallbacks,
       );
-
-      // Service-driven streaming; history updates occur via ChatHistoryService
-    } else {
-      await streamChatResponse(
-        chatHistory,
-        model,
-        llmApi,
-        controller,
-        streamCallbacks,
-      );
+    };
+    // A Stop hook that blocks sends the agent back to work, up to three times
+    // for this message (D4). A turn the person cancelled is not a finished
+    // turn, so no Stop hook runs after it.
+    await runTurnWithStopHooks({
+      runTurn,
+      addUserMessage: addStopHookMessage,
+      notice: (text) => streamCallbacks.onSystemMessage?.(text),
+      cancelled: () => controller.signal.aborted,
+    });
+    if (!controller.signal.aborted) {
+      notifyPerson({
+        kind: "turn-finished",
+        durationMs: Date.now() - startedAt,
+      });
     }
-    // A turn the person cancelled is not a finished turn
-    if (!controller.signal.aborted) await runStopHooks();
   }
 }

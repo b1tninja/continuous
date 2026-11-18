@@ -40,6 +40,7 @@ export default {
     // "!**/autocomplete/context/root-path-context/test/files/**",
   ],
   globalSetup: "<rootDir>/test/jest.global-setup.ts",
+  setupFiles: ["<rootDir>/test/liveProviderGuard.setup.ts"],
   setupFilesAfterEnv: ["<rootDir>/test/jest.setup-after-env.js"],
   maxWorkers: 1, // equivalent to CLI --runInBand
   testMatch: ["**/*.test.ts"],

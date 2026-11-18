@@ -474,9 +474,39 @@ describe("ToolPermissionService", () => {
       expect(service.getPermissions().policies).toEqual(newMockPolicies);
       expect(
         precedenceResolver.resolvePermissionPrecedence,
-      ).toHaveBeenCalledWith({
+      ).toHaveBeenLastCalledWith({
+        commandLineFlags: {},
         personalSettings: true,
         useDefaults: true,
+        isHeadless: false,
+      });
+    });
+
+    test("should pass the session's flags and headless state again on reload", async () => {
+      vi.mocked(precedenceResolver.resolvePermissionPrecedence).mockReturnValue(
+        [],
+      );
+      const service = new ToolPermissionService();
+      service.initializeSync({
+        exclude: ["Bash"],
+        ask: ["Write"],
+        allow: ["Edit"],
+        isHeadless: true,
+      });
+
+      await service.reloadPermissions();
+
+      expect(
+        precedenceResolver.resolvePermissionPrecedence,
+      ).toHaveBeenLastCalledWith({
+        commandLineFlags: {
+          exclude: ["Bash"],
+          ask: ["Write"],
+          allow: ["Edit"],
+        },
+        personalSettings: true,
+        useDefaults: true,
+        isHeadless: true,
       });
     });
 

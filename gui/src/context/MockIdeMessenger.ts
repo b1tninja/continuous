@@ -27,6 +27,7 @@ type MockResponseHandlers = Partial<{
 
 const DEFAULT_MOCK_CORE_RESPONSES: MockResponses = {
   fileExists: true,
+  "instructionFiles/state": { withheld: [], notices: [] },
   getCurrentFile: {
     isUntitled: false,
     contents: "Current file contents",
@@ -36,10 +37,30 @@ const DEFAULT_MOCK_CORE_RESPONSES: MockResponses = {
     "file:///Users/user/workspace1",
     "file:///Users/user/workspace2",
   ],
+  "modelCatalog/status": { policy: "ask", refreshHours: 24 },
+  "modelCatalog/cached": null,
+  "model/retirementNotices": { notices: [] },
+  "modelCatalog/communityCached": null,
   "history/list": [],
+  "history/listTrash": [],
+  "history/search": {
+    query: "",
+    hits: [],
+    scanned: 0,
+    total: 0,
+    skippedLarge: 0,
+  },
   "docs/getIndexedPages": [],
   "history/save": undefined,
+  "history/saveDelta": { rev: null, needFull: true },
   "policy/save": undefined,
+  "policy/preview": {
+    before: "",
+    after: "",
+    changed: false,
+    diff: [],
+    loosens: [],
+  },
   "providers/list": {
     instances: [],
     globalFileUri: "file:///Users/user/.continuous/providers.yaml",
@@ -105,6 +126,13 @@ const DEFAULT_MOCK_CORE_RESPONSES: MockResponses = {
     didPrune: false,
     contextPercentage: 0.5,
   },
+  // No local server in tests: the pre-warm (C106) is skipped
+  "llm/prewarm": {
+    status: "skipped",
+    reason: "unsupported-server",
+    detail: "No server in tests",
+  },
+  "llm/strataMetrics": undefined,
   "context/getContextItems": [
     {
       id: {

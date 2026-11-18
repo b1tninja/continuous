@@ -293,4 +293,60 @@ describe("BedrockConnectionTester tool-call line", () => {
       ),
     );
   });
+  it("shows one quiet line when the quota check was skipped, and no error", async () => {
+    const note =
+      "Quota check skipped: this profile lacks servicequotas:ListServiceQuotas";
+    const { user, onModelsLoaded } = setup({
+      "bedrock/listModels": async (data: any) =>
+        data.endpoint === "mantle"
+          ? { ok: true, models: [] }
+          : {
+              ok: true,
+              models,
+              quota: {
+                status: "skipped",
+                note,
+                docsUrl:
+                  "https://b1tninja.github.io/continuous/customize/model-providers/top-level/bedrock#optional-quota-check",
+              },
+            },
+    });
+    await user.click(screen.getByRole("button", { name: "Test connection" }));
+    expect(await screen.findByText(/2 models available/)).toBeTruthy();
+    expect(screen.getByTestId("quota-check-note").textContent).toContain(note);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(onModelsLoaded.mock.calls.at(-1)![0]).toHaveLength(2);
+  });
+
+  it("warns about a 0 quota for the selected model, with the console link", async () => {
+    const url =
+      "https://console.aws.amazon.com/servicequotas/home/services/bedrock/quotas?region=us-east-1";
+    const { user } = setup({
+      "bedrock/listModels": async (data: any) =>
+        data.endpoint === "mantle"
+          ? { ok: true, models: [] }
+          : {
+              ok: true,
+              models: [
+                ...models,
+                {
+                  id: "anthropic.claude-sonnet-4-6",
+                  name: "Claude Sonnet 4.6",
+                  provider: "Anthropic",
+                  kind: "on-demand" as const,
+                  quotaWarning: `anthropic.claude-sonnet-4-6 has a 0 tokens-per-minute quota in us-east-1 for this account; request an increase in Service Quotas: ${url}`,
+                },
+              ],
+              quota: { status: "ok", zeroQuotaModels: 1 },
+            },
+    });
+    await user.click(screen.getByRole("button", { name: "Test connection" }));
+    expect((await screen.findByTestId("quota-warning")).textContent).toBe(
+      "anthropic.claude-sonnet-4-6 has a 0 tokens-per-minute quota in us-east-1 for this account; request an increase in Service Quotas",
+    );
+    expect(
+      screen.getByRole("button", { name: "Open Service Quotas" }),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("quota-check-note")).toBeNull();
+  });
 });

@@ -685,6 +685,49 @@ describe("Anthropic", () => {
       expect(body.system[0].cache_control).toEqual({ type: "ephemeral" });
     });
 
+    test("CONTINUOUS_FORCE_CACHE_5M=1 puts every breakpoint on 5 minutes", async () => {
+      vi.stubEnv("CONTINUOUS_FORCE_CACHE_5M", "1");
+      try {
+        const { body } = await sentBody(
+          { promptCaching: true, promptCacheTtl: "1h" },
+          { cacheBehavior: { ttl: "1h" } },
+        );
+        const controls = [
+          body.tools[1].cache_control,
+          body.system[0].cache_control,
+          body.messages[2].content[0].cache_control,
+          body.messages[4].content[0].cache_control,
+        ];
+        for (const c of controls) expect(c).toEqual({ type: "ephemeral" });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    test("CONTINUOUS_FORCE_CACHE_5M other than 1 changes nothing", async () => {
+      vi.stubEnv("CONTINUOUS_FORCE_CACHE_5M", "true");
+      try {
+        const { body } = await sentBody({
+          promptCaching: true,
+          promptCacheTtl: "1h",
+        });
+        expect(body.system[0].cache_control).toEqual({
+          type: "ephemeral",
+          ttl: "1h",
+        });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    test("Messages stays on anthropic-version 2023-06-01 (K23: only the list call moves)", async () => {
+      // 2026-10-21 removes temperature, top_p and top_k on Messages; the
+      // Messages path keeps the older version until the sampling guard covers
+      // every route (plans/decisions-2026-11-15.md, K23).
+      const { headers } = await sentBody({ promptCaching: true });
+      expect(headers["anthropic-version"]).toBe("2023-06-01");
+    });
+
     test("cacheBehavior.ttl does not turn caching on", async () => {
       const { body } = await sentBody({}, { cacheBehavior: { ttl: "1h" } });
       expect(marked(body).system).toBe(false);
@@ -767,6 +810,77 @@ describe("Anthropic", () => {
         top_p: 0.9,
       });
       expect(anthropicSamplingParams(0.5, 0.9, true)).toEqual({});
+    });
+  });
+
+  describe("Thinking display", () => {
+    function anthropicFor(model: string) {
+      return new Anthropic({
+        apiKey: "test-api-key",
+        model,
+        apiBase: "https://api.anthropic.com/v1/",
+      });
+    }
+
+    test("asks Claude 4.7 and later for summarized thinking", () => {
+      const args = anthropicFor("claude-opus-4-8").convertArgs({
+        model: "claude-opus-4-8",
+        reasoning: true,
+        reasoningBudgetTokens: 4096,
+      });
+      expect(args.thinking).toEqual({
+        type: "adaptive",
+        display: "summarized",
+      });
+    });
+
+    test("leaves Sonnet 4.6's request as it was: it shows a summary by default", () => {
+      const args = anthropicFor("claude-sonnet-4-6").convertArgs({
+        model: "claude-sonnet-4-6",
+        reasoning: true,
+        reasoningBudgetTokens: 4096,
+      });
+      expect(args.thinking).toEqual({ type: "adaptive" });
+    });
+
+    const history = [
+      { role: "user" as const, content: "hi" },
+      {
+        role: "thinking" as const,
+        content: "A summary of the reasoning",
+        signature: "sig",
+      },
+      { role: "assistant" as const, content: "hello" },
+      { role: "user" as const, content: "again" },
+    ];
+
+    test("does not send a summary back to a model that hides its thinking by default", () => {
+      // Its blocks used to arrive empty and were never sent back; asking for a
+      // summary to show must not change the conversation sent
+      const sent = anthropicFor("claude-opus-5-5").convertMessages(
+        history,
+        false,
+        undefined,
+        "claude-opus-5-5",
+      );
+      expect(sent[1]).toEqual({
+        role: "assistant",
+        content: [{ type: "text", text: "hello" }],
+      });
+    });
+
+    test("still sends signed thinking back to a model that shows it by default", () => {
+      const sent = anthropicFor("claude-sonnet-4-6").convertMessages(
+        history,
+        false,
+        undefined,
+        "claude-sonnet-4-6",
+      );
+      expect(sent[1].content[0]).toEqual({
+        type: "thinking",
+        thinking: "A summary of the reasoning",
+        signature: "sig",
+      });
     });
   });
 

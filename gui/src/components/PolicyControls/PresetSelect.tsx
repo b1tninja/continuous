@@ -1,5 +1,6 @@
 import {
   AdjustmentsHorizontalIcon,
+  ArrowUturnLeftIcon,
   BoltIcon,
   CheckBadgeIcon,
   CheckIcon,
@@ -20,12 +21,14 @@ import {
   type PolicyLevels,
   type PolicyPresetName,
 } from "core/tools/permissions/policy";
+import type { StoredCustomSet } from "core/tools/permissions/settingsFile";
 import { useEffect, useId, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
-import { selectIdgafAreas } from "../../redux/selectors/selectAutoApproval";
 import { applyPolicyPreset } from "../../redux/thunks/policySettings";
+import { customPolicyRoute } from "../../util/navigation";
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "../ui";
-import { CHIP, LEVEL_TONES, idgafSentence } from "./levelStyle";
+import { CHIP, LEVEL_TONES, IDGAF_SENTENCE } from "./levelStyle";
 
 type Glyph = typeof BoltIcon;
 
@@ -99,6 +102,26 @@ export function summarizeLevels(levels: PolicyLevels): string {
   return parts.join(" ");
 }
 
+export const sameLevels = (a: PolicyLevels, b: PolicyLevels) =>
+  POLICY_AREAS.every((area) => a[area] === b[area]);
+
+/**
+ * The chip's name for a set of levels: the preset it matches; "Custom (from
+ * X)" when it is the stored custom set and that set records its preset;
+ * otherwise "Custom". The stored set is only a label here, never behaviour.
+ */
+export function policyChipLabel(
+  levels: PolicyLevels,
+  stored: StoredCustomSet | undefined,
+): string {
+  const preset = presetOf(levels);
+  if (preset) return POLICY_PRESETS[preset].label;
+  if (stored?.from && sameLevels(stored.levels, levels)) {
+    return `Custom (from ${POLICY_PRESETS[stored.from].label})`;
+  }
+  return "Custom";
+}
+
 /** The preset picker: a shortcut that sets all five areas at once. */
 export function PresetSelect({
   placement = "toolbar",
@@ -107,19 +130,23 @@ export function PresetSelect({
   placement?: "toolbar" | "settings";
 }) {
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const levels = useAppSelector((s) => s.ui.policyLevels);
+  const stored = useAppSelector((s) => s.ui.policyExtras.customSet);
   const preset = presetOf(levels);
+  // The saved custom set, offered when something else is in force
+  const recall =
+    stored && !sameLevels(stored.levels, levels) ? stored : undefined;
   const key = preset ?? "custom";
   const Glyph = PRESET_GLYPHS[key];
   const tone = presetTone(levels, preset);
-  const label = preset ? POLICY_PRESETS[preset].label : "Custom";
+  const label = policyChipLabel(levels, stored);
   const summary = summarizeLevels(levels);
   // At the top level the chip is the warning: one line, the sentence on hover and by
   // aria-describedby (there is no separate banner)
-  const idgafAreas = useAppSelector(selectIdgafAreas);
   const idgafDescriptionId = useId();
   const warn = placement === "toolbar" && preset === "idgaf";
-  const sentence = idgafSentence(idgafAreas);
+  const sentence = IDGAF_SENTENCE;
   // The Listbox button manages its own aria-describedby, so set ours directly
   const button = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -133,7 +160,13 @@ export function PresetSelect({
     <Listbox
       value={key}
       onChange={(name: string) => {
-        if (name in POLICY_PRESETS) {
+        if (name === "custom") {
+          void navigate(customPolicyRoute({ base: preset ?? "current" }));
+        } else if (name === "recall" && recall) {
+          // The same save as a preset: a raised level waits for the
+          // editor's own dialog
+          void dispatch(applyPolicyPreset({ ...recall.levels }));
+        } else if (name in POLICY_PRESETS) {
           void dispatch(
             applyPolicyPreset(POLICY_PRESETS[name as PolicyPresetName].levels),
           );
@@ -223,23 +256,47 @@ export function PresetSelect({
               </ListboxOption>
             );
           })}
-          <div
-            data-testid="policy-preset-custom-note"
-            className="flex items-start gap-1 px-2 py-1 text-2xs text-description"
+          {recall && (
+            <ListboxOption
+              value="recall"
+              data-testid="policy-preset-recall"
+              className="items-start gap-1"
+            >
+              <ArrowUturnLeftIcon
+                className="mt-0.5 h-3 w-3 shrink-0"
+                aria-hidden="true"
+              />
+              <div className="flex flex-col">
+                <span>{policyChipLabel(recall.levels, recall)}</span>
+                <span className="text-2xs whitespace-normal text-description">
+                  Your saved custom set. {summarizeLevels(recall.levels)}
+                </span>
+              </div>
+            </ListboxOption>
+          )}
+          <ListboxOption
+            value="custom"
+            data-testid="policy-preset-custom"
+            className="items-start gap-1"
           >
             <AdjustmentsHorizontalIcon
               className="mt-0.5 h-3 w-3 shrink-0"
               aria-hidden="true"
             />
-            <span className="whitespace-normal">
-              Custom: set the five areas one by one.
-              {preset ? "" : " This is your current set."}
-            </span>
+            <div className="flex flex-col">
+              <span>Custom…</span>
+              <span className="text-2xs whitespace-normal text-description">
+                Open the policy editor: levels, rules and settings, starting
+                from{" "}
+                {preset ? POLICY_PRESETS[preset].label : "your current set"}.
+                {preset ? "" : " This is your current set."}
+              </span>
+            </div>
             <CheckIcon
               className={`ml-auto h-3 w-3 shrink-0 ${preset ? "opacity-0" : ""}`}
               aria-hidden="true"
             />
-          </div>
+          </ListboxOption>
         </ListboxOptions>
       </div>
     </Listbox>

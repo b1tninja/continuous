@@ -171,6 +171,24 @@ function autoAnswerAll(decisions: PlanDecision[]): {
  */
 export { reloadPlanFile };
 
+/**
+ * Questions is IDGAF (ID 3): nobody is there to answer "Build this plan?", so
+ * the turn ends with the plan saved instead of blocking, as the IDE's plan
+ * card does. Nothing is built and nothing is asked.
+ */
+export function idgafPlanSavedResult(args: {
+  relativePath: string;
+  todos: number;
+  open: number;
+  autoLines: string;
+  weak?: string;
+}): string {
+  const open = args.open
+    ? ` Its ${args.open === 1 ? "decision waits" : `${args.open} decisions wait`} for the person in the file.`
+    : "";
+  return `Plan saved to ${args.relativePath} with ${args.todos} to-dos.${open}${args.autoLines}${args.weak ? ` ${args.weak}` : ""} Questions is IDGAF, so nobody was asked whether to build it and you are still in Plan mode: do not implement anything. End your turn now; the person builds it when they come back (Shift+Tab out of Plan mode, or \`continuous plan build ${args.relativePath}\`).`;
+}
+
 /** The plan question: Build, Build in a loop, Keep planning, or a change. */
 function askBuild(relativePath: string, checks: string): Promise<string> {
   const shown = checks ? `\n\n${checks}\n\n` : " ";
@@ -274,6 +292,18 @@ export const presentPlanTool: Tool = {
         ? ` Its ${openDecisions.length === 1 ? "decision waits" : `${openDecisions.length} decisions wait`} for the person in the file; do not settle ${openDecisions.length === 1 ? "it" : "them"}.`
         : "";
       return `Plan saved to ${relativePath} with ${plan.items.length} to-dos.${open}${autoLines}${weak ? ` ${weak}` : ""} This is a headless run, so nobody can approve it now: do not implement anything. Stop, and end your reply with the line "Plan: ${relativePath}".`;
+    }
+
+    // Questions is IDGAF: the plan is the result and the turn ends (ID 3)
+    if (!isLoopEntry() && questionsNeverAskHere()) {
+      requestLoopTurnEnd();
+      return idgafPlanSavedResult({
+        relativePath,
+        todos: plan.items.length,
+        open: openDecisions.length,
+        autoLines,
+        weak,
+      });
     }
 
     // The decisions first, each with its options and the model's pick as the

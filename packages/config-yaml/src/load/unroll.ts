@@ -422,6 +422,8 @@ export async function unrollBlocks(
     modeModels: assistant.modeModels,
     toolPermissions: assistant.toolPermissions,
     terminal: assistant.terminal,
+    modelCatalog: assistant.modelCatalog,
+    modelCatalogRefreshHours: assistant.modelCatalogRefreshHours,
   };
 
   if (injectRequestOptions) {
@@ -446,6 +448,9 @@ export async function unrollBlocks(
     | "rulesByMode"
     | "toolPermissions"
     | "terminal"
+    | "web"
+    | "modelCatalog"
+    | "modelCatalogRefreshHours"
   >)[] = ["models", "context", "data", "mcpServers", "prompts", "docs"];
 
   // Process all sections in parallel

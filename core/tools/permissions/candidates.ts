@@ -1,7 +1,8 @@
-import type { ShellKind } from "../../util/shell";
+import { isPosixShell, type ShellKind } from "../../util/shell";
 import { parseCommand } from "./command";
 import { detectCommandShell, familyOf } from "./detectShell";
 import { canonicalCmdlet, isPowerShellAlias } from "./powershell";
+import { decodeEncodedCommand } from "./shellContext";
 import {
   commandName,
   dequote,
@@ -37,6 +38,18 @@ const GIT_OPTS_WITH_ARG = new Set([
 const XARGS_OPTS_WITH_ARG = new Set(["-n", "-I", "-P", "-d", "-L", "-s", "-E"]);
 const MAX_DEPTH = 4;
 const MAX_CANDIDATES = 800;
+
+/**
+ * PowerShell's `-EncodedCommand` under any spelling the host takes: `-e`,
+ * `-ec`, `-en`, `-enc` up to the whole word, with `-`, `/` or a look-alike
+ * dash, in any case. `-ex` and `-ep` are `-ExecutionPolicy`.
+ */
+function isEncodedCommandFlag(word: string): boolean {
+  const m = /^[-/–—―]([A-Za-z]+)$/.exec(word);
+  if (!m) return false;
+  const n = m[1].toLowerCase();
+  return n === "ec" || "encodedcommand".startsWith(n);
+}
 
 /** An alias's cmdlet in its usual capitalisation: `Remove-Item`, not `remove-item`. */
 function canonicalCmdletName(alias: string): string {
@@ -100,6 +113,14 @@ function nested(
   } else if (PS_SHELLS.has(name)) {
     const k = tail.findIndex((w) => /^-(c|command)$/i.test(w));
     if (k >= 0) run(tail.slice(k + 1).join(" "), "powershell");
+    // -EncodedCommand hides the script from every rule: read it decoded. One
+    // that cannot be decoded is code the text does not show, so fail closed.
+    const e = tail.findIndex(isEncodedCommandFlag);
+    if (e >= 0) {
+      const decoded = decodeEncodedCommand(tail[e + 1] ?? "");
+      if (decoded === undefined) cap.truncated = true;
+      else run(decoded, "powershell");
+    }
   } else if (name === "cmd") {
     const k = tail.findIndex((w) => /^\/[ck]$/i.test(w));
     if (k >= 0) run(tail.slice(k + 1).join(" "), "cmd");
@@ -380,6 +401,24 @@ export function grammarsToRead(
   return [shell, ...extra];
 }
 
+/**
+ * PowerShell reads curly quotes as quotes, an en dash, em dash or horizontal
+ * bar as a parameter's dash and any Unicode space as a space, so `git`
+ * followed by `push` in curly quotes is `git push` there. The same text with
+ * the ASCII characters, for a deny rule, an ask rule or a protected path to
+ * meet. A POSIX shell keeps them as ordinary characters.
+ */
+function asciiLookalikes(command: string): string {
+  return command
+    .replace(/[\u2018-\u201b]/g, "'")
+    .replace(/[\u201c-\u201f]/g, '"')
+    .replace(/[\u2013-\u2015]/g, "-")
+    .replace(
+      /[\u00a0\u0085\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]/g,
+      " ",
+    );
+}
+
 /** Every string a deny or ask rule should be tried against, and whether the cap stopped the expansion. */
 export function commandCandidateSet(
   command: string,
@@ -389,6 +428,13 @@ export function commandCandidateSet(
   const cap: CandidateCap = { truncated: false };
   for (const g of grammarsToRead(command, shell)) {
     addCommand(command, 0, out, cap, g);
+  }
+  // PowerShell's own spelling of the same command, when it is not POSIX's
+  const ascii = isPosixShell(shell) ? command : asciiLookalikes(command);
+  if (ascii !== command) {
+    for (const g of grammarsToRead(ascii, shell)) {
+      addCommand(ascii, 0, out, cap, g);
+    }
   }
   return { list: [...out], truncated: cap.truncated };
 }

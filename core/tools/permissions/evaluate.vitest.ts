@@ -150,7 +150,7 @@ describe("file tools", () => {
 });
 
 describe("candidate cap", () => {
-  it("a floor rule still refuses a padded command at IDGAF", () => {
+  it("a floor rule still finds a padded command at IDGAF, which runs it and records the floor", () => {
     const pad = Array.from({ length: 900 }, (_, i) => `f${i}`).join(" ");
     const r = evaluateToolPolicyWithRules({
       tool: terminalTool as any,
@@ -163,8 +163,8 @@ describe("candidate cap", () => {
         floor: ["runTerminalCommand(git push*)"],
       },
     });
-    expect(r.policy).toBe(OFF);
-    expect(r.source).toBe("floor");
+    expect(r.policy).toBe(ALLOW);
+    expect(r.idgafOverride).toMatchObject({ policy: OFF, source: "floor" });
   });
 });
 

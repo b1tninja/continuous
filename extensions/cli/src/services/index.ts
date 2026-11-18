@@ -3,6 +3,8 @@ import { setProjectConfigTrustedForRun } from "core/config/projectTrust.js";
 import { HookService } from "../hooks/HookService.js";
 import { setTrustProjectHooksForRun } from "../hooks/hookTrust.js";
 import { initializeWithOnboarding } from "../onboarding.js";
+import { auditTrust } from "../permissions/policyAudit.js";
+import { setCliUnattended } from "../tools/roleGate.js";
 import { setBetaSubagentToolEnabled } from "../tools/toolsConfig.js";
 import { logger } from "../util/logger.js";
 
@@ -14,9 +16,10 @@ import { ConfigService } from "./ConfigService.js";
 import { FileIndexService } from "./FileIndexService.js";
 import { GitAiIntegrationService } from "./GitAiIntegrationService.js";
 import { MCPService } from "./MCPService.js";
-import { ModelService } from "./ModelService.js";
+import { ModelService, type ModelSwitchWhy } from "./ModelService.js";
 import { quizService } from "./QuizService.js";
 import { ResourceMonitoringService } from "./ResourceMonitoringService.js";
+import { SafeModeHookService } from "./SafeModeHookService.js";
 import { serviceContainer } from "./ServiceContainer.js";
 import { SystemMessageService } from "./SystemMessageService.js";
 import {
@@ -47,7 +50,8 @@ const agentFileService = new AgentFileService();
 const toolPermissionService = new ToolPermissionService();
 const systemMessageService = new SystemMessageService();
 const gitAiIntegrationService = new GitAiIntegrationService();
-const hookService = new HookService();
+// Reads no settings file under --safe (see safeMode.ts)
+const hookService: HookService = new SafeModeHookService();
 
 /** SessionStart hooks, once the hook service is ready. Never throws. */
 async function fireSessionStartOnce(options: object): Promise<void> {
@@ -82,9 +86,21 @@ export async function initializeServices(initOptions: ServiceInitOptions = {}) {
   // The flag is the only way to trust project hooks without recording it.
   // It is read before the hook service loads its settings.
   setTrustProjectHooksForRun(!!commandOptions.trustProjectHooks);
+  if (commandOptions.trustProjectHooks) {
+    auditTrust("hook-trust", "grant", process.cwd(), {
+      source: "flag",
+      confirmed: "flag",
+    });
+  }
   // Same for providers, models and other files the project ships. It does not
   // grant hook trust, and hook trust does not grant this.
   setProjectConfigTrustedForRun(!!commandOptions.trustProjectConfig);
+  if (commandOptions.trustProjectConfig) {
+    auditTrust("project-trust", "grant", process.cwd(), {
+      source: "flag",
+      confirmed: "flag",
+    });
+  }
   // Handle onboarding for TUI mode (headless: false) unless explicitly skipped
   if (!initOptions.headless && !initOptions.skipOnboarding) {
     await initializeWithOnboarding(null, commandOptions.config);
@@ -145,6 +161,7 @@ export async function initializeServices(initOptions: ServiceInitOptions = {}) {
           ask: overrides.ask,
           exclude: overrides.exclude,
           isHeadless: initOptions.headless,
+          interactiveDefaults: overrides.interactiveDefaults,
         };
         // Only set the boolean flag that corresponds to the mode
         if (overrides.mode) {
@@ -249,6 +266,9 @@ export async function initializeServices(initOptions: ServiceInitOptions = {}) {
       if (!configState.config) {
         throw new Error("Config not available for MCP service");
       }
+      // A headless run (and a Loop worker) is unattended (TR1, TR25)
+      mcpService.isUnattended = () => !!initOptions.headless;
+      setCliUnattended(!!initOptions.headless);
       return mcpService.initialize(
         configState.config,
         !!initOptions.options?.agent,
@@ -392,12 +412,19 @@ function currentModelName(): string | undefined {
   return model?.name;
 }
 
-/** Switch to a chat model by its name, when it exists and is not current. */
-export async function applyModelNamed(name: string): Promise<void> {
+/**
+ * Switch to a chat model by its name, when it exists and is not current.
+ * `why` is what the record of the model in use says (M7): by default, coming
+ * back from a Loop item's own model.
+ */
+export async function applyModelNamed(
+  name: string,
+  why: ModelSwitchWhy = { reason: "restore" },
+): Promise<void> {
   try {
     const index = modelService.getModelIndexByName(name);
     if (index === -1 || index === modelService.getCurrentModelIndex()) return;
-    await modelService.switchModel(index);
+    await modelService.switchModel(index, undefined, why);
     serviceContainer.set(SERVICE_NAMES.MODEL, modelService.getState());
   } catch (error) {
     logger.error("Could not switch back to the model", { name, error });

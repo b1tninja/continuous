@@ -128,6 +128,8 @@ describe("AlwaysAllowButton", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       "cannot be saved",
     );
+    // the reason is read in full, not cut to one line behind a tooltip
+    expect(screen.getByRole("alert").className).not.toContain("truncate");
     expect(saved).toHaveLength(0);
     expect(status()).toBe(NOT_RUN);
   });

@@ -3,30 +3,12 @@ import {
   isInsideWorkspace,
   openUrlFromWebviewOk,
   policySavePayloadOk,
-  raisedPolicyAreas,
   runCommandFromWebviewOk,
   subprocessFromWebviewOk,
   writeFileFromWebviewOk,
 } from "./webviewMessageGuard";
 
 const WORKSPACE = ["file:///home/u/proj"];
-
-describe("raisedPolicyAreas", () => {
-  it("lists an area whose level goes up and ignores one that stays or drops", () => {
-    expect(
-      raisedPolicyAreas(
-        { tools: "cautious", edits: "permissive", context: "permissive" },
-        { tools: "permissive", edits: "manual", context: "permissive" },
-      ),
-    ).toEqual(["tools"]);
-  });
-
-  it("treats idgaf as higher than permissive", () => {
-    expect(
-      raisedPolicyAreas({ tools: "permissive" }, { tools: "idgaf" }),
-    ).toEqual(["tools"]);
-  });
-});
 
 describe("policySavePayloadOk", () => {
   it("accepts a known level and rejects an unknown one", () => {
@@ -39,6 +21,17 @@ describe("policySavePayloadOk", () => {
     expect(policySavePayloadOk({ questions: { youDecide: ["scope"] } })).toBe(
       true,
     );
+  });
+
+  // Raising a level is confirmed by core now (policySave.vitest.ts); the
+  // stored custom set travels beside the levels, never inside them
+  it("accepts a save that stores a custom set beside the levels", () => {
+    expect(
+      policySavePayloadOk({
+        levels: { tools: "permissive" },
+        custom: { from: "careful", levels: { tools: "permissive" } },
+      }),
+    ).toBe(true);
   });
 });
 

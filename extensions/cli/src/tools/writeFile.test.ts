@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 
+import { writeFileAtomicSync } from "core/util/atomicWrite.js";
 import { ContinueError } from "core/util/errors.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -23,6 +24,9 @@ vi.mock("../services/index.js", () => ({
   },
 }));
 vi.mock("../telemetry/telemetryService.js");
+vi.mock("core/util/atomicWrite.js", () => ({
+  writeFileAtomicSync: vi.fn(),
+}));
 vi.mock("fs", async () => {
   const actual = await vi.importActual("fs");
   return {
@@ -89,7 +93,7 @@ describe("writeFileTool and the working directory", () => {
     expect(error.message).toContain("Write was not run");
     expect(error.message).toContain(outsidePath);
     expect(error.message).toContain(process.cwd());
-    expect(fs.writeFileSync).not.toHaveBeenCalled();
+    expect(writeFileAtomicSync).not.toHaveBeenCalled();
   });
 
   it("allows a headless write under the Continue home folder", async () => {
@@ -165,7 +169,7 @@ describe("writeFileTool outside the working directory at each File edits level",
       filepath: outsidePath,
       content: "x",
     });
-    expect(fs.writeFileSync).toHaveBeenCalledWith(outsidePath, "x", "utf-8");
+    expect(writeFileAtomicSync).toHaveBeenCalledWith(outsidePath, "x");
     expect(message).toContain(`Wrote outside the workspace: ${outsidePath}`);
   });
 
@@ -186,7 +190,7 @@ describe("writeFileTool outside the working directory at each File edits level",
       }).catch((e) => e);
       expect(error).toBeInstanceOf(ContinueError);
       expect(error.message).toContain("Write was not run");
-      expect(fs.writeFileSync).not.toHaveBeenCalled();
+      expect(writeFileAtomicSync).not.toHaveBeenCalled();
     },
   );
 

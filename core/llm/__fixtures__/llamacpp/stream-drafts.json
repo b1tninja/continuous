@@ -1,0 +1,49 @@
+{
+  "_comment": "Synthesized from the llama.cpp server README (timings) and tools/server/server-common.cpp at fc504f91d8 (draft_n and draft_n_accepted only when draft tokens were produced). prompt_n is the part read; cache_n the part the slot already held. The usage has no cached_tokens, as on older builds. No server was called.",
+  "chunks": [
+    {
+      "id": "chatcmpl-2",
+      "object": "chat.completion.chunk",
+      "model": "qwen",
+      "choices": [
+        {
+          "index": 0,
+          "delta": { "reasoning_content": "Let me look." },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "id": "chatcmpl-2",
+      "object": "chat.completion.chunk",
+      "model": "qwen",
+      "choices": [
+        { "index": 0, "delta": { "content": "Done." }, "finish_reason": null }
+      ]
+    },
+    {
+      "id": "chatcmpl-2",
+      "object": "chat.completion.chunk",
+      "model": "qwen",
+      "choices": [{ "index": 0, "delta": {}, "finish_reason": "stop" }],
+      "usage": {
+        "prompt_tokens": 12000,
+        "completion_tokens": 400,
+        "total_tokens": 12400
+      },
+      "timings": {
+        "cache_n": 10000,
+        "prompt_n": 2000,
+        "prompt_ms": 800,
+        "prompt_per_token_ms": 0.4,
+        "prompt_per_second": 2500,
+        "predicted_n": 400,
+        "predicted_ms": 5000,
+        "predicted_per_token_ms": 12.5,
+        "predicted_per_second": 80,
+        "draft_n": 300,
+        "draft_n_accepted": 240
+      }
+    }
+  ]
+}

@@ -19,6 +19,10 @@ export function refuseRoleCalls(
     tools: Tool[];
     planMcpTools?: string[];
     trustedMcpServers?: string[];
+    /** `background.mcpTools`: what a background run may use (TR25) */
+    backgroundMcpTools?: string[];
+    /** Tool use is IDGAF: a tool waiting for approval runs (TR4) */
+    approvalWaived?: boolean;
   },
 ): ToolCallState[] {
   const role = roleForMode(context.mode);
@@ -31,6 +35,8 @@ export function refuseRoleCalls(
         tools: context.planMcpTools,
         trustedServers: context.trustedMcpServers,
       },
+      unattendedMcpTools: context.backgroundMcpTools,
+      approvalWaived: context.approvalWaived,
     });
     if (!message) continue;
     refused.push(call);

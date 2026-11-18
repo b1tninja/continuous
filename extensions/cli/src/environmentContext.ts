@@ -23,6 +23,41 @@ function isGitRepo(): boolean {
   }
 }
 
+/** Most changed files listed in the block, and most characters they may take. */
+export const MAX_GIT_STATUS_LINES = 40;
+export const MAX_GIT_STATUS_CHARS = 4000;
+
+/**
+ * The porcelain lines in a fixed order (by path text), cut at the line and
+ * character caps with an explicit "... and N more changed files" line, so a
+ * large working tree cannot bloat the first user message.
+ */
+export function capGitStatus(
+  status: string,
+  maxLines: number = MAX_GIT_STATUS_LINES,
+  maxChars: number = MAX_GIT_STATUS_CHARS,
+): string {
+  const lines = status
+    .split("\n")
+    .map((l) => l.trimEnd())
+    .filter((l) => l.length > 0)
+    .sort((a, b) => {
+      const [pa, pb] = [a.slice(3), b.slice(3)];
+      if (pa !== pb) return pa < pb ? -1 : 1;
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
+  const kept: string[] = [];
+  let chars = 0;
+  for (const line of lines) {
+    if (kept.length >= maxLines || chars + line.length + 1 > maxChars) break;
+    kept.push(line);
+    chars += line.length + 1;
+  }
+  const more = lines.length - kept.length;
+  if (more > 0) kept.push(`... and ${more} more changed files`);
+  return kept.join("\n");
+}
+
 function getGitStatus(): string {
   try {
     if (!isGitRepo()) {
@@ -32,7 +67,7 @@ function getGitStatus(): string {
       encoding: "utf-8",
       cwd: process.cwd(),
     });
-    return result.trim() || "Working tree clean";
+    return capGitStatus(result) || "Working tree clean";
   } catch {
     return "Git status not available";
   }

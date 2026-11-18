@@ -5,7 +5,7 @@ import chalk from "chalk";
 import { setConfigFilePermissions } from "core/util/paths.js";
 
 import type { AuthConfig } from "./auth/workos.js";
-import { loadConfiguration } from "./configLoader.js";
+import { ConfigLoadError, loadConfiguration } from "./configLoader.js";
 import { env } from "./env.js";
 import {
   getApiKeyValidationError,
@@ -128,10 +128,11 @@ export async function initializeWithOnboarding(
     // throw an early error is configPath is invalid or has errors
     try {
       await loadConfiguration(authConfig, configPath, [], false);
-    } catch (errorMessage) {
-      throw new Error(
-        `Failed to load config from "${configPath}": ${errorMessage}`,
-      );
+    } catch (error) {
+      // ConfigLoadError already names the file; say it once
+      const reason =
+        error instanceof ConfigLoadError ? error.reason : String(error);
+      throw new Error(`Failed to load config from "${configPath}": ${reason}`);
     }
   }
 

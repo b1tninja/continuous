@@ -1,5 +1,11 @@
-import { ChildProcess, spawn } from "child_process";
+import type { ChildProcess } from "child_process";
 
+import { getCommandExecutor } from "core/util/commandExecutor.js";
+import {
+  COMMAND_STDIO,
+  commandEnvironment,
+  spawnAgentCommand,
+} from "core/util/commandSpawn.js";
 import { terminalEnvironment } from "core/util/terminalEnvironment.js";
 
 import { shellChildEnv } from "../childEnv.js";
@@ -55,7 +61,12 @@ export class BackgroundJobService {
     return job;
   }
 
-  startJob(jobId: string, shell: string, args: string[]): ChildProcess | null {
+  /**
+   * Starts the job's command through the command executor, the same place a
+   * Bash call runs. Null when the job is not there or its shell could not
+   * start (the job is then failed with the reason).
+   */
+  async startJob(jobId: string): Promise<ChildProcess | null> {
     const job = this.jobs.get(jobId);
     if (!job) {
       logger.error(`Cannot start job ${jobId}: job not found`);
@@ -64,10 +75,20 @@ export class BackgroundJobService {
 
     job.status = "running";
 
-    const child = spawn(shell, args, {
-      stdio: "pipe",
-      env: terminalEnvironment(shellChildEnv()),
-    });
+    let child: ChildProcess;
+    try {
+      child = await spawnAgentCommand(getCommandExecutor(), job.command, {
+        // Output is piped; standard input is not left open (a prompt must fail)
+        stdio: COMMAND_STDIO,
+        env: commandEnvironment(terminalEnvironment(shellChildEnv())),
+      });
+    } catch (error) {
+      this.failJob(
+        jobId,
+        error instanceof Error ? error.message : String(error),
+      );
+      return null;
+    }
     this.processes.set(jobId, child);
 
     child.stdout?.setEncoding("utf8");

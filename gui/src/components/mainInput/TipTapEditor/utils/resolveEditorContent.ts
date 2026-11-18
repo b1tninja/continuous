@@ -57,6 +57,7 @@ export async function resolveEditorContent({
     contextRequests: editorContextRequests,
     selectedCode,
     slashCommandName,
+    attachedCode,
   } = processEditorContent(editorState);
 
   const {
@@ -83,7 +84,7 @@ export async function resolveEditorContent({
     dispatch(setIsGatheringContext(true));
   }
 
-  const selectedContextItems = await gatherContextItems({
+  const gatheredContextItems = await gatherContextItems({
     contextRequests,
     modifiers,
     ideMessenger,
@@ -92,6 +93,8 @@ export async function resolveEditorContent({
     selectedCode,
     getState,
   });
+  // Code selections (the chips from Ctrl/Cmd+L) are attachments too
+  const selectedContextItems = [...gatheredContextItems, ...attachedCode];
 
   if (shouldGatherContext) {
     dispatch(setIsGatheringContext(false));

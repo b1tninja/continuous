@@ -20,6 +20,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   mode: "agent" as "plan" | "agent",
   mcp: [] as any[],
+  history: [] as any[],
 }));
 
 vi.mock("../services/index.js", () => ({
@@ -42,6 +43,7 @@ vi.mock("../services/index.js", () => ({
       getCurrentMode: () => state.mode,
       isHeadless: () => false,
     },
+    chatHistory: { getHistory: () => state.history },
   },
 }));
 vi.mock("./searchCode.js", async (orig) => ({
@@ -51,7 +53,7 @@ vi.mock("./searchCode.js", async (orig) => ({
 
 import {
   applyCliToolSearch,
-  getActivatedToolNames,
+  activatedToolNamesFromHistory,
   resetToolSearchState,
 } from "./searchTools.js";
 
@@ -75,6 +77,26 @@ const measured = (tools: any[]): MeasuredTool[] =>
 beforeEach(() => {
   delete process.env.CONTINUE_TOOL_SEARCH;
   resetToolSearchState();
+  state.history = [];
+});
+
+/** What the history holds after the model called SearchTools and got `out`. */
+const searchTurn = (out: string) => ({
+  message: { role: "assistant", content: "" },
+  contextItems: [],
+  toolCallStates: [
+    {
+      toolCallId: "c1",
+      toolCall: {
+        id: "c1",
+        type: "function",
+        function: { name: "SearchTools", arguments: "{}" },
+      },
+      status: "done",
+      parsedArgs: {},
+      output: [{ content: out, name: "result", description: "" }],
+    },
+  ],
 });
 
 describe("CLI tool overhead", () => {
@@ -153,11 +175,65 @@ describe("CLI tool search", () => {
     const search = first.find((t) => t.name === "SearchTools")!;
     const out = await search.run({ query: "merge pull request" });
     expect(out.split("\n")[0]).toMatch(/^activated: .*merge_pull_request/);
-    expect(getActivatedToolNames()).toContain("merge_pull_request");
+    state.history = [searchTurn(out)];
+    expect(activatedToolNamesFromHistory(state.history)).toContain(
+      "merge_pull_request",
+    );
     const second = (await getAllAvailableTools(false)).map((t) => t.name);
-    expect(second.at(-1)).toBe(getActivatedToolNames().at(-1));
+    expect(second.at(-1)).toBe(
+      activatedToolNamesFromHistory(state.history).at(-1),
+    );
     expect(second).toContain("merge_pull_request");
     expect(second.slice(0, names.length)).toEqual(names);
+  });
+
+  it("the SearchTools description is the same before and after an activation", async () => {
+    state.mode = "agent";
+    state.mcp = mcpOf(2);
+    process.env.CONTINUE_TOOL_SEARCH = "auto";
+    const first = await getAllAvailableTools(false);
+    const search = first.find((t) => t.name === "SearchTools")!;
+    const out = await search.run({ query: "merge pull request" });
+    state.history = [searchTurn(out)];
+    const second = await getAllAvailableTools(false);
+    expect(second.find((t) => t.name === "SearchTools")!.description).toBe(
+      search.description,
+    );
+    expect(second.length).toBeGreaterThan(first.length);
+  });
+
+  it("a resumed session (fresh module state, saved history) lists the same tools as before the resume", async () => {
+    state.mode = "agent";
+    state.mcp = mcpOf(2);
+    process.env.CONTINUE_TOOL_SEARCH = "auto";
+    const first = await getAllAvailableTools(false);
+    const out = await first
+      .find((t) => t.name === "SearchTools")!
+      .run({ query: "merge pull request" });
+    state.history = [searchTurn(out)];
+    const before = (await getAllAvailableTools(false)).map((t) => t.name);
+    resetToolSearchState(); // what a new process starts with
+    const after = (await getAllAvailableTools(false)).map((t) => t.name);
+    expect(after).toEqual(before);
+    expect(after).toContain("merge_pull_request");
+  });
+
+  it("a new session in the same process starts without the first session's tools", async () => {
+    state.mode = "agent";
+    state.mcp = mcpOf(2);
+    process.env.CONTINUE_TOOL_SEARCH = "auto";
+    const first = await getAllAvailableTools(false);
+    const out = await first
+      .find((t) => t.name === "SearchTools")!
+      .run({ query: "merge pull request" });
+    state.history = [searchTurn(out)];
+    expect((await getAllAvailableTools(false)).map((t) => t.name)).toContain(
+      "merge_pull_request",
+    );
+    state.history = []; // a new session's empty history
+    expect(
+      (await getAllAvailableTools(false)).map((t) => t.name),
+    ).not.toContain("merge_pull_request");
   });
 
   it("applyCliToolSearch with the setting off returns the same array", () => {

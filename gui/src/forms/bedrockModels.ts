@@ -1,6 +1,7 @@
 import type {
   BedrockConnectionParams,
   BedrockListModelsResult,
+  BedrockQuotaCheckInfo,
 } from "core/protocol/core";
 import type { IIdeMessenger } from "../context/IdeMessenger";
 import { BedrockEndpointModel, mergeBedrockEndpoints } from "./modelListUtils";
@@ -24,7 +25,13 @@ export async function listBedrockModels(
 }
 
 export type BedrockAllModelsResult =
-  | { ok: true; models: BedrockEndpointModel[]; notes: string[] }
+  | {
+      ok: true;
+      models: BedrockEndpointModel[];
+      notes: string[];
+      /** The optional Service Quotas check of the standard endpoint */
+      quota?: BedrockQuotaCheckInfo;
+    }
   | { ok: false; error: string };
 
 const firstLine = (text: string) => text.split("\n")[0].trim();
@@ -97,5 +104,6 @@ export async function listBedrockModelsAcrossEndpoints(
       mantle?.ok ? mantle.models : [],
     ),
     notes,
+    ...(runtime.ok && runtime.quota ? { quota: runtime.quota } : {}),
   };
 }

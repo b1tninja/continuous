@@ -3,8 +3,6 @@ import {
   type RecoveryStatRow,
 } from "@continuedev/openai-adapters";
 import chalk from "chalk";
-import { maskArgsForDisplay } from "core/tools/permissions/displayMask.js";
-import { scrubDeep } from "core/util/secretScan/index.js";
 import type { Express, Request, Response } from "express";
 
 import { currentRunStop, reportRunStop } from "../budget/runLimits.js";
@@ -15,6 +13,7 @@ import {
 import { safeStderr } from "../init.js";
 import { runLoopCheck } from "../loop/loopChecks.js";
 import { loopWakeDelay, nextLoopTurn } from "../loop/loopDriver.js";
+import { stopLoopForRunLimit } from "../loop/loopRunLimit.js";
 import { prepareLoopTurn } from "../loop/loopSession.js";
 import { getSessionLoop, interruptRunningLoop } from "../loop/loopSession.js";
 import { startWave } from "../loop/loopWave.js";
@@ -34,6 +33,7 @@ import {
 import { gracefulExit } from "../util/exit.js";
 import { formatError } from "../util/formatError.js";
 import { logger } from "../util/logger.js";
+import { maskForSupervisor } from "../util/maskForSupervisor.js";
 import {
   answerPendingQuestion,
   listPendingQuestions,
@@ -128,19 +128,19 @@ export interface RunTallySnapshot {
 export function getServeStateSnapshot(
   state: ServerState,
 ): StateSnapshot & QueueSnapshot & LoopSnapshot & RunTallySnapshot {
-  return {
-    // Masked: a supervisor reads this, and a pending approval carries the
-    // call's arguments (plans/ROADMAP.md X10, "no secrets on a supervisor surface").
-    // The display masker first, then the shared secret scanner over what is left.
-    ...scrubDeep(
-      maskArgsForDisplay(
-        getCompleteStateSnapshot(
-          state.session,
-          state.isProcessing,
-          messageQueue.getQueueLength(),
-          state.pendingPermission,
-        ),
-      ),
+  // Masked as one value: a supervisor reads this, and a pending approval
+  // carries the call's arguments (plans/ROADMAP.md X10, "no secrets on a
+  // supervisor surface"). A queued message, a held question and the loop's
+  // questions, reports and check output are text a person or a tool wrote, so
+  // they go through the same two passes as the conversation: the display
+  // masker first, then the shared secret scanner over what is left. Masking
+  // the whole snapshot keeps a field added later inside it.
+  return maskForSupervisor({
+    ...getCompleteStateSnapshot(
+      state.session,
+      state.isProcessing,
+      messageQueue.getQueueLength(),
+      state.pendingPermission,
     ),
     ...getQueueSnapshot(),
     ...getLoopSnapshot(),
@@ -154,7 +154,7 @@ export function getServeStateSnapshot(
       state: pendingQuestionState(q),
     })),
     openQuestions: openPendingQuestions().length,
-  };
+  });
 }
 
 /**
@@ -419,6 +419,7 @@ async function drainMessages(ctx: ServeMessageContext) {
     const runStop = currentRunStop();
     if (runStop) {
       state.serverRunning = false;
+      stopLoopForRunLimit(`A run limit was reached: ${runStop.detail}`);
       await gracefulExit(reportRunStop(runStop, safeStderr));
       break;
     }

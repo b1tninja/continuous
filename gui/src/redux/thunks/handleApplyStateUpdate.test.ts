@@ -542,6 +542,7 @@ describe("applyForEditTool", () => {
       expect(errorToolCall).toHaveBeenCalledWith({
         toolCallId: "test-tool-call",
       });
+      // The error's own text reaches the model
       expect(updateToolCallOutput).toHaveBeenCalledWith({
         toolCallId: "test-tool-call",
         contextItems: [
@@ -549,7 +550,7 @@ describe("applyForEditTool", () => {
             icon: "problems",
             name: "Apply Error",
             description: "Failed to apply changes",
-            content: `Error editing file: failed to apply changes to file.\n\nPlease try again with correct args or notify the user and request further instructions.`,
+            content: `Error editing file: Request failed`,
             hidden: false,
           },
         ],

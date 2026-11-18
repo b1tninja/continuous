@@ -157,4 +157,38 @@ describe("handleSlashCommands - /info usage", () => {
     const result = await handleSlashCommands("/info", mockAssistant as any);
     expect(result?.output).toContain("$4.000000 (estimate)");
   });
+
+  it("names where the prices came from, their date and the served tier", async () => {
+    vi.mocked(sessionModule.getSessionUsage).mockReturnValue({
+      totalCost: 0.5,
+      promptTokens: 100,
+      completionTokens: 10,
+      byModel: {
+        "mistral/mistral-large-latest": {
+          provider: "mistral",
+          model: "mistral-large-latest",
+          requests: 1,
+          pricedRequests: 1,
+          inputTokens: 100,
+          outputTokens: 10,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          cost: 0.5,
+          priceSource: {
+            kind: "community",
+            label: "community catalogue (models.dev)",
+            asOf: "2026-11-10T08:00:00.000Z",
+          },
+          servedTier: "flex",
+        },
+      },
+    } as any);
+    const result = await handleSlashCommands("/info", mockAssistant as any);
+    expect(result?.output).toContain(
+      "Prices: community catalogue (models.dev), 2026-11-10 — estimate",
+    );
+    expect(result?.output).toContain(
+      "Prices: standard tier; the provider served this request at the flex tier",
+    );
+  });
 });
