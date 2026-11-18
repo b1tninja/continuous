@@ -154,16 +154,19 @@ describe("the pair at each level, taintedSessionRule off", () => {
   it.each([
     ["with Questions at IDGAF", POLICY_PRESETS.idgaf.levels],
     ["without Questions at IDGAF", { ...all("idgaf"), questions: "cautious" }],
-  ] as const)("runs at IDGAF %s, unless safety checks are on", (_name, levels) => {
-    for (const [name, call] of EGRESS) {
-      const r = call({
-        approval: { levels: levels as PolicyLevels },
-        secretRead: NPMRC,
-      });
-      expect(r.policy, name).toBe(ALLOW);
-      expect(r.source, name).toBe("idgaf");
-    }
-  });
+  ] as const)(
+    "runs at IDGAF %s, unless safety checks are on",
+    (_name, levels) => {
+      for (const [name, call] of EGRESS) {
+        const r = call({
+          approval: { levels: levels as PolicyLevels },
+          secretRead: NPMRC,
+        });
+        expect(r.policy, name).toBe(ALLOW);
+        expect(r.source, name).toBe("idgaf");
+      }
+    },
+  );
 
   it("is refused at IDGAF when safety checks are on, and never asked", () => {
     for (const [name, call] of EGRESS) {

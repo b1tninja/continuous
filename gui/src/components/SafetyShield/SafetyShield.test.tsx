@@ -33,7 +33,9 @@ describe("SafetyShield", () => {
     expect(badge.getAttribute("data-on")).toBe("true");
     await user.click(badge);
     await user.click(
-      screen.getByTestId("safety-shield-master").querySelector(".rounded-full")!,
+      screen
+        .getByTestId("safety-shield-master")
+        .querySelector(".rounded-full")!,
     );
     expect(store.getState().ui.policyExtras.safetyChecks).toBe(false);
     expect(badge.getAttribute("data-on")).toBe("false");
@@ -56,7 +58,9 @@ describe("SafetyShield", () => {
     expect(badge.getAttribute("aria-label")).toBe("Safety checks off at IDGAF");
     await user.click(badge);
     await user.click(
-      screen.getByTestId("safety-shield-master").querySelector(".rounded-full")!,
+      screen
+        .getByTestId("safety-shield-master")
+        .querySelector(".rounded-full")!,
     );
     expect(store.getState().ui.policyExtras.safetyChecks).toBe(true);
     expect(badge.getAttribute("data-on")).toBe("true");
