@@ -182,7 +182,7 @@ describe("/policy", () => {
   });
 
   it("sets levels, and says what it did not understand", async () => {
-    await handleSlashCommands("/policy tools=permissive", {} as never);
+    await handleSlashCommands("/policy tools=permissive --yes", {} as never);
     expect(getPolicyLevels().tools).toBe("permissive");
     const bad = await handleSlashCommands("/policy tools=never", {} as never);
     expect(bad?.output).toContain('"never"');

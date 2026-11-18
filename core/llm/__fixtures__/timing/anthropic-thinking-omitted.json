@@ -1,0 +1,37 @@
+{
+  "_comment": "What core/llm/llms/Anthropic.ts yields for a Messages stream with extended thinking and display \"omitted\" (the streaming page: the thinking block 'receives a thinking_delta with an empty thinking string and then a single signature_delta'), then text, then the usage built from message_start and the cumulative message_delta. `at` is milliseconds after the request was sent. Synthesized; no API was called.",
+  "events": [
+    { "at": 1400, "message": { "role": "thinking", "content": "" } },
+    {
+      "at": 6200,
+      "message": { "role": "thinking", "content": "", "signature": "sig" }
+    },
+    {
+      "at": 6300,
+      "message": { "role": "assistant", "content": "The answer " }
+    },
+    {
+      "at": 7300,
+      "message": {
+        "role": "assistant",
+        "content": "is in the second file, where the parser drops the last line."
+      }
+    },
+    {
+      "at": 7400,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "usage": {
+          "promptTokens": 1200,
+          "completionTokens": 310,
+          "promptTokensDetails": {
+            "cachedTokens": 1000,
+            "cacheWriteTokens": 0
+          },
+          "response": { "stopReason": "end_turn", "requestId": "msg_1" }
+        }
+      }
+    }
+  ]
+}

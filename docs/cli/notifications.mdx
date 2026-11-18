@@ -1,0 +1,42 @@
+---
+title: "Attention notifications"
+description: "A terminal bell or an OS notification when the terminal agent needs you or a long turn has finished. Off by default."
+---
+
+The terminal UI can tell you when it is waiting for you. Nothing is on until you turn it on, and nothing is sent anywhere: the bell is a character written to your terminal, and the notification is raised by your own operating system.
+
+Turn it on in your **user** settings file, `settings.json` in the global directory (`~/.continuous` by default). A project's settings file cannot turn it on.
+
+```json
+{
+  "notifications": {
+    "bell": true,
+    "desktop": false,
+    "when": "unfocused",
+    "longTurnSeconds": 30
+  }
+}
+```
+
+| Key               | Meaning                                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------------------- |
+| `bell`            | Ring the terminal bell (the BEL character, 0x07). Your terminal decides whether that is a sound, a flash or a badge. |
+| `desktop`         | Raise an OS notification: a Windows toast (through Windows PowerShell), macOS Notification Center (`osascript`), or `notify-send` on Linux. If the program or a notification service is missing, nothing happens and nothing is reported. |
+| `when`            | `unfocused` (default) or `always`. See below.                                                             |
+| `longTurnSeconds` | A finished turn notifies only when it took at least this many seconds (default 30).                      |
+
+## When it notifies
+
+- A tool call is waiting for your approval. The notice names the tool, never its arguments.
+- The agent asked a question and is waiting for the answer.
+- A turn you started has finished and took at least `longTurnSeconds`. A turn you cancelled does not notify, and a subagent's turn never does.
+
+The same notice is not repeated within 10 seconds. Headless runs (`-p`) and `continuous serve` never notify.
+
+**Focus.** `when: "unfocused"` is meant to stay quiet while you are looking at the terminal. Telling focus apart needs the terminal's focus reporting (`DECSET 1004`, which sends `CSI I` and `CSI O`), and its replies would arrive in the input the terminal UI reads, so it is not used yet. Until it is, `unfocused` behaves like `always`.
+
+The `Notification` hook event still fires for an approval, whatever these settings say, so a hook can send the notice somewhere else instead.
+
+## How others do it
+
+Read on 2026-11-12. Codex has `tui.notifications` with `tui.notification_method` (`auto`, `osc9`, `bel`) and `tui.notification_condition` (`unfocused` or `always`, default `unfocused`), plus a `notify` program ([https://learn.chatgpt.com/docs/config-file/config-reference](https://learn.chatgpt.com/docs/config-file/config-reference)). Claude Code has `preferredNotifChannel` (`terminal_bell`, `iterm2`, `kitty`, `ghostty`, `notifications_disabled`, ...) and `Notification` hooks ([https://code.claude.com/docs/en/settings-reference](https://code.claude.com/docs/en/settings-reference)). Terminal escape sequences that some terminals turn into a desktop notice (OSC 9 in iTerm2, OSC 99 in kitty, OSC 777) are not used here yet: support differs between terminals and is unverified for Windows Terminal.

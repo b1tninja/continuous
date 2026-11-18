@@ -48,6 +48,12 @@ sidebarTitle: "Anthropic"
   **Check out a more advanced configuration here**
 </Info>
 
+## Model information from Anthropic
+
+**Test connection** in the add-model form (and `continuous test-connection --provider anthropic --model <id>`) asks `GET /v1/models/{id}` with your key. It reports the context window, maximum output, image and PDF input, thinking types and any deprecation or retirement date. An id your key cannot reach is named, with close matches from your model list ("Did you mean claude-opus-5-5?"). A refused key, a rate limit, a network failure and an endpoint without a models API are each reported as "not checked"; none of them affects chat requests.
+
+With [Model information updates](/reference#modelcatalog) on `automatic` (the default), the selected Anthropic chat model is looked up the same way in the background: a few seconds after you select it, then once per refresh interval (24 hours by default). Only the API base you configured is contacted, with your key and `requestOptions`. The answer is kept in `model-catalog/provider-anthropic-<hash>.json` in your global folder (the hash covers the API base and key; the key is not stored) and supplies `contextLength` and the default maximum output when your config does not set them, ahead of the bundled model data. Anthropic's built-in default of 8192 output tokens is only ever lowered by this, never raised. A deprecation or retirement date shows as the warning chip beside the model picker. With `manual` only Test connection asks; with `off` nothing is asked and a kept answer is not used.
+
 ## How to Enable Prompt Caching with Claude
 
 Anthropic supports [prompt caching with Claude](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching), which allows Claude models to cache system messages and conversation history between requests to improve performance and reduce costs.

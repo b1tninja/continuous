@@ -10,32 +10,6 @@ import {
 
 import { AuthConfig } from "./auth/workos.js";
 import { logger } from "./util/logger.js";
-import { getUniqueId } from "./util/uniqueId.js";
-import { getVersion } from "./version.js";
-
-/**
- * Creates user-agent header value for CLI requests
- */
-function getUserAgent(): string {
-  const version = getVersion();
-  return `Continuous-CLI/${version}`;
-}
-
-/**
- * Merges user-agent header into request options
- */
-function _mergeUserAgentIntoRequestOptions(
-  requestOptions: ModelConfig["requestOptions"],
-): ModelConfig["requestOptions"] {
-  return {
-    ...requestOptions,
-    headers: {
-      ...requestOptions?.headers,
-      "user-agent": getUserAgent(),
-      "x-continue-unique-id": getUniqueId(),
-    },
-  };
-}
 
 /**
  * The caching settings for a Bedrock model. The CLI only runs agent loops, so
@@ -86,6 +60,20 @@ export function anthropicTtl(
     model.cacheBehavior?.cacheConversation === undefined &&
     model.cacheBehavior?.cacheSystemMessage === undefined;
   return silent ? "auto" : undefined;
+}
+
+/**
+ * The model config a subagent's requests are built from: its cache lifetime is
+ * `cacheBehavior.subagentTtl` (C85), 5 minutes unless that says otherwise,
+ * because a run's requests come seconds apart. "inherit" keeps the model's own
+ * `cacheBehavior.ttl` (or the CLI's Auto default). Only the lifetime changes:
+ * whether the model caches at all is decided as for any other request, and
+ * CONTINUOUS_FORCE_CACHE_5M=1 still wins in the adapters.
+ */
+export function subagentCacheModel(model: ModelConfig): ModelConfig {
+  const policy = model.cacheBehavior?.subagentTtl ?? "5m";
+  if (policy === "inherit") return model;
+  return { ...model, cacheBehavior: { ...model.cacheBehavior, ttl: policy } };
 }
 
 /**

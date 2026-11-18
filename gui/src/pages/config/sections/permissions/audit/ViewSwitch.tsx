@@ -1,5 +1,11 @@
 export type PermissionsView = "rules" | "recent" | "inbox";
 
+export function isPermissionsView(
+  value: string | null | undefined,
+): value is PermissionsView {
+  return value === "rules" || value === "recent" || value === "inbox";
+}
+
 const VIEWS: { id: PermissionsView; label: string; help: string }[] = [
   { id: "rules", label: "Rules", help: "Every rule in effect, and your own" },
   {

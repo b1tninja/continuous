@@ -68,7 +68,7 @@ class Cohere extends BaseLLM {
             };
           }
 
-          if (m.toolCalls) {
+          if (m.toolCalls?.length) {
             msg.tool_calls = m.toolCalls.map((toolCall) => ({
               id: toolCall.id,
               type: "function",

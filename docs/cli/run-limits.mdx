@@ -18,6 +18,8 @@ continuous -p --max-budget-usd 2 --max-turns 40 --max-duration 15 "fix the faili
 
 The flags apply to `-p` runs and to `serve`. In `serve` they cover the whole server process: when a limit is reached the server stops with the limit's exit code. The interactive chat refuses them rather than pretend to enforce them.
 
+When a limit is reached while `serve` holds a loop, the loop is marked stopped before the process exits, with the reason "A run limit was reached: ..." followed by the limit's message, so a later resume says why it ended. A running item or wave of workers is stopped first and its items go back to pending.
+
 ## Semantics
 
 These are this project's own definitions. `--max-turns` and `--max-budget-usd` are also flags of Claude Code's `-p` mode, whose [CLI reference](https://code.claude.com/docs/en/cli-reference) describes `--max-turns` as limiting "the number of agentic turns" and `--max-budget-usd` as stopping the run "once estimated spend on API calls reaches this amount", counting only the current run when a session is resumed, and warns that "spend can pass the cap". Ours follow the same ideas with these differences:
@@ -31,6 +33,24 @@ These are this project's own definitions. `--max-turns` and `--max-budget-usd` a
 ## Unpriced models
 
 A dollar cap cannot be held on a model the cost table has no price for: its spend would read as unknown. `--max-budget-usd` on such a model is refused at startup with an error naming the model, unless `--budget-allow-unpriced` is given. The same rule applies to the shadow reviewer.
+
+### OpenRouter models
+
+OpenRouter publishes per-token prices for its models. Continuous keeps a dated copy in `model-catalog/openrouter.json` in your global folder: with model information updates on `automatic` (the default) it is refreshed in the background when older than 24 hours, and `continuous models refresh` downloads it at any time (a plain GET to openrouter.ai with no key; see [model information](/customize/model-providers/top-level/openrouter#model-information-and-prices) for `modelCatalog: manual | off` and `CONTINUOUS_MODEL_INFO_UPDATES`). With a copy, `--max-budget-usd` is held on those models without `--budget-allow-unpriced`. The prices are estimates from that copy, and the run says so at the end ("prices from openrouter.ai as of 2026-11-12"). A run never waits for the background refresh: it starts with the copy it finds. The prices are estimates from that copy, and the run says so at the end ("prices from openrouter.ai as of 2026-11-12").
+
+- A copy older than 30 days still works, with the warning "prices may be out of date: run `continuous models refresh`".
+- A copy older than 90 days is never used for a dollar cap: the model counts as unpriced and the error says how old the copy is.
+- With no copy, the error says to run `continuous models refresh`.
+- With model information updates `off`, the copy is not used: OpenRouter models count as unpriced unless the bundled data prices them.
+- `continuous models list [--json]` shows the downloaded models with their prices and never touches the network.
+
+### Models only the community catalogue prices
+
+When neither a price you entered, a provider list nor the price tables have a price for a model, Continuous can price it from the community catalogue [models.dev](https://models.dev), downloaded only while such a model is selected and never when model information updates are `off` (see [PRIVACY.md](https://github.com/b1tninja/continuous/blob/main/PRIVACY.md)). Those figures are labelled "community catalogue (models.dev), &lt;date&gt; — estimate".
+
+- `--max-budget-usd` is **not** held on a community price: the run is refused at startup with an error naming the catalogue and its date.
+- With `--budget-allow-unpriced` the cap **is** held on the community estimate, and the run says so at the end ("prices from the community catalogue (models.dev) as of 2026-11-10").
+- The shadow reviewer's budget is never held on a community price.
 
 ## Exit codes and the final message
 

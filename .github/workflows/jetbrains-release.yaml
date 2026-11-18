@@ -163,24 +163,9 @@ jobs:
         with:
           node-version-file: ".nvmrc"
 
-      - name: Cache core node_modules
-        uses: actions/cache@v6
-        with:
-          path: core/node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('core/package-lock.json') }}
-
-      - name: Cache binary node_modules
-        uses: actions/cache@v6
-        with:
-          path: binary/node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('binary/package-lock.json') }}
-
-      - name: Cache gui node_modules
-        uses: actions/cache@v6
-        with:
-          path: gui/node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('gui/package-lock.json') }}
-
+      # No node_modules caches in this release build (docs/ci-caching.md): the ones that were here
+      # were restored and then deleted by the `npm ci` steps below, and a restored node_modules is a
+      # supply-chain path into the shipped plugin.
       - name: Build packages (Unix)
         run: cd ../.. && node ./scripts/build-packages.js
 
@@ -381,18 +366,7 @@ jobs:
         with:
           node-version-file: ".nvmrc"
 
-      - name: Cache core node_modules
-        uses: actions/cache@v6
-        with:
-          path: core/node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('core/package-lock.json') }}
-
-      - name: Cache binary node_modules
-        uses: actions/cache@v6
-        with:
-          path: binary/node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('binary/package-lock.json') }}
-
+      # No node_modules caches in this release build (see the build job above).
       - name: Install Core Dependencies
         run: |
           cd ../../core

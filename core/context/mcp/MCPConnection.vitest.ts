@@ -1,4 +1,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import * as fs from "fs";
+import { createRequire } from "module";
+import * as os from "os";
+import * as path from "path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   InternalSseMcpOptions,
@@ -361,6 +365,42 @@ describe("MCPConnection", () => {
       // Starts a real node process, which can take longer than the 5 s default
       // on a loaded runner.
     }, 30_000);
+
+    it("masks secrets and caps the stderr shown in the connect-failure message", async () => {
+      vi.restoreAllMocks();
+      // Assembled at run time so the file holds no literal that looks like a key.
+      const canary = ["AKIA", "QXZN2M4K", "KPQR5TWV"].join("");
+      const envSecret = "plain-looking-secret-value-77";
+      // The child ends with `process.exitCode`, not `process.exit()`. Its
+      // stderr is a pipe, which Node writes asynchronously on Linux and macOS,
+      // and `process.exit()` drops whatever is still queued: the child itself
+      // would never write the last line.
+      const conn = new MCPConnection({
+        name: "noisy-mcp",
+        id: "noisy-id",
+        type: "stdio",
+        command: "node",
+        args: [
+          "-e",
+          `console.error("key " + process.env.NOISY_API_KEY + " and ${canary}");` +
+            `console.error("x".repeat(200000));` +
+            `console.error("final words"); process.exitCode = 1;`,
+        ],
+        env: { NOISY_API_KEY: envSecret },
+        timeout: 5000,
+      });
+
+      await conn.connectClient(false, new AbortController().signal);
+
+      expect(conn.status).toBe("error");
+      const message = conn.errors[0];
+      expect(message).toContain("STDERR:");
+      expect(message).toContain("final words");
+      expect(message).not.toContain(canary);
+      expect(message).not.toContain(envSecret);
+      expect(message).toContain("characters omitted");
+      expect(message.length).toBeLessThan(10_000);
+    }, 30_000);
   });
 
   // Needs the real filesystem MCP server from npm and times out in CI.
@@ -384,100 +424,89 @@ describe("MCPConnection", () => {
     });
   });
 
-  describe("resolveCommandForPlatform", () => {
-    const baseOptions: InternalStdioMcpOptions = {
-      name: "test-mcp",
-      id: "test-id",
-      type: "stdio",
-      command: "npx",
-      args: ["-y", "@modelcontextprotocol/server-filesystem", "."],
-    };
+  describe("Windows launch of shim commands", () => {
+    const evilArgs = [
+      "-y",
+      "pkg & calc",
+      "a|b",
+      "c^d",
+      "%PATH%",
+      "(x)",
+      "<in >out",
+      'say "hi"',
+    ];
 
-    it("should NOT wrap with cmd.exe when Windows host connects to WSL remote", async () => {
-      const mockIde = {
-        getIdeInfo: vi.fn().mockResolvedValue({ remoteName: "wsl" }),
-      } as any;
-
-      const conn = new MCPConnection(baseOptions, { ide: mockIde });
-
-      // Mock process.platform to be win32
-      const originalPlatform = process.platform;
-      Object.defineProperty(process, "platform", { value: "win32" });
-
+    async function transportFor(command: string, platform: string) {
+      const conn = new MCPConnection({
+        name: "test-mcp",
+        id: "test-id",
+        type: "stdio",
+        command,
+        args: evilArgs,
+      });
+      const original = process.platform;
+      Object.defineProperty(process, "platform", { value: platform });
       try {
-        const result = await (conn as any).resolveCommandForPlatform("npx", [
-          "-y",
-          "test",
-        ]);
-        // Should NOT wrap with cmd.exe when in WSL
-        expect(result.command).toBe("npx");
-        expect(result.args).toEqual(["-y", "test"]);
+        return (await (conn as any).constructStdioTransport(conn.options)) as {
+          _serverParams: { command: string; args: string[] };
+        };
       } finally {
-        Object.defineProperty(process, "platform", { value: originalPlatform });
+        Object.defineProperty(process, "platform", { value: original });
       }
+    }
+
+    it.each(["npx", "npm", "pnpm", "yarn", "bunx", "uvx", "python"])(
+      "passes %s and its arguments to the transport unchanged on Windows",
+      async (command) => {
+        const transport = await transportFor(command, "win32");
+        // No cmd.exe wrapper: cross-spawn in the transport resolves .cmd
+        // shims and escapes the arguments for cmd.exe.
+        expect(transport._serverParams.command).toBe(command);
+        expect(transport._serverParams.args).toEqual(evilArgs);
+      },
+    );
+
+    it("does not wrap on Linux either", async () => {
+      const transport = await transportFor("npx", "linux");
+      expect(transport._serverParams.command).toBe("npx");
+      expect(transport._serverParams.args).toEqual(evilArgs);
     });
 
-    it("should wrap with cmd.exe when Windows host is local (not WSL)", async () => {
-      const mockIde = {
-        getIdeInfo: vi.fn().mockResolvedValue({ remoteName: "" }),
-      } as any;
-
-      const conn = new MCPConnection(baseOptions, { ide: mockIde });
-
-      const originalPlatform = process.platform;
-      Object.defineProperty(process, "platform", { value: "win32" });
-
-      try {
-        const result = await (conn as any).resolveCommandForPlatform("npx", [
-          "-y",
-          "test",
-        ]);
-        // Should wrap with cmd.exe for local Windows
-        expect(result.command).toBe("cmd.exe");
-        expect(result.args).toEqual(["/c", "npx", "-y", "test"]);
-      } finally {
-        Object.defineProperty(process, "platform", { value: originalPlatform });
-      }
-    });
-
-    it("should NOT wrap with cmd.exe on Linux regardless of batch command", async () => {
-      const conn = new MCPConnection(baseOptions);
-
-      const originalPlatform = process.platform;
-      Object.defineProperty(process, "platform", { value: "linux" });
-
-      try {
-        const result = await (conn as any).resolveCommandForPlatform("npx", [
-          "-y",
-          "test",
-        ]);
-        expect(result.command).toBe("npx");
-        expect(result.args).toEqual(["-y", "test"]);
-      } finally {
-        Object.defineProperty(process, "platform", { value: originalPlatform });
-      }
-    });
-
-    it("should NOT wrap non-batch commands even on Windows", async () => {
-      const mockIde = {
-        getIdeInfo: vi.fn().mockResolvedValue({ remoteName: "" }),
-      } as any;
-
-      const conn = new MCPConnection(baseOptions, { ide: mockIde });
-
-      const originalPlatform = process.platform;
-      Object.defineProperty(process, "platform", { value: "win32" });
-
-      try {
-        const result = await (conn as any).resolveCommandForPlatform("python", [
-          "script.py",
-        ]);
-        // python is not in WINDOWS_BATCH_COMMANDS, so no wrapping
-        expect(result.command).toBe("python");
-        expect(result.args).toEqual(["script.py"]);
-      } finally {
-        Object.defineProperty(process, "platform", { value: originalPlatform });
-      }
-    });
+    // Real cmd.exe, so only where it exists: the transport's spawn must hand a
+    // .cmd shim every argument literally, metacharacters included.
+    it.skipIf(process.platform !== "win32")(
+      "runs a .cmd shim with metacharacter arguments literally",
+      async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-shim-"));
+        try {
+          fs.writeFileSync(
+            path.join(dir, "shim.cmd"),
+            [
+              "@echo off",
+              'node -e "console.log(JSON.stringify(process.argv.slice(1)))" -- %*',
+              "",
+            ].join("\r\n"),
+          );
+          const canary = path.join(dir, "pwned.txt").split(path.sep).join("/");
+          const args = [`a&echo x>${canary}`, "b|c", "%COMPUTERNAME%", "d e"];
+          // cross-spawn is the transport SDK's own spawn, not a direct dependency.
+          const crossSpawn = createRequire(path.join(process.cwd(), "noop.js"))(
+            "cross-spawn",
+          );
+          const result = crossSpawn.sync("shim", args, {
+            env: {
+              ...process.env,
+              PATH: dir + path.delimiter + process.env.PATH,
+            },
+            encoding: "utf8",
+          });
+          expect(JSON.parse(result.stdout)).toEqual(args);
+          expect(fs.existsSync(canary)).toBe(false);
+        } finally {
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
+      },
+      30_000,
+    );
   });
 });

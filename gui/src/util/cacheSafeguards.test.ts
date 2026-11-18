@@ -201,7 +201,7 @@ describe("detectCacheMiss", () => {
     })!;
     expect(m.causes).toEqual([
       "the tools changed",
-      "the system prompt changed (a rule or a summary)",
+      "the system prompt changed (the base prompt or a rule)",
     ]);
   });
 
@@ -222,7 +222,7 @@ describe("detectCacheMiss", () => {
     );
     const m = detectCacheMiss({ before: before(), ...base, key: withRule })!;
     expect(m.causes).toEqual([
-      "the system prompt changed (a rule or a summary)",
+      "the system prompt changed (the base prompt or a rule)",
     ]);
   });
 

@@ -40,3 +40,30 @@ export function scrubDeep<T>(
   };
   return walk(value, 0) as T;
 }
+
+/**
+ * `scrubDeep`, with the number of values it replaced (a `/export` reports
+ * it, V13). The same rules and the same placeholders.
+ */
+export function scrubDeepCounted<T>(
+  value: T,
+  profile: SecretProfile = "at-rest",
+  options: ScanOptions = {},
+): { value: T; count: number } {
+  let count = 0;
+  const scrub = (text: string): string => {
+    if (!text) return text;
+    const found = scanText(text, profile, options);
+    count += found.length;
+    return found.length ? redact(text, found) : text;
+  };
+  const walk = (v: unknown, depth: number): unknown => {
+    if (typeof v === "string") return scrub(v);
+    if (depth > 40 || v === null || typeof v !== "object") return v;
+    if (Array.isArray(v)) return v.map((x) => walk(x, depth + 1));
+    const out: Record<string, unknown> = {};
+    for (const [k, x] of Object.entries(v)) out[k] = walk(x, depth + 1);
+    return out;
+  };
+  return { value: walk(value, 0) as T, count };
+}

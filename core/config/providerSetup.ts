@@ -60,7 +60,11 @@ export interface ProviderSetupConnection {
      * (not by `describeProviderConnections`). Never the value itself.
      */
     storedIn?: { secure: boolean; env: boolean };
-  };
+  }; /**
+   * How the AWS profile of a Bedrock connection signs in, from the key names
+   * of its section in ~/.aws/config; filled in by core. Never a value.
+   */
+  awsProfileKind?: import("./awsProfileKind").AwsProfileKind;
 }
 
 export interface ProviderSetupInfo {
@@ -503,4 +507,80 @@ export function readProviderConnections(paths?: {
   } catch {
     return { connections: [], editable: false };
   }
+}
+
+/** Take one provider connection's models out of the selected config. */
+export interface RemoveProviderConnectionRequest {
+  provider: string;
+  connection: ProviderConnectionKey;
+  /** The provider account the connection's models use, when they use one. */
+  account?: string;
+}
+
+export interface RemoveProviderConnectionResult {
+  /** Names (as in config.yaml) of the entries taken out. */
+  removed: string[];
+  error?: string;
+}
+
+/**
+ * The config without the entries of one connection, as the Providers page
+ * lists them: inline entries matched by provider, apiBase, region and
+ * profile, or the entries that use `account` (through `from:` and the
+ * catalog, or with `connection:`). Nothing else changes: the account in
+ * providers.yaml, its catalog models and every stored key stay; modeModels
+ * loses the removed names, as when models are unchecked in the setup flow.
+ */
+export function applyRemoveConnection(
+  config: ConfigYaml,
+  req: RemoveProviderConnectionRequest,
+  catalog: YamlModel[] = [],
+): { config: ConfigYaml; removed: string[] } {
+  const byModel = new Map(catalog.map((m) => [m?.name, m]));
+  const connectionId = requestConnectionKey(req.provider, req.connection);
+  const removed: string[] = [];
+  const belongs = (m: YamlModel): string | undefined => {
+    if (!m || typeof m !== "object") return undefined;
+    if (req.account) {
+      if (typeof m.from === "string") {
+        const base = byModel.get(m.from.split("#")[0]);
+        const account = m.connection ?? base?.connection;
+        return account === req.account ? (m.name ?? m.from) : undefined;
+      }
+      return m.connection === req.account ? m.name : undefined;
+    }
+    return typeof m.provider === "string" && connectionKeyOf(m) === connectionId
+      ? m.name
+      : undefined;
+  };
+  const kept = ((config.models ?? []) as YamlModel[]).filter((m) => {
+    const name = belongs(m);
+    if (name === undefined) return true;
+    removed.push(name);
+    return false;
+  });
+  if (removed.length === 0) return { config, removed };
+  const next = { ...config, models: kept } as ConfigYaml;
+  return { config: removeFromModeModels(next, removed), removed };
+}
+
+/**
+ * Remove one connection's models from the selected config (comments and key
+ * order are kept). Returns undefined when it is not a YAML file this can edit.
+ */
+export function removeProviderConnection(
+  req: RemoveProviderConnectionRequest,
+  paths?: { models: string },
+): RemoveProviderConnectionResult | undefined {
+  const catalog = paths ? readYamlList(paths.models, "models") : [];
+  let result: RemoveProviderConnectionResult | undefined;
+  editConfigFile(
+    (config) => config, // config.json is not edited
+    (config) => {
+      const applied = applyRemoveConnection(config, req, catalog);
+      result = { removed: applied.removed };
+      return applied.config;
+    },
+  );
+  return result;
 }

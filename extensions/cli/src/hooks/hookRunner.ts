@@ -6,13 +6,13 @@ import { terminalEnvironment } from "core/util/terminalEnvironment.js";
 import { logger } from "../util/logger.js";
 import { cliFetch } from "../util/networkFetch.js";
 
-import { getMatchingHookGroups } from "./hookConfig.js";
 import {
   capAdditionalContext,
   failureLetsActionThrough,
   inputIsMasked,
   maskHookInput,
 } from "./hookInput.js";
+import { getMatchingGroupsForInput } from "./hookMatch.js";
 import {
   BLOCKING_EVENTS,
   MATCHER_FIELD_MAP,
@@ -358,7 +358,7 @@ function getHandlerDedupeKey(handler: HookHandler): string {
   }
 }
 
-function getMatcherValue(input: HookInput): string | undefined {
+export function getMatcherValue(input: HookInput): string | undefined {
   const eventName = input.hook_event_name as HookEventName;
 
   if (NO_MATCHER_EVENTS.includes(eventName)) {
@@ -379,7 +379,12 @@ export async function runHooks(
   const eventName = input.hook_event_name;
   const matcherValue = getMatcherValue(input);
 
-  const matchingGroups = getMatchingHookGroups(config, eventName, matcherValue);
+  const matchingGroups = getMatchingGroupsForInput(
+    config,
+    eventName,
+    matcherValue,
+    input,
+  );
 
   if (matchingGroups.length === 0) {
     return { blocked: false, results: [] };

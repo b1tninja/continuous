@@ -2,14 +2,15 @@ name: Merge Gate
 
 # The ONE status check to require on `main` (job name: `merge-gate`). See docs/ci-merge-gate.md.
 #
-# Why this exists: the real gates (`require-all-checks-to-pass` in PR Checks and
-# `require-all-checks-to-pass-cli` in CLI PR Checks) live in other workflows and are skipped
-# entirely by `paths-ignore` for docs-only PRs, so neither can be a *required* check (a required
-# check that never reports blocks the PR forever). This workflow has no path filter, so it always
-# reports, and it only goes green when those aggregate jobs concluded `success` for the same head
-# SHA. A plain `needs:` cannot be used: `needs` only links jobs inside one workflow file.
+# One workflow, no polling. A `changes` job decides which areas the change touches, the PR and CLI
+# checks run as called workflows (pr-checks.yaml, cli-pr-checks.yml), and `merge-gate` is a plain
+# aggregate over `needs` that reports in seconds. It holds no runner while others work: it starts
+# only after every job it needs has finished. This workflow has no path filter, so it always
+# reports, and a docs-only change gets a green gate with no code jobs behind it.
 #
-# No third-party action is used: only the preinstalled `gh` CLI and the built-in GITHUB_TOKEN.
+# Why there are no `paths-ignore` filters any more: a required check whose workflow is skipped by a
+# path filter never reports and blocks the PR forever. The filter lives in `changes`
+# (scripts/ci/changed-areas.mjs) instead, where a skipped job still lets the gate report.
 on:
   pull_request:
     branches: [main]
@@ -19,101 +20,179 @@ on:
 
 permissions:
   contents: read
-  checks: read
-  pull-requests: read
 
 concurrency:
   group: merge-gate-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  merge-gate:
+  changes:
     runs-on: ubuntu-latest
-    # Hard ceiling. The polling loop below gives up earlier (GATE_TIMEOUT_MIN) with a clear message.
-    timeout-minutes: 240
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      REPO: ${{ github.repository }}
-      EVENT: ${{ github.event_name }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-      PR_DRAFT: ${{ github.event.pull_request.draft }}
-      # Minutes to wait for the aggregate jobs to appear and finish. The runner queue can hold
-      # jobs for hours, so this is generous; a gate that times out fails and can be re-run.
-      GATE_TIMEOUT_MIN: "200"
-      POLL_SECONDS: "30"
-      REQUIRED_CHECKS: "require-all-checks-to-pass require-all-checks-to-pass-cli"
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      draft: ${{ steps.areas.outputs.draft }}
+      code: ${{ steps.areas.outputs.code }}
+      prettier: ${{ steps.areas.outputs.prettier }}
+      core: ${{ steps.areas.outputs.core }}
+      gui: ${{ steps.areas.outputs.gui }}
+      binary: ${{ steps.areas.outputs.binary }}
+      vscode: ${{ steps.areas.outputs.vscode }}
+      packages: ${{ steps.areas.outputs.packages }}
+      e2e: ${{ steps.areas.outputs.e2e }}
+      jetbrains: ${{ steps.areas.outputs.jetbrains }}
+      cli: ${{ steps.areas.outputs.cli }}
+      changed_files: ${{ steps.areas.outputs.changed_files }}
     steps:
-      - name: Wait for the aggregate gates on this head SHA
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Decide which areas this change touches
+        id: areas
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
         run: |
           set -euo pipefail
+          draft=false
+          case "$EVENT" in
+            pull_request)
+              # Live state from the API, not the event payload: a re-run of a run that started while
+              # the PR was a draft carries `draft: true` forever, which is how the old gate stayed
+              # red after "ready for review".
+              draft=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.draft')
+              # --no-renames lists a renamed file under both its old and its new name.
+              git diff --no-renames --name-only "$PR_BASE_SHA...$PR_HEAD_SHA" > "$RUNNER_TEMP/files.txt"
+              ;;
+            merge_group)
+              git diff --no-renames --name-only "$MG_BASE_SHA" "$MG_HEAD_SHA" > "$RUNNER_TEMP/files.txt"
+              ;;
+            *)
+              : > "$RUNNER_TEMP/files.txt"
+              ;;
+          esac
 
-          if [ "$EVENT" = "merge_group" ]; then
-            # The PR checks have no merge_group trigger, so nothing here could be waited on. The PR
-            # was already gated and (with "require up to date") tested against this base.
-            echo "::notice::merge_group: PR checks do not run for merge queue refs; passing."
-            exit 0
-          fi
-
-          if [ "$EVENT" = "pull_request" ]; then
-            SHA="$PR_HEAD_SHA"
-            if [ "$PR_DRAFT" = "true" ]; then
-              echo "::error::Draft PR: the aggregate gates are skipped for drafts. Mark it ready for review."
-              exit 1
-            fi
-
-            # Docs-only? Mirror the paths-ignore list of pr-checks.yaml / cli-pr-checks.yml.
-            # Both the new and the previous name of a renamed file count, as for path filters.
-            code_files=0
-            while IFS= read -r f; do
-              [ -z "$f" ] && continue
-              case "$f" in
-                docs/*|docs-site/*|plans/*|*.md|*.mdx|LICENSE) ;;
-                *) code_files=$((code_files + 1)); echo "code change: $f" ;;
-              esac
-            done < <(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files?per_page=100" \
-                       --jq '.[] | .filename, (.previous_filename // empty)')
-            if [ "$code_files" -eq 0 ]; then
-              echo "Docs-only change: the code checks are skipped by paths-ignore; nothing to wait for."
-              exit 0
-            fi
+          if [ "$EVENT" = "pull_request" ] || [ "$EVENT" = "merge_group" ]; then
+            node scripts/ci/changed-areas.mjs < "$RUNNER_TEMP/files.txt" > "$RUNNER_TEMP/areas.txt"
           else
-            SHA="$GITHUB_SHA"
+            node scripts/ci/changed-areas.mjs --all > "$RUNNER_TEMP/areas.txt"
+          fi
+          { echo "draft=$draft"; cat "$RUNNER_TEMP/areas.txt"; } | tee -a "$GITHUB_OUTPUT"
+
+          # The list for affected-only tests (scripts/ci/affected-tests.mjs), as a JSON array; empty
+          # when it is too long to be worth narrowing, which makes every suite run in full.
+          if [ "$(grep -c . "$RUNNER_TEMP/files.txt" || true)" -le 150 ]; then
+            echo "changed_files=$(jq -R -s -c 'split("\n") | map(select(length > 0))' "$RUNNER_TEMP/files.txt")" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed_files=" >> "$GITHUB_OUTPUT"
           fi
 
-          echo "Waiting for [$REQUIRED_CHECKS] on $SHA (limit ${GATE_TIMEOUT_MIN} min)"
-          deadline=$(( $(date +%s) + GATE_TIMEOUT_MIN * 60 ))
+          {
+            echo "### Changed files ($(wc -l < "$RUNNER_TEMP/files.txt"))"
+            echo '```'
+            head -n 200 "$RUNNER_TEMP/files.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
-          while true; do
-            # The API returns the latest attempt per check name by default.
-            runs=$(gh api --paginate "repos/$REPO/commits/$SHA/check-runs?per_page=100" \
-                     --jq '.check_runs[] | [.name, .status, (.conclusion // "")] | @tsv')
-            pending=0
-            for name in $REQUIRED_CHECKS; do
-              line=$(printf '%s\n' "$runs" | awk -F'\t' -v n="$name" '$1 == n { l = $0 } END { print l }')
-              if [ -z "$line" ]; then
-                echo "  $name: not started yet"
-                pending=1
-                continue
-              fi
-              status=$(printf '%s' "$line" | cut -f2)
-              conclusion=$(printf '%s' "$line" | cut -f3)
-              echo "  $name: $status $conclusion"
-              if [ "$status" != "completed" ]; then
-                pending=1
-              elif [ "$conclusion" != "success" ]; then
-                echo "::error::$name concluded '$conclusion' for $SHA"
-                exit 1
-              fi
-            done
-            if [ "$pending" -eq 0 ]; then
-              echo "All required aggregate gates succeeded for $SHA."
-              exit 0
-            fi
-            if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "::error::Timed out after ${GATE_TIMEOUT_MIN} min waiting for the aggregate gates. Re-run this job once they finish."
-              exit 1
-            fi
-            sleep "$POLL_SECONDS"
-          done
+  pr-checks:
+    needs: changes
+    if: needs.changes.outputs.draft != 'true' && needs.changes.outputs.code == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/pr-checks.yaml
+    secrets: inherit
+    with:
+      run_prettier: ${{ needs.changes.outputs.prettier }}
+      run_core: ${{ needs.changes.outputs.core }}
+      run_gui: ${{ needs.changes.outputs.gui }}
+      run_binary: ${{ needs.changes.outputs.binary }}
+      run_vscode: ${{ needs.changes.outputs.vscode }}
+      run_packages: ${{ needs.changes.outputs.packages }}
+      run_e2e: ${{ needs.changes.outputs.e2e }}
+      run_jetbrains: ${{ needs.changes.outputs.jetbrains }}
+      changed_files: ${{ needs.changes.outputs.changed_files }}
+
+  cli-pr-checks:
+    needs: changes
+    if: needs.changes.outputs.draft != 'true' && needs.changes.outputs.code == 'true' && needs.changes.outputs.cli == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/cli-pr-checks.yml
+    secrets: inherit
+    with:
+      changed_files: ${{ needs.changes.outputs.changed_files }}
+
+  # The aggregate. `if: always()` makes it run (and report) even when a needed job failed or was
+  # skipped; a plain job-level skip would report success to branch protection.
+  merge-gate:
+    needs: [changes, pr-checks, cli-pr-checks]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Evaluate the needed jobs
+        shell: bash
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          out() { jq -r --arg k "$1" '.changes.outputs[$k] // ""' <<<"$NEEDS"; }
+          result() { jq -r --arg j "$1" '.[$j].result' <<<"$NEEDS"; }
+
+          failed=0
+          fail() { echo "::error::$*"; failed=1; }
+          {
+            echo "### merge-gate"
+            echo "| job | expected | result |"
+            echo "| --- | --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Without the filter's answer nothing can be judged: fail, never guess.
+          changes=$(result changes)
+          if [ "$changes" != "success" ]; then
+            echo "| changes | run | $changes |" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::The changes job concluded '$changes'; the gate cannot tell what was meant to run."
+            exit 1
+          fi
+
+          draft=$(out draft); code=$(out code); cli=$(out cli)
+
+          # A job may be skipped only when the filter or the draft state said so. Anything else
+          # that is not `success` (failure, cancelled, an unexpected skip) fails the gate.
+          check() { # name, expected (run|skip), reason for a skip
+            local name=$1 expected=$2 why=$3 r
+            r=$(result "$name")
+            echo "| $name | $expected${why:+ ($why)} | $r |" >> "$GITHUB_STEP_SUMMARY"
+            echo "$name: expected $expected, result $r"
+            case "$r" in
+              success) ;;
+              skipped) [ "$expected" = skip ] || fail "$name was skipped but had to run" ;;
+              *) fail "$name concluded '$r'" ;;
+            esac
+          }
+
+          if [ "$draft" = "true" ]; then
+            echo "::notice::Draft PR: the code checks are not run for drafts and the gate passes. GitHub does not merge a draft. Marking the PR ready starts a new run that runs the checks."
+            check pr-checks skip "draft"
+            check cli-pr-checks skip "draft"
+          elif [ "$code" != "true" ]; then
+            echo "::notice::Docs-only change: no code checks to run."
+            check pr-checks skip "docs only"
+            check cli-pr-checks skip "docs only"
+          else
+            check pr-checks run ""
+            if [ "$cli" = "true" ]; then check cli-pr-checks run ""; else check cli-pr-checks skip "no CLI, core or packages change"; fi
+          fi
+
+          if [ "$failed" -ne 0 ]; then exit 1; fi
+          echo "merge-gate: every needed job succeeded or was skipped on purpose."

@@ -28,3 +28,19 @@ describe("cacheBehavior.ttl", () => {
     expect(parsed.cacheBehavior).toEqual({ ttl: "1h" });
   });
 });
+
+describe("cacheBehavior.subagentTtl", () => {
+  it.each(["5m", "1h", "auto", "inherit"])("accepts %s", (subagentTtl) => {
+    expect(cacheBehaviorSchema.parse({ subagentTtl })).toEqual({
+      subagentTtl,
+    });
+  });
+
+  it.each(["30m", "Inherit", "", 300])("rejects %p", (subagentTtl) => {
+    expect(cacheBehaviorSchema.safeParse({ subagentTtl }).success).toBe(false);
+  });
+
+  it("is optional next to ttl", () => {
+    expect(cacheBehaviorSchema.parse({ ttl: "1h" })).toEqual({ ttl: "1h" });
+  });
+});

@@ -38,6 +38,19 @@ function fakeChild() {
   return child;
 }
 
+/** `spawn` returns `child`, which reports that it started, as a real process does. */
+function spawnReturns(child: EventEmitter) {
+  spawn.mockImplementation(() => {
+    queueMicrotask(() => child.emit("spawn"));
+    return child;
+  });
+}
+
+/** Lets the executor's asynchronous start finish, so the runner is listening. */
+async function processStarted() {
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+}
+
 describe("loop check commands use the approved shell", () => {
   afterEach(() => {
     spawn.mockReset();
@@ -46,8 +59,9 @@ describe("loop check commands use the approved shell", () => {
 
   it("spawns the command executor, not exec's sh or cmd", async () => {
     const child = fakeChild();
-    spawn.mockReturnValue(child);
+    spawnReturns(child);
     const pending = runCheckCommand("echo hello", "/work");
+    await processStarted();
     child.stdout.emit("data", "hello\n");
     child.emit("close", 0);
     await expect(pending).resolves.toEqual({ exitCode: 0, output: "hello" });
@@ -70,8 +84,9 @@ describe("loop check commands use the approved shell", () => {
 
   it("keeps a non-zero exit and what the command printed", async () => {
     const child = fakeChild();
-    spawn.mockReturnValue(child);
+    spawnReturns(child);
     const pending = runCheckCommand("npm test");
+    await processStarted();
     child.stdout.emit("data", "1 failed");
     child.stderr.emit("data", "boom");
     child.emit("close", 3);
@@ -93,6 +108,7 @@ describe("loop check commands use the approved shell", () => {
         child.emit("close", null);
         return new EventEmitter();
       }
+      queueMicrotask(() => child.emit("spawn"));
       return child;
     });
     const kill = vi.spyOn(process, "kill").mockImplementation((pid) => {

@@ -1,7 +1,9 @@
 import { ToolCallState } from "core";
 import { ContinueErrorReason } from "core/util/errors";
 import {
+  incompleteToolCallResult,
   isTruncatedJson,
+  stoppedForLength,
   truncatedToolCallResult,
 } from "core/util/truncatedJson";
 
@@ -15,15 +17,23 @@ import {
 import { AppThunkDispatch } from "../store";
 
 /**
- * A call the model was still writing when it hit its output limit is not run.
- * The lenient parser would turn its arguments into a valid-looking object, so
- * create_new_file would write part of the file and report success.
+ * A call whose arguments stop part-way is not run. The lenient parser would
+ * turn them into a valid-looking object, so create_new_file would write part
+ * of the file and report success.
+ *
+ * The reply's stop reason says why. Only a reply that hit its output limit
+ * (or reported no reason) was cut off; for any other the arguments arrived
+ * incomplete, and telling the model to send smaller pieces sent it chasing a
+ * limit it never reached (a 1,100-character edit was refused as "cut off at
+ * 128000 tokens" after its fragments landed on another call).
  */
 export function refuseTruncatedToolCalls(
   dispatch: AppThunkDispatch,
   generatedToolCalls: ToolCallState[],
   maxTokens: number | undefined,
+  stopReason?: string,
 ): void {
+  const cutOff = stoppedForLength(stopReason) !== false;
   for (const { toolCall, toolCallId } of generatedToolCalls) {
     if (!isTruncatedJson(toolCall.function.arguments ?? "")) continue;
     dispatch(errorToolCall({ toolCallId }));
@@ -32,13 +42,24 @@ export function refuseTruncatedToolCalls(
       updateToolCallOutput({
         toolCallId,
         contextItems: [
-          {
-            icon: "problems",
-            name: "Cut off",
-            description: "Hit the output limit; not run",
-            content: truncatedToolCallResult(toolCall.function.name, maxTokens),
-            hidden: false,
-          },
+          cutOff
+            ? {
+                icon: "problems",
+                name: "Cut off",
+                description: "Hit the output limit; not run",
+                content: truncatedToolCallResult(
+                  toolCall.function.name,
+                  maxTokens,
+                ),
+                hidden: false,
+              }
+            : {
+                icon: "problems",
+                name: "Incomplete arguments",
+                description: "The arguments arrived incomplete; not run",
+                content: incompleteToolCallResult(toolCall.function.name),
+                hidden: false,
+              },
         ],
       }),
     );

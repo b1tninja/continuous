@@ -4,29 +4,6 @@ import {
   type PolicyLevel,
 } from "core/tools/permissions/policy";
 
-const LEVEL_RANK = new Map<string, number>(
-  POLICY_LEVELS.map((level, index) => [level, index]),
-);
-
-export function raisedPolicyAreas(
-  current: Partial<Record<string, string>> | undefined,
-  next: Partial<Record<string, unknown>> | undefined,
-): string[] {
-  if (!next) return [];
-  const raised: string[] = [];
-  for (const area of POLICY_AREAS) {
-    const after = next[area];
-    if (typeof after !== "string") continue;
-    const afterRank = LEVEL_RANK.get(after);
-    if (afterRank === undefined) continue;
-    const before = current?.[area];
-    const beforeRank =
-      typeof before === "string" ? (LEVEL_RANK.get(before) ?? -1) : -1;
-    if (afterRank > beforeRank) raised.push(area);
-  }
-  return raised;
-}
-
 /** The panel's policy/save body: known areas and known levels only. */
 export function policySavePayloadOk(data: unknown): boolean {
   if (!data || typeof data !== "object" || Array.isArray(data)) return false;

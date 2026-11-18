@@ -16,6 +16,7 @@ import {
   useRestoreCheckpoint,
 } from "../../util/restoreCheckpoint";
 import { FeedbackButtons } from "../FeedbackButtons";
+import { ForkFromHereButton } from "./ForkFromHereButton";
 import { CopyIconButton } from "../gui/CopyIconButton";
 import HeaderButtonWithToolTip from "../gui/HeaderButtonWithToolTip";
 
@@ -104,6 +105,8 @@ export default function ResponseActions({
           <ArrowUturnLeftIcon className="h-3.5 w-3.5 text-description-muted" />
         </HeaderButtonWithToolTip>
       )}
+
+      <ForkFromHereButton index={index} />
 
       {isTruncated && (
         <HeaderButtonWithToolTip

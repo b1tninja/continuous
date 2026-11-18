@@ -1,8 +1,13 @@
 /**
- * `continuous doctor network [url...]`: why does a request fail behind a proxy
- * or a TLS-inspecting gateway? Shows the proxy and CA settings the CLI would
- * use (credentials masked), then tests each URL the way the CLI sends requests
+ * `continuous doctor <topic>`: read-only diagnostics.
+ *
+ * `network [url...]`: why does a request fail behind a proxy or a
+ * TLS-inspecting gateway? Shows the proxy and CA settings the CLI would use
+ * (credentials masked), then tests each URL the way the CLI sends requests
  * and prints the certificate chain it was given.
+ *
+ * `config`: which settings files exist and parse, and each main control's
+ * value and source (see doctorConfig.ts).
  *
  * Nothing here prints a secret: proxy URLs have their user name and password
  * replaced, and only certificate subjects, issuers, dates and short
@@ -23,6 +28,8 @@ import {
 } from "@continuedev/fetch";
 
 import type { NetworkRequestOptions } from "../util/networkFetch.js";
+
+import { doctorConfigCommand, type DoctorFlags } from "./doctorConfig.js";
 
 const PROXY_VARS = [
   "HTTPS_PROXY",
@@ -173,19 +180,57 @@ export interface DoctorOptions {
   /** Where to write; defaults to stdout. */
   write?: (line: string) => void;
   requestOptions?: NetworkRequestOptions;
+  /** `--json`, for the topics that have a machine-readable form. */
+  json?: boolean;
+  /** The root flags of this invocation, for `config`. */
+  flags?: DoctorFlags;
 }
 
-/** Returns the process exit code: 0 when every URL answered. */
+/**
+ * The topics, in the order the usage line lists them. A new topic is one
+ * entry here and one `case` in `doctorCommand`; `env` (what the model is told
+ * about this machine, ENV28) is planned as the next one.
+ */
+export const DOCTOR_TOPICS: Readonly<Record<string, string>> = {
+  config: "settings files (do they parse) and each control's value and source",
+  network: "proxy and certificate settings, and a TLS test per URL",
+};
+
+function usage(write: (line: string) => void): number {
+  write("Usage: continuous doctor <topic>");
+  for (const [topic, what] of Object.entries(DOCTOR_TOPICS)) {
+    write(`  ${topic.padEnd(8)} ${what}`);
+  }
+  return 1;
+}
+
+/** Returns the process exit code: 0 when nothing is wrong. */
 export async function doctorCommand(
   topic: string | undefined,
   urls: string[],
   options: DoctorOptions = {},
 ): Promise<number> {
   const write = options.write ?? ((line) => process.stdout.write(`${line}\n`));
-  if (topic !== "network") {
-    write("Usage: continuous doctor network [url...]");
-    return 1;
+  switch (topic) {
+    case "config":
+      return doctorConfigCommand({
+        json: options.json,
+        flags: options.flags,
+        write,
+      });
+    case "network":
+      return doctorNetwork(urls, options, write);
+    default:
+      return usage(write);
   }
+}
+
+/** 0 when every URL answered. */
+async function doctorNetwork(
+  urls: string[],
+  options: DoctorOptions,
+  write: (line: string) => void,
+): Promise<number> {
   write("Network settings");
   for (const line of settingsLines(options.requestOptions)) {
     write(`  ${line}`);

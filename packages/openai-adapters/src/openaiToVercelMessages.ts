@@ -2,11 +2,49 @@
  * Converts OpenAI ChatCompletionMessageParam format to Vercel AI SDK CoreMessage format
  */
 
-import type { ChatCompletionMessageParam } from "openai/resources/index.js";
+import type {
+  ChatCompletionAssistantMessageParam,
+  ChatCompletionContentPart,
+  ChatCompletionMessageParam,
+} from "openai/resources/index.js";
 
 export interface VercelCoreMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string | Array<any>;
+}
+
+/**
+ * A tool call's `input` must be an object. Arguments that are empty, cut off
+ * by a stop, or not an object are sent as `{}` rather than as the raw string.
+ */
+function toolCallInput(args: string | undefined): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(args ?? "");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed;
+    }
+  } catch {}
+  return {};
+}
+
+/** An assistant's content as AI SDK text parts (not one text holding the array). */
+function assistantTextParts(
+  content: ChatCompletionAssistantMessageParam["content"],
+): Array<{ type: "text"; text: string }> {
+  if (!content) return [];
+  if (typeof content === "string") return [{ type: "text", text: content }];
+  return content
+    .map((part) => (part.type === "text" ? part.text : part.refusal))
+    .filter((text) => !!text)
+    .map((text) => ({ type: "text" as const, text }));
+}
+
+/** A user content part as an AI SDK part: an `image_url` becomes an image part. */
+function toVercelUserPart(part: ChatCompletionContentPart): unknown {
+  if (part.type === "image_url") {
+    return { type: "image", image: part.image_url.url };
+  }
+  return part;
 }
 
 /**
@@ -56,7 +94,10 @@ export function convertOpenAIMessagesToVercel(
       case "user":
         vercelMessages.push({
           role: "user",
-          content: msg.content,
+          content:
+            typeof msg.content === "string"
+              ? msg.content
+              : msg.content.map(toVercelUserPart),
         });
         break;
 
@@ -64,21 +105,11 @@ export function convertOpenAIMessagesToVercel(
         if (msg.tool_calls && msg.tool_calls.length > 0) {
           const contentParts: any[] = [];
 
-          if (msg.content) {
-            contentParts.push({
-              type: "text",
-              text: msg.content,
-            });
-          }
+          contentParts.push(...assistantTextParts(msg.content));
 
           for (const tc of msg.tool_calls) {
             if (tc.type === "function") {
-              let input: unknown;
-              try {
-                input = JSON.parse(tc.function.arguments);
-              } catch {
-                input = tc.function.arguments;
-              }
+              const input = toolCallInput(tc.function.arguments);
 
               const thoughtSignature = (tc as any)?.extra_content?.google
                 ?.thought_signature as string | undefined;
@@ -106,7 +137,9 @@ export function convertOpenAIMessagesToVercel(
         } else {
           vercelMessages.push({
             role: "assistant",
-            content: msg.content || "",
+            content: Array.isArray(msg.content)
+              ? assistantTextParts(msg.content)
+              : msg.content || "",
           });
         }
         break;

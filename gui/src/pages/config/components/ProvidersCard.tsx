@@ -3,21 +3,12 @@ import type {
   ProviderSetupInfo,
 } from "core/config/providerSetup";
 import { useContext, useEffect, useState } from "react";
+import { useModelConfigDialog } from "../../../components/ModelConfig/useModelConfigDialog";
 import { useProviderSetupDialog } from "../../../components/ProviderSetup/useProviderSetupDialog";
 import { Button, Card } from "../../../components/ui";
 import { IdeMessengerContext } from "../../../context/IdeMessenger";
 import { useAppSelector } from "../../../redux/hooks";
-import { providerLabel } from "../../../util/missingSecrets";
-
-function describe(c: ProviderSetupConnection): string {
-  const where =
-    c.connection.apiBase ?? c.connection.region ?? c.connection.profile;
-  const count = `${c.models.length} model${c.models.length === 1 ? "" : "s"}`;
-  const parts = [c.account ? `account ${c.account}` : undefined, where, count];
-  return parts.filter(Boolean).join(" - ");
-}
-
-type KeyAction = { kind: "move" | "removeCopy"; secretName: string };
+import { type KeyAction, ProviderConnectionRow } from "./ProviderConnectionRow";
 
 /** What can be done about where this connection's key is kept, if anything. */
 function keyActionFor(
@@ -34,21 +25,30 @@ function keyActionFor(
   return { kind: "removeCopy", secretName };
 }
 
+const rowId = (c: ProviderSetupConnection) =>
+  `${c.provider}|${c.account ?? ""}|${JSON.stringify(c.connection)}`;
+
+type Confirming =
+  | { kind: "key"; row: string; action: KeyAction }
+  | { kind: "remove"; row: string };
+
 /**
- * One row per provider connection in config.yaml, with a way back into the
- * setup flow to change its models or key.
+ * One row per provider connection in the selected config, with the ways back
+ * into the setup flow: its models, its connection, a connection test, and
+ * removing it. Shown on Settings > Providers.
  */
 export function ProvidersCard() {
   const ideMessenger = useContext(IdeMessengerContext);
   const { openSetup } = useProviderSetupDialog();
+  const openModelConfig = useModelConfigDialog();
   // The config object changes whenever a save reloads it.
   const config = useAppSelector((state) => state.config.config);
   const [info, setInfo] = useState<ProviderSetupInfo>();
   const [reload, setReload] = useState(0);
-  // The key action being confirmed, and the last failure. Never a key value.
-  const [confirming, setConfirming] = useState<KeyAction>();
+  // The action being confirmed, and the last failure. Never a key value.
+  const [confirming, setConfirming] = useState<Confirming>();
   const [busy, setBusy] = useState(false);
-  const [keyError, setKeyError] = useState<string>();
+  const [error, setError] = useState<string>();
 
   useEffect(() => {
     let cancelled = false;
@@ -56,61 +56,22 @@ export function ProvidersCard() {
       .request("config/getProviderSetup", undefined)
       .then((res) => {
         if (!cancelled && res.status === "success") setInfo(res.content);
+      })
+      .catch(() => {
+        // Older cores: the card stays empty.
       });
     return () => {
       cancelled = true;
     };
   }, [ideMessenger, config, reload]);
 
-  /**
-   * Turn a connection set up the old way into a provider account and
-   * catalog models, so other configs (and cn) can use the same setup.
-   */
-  async function convertToAccount(c: ProviderSetupConnection) {
+  /** Runs one change, shows its error, and reads the setup again. */
+  async function run(change: () => Promise<string | undefined>) {
     setBusy(true);
-    setKeyError(undefined);
+    setError(undefined);
     try {
-      const res = await ideMessenger.request(
-        "config/convertConnectionToAccount",
-        { provider: c.provider, connection: c.connection },
-      );
-      const content = res.status === "success" ? res.content : undefined;
-      if (!content || content.error || content.converted === 0) {
-        setKeyError(
-          content?.error ?? "Could not turn this connection into an account",
-        );
-      }
-      setReload((n) => n + 1);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function runKeyAction(action: KeyAction) {
-    setBusy(true);
-    setKeyError(undefined);
-    try {
-      let ok = false;
-      let error: string | undefined;
-      if (action.kind === "move") {
-        const res = await ideMessenger.request(
-          "config/moveKeyToSecureStorage",
-          { secretName: action.secretName },
-        );
-        const content = res.status === "success" ? res.content : undefined;
-        ok = !!content?.moved;
-        error = content?.error;
-      } else {
-        const res = await ideMessenger.request("config/removeEnvSecret", {
-          secretName: action.secretName,
-        });
-        const content = res.status === "success" ? res.content : undefined;
-        ok = !!content?.removed;
-        error = content?.error;
-      }
-      if (error || !ok) {
-        setKeyError(error ?? "Could not update where the key is kept");
-      }
+      const failure = await change();
+      if (failure) setError(failure);
       setConfirming(undefined);
       setReload((n) => n + 1);
     } finally {
@@ -118,19 +79,91 @@ export function ProvidersCard() {
     }
   }
 
+  /**
+   * Turn a connection set up the old way into a provider account and
+   * catalog models, so other configs (and cn) can use the same setup.
+   */
+  const convertToAccount = (c: ProviderSetupConnection) =>
+    run(async () => {
+      const res = await ideMessenger.request(
+        "config/convertConnectionToAccount",
+        { provider: c.provider, connection: c.connection },
+      );
+      const content = res.status === "success" ? res.content : undefined;
+      return !content || content.error || content.converted === 0
+        ? (content?.error ?? "Could not turn this connection into an account")
+        : undefined;
+    });
+
+  const runKeyAction = (action: KeyAction) =>
+    run(async () => {
+      if (action.kind === "move") {
+        const res = await ideMessenger.request(
+          "config/moveKeyToSecureStorage",
+          { secretName: action.secretName },
+        );
+        const content = res.status === "success" ? res.content : undefined;
+        return content?.moved && !content.error
+          ? undefined
+          : (content?.error ?? "Could not update where the key is kept");
+      }
+      const res = await ideMessenger.request("config/removeEnvSecret", {
+        secretName: action.secretName,
+      });
+      const content = res.status === "success" ? res.content : undefined;
+      return content?.removed && !content.error
+        ? undefined
+        : (content?.error ?? "Could not update where the key is kept");
+    });
+
+  const remove = (c: ProviderSetupConnection) =>
+    run(async () => {
+      const res = await ideMessenger.request(
+        "config/removeProviderConnection",
+        {
+          provider: c.provider,
+          connection: c.connection,
+          ...(c.account ? { account: c.account } : {}),
+        },
+      );
+      const content = res.status === "success" ? res.content : undefined;
+      if (!content || content.error) {
+        return content?.error ?? "Could not remove the provider";
+      }
+      return content.removed.length === 0
+        ? "Nothing was removed: the config has no models of this connection any more."
+        : undefined;
+    });
+
+  /** Test connection opens where the palette command does: the model's settings. */
+  function testConnection(c: ProviderSetupConnection) {
+    const name = c.models[0]?.name;
+    if (!name) return undefined;
+    return () => {
+      const loaded = Object.values(config.modelsByRole ?? {})
+        .flat()
+        .find((m) => m?.title === name);
+      openModelConfig(loaded ?? { title: name });
+    };
+  }
+
+  const connections = info?.connections ?? [];
+  const closeConfirm = () => setConfirming(undefined);
+
   return (
     <Card>
-      <div className="flex items-center justify-between px-3 py-2">
+      <div className="flex items-center justify-between gap-2 px-3 py-2">
         <div>
-          <div className="text-sm font-medium">Providers</div>
+          <div className="text-sm font-medium">Connections</div>
           <div className="text-xs text-description-muted">
-            Connect a provider and choose which of its models to use
+            Each provider connection in the selected config and how it signs in.
+            Keys are never shown.
           </div>
         </div>
         <Button
           variant="secondary"
           size="sm"
-          className="my-0"
+          className="my-0 shrink-0"
           onClick={() => openSetup()}
           data-testid="add-provider"
         >
@@ -143,104 +176,74 @@ export function ProvidersCard() {
           config is not one.
         </div>
       )}
-      {info?.connections.map((c) => {
-        const id = `${c.provider}|${JSON.stringify(c.connection)}`;
-        const action = keyActionFor(c, info.secureStorageAvailable);
-        const isConfirming =
-          !!action &&
-          confirming?.kind === action.kind &&
-          confirming.secretName === action.secretName;
-        return (
-          <div
-            key={id}
-            className="flex flex-col gap-1 px-3 py-1.5 text-xs"
-            data-testid={`provider-row-${c.provider}`}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <span className="font-medium">{providerLabel(c.provider)}</span>{" "}
-                <span className="truncate text-description-muted">
-                  {describe(c)}
-                </span>
-              </div>
-              <div className="flex shrink-0 gap-1">
-                {action && !isConfirming && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="my-0"
-                    onClick={() => setConfirming(action)}
-                  >
-                    {action.kind === "move"
-                      ? "Move key to secure storage"
-                      : "Remove .env copy"}
-                  </Button>
-                )}
-                {!c.account && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="my-0"
-                    disabled={busy}
-                    title="Save this connection as a provider account and its models in the model catalog, so other configs and cn can use them"
-                    onClick={() => convertToAccount(c)}
-                    data-testid={`convert-to-account-${c.provider}`}
-                  >
-                    Turn into an account
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="my-0"
-                  onClick={() =>
-                    openSetup({
-                      initialProvider: c.provider,
-                      initialConnection: c.connection,
-                    })
-                  }
-                >
-                  Edit
-                </Button>
-              </div>
-            </div>
-            {action && isConfirming && (
-              <div
-                className="flex items-center justify-between gap-2"
-                data-testid="key-action-confirm"
-              >
-                <span className="text-description-muted">
-                  {action.kind === "move"
-                    ? `Move ${action.secretName} from ~/.continuous/.env to secure storage and delete it from .env? config.yaml stays the same.`
-                    : `${action.secretName} is already in secure storage. Delete the plaintext line from ~/.continuous/.env?`}
-                </span>
-                <div className="flex shrink-0 gap-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="my-0"
-                    onClick={() => setConfirming(undefined)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="my-0"
-                    disabled={busy}
-                    onClick={() => runKeyAction(action)}
-                  >
-                    {action.kind === "move" ? "Move" : "Delete line"}
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-      {keyError && (
+      {error && (
         <div className="px-3 pb-2 text-xs text-error" role="alert">
-          {keyError}
+          {error}
         </div>
+      )}
+      {info && connections.length === 0 && (
+        <div
+          className="flex flex-col items-start gap-2 px-3 pb-3 text-xs text-description-muted"
+          data-testid="providers-empty"
+        >
+          <span>
+            No providers are set up in this config yet. Connect one to choose
+            which of its models to use.
+          </span>
+          <Button
+            size="sm"
+            className="my-0"
+            onClick={() => openSetup()}
+            data-testid="add-provider-empty"
+          >
+            Add a provider
+          </Button>
+        </div>
+      )}
+      {connections.length > 0 && (
+        <ul className="m-0 list-none p-0" aria-label="Provider connections">
+          {connections.map((c) => {
+            const id = rowId(c);
+            const action = keyActionFor(
+              c,
+              info?.secureStorageAvailable ?? false,
+            );
+            const edit = {
+              initialProvider: c.provider,
+              initialConnection: c.connection,
+            };
+            return (
+              <ProviderConnectionRow
+                key={id}
+                connection={c}
+                keyAction={action}
+                confirmingKeyAction={
+                  confirming?.kind === "key" && confirming.row === id
+                }
+                confirmingRemove={
+                  confirming?.kind === "remove" && confirming.row === id
+                }
+                busy={busy}
+                onManageModels={() =>
+                  openSetup({ ...edit, initialStep: "models" })
+                }
+                onEditConnection={() =>
+                  openSetup({ ...edit, initialStep: "credentials" })
+                }
+                onTestConnection={testConnection(c)}
+                onAskRemove={() => setConfirming({ kind: "remove", row: id })}
+                onCancelRemove={closeConfirm}
+                onRemove={() => void remove(c)}
+                onAskKeyAction={() =>
+                  action && setConfirming({ kind: "key", row: id, action })
+                }
+                onCancelKeyAction={closeConfirm}
+                onKeyAction={() => action && void runKeyAction(action)}
+                onConvertToAccount={() => void convertToAccount(c)}
+              />
+            );
+          })}
+        </ul>
       )}
     </Card>
   );

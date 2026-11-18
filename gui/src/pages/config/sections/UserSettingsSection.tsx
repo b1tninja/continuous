@@ -2,6 +2,8 @@ import {
   SharedConfigSchema,
   modifyAnyConfigWithSharedConfig,
 } from "core/config/sharedConfig";
+import { SESSION_LOG_STORAGE_DEFAULT } from "core/util/constants";
+import { DEFAULT_AUTOCOMPLETE_OPTS } from "core/util/parameters";
 import { useContext, useEffect, useState } from "react";
 import { Card, Toggle, useFontSize } from "../../../components/ui";
 import { IdeMessengerContext } from "../../../context/IdeMessenger";
@@ -51,8 +53,11 @@ export function UserSettingsSection() {
   const continueAfterToolRejection =
     config.ui?.continueAfterToolRejection ?? false;
   const nudgeLeakedToolCalls = config.ui?.nudgeLeakedToolCalls ?? true;
+  const sessionLogStorage =
+    config.ui?.sessionLogStorage ?? SESSION_LOG_STORAGE_DEFAULT;
   const codeWrap = config.ui?.codeWrap ?? false;
   const showChatScrollbar = config.ui?.showChatScrollbar ?? false;
+  const keepThinkingExpanded = config.ui?.keepThinkingExpanded ?? false;
   const readResponseTTS = config.experimental?.readResponseTTS ?? false;
   const displayRawMarkdown = config.ui?.displayRawMarkdown ?? false;
   const disableSessionTitles = config.disableSessionTitles ?? false;
@@ -67,10 +72,17 @@ export function UserSettingsSection() {
   const enableAutoApproval = config.experimental?.enableAutoApproval ?? false;
   const allowAnonymousTelemetry = config.allowAnonymousTelemetry ?? true;
 
+  // Unset values show what autocomplete actually uses (core's defaults); the
+  // debounce fallback here used to say 250 ms while core waited 350 ms
   const useAutocompleteMultilineCompletions =
-    config.tabAutocompleteOptions?.multilineCompletions ?? "auto";
-  const modelTimeout = config.tabAutocompleteOptions?.modelTimeout ?? 150;
-  const debounceDelay = config.tabAutocompleteOptions?.debounceDelay ?? 250;
+    config.tabAutocompleteOptions?.multilineCompletions ??
+    DEFAULT_AUTOCOMPLETE_OPTS.multilineCompletions;
+  const modelTimeout =
+    config.tabAutocompleteOptions?.modelTimeout ??
+    DEFAULT_AUTOCOMPLETE_OPTS.modelTimeout;
+  const debounceDelay =
+    config.tabAutocompleteOptions?.debounceDelay ??
+    DEFAULT_AUTOCOMPLETE_OPTS.debounceDelay;
   const fontSize = useFontSize();
 
   const cancelChangeDisableAutocomplete = () => {
@@ -118,6 +130,15 @@ export function UserSettingsSection() {
                   value={showChatScrollbar}
                   onChange={(value) =>
                     handleUpdate({ showChatScrollbar: value })
+                  }
+                />
+                <UserSetting
+                  type="toggle"
+                  title="Keep Thinking Expanded"
+                  description="The model's thinking streams open while it thinks and folds to one line when the answer starts. On: it stays open."
+                  value={keepThinkingExpanded}
+                  onChange={(value) =>
+                    handleUpdate({ keepThinkingExpanded: value })
                   }
                 />
                 <UserSetting
@@ -299,6 +320,15 @@ export function UserSettingsSection() {
                     value={nudgeLeakedToolCalls}
                     onChange={(value) =>
                       handleUpdate({ nudgeLeakedToolCalls: value })
+                    }
+                  />
+                  <UserSetting
+                    type="toggle"
+                    title="Save chats as an append-only log"
+                    description="On: each save adds only what changed, large tool outputs and images are stored once, and a turn is saved while it runs, so a crash keeps it for Resume. Off: each save rewrites the whole chat file."
+                    value={sessionLogStorage}
+                    onChange={(value) =>
+                      handleUpdate({ sessionLogStorage: value })
                     }
                   />
                 </div>

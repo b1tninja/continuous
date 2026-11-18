@@ -91,6 +91,7 @@ describe("loop budgets during an item", () => {
     expect(getSessionLoop()).toMatchObject({
       status: "stopped",
       stopReason: "tokens",
+      stopBudget: { kind: "tokens", used: 225, max: expect.any(Number) },
     });
     expect(getSessionLoop()?.current).toBeUndefined();
   });
@@ -100,6 +101,11 @@ describe("loop budgets during an item", () => {
     expect(stopLoopItemOverBudget(NOW)).toBe(false);
     expect(stopLoopItemOverBudget(new Date(NOW.getTime() + 60_000))).toBe(true);
     expect(getSessionLoop()?.stopReason).toBe("time");
+    expect(getSessionLoop()?.stopBudget).toEqual({
+      kind: "time",
+      used: 60_000,
+      max: 60_000,
+    });
     expect(loop.budget.maxWallMs).toBe(60_000);
   });
 

@@ -41,4 +41,9 @@ export type ToWebviewFromIdeOrCoreProtocol = {
   "jetbrains/setColors": [Record<string, string | null | undefined>, void];
   sessionUpdate: [{ sessionInfo: any | undefined }, void];
   toolCallPartialOutput: [{ toolCallId: string; contextItems: any[] }, void];
+  /**
+   * The selected model's facts were refreshed from its provider (window,
+   * output cap, deprecation); the model chip asks for its notice again.
+   */
+  "model/infoUpdated": [{ provider: string; model: string }, void];
 };

@@ -1,11 +1,34 @@
 import { streamSse } from "@continuedev/fetch";
-import { ChatCompletionChunk, Model } from "openai/resources/index";
+import {
+  ChatCompletionChunk,
+  ChatCompletionCreateParams,
+  Model,
+} from "openai/resources/index";
 import { DeepseekConfig } from "../types.js";
 import { chatChunk, customFetch } from "../util.js";
 import { OpenAIApi } from "./OpenAI.js";
 import { FimCreateParamsStreaming } from "./base.js";
 
 export const DEEPSEEK_API_BASE = "https://api.deepseek.com/";
+
+/**
+ * The reasoning switch (reasoningSwitch.ts) as DeepSeek's thinking toggle:
+ * `thinking: { type: "disabled" }` for off, `enabled` with the effort for on
+ * (DeepSeek maps the OpenAI effort names to its own low, high and max).
+ * Unset sends nothing; DeepSeek thinks by default.
+ */
+export function deepSeekThinking<T extends ChatCompletionCreateParams>(
+  body: T,
+): T {
+  const effort = body.reasoning_effort;
+  if (effort === undefined || effort === null) return body;
+  if (effort === "none") {
+    const { reasoning_effort: _off, ...rest } = body;
+    return { ...rest, thinking: { type: "disabled" } } as unknown as T;
+  }
+  return { ...body, thinking: { type: "enabled" } } as T;
+}
+
 export class DeepSeekApi extends OpenAIApi {
   constructor(config: DeepseekConfig) {
     super({
@@ -48,6 +71,10 @@ export class DeepSeekApi extends OpenAIApi {
         model: body.model,
       });
     }
+  }
+
+  override modifyChatBody<T extends ChatCompletionCreateParams>(body: T): T {
+    return deepSeekThinking(super.modifyChatBody(body));
   }
 
   list(): Promise<Model[]> {

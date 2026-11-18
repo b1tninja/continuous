@@ -216,10 +216,13 @@ describe("obfuscated commands the safety floor cannot see", () => {
   });
 
   it.each(["{rm,-rf,~}", "rm${IFS}-rf${IFS}~", "G=rm; $G -rf ~"])(
-    "does not run %s under Hands-off or IDGAF",
+    "does not run %s under Hands-off; IDGAF runs it and records the refusal",
     (command) => {
       expect(cmd(command, handsOff).policy).toBe(OFF);
-      expect(cmd(command, idgaf).policy).toBe(OFF);
+      const r = cmd(command, idgaf);
+      expect(r.policy).toBe(ALLOW);
+      expect(r.source).toBe("idgaf");
+      expect(r.idgafOverride?.policy).toBe(OFF);
     },
   );
 
@@ -229,9 +232,11 @@ describe("obfuscated commands the safety floor cannot see", () => {
     expect(cmd("rm -rf /", idgaf).policy).toBe(ALLOW);
   });
 
-  it("does not run a substitution the floor only asks about; at IDGAF nobody is asked, so it is refused", () => {
+  it("asks about a substitution under Hands-off; IDGAF runs it and records the ask", () => {
     expect(cmd("echo $(date)", handsOff).policy).toBe(ASK);
-    expect(cmd("echo $(date)", idgaf).policy).toBe(OFF);
+    const r = cmd("echo $(date)", idgaf);
+    expect(r.policy).toBe(ALLOW);
+    expect(r.idgafOverride?.policy).toBe(ASK);
   });
 });
 
@@ -304,18 +309,19 @@ describe("the floor", () => {
     floor: ["runTerminalCommand(terraform destroy*)"],
   });
 
-  it("binds at IDGAF, where every other rule is ignored", () => {
+  it("does not bind at IDGAF: the call runs and the floor rule is recorded", () => {
     const r = cmd("terraform destroy -auto-approve", floor({ tools: "idgaf" }));
-    expect(r.policy).toBe(OFF);
-    expect(r.source).toBe("floor");
-    expect(r.rule).toContain("terraform destroy");
+    expect(r.policy).toBe(ALLOW);
+    expect(r.source).toBe("idgaf");
+    expect(r.idgafOverride).toMatchObject({ policy: OFF, source: "floor" });
+    expect(r.idgafOverride?.rule).toContain("terraform destroy");
   });
 
   it("leaves other commands to the level", () => {
     expect(cmd("terraform plan", floor({ tools: "idgaf" })).policy).toBe(ALLOW);
   });
 
-  it("binds at every other level too", () => {
+  it("binds at every level below IDGAF", () => {
     for (const tools of ["manual", "cautious", "permissive"] as const) {
       expect(cmd("terraform destroy", floor({ tools })).policy).toBe(OFF);
     }

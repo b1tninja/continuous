@@ -8,15 +8,37 @@ import type {
 export type PromptCacheTtl = "5m" | "1h";
 
 /**
+ * The debug override: `CONTINUOUS_FORCE_CACHE_5M=1` in the environment the
+ * extension (or the CLI) runs in puts every prompt cache entry on the
+ * 5-minute lifetime, whatever the toolbar, `cacheBehavior.ttl` or
+ * `cacheBehavior.subagentTtl` say. It wins over every other lifetime control.
+ * Keep in sync with `cacheTtlForcedTo5m` in
+ * packages/openai-adapters/src/apis/cacheTtl.ts.
+ */
+export const FORCE_CACHE_5M_ENV = "CONTINUOUS_FORCE_CACHE_5M";
+
+function processEnv(): Record<string, string | undefined> | undefined {
+  return typeof process === "undefined" ? undefined : process.env;
+}
+
+export function cacheTtlForcedTo5m(
+  env: Record<string, string | undefined> | undefined = processEnv(),
+): boolean {
+  return env?.[FORCE_CACHE_5M_ENV] === "1";
+}
+
+/**
  * The lifetime to send: the per-request choice (toolbar) wins over the model's
  * `cacheBehavior.ttl`. "auto" in config is not a lifetime, it is a policy the
  * chat window turns into "5m" or "1h" for each request, so here it (and any
  * unrecognised value) means "send nothing", which is the 5-minute default.
+ * With `CONTINUOUS_FORCE_CACHE_5M=1` the answer is always "5m".
  */
 export function resolvePromptCacheTtl(
   requested: unknown,
   configured: unknown,
 ): PromptCacheTtl | undefined {
+  if (cacheTtlForcedTo5m()) return "5m";
   for (const value of [requested, configured]) {
     if (value === "5m" || value === "1h") return value;
   }

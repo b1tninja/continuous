@@ -5,6 +5,7 @@ import {
   InputModifiers,
   PromptLog,
 } from "core";
+import { DROPPED_PROMPT_MARKER } from "core/util/promptLogs";
 import { describe, expect, it, vi } from "vitest";
 import { createMockStore, getEmptyRootState } from "../../util/test/mockStore";
 import { streamResponseThunk } from "./streamResponse";
@@ -213,6 +214,10 @@ describe("streamResponseThunk", () => {
         payload: undefined,
       },
       {
+        type: "session/setSentToolList",
+        payload: expect.anything(),
+      },
+      {
         type: "session/setAppliedRulesAtIndex",
         payload: {
           index: 1,
@@ -409,6 +414,11 @@ describe("streamResponseThunk", () => {
       expect.any(AbortSignal),
     );
 
+    // The person's message ends the last turn's turn-scoped web pages
+    expect(postSpy).toHaveBeenCalledWith("web/endTurn", {
+      sessionId: initialState.session.id,
+    });
+
     // Verify dev data logging call
     expect(postSpy).toHaveBeenCalledWith("devdata/log", {
       name: "chatInteraction",
@@ -433,6 +443,7 @@ describe("streamResponseThunk", () => {
       ...initialState,
       session: {
         ...initialState.session,
+        sentToolList: expect.anything(),
         streamAborter: expect.any(AbortController),
         title: "Session summary",
         isPruned: false,
@@ -604,6 +615,7 @@ describe("streamResponseThunk", () => {
       "symbols/updateFromContextItems/pending",
       "session/updateHistoryItemAtIndex",
       "chat/streamNormalInput/pending",
+      "session/setSentToolList",
       "session/setAppliedRulesAtIndex",
       "session/setActive",
       "session/setInlineErrorMessage",
@@ -623,6 +635,7 @@ describe("streamResponseThunk", () => {
       "session/resetNextCodeBlockToApplyIndex",
       "session/streamUpdate",
       "chat/streamNormalInput/pending",
+      "session/setSentToolList",
       "session/setAppliedRulesAtIndex",
       "session/setActive",
       "session/setInlineErrorMessage",
@@ -759,6 +772,9 @@ describe("streamResponseThunk", () => {
           arguments: JSON.stringify({ query: "test function" }),
         },
       },
+      // Cautious, the default Tools level: a runaway command is stopped
+      runawayAction: "stop",
+      sessionId: expect.any(String),
     });
 
     // Verify that multiple compilation calls were made (due to tool call continuation)
@@ -775,6 +791,7 @@ describe("streamResponseThunk", () => {
       ...stateWithToolSettings,
       session: {
         ...stateWithToolSettings.session,
+        sentToolList: expect.anything(),
         history: [
           {
             contextItems: [],
@@ -816,7 +833,11 @@ describe("streamResponseThunk", () => {
                 completion: "I'll search the codebase for you.",
                 modelProvider: "anthropic",
                 modelTitle: "Claude 3.5 Sonnet",
-                prompt: "Please search the codebase",
+                // An older request: only the newest keeps its prompt, the
+                // older keeps its size and hash for feedback (PERF10)
+                prompt: DROPPED_PROMPT_MARKER,
+                promptBytes: expect.any(Number),
+                promptSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
               },
             ],
             toolCallStates: [
@@ -1017,6 +1038,10 @@ describe("streamResponseThunk", () => {
           requestStatus: "pending",
         },
         payload: undefined,
+      },
+      {
+        type: "session/setSentToolList",
+        payload: expect.anything(),
       },
       {
         type: "session/setAppliedRulesAtIndex",
@@ -1244,6 +1269,7 @@ describe("streamResponseThunk", () => {
       ...abortState,
       session: {
         ...abortState.session,
+        sentToolList: expect.anything(),
         history: [
           {
             contextItems: [],

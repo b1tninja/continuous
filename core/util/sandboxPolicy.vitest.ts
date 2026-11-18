@@ -59,13 +59,113 @@ describe("compileSandboxConfig: the default read policy", () => {
     ]) {
       expect(denied, d).toContain(d);
     }
-    expect(p.config.filesystem.allowRead).toEqual([]);
+    // Only the project's plans folders are allowed back (S9-X3)
+    expect(p.config.filesystem.allowRead).toEqual([
+      `${WS}/.continue/plans`,
+      `${WS}/.continuous/plans`,
+    ]);
     expect(p.notEnforced.map((n) => n.id)).toContain("open-reads");
   });
 
   it("workspace-only is what also hides the rest of the home folder", () => {
     const p = plan({ readPolicy: "workspace-only" });
     expect(p.config.filesystem.denyRead).toContain("/home");
+  });
+});
+
+describe("S9-X3: the decided read policy", () => {
+  // With the sandbox on, reads of the policy folders, ~/.ssh, ~/.aws,
+  // ~/.config/gh and the OS credential stores are denied, with a short allow
+  // list (~/.gitconfig, ~/.npmrc). The workspace-only flip (B76) waits.
+  const MAC = {
+    platform: "macos" as const,
+    workspace: "/Users/dev/proj",
+    homeDir: "/Users/dev",
+    tempDir: "/var/folders/ab/T/run1",
+  };
+
+  it.each([
+    ["linux", {}, "/home/dev", WS],
+    ["macos", MAC, "/Users/dev", "/Users/dev/proj"],
+  ] as const)(
+    "%s denies the credential folders and the policy folders, for reads and writes",
+    (_name, over, home, ws) => {
+      for (const readPolicy of ["open", "workspace-only"] as const) {
+        const f = plan({ ...over, readPolicy }).config.filesystem;
+        for (const d of [
+          `${home}/.ssh`,
+          `${home}/.aws`,
+          `${home}/.config/gh`,
+          `${home}/.continuous`,
+          `${home}/.continue`,
+          `${ws}/.continuous`,
+          `${ws}/.continue`,
+        ]) {
+          expect(f.denyRead, `${readPolicy} ${d}`).toContain(d);
+          expect(f.denyWrite, `${readPolicy} ${d}`).toContain(d);
+        }
+      }
+    },
+  );
+
+  it("denies the OS credential stores: Keychains on macOS, the keyrings on Linux and WSL2", () => {
+    const mac = plan(MAC).config.filesystem.denyRead;
+    expect(mac).toContain("/Users/dev/Library/Keychains");
+    expect(mac).not.toContain("/Users/dev/.local/share/keyrings");
+    for (const platform of ["linux", "wsl2"] as const) {
+      const f = plan({ platform }).config.filesystem.denyRead;
+      for (const d of [
+        "/home/dev/.local/share/keyrings",
+        "/home/dev/.local/share/kwalletd",
+        "/home/dev/.password-store",
+      ]) {
+        expect(f, `${platform} ${d}`).toContain(d);
+      }
+      expect(f).not.toContain("/home/dev/Library/Keychains");
+    }
+    // The Windows stores sit under /mnt/c on WSL2, which is denied whole
+    expect(plan({ platform: "wsl2" }).config.filesystem.denyRead).toContain(
+      "/mnt",
+    );
+  });
+
+  it("allows reading ~/.gitconfig and ~/.npmrc, and keeps them write-protected", () => {
+    for (const readPolicy of ["open", "workspace-only"] as const) {
+      const f = plan({ readPolicy }).config.filesystem;
+      for (const d of ["/home/dev/.gitconfig", "/home/dev/.npmrc"]) {
+        expect(f.denyRead, `${readPolicy} ${d}`).not.toContain(d);
+      }
+      expect(f.denyWrite).toContain("/home/dev/.npmrc");
+    }
+    const only = plan({ readPolicy: "workspace-only" }).config.filesystem;
+    expect(only.allowRead).toEqual(
+      expect.arrayContaining(["/home/dev/.gitconfig", "/home/dev/.npmrc"]),
+    );
+    // A project .npmrc is still a secret wherever it sits
+    expect(plan().config.filesystem.denyRead).toContain(`${WS}/**/.npmrc`);
+    expect(plan().notEnforced.map((n) => n.id)).toContain("allowed-home-reads");
+  });
+
+  it("keeps the project's plans readable inside the denied policy folders; writes stay protected", () => {
+    for (const readPolicy of ["open", "workspace-only"] as const) {
+      const f = plan({ readPolicy }).config.filesystem;
+      for (const d of [".continue", ".continuous"]) {
+        expect(f.denyRead).toContain(`${WS}/${d}`);
+        expect(f.allowRead, `${readPolicy} ${d}`).toContain(`${WS}/${d}/plans`);
+        expect(f.denyWrite).toContain(`${WS}/${d}`);
+        expect(f.allowWrite).not.toContain(`${WS}/${d}/plans`);
+      }
+    }
+  });
+
+  it("a deny rule of the person's on ~/.npmrc is not allowed back", () => {
+    const f = plan({
+      readPolicy: "workspace-only",
+      toolPermissions: { deny: ["readFile(~/.npmrc)"] },
+    }).config.filesystem;
+    expect(f.denyRead).toContain("/home/dev/.npmrc");
+    expect(f.allowRead).not.toContain("/home/dev/.npmrc");
+    expect(f.allowRead).toContain("/home/dev/.gitconfig");
   });
 });
 
@@ -124,7 +224,7 @@ describe("rule 1: deny rules and secrets become denyRead and denyWrite", () => {
     for (const e of [
       "/home/dev/.ssh",
       "/home/dev/.aws",
-      "/home/dev/.npmrc",
+      `${WS}/.npmrc`,
       `${WS}/.env`,
       `${WS}/**/id_rsa`,
       `${WS}/**/*.pem`,

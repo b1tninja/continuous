@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   getGitBranch,
@@ -86,5 +86,32 @@ describe("git utilities - GitHub Actions detection", () => {
       const result = getGitBranch();
       expect(typeof result === "string" || result === null).toBe(true);
     });
+  });
+});
+
+describe("git utilities - blocking queries are bounded", () => {
+  it("passes a timeout to every synchronous git query", async () => {
+    vi.resetModules();
+    const execSync = vi.fn(() => "out\n");
+    vi.doMock("child_process", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("child_process")>()),
+      execSync,
+    }));
+    try {
+      const git = await import("./git.js");
+      git.isGitRepo();
+      git.getGitBranch();
+      git.getGitRemoteUrl();
+      expect(execSync).toHaveBeenCalledTimes(3);
+      for (const [, options] of execSync.mock.calls as unknown as [
+        string,
+        { timeout?: number },
+      ][]) {
+        expect(options.timeout).toBe(git.GIT_QUERY_TIMEOUT_MS);
+      }
+    } finally {
+      vi.doUnmock("child_process");
+      vi.resetModules();
+    }
   });
 });

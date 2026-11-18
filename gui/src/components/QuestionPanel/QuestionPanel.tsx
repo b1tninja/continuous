@@ -2,29 +2,20 @@ import { maskCommandForDisplay } from "core/tools/permissions/displayMask";
 import { QuestionMarkCircleIcon } from "@heroicons/react/24/outline";
 import type { LoopQuestion } from "core";
 import { LOOP_LIMITS } from "core/util/loopMode";
-import {
-  answeredDecisions,
-  parsePlanFile,
-  validatePlanArgs,
-  type PlanDecision,
-} from "core/util/planFile";
+import { answeredDecisions, type PlanDecision } from "core/util/planFile";
 import { createContext, useContext, useEffect, useState } from "react";
 import { IdeMessengerContext } from "../../context/IdeMessenger";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
-import { selectPlanCallToDecide } from "../../redux/selectors/selectPlanDecisions";
 import {
   answerLoopQuestion,
   type LoopAnswerInput,
 } from "../../redux/thunks/loop";
 import { answerLimitQuestionThunk } from "../../redux/thunks/loopBudget";
 import { autoAnswerPlanFile, recordPlanAnswer } from "../../util/planDecisions";
-import { selectEffectiveLevels } from "../../redux/selectors/selectAutoApproval";
-import {
-  policyLevelLabel,
-  questionsNeverAsk,
-} from "core/tools/permissions/policy";
+import { policyLevelLabel } from "core/tools/permissions/policy";
 import { autoAnsweredLine } from "core/util/autoAnswer";
 import { AnswerChoices } from "./AnswerChoices";
+import { useOpenQuestions } from "./useOpenQuestions";
 
 /**
  * True below the Questions panel's provider: the plan card then leaves its
@@ -42,7 +33,7 @@ const buttonClass =
   "cursor-pointer rounded border border-solid border-border bg-transparent px-1.5 text-xs text-foreground hover:bg-input disabled:cursor-default disabled:opacity-50";
 
 /** One question a loop item holds: choices and Other, or a free answer. */
-function LoopQuestionRow({
+export function LoopQuestionRow({
   question,
   itemText,
 }: {
@@ -174,7 +165,7 @@ function LoopQuestionRow({
 }
 
 /** One decision a plan leaves to the person. The answer goes in the plan file. */
-function PlanDecisionRow({
+export function PlanDecisionRow({
   decision,
   fileUri,
   onRecorded,
@@ -236,42 +227,22 @@ function PlanDecisionRow({
  * the agent's choices and "Other". Without a question it renders nothing.
  */
 export function QuestionPanel() {
-  const loop = useAppSelector((s) => s.session.loop);
-  const taskPlan = useAppSelector((s) => s.session.taskPlan);
-  const planCall = useAppSelector(selectPlanCallToDecide);
+  const {
+    open,
+    decisions,
+    fileUri,
+    fileDecisions,
+    setFileDecisions,
+    itemText,
+    count,
+    level,
+    neverAsk,
+  } = useOpenQuestions();
   const ideMessenger = useContext(IdeMessengerContext);
-  const [fileDecisions, setFileDecisions] = useState<PlanDecision[]>();
-
-  const args = planCall
-    ? validatePlanArgs(planCall.parsedArgs ?? {})
-    : undefined;
-  const fileUri =
-    planCall?.output?.[0]?.uri?.type === "file"
-      ? planCall.output[0].uri.value
-      : undefined;
-  const callId = planCall?.toolCallId;
-
-  // The plan file is the source of truth for which decisions are answered
-  useEffect(() => {
-    setFileDecisions(undefined);
-    if (!fileUri) return;
-    let cancelled = false;
-    void ideMessenger.ide
-      .readFile(fileUri)
-      .then((text) => {
-        if (!cancelled) setFileDecisions(parsePlanFile(text).decisions);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [fileUri, callId, ideMessenger]);
 
   // Questions is IDGAF: a plan's open decisions are answered from what it
   // offered, so the person is shown a line and nothing waits (a plan made
   // earlier or opened later is covered here; present_plan covers a new one)
-  const level = useAppSelector((s) => selectEffectiveLevels(s).questions);
-  const neverAsk = questionsNeverAsk(level);
   const [autoLines, setAutoLines] = useState<string[]>([]);
   useEffect(() => {
     if (!neverAsk || !fileUri || !fileDecisions) return;
@@ -303,21 +274,6 @@ export function QuestionPanel() {
     };
   }, [neverAsk, fileUri, fileDecisions, ideMessenger, level]);
 
-  const open = (loop?.questions ?? []).filter(
-    (q) => !q.answerId && !q.decidedAlone,
-  );
-  const decisions =
-    args?.ok && fileUri && !neverAsk
-      ? answeredDecisions(
-          args.decisions,
-          (fileDecisions ?? []).flatMap((d) =>
-            d.answer ? [{ question: d.question, answer: d.answer }] : [],
-          ),
-        ).filter((d) => !d.answer)
-      : [];
-  const itemText = (id?: string) =>
-    taskPlan?.items.find((i) => i.id === id)?.text;
-  const count = open.length + decisions.length;
   const autoNotice = autoLines.length > 0 && (
     <div
       data-testid="auto-answered"
