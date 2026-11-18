@@ -2,6 +2,7 @@ import { JSONContent } from "@tiptap/core";
 import { InputModifiers } from "core";
 import { describe, expect, it, vi } from "vitest";
 import { createMockStore, getEmptyRootState } from "../../util/test/mockStore";
+import type { RootState } from "../store";
 import { streamResponseThunk } from "./streamResponse";
 
 // Mock external dependencies only - let selectors run naturally
@@ -613,16 +614,15 @@ describe("streamResponseThunk", () => {
       ),
     );
 
-    const shown = mockStore.getState().session.inlineErrorMessage;
+    const state = mockStore.getState() as RootState;
+    const shown = state.session.inlineErrorMessage;
     expect(shown).toEqual({ kind: "out-of-context", detail: error });
     const detail = typeof shown === "object" ? shown.detail : "";
     expect(detail).toContain("90000");
     expect(detail).toContain("32768");
     expect(detail).toContain("Context & cost");
     expect(chatSpy).not.toHaveBeenCalled();
-    expect(mockStore.getState().session.history.at(-1)?.message.role).toBe(
-      "user",
-    );
+    expect(state.session.history.at(-1)?.message.role).toBe("user");
   });
 
   it("should throw error for other compilation errors", async () => {
