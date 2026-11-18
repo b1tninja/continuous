@@ -1,4 +1,8 @@
-import { ruleKeyOf, type DayCounts } from "./auditIndexKeys";
+import {
+  IDGAF_OBJECTION_KEY,
+  ruleKeyOf,
+  type DayCounts,
+} from "./auditIndexKeys";
 import type { AuditIndex, IndexKey } from "./auditIndex";
 
 /**
@@ -52,6 +56,11 @@ export interface AuditOverview {
   mostAsked: MostAskedRow[];
   /** Some rows were not checked in time and are left for the next open */
   guardsCut?: boolean;
+  /**
+   * Calls IDGAF ran in the last 30 days that a rule or guard would have
+   * refused or asked about. Absent when there were none.
+   */
+  idgafObjections?: number;
 }
 
 function sumSince(key: IndexKey | undefined, from: string): DayCounts {
@@ -139,6 +148,7 @@ export function buildOverview(
     if (mostAsked.length >= MOST_ASKED_LIMIT) break;
     if (keepCandidate(row)) mostAsked.push(row);
   }
+  const idgafObjections = sumSince(index.rules[IDGAF_OBJECTION_KEY], from30)[1];
   return {
     state: "ready",
     coverageDays,
@@ -146,5 +156,6 @@ export function buildOverview(
     updatedAt: index.updatedAt,
     rules,
     mostAsked,
+    ...(idgafObjections > 0 ? { idgafObjections } : {}),
   };
 }

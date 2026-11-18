@@ -297,6 +297,37 @@ describe("planTreeModel", () => {
     expect(fold(m.nodes, "done")?.label).toBe("1 replaced");
   });
 
+  it("reads the round and the taken-out to-dos from the loop itself", () => {
+    const loop = loopOf(
+      3,
+      { "1": { status: "done" }, "3": { addedInRound: 2 } },
+      {
+        round: 2,
+        replacedItems: [
+          { id: "7", text: "Old check", round: 2, replacedBy: "3" },
+          { id: "8", text: "Dropped for good", round: 2 },
+        ],
+      },
+    );
+    const m = planTreeModel({ loop, plan: planOf(3) });
+    const done = fold(m.nodes, "done")!;
+    expect(done.label).toBe("1 done · 1 replaced · 1 dropped");
+    const old = done.children.find((c) => c.id === "replaced:7")!;
+    expect(old).toMatchObject({
+      status: "replaced",
+      text: "Old check",
+      replacedByNumber: 3,
+      replacedById: "3",
+    });
+    expect(done.children.find((c) => c.id === "replaced:8")?.status).toBe(
+      "dropped",
+    );
+    expect(items(m.nodes).find((i) => i.id === "3")?.round).toBe(2);
+    // the taken-out to-dos are not counted as work
+    expect(m.total).toBe(3);
+    expect(m.done).toBe(1);
+  });
+
   it("shows the trace and the auto-answers of a loop that decided for the person", () => {
     const loop = {
       ...loopOf(2, { "1": { status: "running", attempts: 1 } }),

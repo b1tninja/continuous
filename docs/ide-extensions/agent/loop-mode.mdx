@@ -103,7 +103,7 @@ A re-plan is a read-only planning turn that proposes the next round: it may rewo
 | ---------- | --------------- | ------------------------------------------------------------------------------------------- |
 | Manual     | Waits for you   | Waits for you                                                                               |
 | Cautious   | Waits for you   | Goes on if it adds no to-do; otherwise waits                                                |
-| Automatic  | Goes on         | Goes on                                                                                     |
+| Automatic  | Goes on         | As Permissive (no reviewer for plans exists yet)                                            |
 | Permissive | Goes on         | Goes on, unless it adds more new to-dos than `plan.maxNewItems` (default 5); then it waits  |
 | IDGAF      | Goes on         | Goes on                                                                                     |
 
@@ -182,7 +182,7 @@ Whatever the levels, the strategy and the autonomy level:
 
 ## Limits
 
-- **Automatic on Plan edits has no reviewer.** The level's description says a reviewer model judges each plan. A reviewer for plans is not built: at Automatic a re-plan goes on with no cap on new to-dos, which makes it looser than Permissive.
+- **Automatic on Plan edits has no reviewer.** A reviewer for plans is not built, so Automatic works as Permissive until one exists: plans go on, and a re-plan that adds more new to-dos than the Plan edits cap waits for you. The level's description says so.
 - The product's own description of Unattended mentions going on "after 15 minutes without an answer". A loop that follows your permission levels, which is every loop the extension and the terminal agent start, has no such timer.
 - Checkpoints and **Restore to here** are in the extension only. The terminal agent has no undo for a loop's edits; use git.
 - A finished or stopped loop does not summarise what it changed.

@@ -129,7 +129,7 @@ describe("detectToolDialectLeak", () => {
     expect(providerRecoversText("ollama")).toBe(false);
     expect(providerRecoversText("ollama", "cli")).toBe(true);
     expect(leakNoticeText("qwen-xml")).toBe(
-      "This model typed a tool request as plain text, so it did not run. Let Continue read that format for this model?",
+      "This model typed a tool request as plain text, so it did not run. Let Continuous read that format for this model?",
     );
     expect(leakHintText("m", "qwen-xml")).toContain("toolDialect: qwen-xml");
   });

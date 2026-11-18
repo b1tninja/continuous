@@ -1,9 +1,9 @@
 # Unreleased
 
-Staging note for the next release. Fold it into that release's `<tag>.md` (the release job reads `.github/release-notes/<tag>.md`) and delete this file.
+Staging note for the next release. New entries go in `unreleased/<branch>.md` (see `unreleased/README.md`); this file keeps entries that were added before fragments. At release time, fold this file and every fragment into that release's `<tag>.md` (the release job reads `.github/release-notes/<tag>.md`; `node scripts/release-notes-fragments.mjs` prints them combined), then delete this file and the fragments.
 
 ## New
 
-- **Drag files, folders, images and text into the chat input.** A workspace file dropped from the VS Code Explorer or an editor tab becomes an `@` file chip (read when you send, as if picked from the `@` list); a folder becomes an `@` folder chip, which is a search scope rather than the folder's whole contents. Images go through the image attachment (only for models that read images; at most 10 per message, 5 MB each), dropped text loses hidden characters, and a link is added as text without being fetched. Files that look like they hold secrets (`.env` files, keys and certificates, `.ssh` and cloud credential folders) and files outside the workspace are refused, and the input says which file and why; a refused file is never read. A text file dropped from outside VS Code (Windows File Explorer, Finder, another window) arrives without its location, so it becomes a snapshot chip instead: its content, read once on drop and marked "snapshot", not kept in sync. Snapshots refuse secret-named files unread, files over 200 KB unread, binary files (UTF-8, or UTF-16 with a byte order mark, are read), and any file in which the secret scanner finds a credential; a message holds at most 20 snapshots and 1 MB of them. A folder from outside VS Code becomes snapshots of its text files, two levels deep, skipping `node_modules`, `.git`, `dist` and secret folders, with a note of what was left out. In VS Code, hold Shift while dragging. VS Code 1.140 and later stop Explorer and tab drops from reaching extension webviews (microsoft/vscode#339036); until VS Code fixes that, use `@` for workspace files. JetBrains IDEs are reported not to deliver drops to the chat (its browser is off-screen); use `@` there.
-
 ## Behaviour changes
+
+## Fixes

@@ -3,7 +3,10 @@ import { render } from "ink-testing-library";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { BaseSessionMetadata } from "../session.js";
+import type {
+  BaseSessionMetadata,
+  ExtendedSessionMetadata,
+} from "../session.js";
 
 import { SessionSelector } from "./SessionSelector.js";
 
@@ -111,5 +114,57 @@ describe("SessionSelector", () => {
     );
 
     expect(lastFrame()).toContain("Empty session");
+  });
+  it("shows a header per workspace and selects the newest session of this folder", () => {
+    const sessions: ExtendedSessionMetadata[] = [
+      {
+        sessionId: "here",
+        title: "Newest here",
+        dateCreated: new Date().toISOString(),
+        workspaceDirectory: "/home/me/code/proj",
+        inWorkspace: true,
+        workspaceGroup: "~/code/proj",
+      },
+      {
+        sessionId: "here-old",
+        title: "Older here",
+        dateCreated: new Date().toISOString(),
+        workspaceDirectory: "/home/me/code/proj",
+        inWorkspace: true,
+        workspaceGroup: "~/code/proj",
+      },
+      {
+        sessionId: "other",
+        title: "Elsewhere",
+        dateCreated: new Date().toISOString(),
+        workspaceDirectory: "/home/me/code/other",
+        inWorkspace: false,
+        workspaceGroup: "~/code/other",
+      },
+    ];
+
+    const { lastFrame, stdin } = render(
+      <SessionSelector
+        sessions={sessions}
+        onSelect={mockOnSelect}
+        onExit={mockOnExit}
+      />,
+    );
+
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("~/code/proj (this folder)");
+    expect(frame).toContain("~/code/other");
+    // One header per group, above its first session
+    expect(frame.split("~/code/proj (this folder)")).toHaveLength(2);
+    expect(frame.indexOf("~/code/proj (this folder)")).toBeLessThan(
+      frame.indexOf("Newest here"),
+    );
+    expect(frame.indexOf("Older here")).toBeLessThan(
+      frame.indexOf("~/code/other"),
+    );
+    expect(frame).toMatch(/➤ Newest here/);
+
+    stdin.write("\r");
+    expect(mockOnSelect).toHaveBeenCalledWith("here");
   });
 });

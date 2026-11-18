@@ -1,8 +1,15 @@
 import { evaluateTerminalCommandSecurity } from "@continuedev/terminal-security";
 import { describe, expect, it } from "vitest";
 import type { ApprovalSettings } from "./approval";
-import { evaluateToolPolicyWithRules } from "./evaluate";
+import { evaluateToolPolicyWithRules as evaluateAndRun } from "./evaluate";
+import { wouldDecide } from "./idgafView.testutil";
 import { DEFAULT_POLICY_LEVELS, type PolicyLevel } from "./policy";
+
+// At IDGAF every call runs; these tests read what the guard would have
+// decided (wouldDecide), which IDGAF records instead of acting on.
+const evaluateToolPolicyWithRules = (
+  input: Parameters<typeof evaluateAndRun>[0],
+) => wouldDecide(evaluateAndRun(input));
 
 const ASK = "allowedWithPermission" as const;
 const ALLOW = "allowedWithoutPermission" as const;
@@ -165,7 +172,10 @@ describe("the policy files are a locked floor", () => {
         "grep allow ~/.continue/permissions.yaml",
         "git add .continue/rules/a.md",
       ]) {
-        expect(run(c, at("idgaf")).policy).toBe(ALLOW);
+        // The lock is not what decides (another guard may ask about a config file)
+        const r = run(c, at("idgaf"));
+        expect(r.policy).not.toBe(OFF);
+        expect(r.source).not.toBe("floor");
       }
     });
   });
@@ -187,7 +197,9 @@ describe("the policy files are a locked floor", () => {
 
     it("a read-only MCP tool naming it is not", () => {
       const args = { path: "~/.continue/config.yaml" };
-      expect(mcp("read_file", args, at("idgaf"), true).policy).toBe(ALLOW);
+      const r = mcp("read_file", args, at("idgaf"), true);
+      expect(r.policy).not.toBe(OFF);
+      expect(r.source).not.toBe("floor");
     });
   });
 

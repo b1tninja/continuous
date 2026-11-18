@@ -75,7 +75,8 @@ export const SYSTEM_SLASH_COMMANDS: SystemCommand[] = [
   },
   {
     name: "fork",
-    description: "Start a forked chat session from the current history",
+    description:
+      "Fork this session into a new one (history, mode, model, task plan) and continue there",
     category: "system",
   },
   {
@@ -101,7 +102,7 @@ export const SYSTEM_SLASH_COMMANDS: SystemCommand[] = [
   {
     name: "untaint",
     description:
-      "Acknowledge the untrusted content in this session (taintedSessionRule)",
+      "Acknowledge the untrusted content in this session (taintedSessionRule): /untaint, or /untaint <label> for one, such as mcp:github",
     category: "system",
   },
   {
@@ -121,6 +122,18 @@ export const SYSTEM_SLASH_COMMANDS: SystemCommand[] = [
     category: "system",
   },
   {
+    name: "thinking",
+    description:
+      "How the model's reasoning shows: /thinking fold (one line after the answer), expanded, or hide",
+    category: "system",
+  },
+  {
+    name: "tools",
+    description:
+      "Tool changes waiting for the prompt cache to go cold: /tools, or /tools apply to apply them now",
+    category: "system",
+  },
+  {
     name: "skills",
     description: "List all available skills",
     category: "system",
@@ -132,7 +145,8 @@ export const SYSTEM_SLASH_COMMANDS: SystemCommand[] = [
   },
   {
     name: "export",
-    description: "Export a session to JSON file",
+    description:
+      "Export this session as a masked Markdown transcript: /export [path] [--force]; --json for the session file /import reads; --raw masks nothing",
     category: "system",
   },
   {

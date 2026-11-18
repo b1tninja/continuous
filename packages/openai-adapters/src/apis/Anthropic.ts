@@ -62,6 +62,15 @@ import {
   requestedCacheTtl,
 } from "./cacheTtl.js";
 import {
+  claudeThinkingDisplayDefaultsToOmitted,
+  claudeThinkingFields,
+} from "./bedrockHelpers.js";
+import {
+  reasoningSwitch,
+  requestedReasoningEffort,
+  withoutReasoningEffort,
+} from "./reasoningSwitch.js";
+import {
   BaseLlmApi,
   CreateRerankResponse,
   FimCreateParamsStreaming,
@@ -104,6 +113,86 @@ export function anthropicFinishReason(
       // end_turn, stop_sequence, pause_turn and anything newer
       return "stop";
   }
+}
+
+function orphanToolResultText(
+  message: OpenAI.Chat.Completions.ChatCompletionToolMessageParam,
+): string {
+  const text =
+    typeof message.content === "string"
+      ? message.content
+      : (message.content ?? [])
+          .map((part) => (part.type === "text" ? part.text : ""))
+          .join("\n");
+  return `Tool call output for Tool Call ID ${message.tool_call_id || "unknown"}:\n\n${text.trim() || "No tool output"}`;
+}
+
+/** A chunk that carries only reasoning fields. */
+function reasoningChunk(
+  model: string,
+  reasoning: {
+    reasoning_content?: string;
+    reasoning_details?: Record<string, unknown>[];
+  },
+): ChatCompletionChunk {
+  return chatChunkFromDelta({
+    model,
+    delta: reasoning as ChatCompletionChunk.Choice["delta"],
+  });
+}
+
+/** Room left for the answer when a thinking budget raises max_tokens. */
+const MIN_ANSWER_TOKENS = 4096;
+
+/**
+ * The thinking blocks an assistant message carries back to Claude, from its
+ * `reasoning_details`, in order, by the rules core uses
+ * (core/llm/llms/Anthropic.ts, "thinking" case): redacted thinking
+ * (`reasoning.encrypted`) always; a signed entry as a thinking block with its
+ * text, except for the models whose thinking display defaults to "omitted"
+ * (Claude 4.7 and later, Fable, Mythos), whose blocks used to arrive empty and
+ * were never sent back, so the conversation sent stays the one it was. A
+ * signed entry without text (core sends the signature alone, and the text as
+ * `reasoning_content` or `reasoning`) takes the message's reasoning text once.
+ */
+export function anthropicThinkingBlocks(
+  message: unknown,
+  model: string,
+): ContentBlockParam[] {
+  const msg = message as {
+    reasoning_details?: unknown;
+    reasoning_content?: unknown;
+    reasoning?: unknown;
+  };
+  if (!Array.isArray(msg.reasoning_details)) return [];
+  const replaySigned = !claudeThinkingDisplayDefaultsToOmitted(model);
+  let fallbackText =
+    (typeof msg.reasoning_content === "string" ? msg.reasoning_content : "") ||
+    (typeof msg.reasoning === "string" ? msg.reasoning : "");
+  const blocks: ContentBlockParam[] = [];
+  for (const detail of msg.reasoning_details as Record<string, unknown>[]) {
+    if (
+      detail?.type === "reasoning.encrypted" &&
+      typeof detail.data === "string" &&
+      detail.data
+    ) {
+      blocks.push({ type: "redacted_thinking", data: detail.data });
+      continue;
+    }
+    const signature = detail?.signature;
+    if (!replaySigned || typeof signature !== "string" || !signature) {
+      continue;
+    }
+    let text = typeof detail.text === "string" ? detail.text : "";
+    if (!text) {
+      text = fallbackText;
+      fallbackText = "";
+    }
+    if (text) {
+      blocks.push({ type: "thinking", thinking: text, signature });
+    }
+  }
+  return blocks;
 }
 
 export class AnthropicApi implements BaseLlmApi {
@@ -211,28 +300,53 @@ export class AnthropicApi implements BaseLlmApi {
     if (noSampling) {
       noteSamplingOmitted(oaiBody.model, this.config.omitSampling === true);
     }
-    const anthropicBody: MessageCreateParams = {
+    // The reasoning switch (reasoningSwitch.ts) as Claude's `thinking`, the
+    // same fields core sends (getAnthropicThinkingParams)
+    const { reasoning, budgetTokens } = reasoningSwitch(
+      requestedReasoningEffort(
+        oaiBody,
+        this.config.requestOptions?.extraBodyProperties,
+      ),
+    );
+    const thinking = claudeThinkingFields(
+      oaiBody.model,
+      reasoning,
+      budgetTokens,
+    );
+    // max_tokens is required
+    let maxTokens = oaiBody.max_tokens ?? this.maxTokensForModel(oaiBody.model);
+    if (
+      thinking.thinking?.type === "enabled" &&
+      maxTokens <= thinking.thinking.budget_tokens
+    ) {
+      // A thinking budget must be below max_tokens, or the request is refused
+      maxTokens = thinking.thinking.budget_tokens + MIN_ANSWER_TOKENS;
+    }
+    const anthropicBody = {
       messages: this._convertMessages(
         oaiBody.messages.filter(
           (msg) => msg.role !== "system" && msg.role !== "developer",
         ),
+        oaiBody.model,
       ),
       system: systemMessage,
-      // This adapter sends no thinking block, so only the both-set rule applies
+      // With thinking on, Claude refuses most sampling values
       ...(noSampling
         ? {}
         : anthropicSamplingParams(
             oaiBody.temperature ?? undefined,
             oaiBody.top_p ?? undefined,
-            false,
+            thinking.thinking !== undefined,
           )),
-      max_tokens: oaiBody.max_tokens ?? this.maxTokensForModel(oaiBody.model), // max_tokens is required
+      max_tokens: maxTokens,
       model: oaiBody.model,
       stop_sequences: stop,
       stream: oaiBody.stream ?? undefined,
       tools,
       tool_choice: openAiToolChoiceToAnthropicToolChoice(oaiBody.tool_choice),
-    };
+      // The pinned SDK types have no adaptive thinking or output_config
+      ...thinking,
+    } as MessageCreateParams;
 
     return anthropicBody;
   }
@@ -380,6 +494,7 @@ export class AnthropicApi implements BaseLlmApi {
 
   private getContentBlocksFromChatMessage(
     message: OpenAI.Chat.Completions.ChatCompletionMessageParam,
+    model: string,
   ): ContentBlockParam[] {
     switch (message.role) {
       // One tool message = one tool_result block
@@ -398,9 +513,13 @@ export class AnthropicApi implements BaseLlmApi {
       case "user":
         return this.convertMessageContentToBlocks(message.content);
       case "assistant":
-        const blocks: ContentBlockParam[] = message.content
-          ? this.convertMessageContentToBlocks(message.content)
-          : [];
+        // Thinking first, as Claude returned it
+        const blocks: ContentBlockParam[] = [
+          ...anthropicThinkingBlocks(message, model),
+          ...(message.content
+            ? this.convertMessageContentToBlocks(message.content)
+            : []),
+        ];
         // If any tool calls are present, always put them last
         // Loses order vs what was originally sent, but they typically come last
         for (const toolCall of message.tool_calls ?? []) {
@@ -422,6 +541,7 @@ export class AnthropicApi implements BaseLlmApi {
 
   private _convertMessages(
     msgs: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+    model: string,
   ): MessageParam[] {
     const nonSystemMessages = msgs.filter(
       (m) => m.role !== "system" && m.role !== "developer",
@@ -441,6 +561,10 @@ export class AnthropicApi implements BaseLlmApi {
       }
     };
 
+    // A tool_result must answer a tool_use that was sent. One whose call was
+    // left out (no id or name) goes as text instead of a 400, in the words
+    // Bedrock uses for the same case.
+    const sentToolUseIds = new Set<string>();
     for (const message of nonSystemMessages) {
       const newRole =
         message.role === "user" || message.role === "tool"
@@ -450,7 +574,14 @@ export class AnthropicApi implements BaseLlmApi {
         flushCurrentMessage();
         currentRole = newRole;
       }
-      currentParts.push(...this.getContentBlocksFromChatMessage(message));
+      const blocks: ContentBlockParam[] =
+        message.role === "tool" && !sentToolUseIds.has(message.tool_call_id)
+          ? [{ type: "text", text: orphanToolResultText(message) }]
+          : this.getContentBlocksFromChatMessage(message, model);
+      for (const block of blocks) {
+        if (block.type === "tool_use") sentToolUseIds.add(block.id);
+      }
+      currentParts.push(...blocks);
       // A pinned message (CACHE_PIN_FIELD, a fork point): its last block takes
       // the mark, and the caching step turns it into a marker or strips it.
       if (isCachePinned(message) && currentParts.length > 0) {
@@ -471,15 +602,14 @@ export class AnthropicApi implements BaseLlmApi {
     body: ChatCompletionCreateParamsNonStreaming,
     signal: AbortSignal,
   ): Promise<ChatCompletion> {
-    const response = await customFetch(this.config.requestOptions)(
-      new URL("messages", this.apiBase),
-      {
-        method: "POST",
-        headers: this.getHeaders(),
-        body: JSON.stringify(this._convertBody(body)),
-        signal,
-      },
-    );
+    const response = await customFetch(
+      withoutReasoningEffort(this.config.requestOptions),
+    )(new URL("messages", this.apiBase), {
+      method: "POST",
+      headers: this.getHeaders(),
+      body: JSON.stringify(this._convertBody(body)),
+      signal,
+    });
 
     if (response.status === 499) {
       return EMPTY_CHAT_COMPLETION;
@@ -489,7 +619,13 @@ export class AnthropicApi implements BaseLlmApi {
 
     const usage: Record<string, number> | undefined = completion.usage;
     const finishReason = anthropicFinishReason(completion.stop_reason);
-    const text: string = completion.content?.[0]?.text ?? "";
+    // With thinking on the first block is the thinking, not the answer
+    const text: string = Array.isArray(completion.content)
+      ? completion.content
+          .filter((block: { type?: string }) => block?.type === "text")
+          .map((block: { text?: string }) => block.text ?? "")
+          .join("")
+      : "";
     return {
       id: completion.id,
       object: "chat.completion",
@@ -551,6 +687,17 @@ export class AnthropicApi implements BaseLlmApi {
             lastToolUseId = blockStartEvent.content_block.id;
             lastToolUseName = blockStartEvent.content_block.name;
           }
+          // Redacted thinking has no text; it goes back to Claude as it came
+          if (blockStartEvent.content_block.type === "redacted_thinking") {
+            yield reasoningChunk(model, {
+              reasoning_details: [
+                {
+                  type: "reasoning.encrypted",
+                  data: blockStartEvent.content_block.data,
+                },
+              ],
+            });
+          }
           break;
         case "message_start":
           const startEvent = rawEvent as RawMessageStartEvent;
@@ -581,6 +728,23 @@ export class AnthropicApi implements BaseLlmApi {
               yield chatChunk({
                 content: blockDeltaEvent.delta.text,
                 model,
+              });
+              break;
+            // Thinking as the reasoning fields core's chunk reader and the
+            // CLI read: text as reasoning_content, the signature in
+            // reasoning_details (the same shape as the Bedrock adapter's)
+            case "thinking_delta":
+              if (blockDeltaEvent.delta.thinking) {
+                yield reasoningChunk(model, {
+                  reasoning_content: blockDeltaEvent.delta.thinking,
+                });
+              }
+              break;
+            case "signature_delta":
+              yield reasoningChunk(model, {
+                reasoning_details: [
+                  { signature: blockDeltaEvent.delta.signature },
+                ],
               });
               break;
             case "input_json_delta":
@@ -652,15 +816,14 @@ export class AnthropicApi implements BaseLlmApi {
     body: ChatCompletionCreateParamsStreaming,
     signal: AbortSignal,
   ): AsyncGenerator<ChatCompletionChunk> {
-    const response = await customFetch(this.config.requestOptions)(
-      new URL("messages", this.apiBase),
-      {
-        method: "POST",
-        headers: this.getHeaders(),
-        body: JSON.stringify(this._convertBody(body)),
-        signal,
-      },
-    );
+    const response = await customFetch(
+      withoutReasoningEffort(this.config.requestOptions),
+    )(new URL("messages", this.apiBase), {
+      method: "POST",
+      headers: this.getHeaders(),
+      body: JSON.stringify(this._convertBody(body)),
+      signal,
+    });
     yield* this.handleStreamResponse(response, body.model, signal);
   }
 

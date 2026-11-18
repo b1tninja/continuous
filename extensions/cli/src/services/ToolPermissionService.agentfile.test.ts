@@ -475,7 +475,7 @@ describe("ToolPermissionService - Agent File Integration", () => {
   });
 
   describe("initializeSync with agent file", () => {
-    it("should use agent file policies when agent file is present with no parsed tools", () => {
+    it("an agent file with no tools key adds nothing: the person's policy decides", () => {
       const agentFileState: AgentFileServiceState = {
         agentFile: { name: "test-agent" } as any,
         slug: "test-slug",
@@ -484,18 +484,19 @@ describe("ToolPermissionService - Agent File Integration", () => {
         parsedRules: null,
       };
 
-      const state = service.initializeSync(undefined, agentFileState);
+      const withAgent = service.initializeSync(undefined, agentFileState);
+      const without = new ToolPermissionService().initializeSync(
+        undefined,
+        undefined,
+      );
 
-      // Should have wildcard allow policy
-      expect(state.permissions.policies).toEqual([
-        {
-          tool: "*",
-          permission: "allow",
-        },
-      ]);
+      // Not a lone wildcard allow: the same lists as without the file
+      expect(withAgent.permissions.policies).toEqual(
+        without.permissions.policies,
+      );
     });
 
-    it("should use agent file policies when agent file is present with parsed tools", () => {
+    it("an agent file's tool list excludes the others but does not allow Bash", () => {
       const agentFileState: AgentFileServiceState = {
         agentFile: { name: "test-agent" } as any,
         slug: "test-slug",
@@ -510,30 +511,24 @@ describe("ToolPermissionService - Agent File Integration", () => {
 
       const state = service.initializeSync(undefined, agentFileState);
 
-      // Should have specific policies for Bash and exclusions for others
-      expect(state.permissions.policies).toContainEqual({
-        tool: "Bash",
-        permission: "allow",
-      });
-
       // Should exclude other built-in tools
       const allBuiltInNames = ALL_BUILT_IN_TOOLS.map((t) => t.name);
       const notBash = allBuiltInNames.filter((name) => name !== "Bash");
 
       for (const toolName of notBash) {
+        // structural: an agent's tool list is its role, which IDGAF keeps
         expect(state.permissions.policies).toContainEqual({
           tool: toolName,
           permission: "exclude",
+          structural: true,
         });
       }
 
-      // Should have wildcard allow at the end
-      const lastPolicy =
-        state.permissions.policies[state.permissions.policies.length - 1];
-      expect(lastPolicy).toEqual({
-        tool: "*",
-        permission: "allow",
-      });
+      // The agent file's own allow and its closing wildcard allow are gone
+      const first = (tool: string) =>
+        state.permissions.policies.find((p) => p.tool === tool);
+      expect(first("Bash")).toEqual({ tool: "Bash", permission: "ask" });
+      expect(first("*")).toEqual({ tool: "*", permission: "ask" });
     });
 
     it("should use normal resolution when agent file is not present", () => {
@@ -550,7 +545,7 @@ describe("ToolPermissionService - Agent File Integration", () => {
       ]);
     });
 
-    it("should prioritize agent file over runtime overrides", () => {
+    it("the person's flags still bind under an agent file, and it can only take away", () => {
       const agentFileState: AgentFileServiceState = {
         agentFile: { name: "test-agent" } as any,
         slug: "test-slug",
@@ -573,17 +568,17 @@ describe("ToolPermissionService - Agent File Integration", () => {
         agentFileState,
         undefined,
       );
+      const first = (tool: string) =>
+        state.permissions.policies.find((p) => p.tool === tool);
 
-      // Agent file should take precedence, so Read should be allowed (not excluded)
-      expect(state.permissions.policies).toContainEqual({
-        tool: "Read",
-        permission: "allow",
-      });
-
-      // Bash should be excluded (not in agent file)
-      expect(state.permissions.policies).toContainEqual({
+      // The person excluded Read; listing it in the agent file does not
+      // bring it back
+      expect(first("Read")).toEqual({ tool: "Read", permission: "exclude" });
+      // The person allowed Bash; the agent file left it out, so it is gone
+      expect(first("Bash")).toEqual({
         tool: "Bash",
         permission: "exclude",
+        structural: true,
       });
     });
   });

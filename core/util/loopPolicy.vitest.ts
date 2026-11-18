@@ -121,12 +121,19 @@ describe("Plan edits decides a re-plan", () => {
     ).toBe(true);
   });
 
-  test("Automatic goes on without a cap: no reviewer for plans exists yet", () => {
+  test("Automatic keeps Permissive's cap: no reviewer for plans exists yet (UJ10)", () => {
     expect(
       replanDecision(
         loopWith({ plan: "automatic" }),
         before,
         plan("A", "B", "1", "2", "3", "4", "5", "6"),
+      ).accept,
+    ).toBe(false);
+    expect(
+      replanDecision(
+        loopWith({ plan: "automatic" }),
+        before,
+        plan("A", "B", "1", "2"),
       ).accept,
     ).toBe(true);
   });

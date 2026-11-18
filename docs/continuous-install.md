@@ -6,7 +6,7 @@ Continuous is not affiliated with Continue Dev, Inc.
 
 **Requirements:** VS Code 1.105 or newer (or a VS Code-based editor built on it). Older versions cannot load the extension and will refuse to install it, so they keep the previously installed version.
 
-The current release is on the [latest release page](https://github.com/b1tninja/continuous/releases/latest). The file names below use 2.4.4 as the example version.
+The current release is on the [latest release page](https://github.com/b1tninja/continuous/releases/latest). The file names below use 2.16.2 as the example version.
 
 ## Option 1: install the latest release
 
@@ -23,12 +23,14 @@ Open the [latest release](https://github.com/b1tninja/continuous/releases/latest
 | Linux x64             | `continuous-linux-x64-<version>.vsix`    |
 | Linux Arm64           | `continuous-linux-arm64-<version>.vsix`  |
 
-For 2.4.4, the Windows x64 file is `continuous-win32-x64-2.4.4.vsix`. There are no 32-bit ARM or Alpine (musl) builds; the 2.2.0 release's `linux-armhf` and `alpine-x64` files did not work, because their native modules were built for other platforms.
+For 2.16.2, the Windows x64 file is `continuous-win32-x64-2.16.2.vsix`. There are no 32-bit ARM or Alpine (musl) builds; the 2.2.0 release's `linux-armhf` and `alpine-x64` files did not work, because their native modules were built for other platforms.
+
+Each platform also has an **agents** build, `continuous-<platform>-<version>-agents.vsix`. It adds Continuous to VS Code's Agents window through APIs that are still proposed, so it works in VS Code Insiders, or in Stable started with `code --enable-proposed-api b1tninja.continuous`; elsewhere it works like the normal build. See [VS Code Chat and Agents](https://b1tninja.github.io/continuous/customize/vscode-chat-and-agents). The commands below pick the normal build.
 
 With the [GitHub CLI](https://cli.github.com/), you can download the latest release's file and checksums in one command. Change `win32-x64` to your platform:
 
 ```bash
-gh release download --repo b1tninja/continuous --pattern "continuous-win32-x64-*.vsix" --pattern SHA256SUMS.txt --dir continuous-vsix
+gh release download --repo b1tninja/continuous --pattern "continuous-win32-x64-*[0-9].vsix" --pattern SHA256SUMS.txt --dir continuous-vsix
 ```
 
 ### 2. Verify the download (optional, recommended)
@@ -37,7 +39,7 @@ The packages are not code-signed, so the checksum is how you confirm you have th
 
 ```powershell
 # Windows PowerShell: prints True when the checksum matches
-$file = Get-ChildItem continuous-win32-x64-*.vsix
+$file = Get-ChildItem continuous-win32-x64-*[0-9].vsix
 $expected = (Select-String -Path SHA256SUMS.txt -SimpleMatch $file.Name).Line.Split(' ')[0]
 (Get-FileHash $file.FullName -Algorithm SHA256).Hash -eq $expected
 ```
@@ -46,13 +48,13 @@ $expected = (Select-String -Path SHA256SUMS.txt -SimpleMatch $file.Name).Line.Sp
 # Linux: prints "<file>: OK" when the checksum matches
 sha256sum --check --ignore-missing SHA256SUMS.txt
 # macOS (change darwin-arm64 to darwin-x64 on an Intel Mac)
-grep continuous-darwin-arm64 SHA256SUMS.txt | shasum -a 256 --check
+grep "continuous-darwin-arm64-.*[0-9].vsix$" SHA256SUMS.txt | shasum -a 256 --check
 ```
 
 ### 3. Install it
 
 ```bash
-code --install-extension continuous-win32-x64-2.4.4.vsix --force
+code --install-extension continuous-win32-x64-2.16.2.vsix --force
 ```
 
 Or in VS Code: open the **Extensions** view, select **...** → **Install from VSIX...**, and choose the file.
@@ -67,7 +69,7 @@ To check which version is installed, run `code --list-extensions --show-versions
 
 **Coming from 2.4.1 or earlier?** Those releases used the ID `b1tninja.continued`, which is taken on the VS Code Marketplace by another extension, so from 2.4.2 the ID is `b1tninja.continuous`. VS Code treats it as a different extension: uninstall `b1tninja.continued` (`code --uninstall-extension b1tninja.continued`) after installing 2.4.2, so the two do not both run. Your settings and configuration carry over: the first start copies `~/.continue` to `~/.continuous` (the codebase index is rebuilt) and each `continue.*` setting to its `continuous.*` name, and a workspace's `.continue` folder is still read. Keyboard shortcuts bound to a `continue.*` command need the new `continuous.*` name. API keys kept in VS Code's secure storage do not carry over, as each extension has its own: enter them again, or keep them in `~/.continuous/.env`. The welcome screen also shows once; close it, your models are already set up.
 
-> Release files are named with the version only, for example `continuous-win32-x64-2.4.4.vsix`. GitHub Actions builds (Option 2) add the short commit SHA, for example `continuous-win32-x64-2.4.4-g62505d0.vsix`.
+> Release files are named with the version only, for example `continuous-win32-x64-2.16.2.vsix`. GitHub Actions builds (Option 2) add the short commit SHA, for example `continuous-win32-x64-2.16.2-g62505d0.vsix`.
 
 ## Option 2: download an unreleased build from GitHub Actions
 
@@ -133,7 +135,7 @@ $env:CONTINUOUS_CLI_VERSION = "2.14.0"; .\install.ps1
 Without the script, install straight from the release:
 
 ```bash
-npm i -g https://github.com/b1tninja/continuous/releases/download/v2.14.0-vscode/continuous-cli-2.14.0.tgz
+npm i -g https://github.com/b1tninja/continuous/releases/download/v2.16.2-vscode/continuous-cli-2.16.2.tgz
 ```
 
 To update, run the install script again or install the next release's `.tgz` the same way; the CLI does not update itself. To uninstall, run `npm uninstall -g @b1tninja/continuous-cli`. That removes both commands and leaves `~/.continuous` alone.
@@ -168,4 +170,4 @@ cd extensions/vscode && npm ci && npm run prepackage && npm run package
 npx @vscode/vsce package --no-dependencies
 ```
 
-Node.js 20.20.1 or later is required (see `.nvmrc`). Building on Windows also needs the Visual Studio Build Tools for native modules.
+Node.js 20.20.1 or later is required; `.nvmrc` pins the version CI builds with. Building on Windows also needs the Visual Studio Build Tools for native modules.

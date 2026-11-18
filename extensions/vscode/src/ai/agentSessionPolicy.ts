@@ -75,6 +75,9 @@ export function agentSessionApproval(file?: string): ApprovalSettings {
     levels: settings.levels,
     ...(settings.builtin ? { builtin: settings.builtin } : {}),
     ...(settings.floor?.length ? { floor: settings.floor } : {}),
+    ...(typeof settings.safetyChecks === "boolean"
+      ? { safetyChecks: settings.safetyChecks }
+      : {}),
   };
 }
 

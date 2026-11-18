@@ -159,6 +159,35 @@ describe("ProviderSetupFlow: local server", () => {
     });
   });
 
+  it("opened at the checklist (Manage models), lists the configured server's models", async () => {
+    const { messenger, fetches } = messengerWith({
+      ...EMPTY_SETUP,
+      connections: [
+        {
+          provider: "openai",
+          connection: { apiBase: "http://127.0.0.1:8083/v1" },
+          account: "strata",
+          models: [{ name: "Old", model: "old-model" }],
+          key: { state: "none" },
+        },
+      ],
+    });
+    await renderWithProviders(
+      <ProviderSetupFlow
+        initialProvider="openai"
+        initialConnection={{ apiBase: "http://127.0.0.1:8083/v1" }}
+        initialStep="models"
+        onDone={vi.fn()}
+      />,
+      { mockIdeMessenger: messenger },
+    );
+    expect(screen.getByText("Step 2 of 3")).toBeTruthy();
+    await screen.findByLabelText(STRATA_MODEL.name);
+    const openaiFetches = fetches.filter((f) => f.provider === "openai");
+    expect(openaiFetches).toHaveLength(1);
+    expect(openaiFetches[0].apiBase).toMatch(/^http:\/\/127\.0\.0\.1:8083\/v1/);
+  });
+
   it("chooses a usual address with one click", async () => {
     const { messenger } = messengerWith();
     const { user } = await renderWithProviders(
@@ -239,7 +268,7 @@ describe("ProviderSetupFlow: catalogue fetch only on request", () => {
   function setup(
     opts: {
       fail?: boolean;
-      policy?: "ask" | "never";
+      policy?: "automatic" | "ask" | "never" | "off";
       cached?: boolean;
     } = {},
   ) {
@@ -259,6 +288,12 @@ describe("ProviderSetupFlow: catalogue fetch only on request", () => {
     };
     messenger.responseHandlers["modelCatalog/status"] = async () => ({
       policy: opts.policy ?? "ask",
+      refreshHours: 24,
+      ...(opts.cached
+        ? {
+            openrouter: { fetchedAt: "2026-11-01T00:00:00.000Z", count: 1 },
+          }
+        : {}),
     });
     messenger.responseHandlers["modelCatalog/cached"] = async () =>
       opts.cached
@@ -353,7 +388,9 @@ describe("ProviderSetupFlow: catalogue fetch only on request", () => {
     await user.type(screen.getByLabelText(/API key/i), "test-key");
     await user.click(screen.getByRole("button", { name: "Next" }));
     expect(await screen.findByLabelText(NEW_MODEL.name)).toBeTruthy();
-    expect(screen.getByText(/downloaded/)).toBeTruthy();
+    expect(
+      await screen.findByText(/OpenRouter model information/),
+    ).toBeTruthy();
     // The Refresh button stays for later: one request per click
     await user.click(
       screen.getByRole("button", { name: "Refresh from openrouter.ai" }),
@@ -442,6 +479,61 @@ describe("ProviderSetupFlow: catalogue fetch only on request", () => {
     expect(await screen.findByText(/Could not reach ollama.com/)).toBeTruthy();
     expect(fetches).toHaveLength(1);
     expect(screen.getByTestId("model-checklist")).toBeTruthy();
+  });
+
+  it("openrouter, updates automatic: nothing is asked, and with no list yet one pull is made", async () => {
+    const { messenger, fetches, pulls } = setup({ policy: "automatic" });
+    await renderWithProviders(
+      <ProviderSetupFlow initialProvider="openrouter" onDone={vi.fn()} />,
+      { mockIdeMessenger: messenger },
+    );
+    await waitFor(() => expect(pulls).toHaveLength(1));
+    await idle();
+    expect(promptRegion()).toBeNull();
+    expect(pulls).toHaveLength(1);
+    expect(fetches).toHaveLength(0);
+  });
+
+  it("openrouter, updates automatic with a list on this computer: no prompt, no request", async () => {
+    const { messenger, pulls } = setup({ policy: "automatic", cached: true });
+    await renderWithProviders(
+      <ProviderSetupFlow initialProvider="openrouter" onDone={vi.fn()} />,
+      { mockIdeMessenger: messenger },
+    );
+    await idle();
+    expect(promptRegion()).toBeNull();
+    expect(pulls).toHaveLength(0);
+  });
+
+  it("openrouter, updates off: no prompt, no Refresh, no request", async () => {
+    const { messenger, fetches, pulls } = setup({ policy: "off" });
+    const { user } = await renderWithProviders(
+      <ProviderSetupFlow initialProvider="openrouter" onDone={vi.fn()} />,
+      { mockIdeMessenger: messenger },
+    );
+    await idle();
+    expect(promptRegion()).toBeNull();
+    await user.type(screen.getByLabelText(/API key/i), "test-key");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(
+      await screen.findByText(/Model information updates are off/),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Refresh now" })).toBeNull();
+    await idle();
+    expect(pulls).toHaveLength(0);
+    expect(fetches).toHaveLength(0);
+  });
+
+  it("ollama is not covered by Automatic: it still asks and fetches nothing on open", async () => {
+    const { messenger, fetches, pulls } = setup({ policy: "automatic" });
+    await renderWithProviders(
+      <ProviderSetupFlow initialProvider="ollama" onDone={vi.fn()} />,
+      { mockIdeMessenger: messenger },
+    );
+    await idle();
+    expect(screen.getByText(/latest model list from ollama.com/)).toBeTruthy();
+    expect(fetches).toHaveLength(0);
+    expect(pulls).toHaveLength(0);
   });
 
   it("Not now on Ollama sends nothing and keeps the bundled list", async () => {

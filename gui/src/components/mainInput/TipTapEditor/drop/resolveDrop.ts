@@ -12,8 +12,8 @@
  *    a file becomes an `@file` mention, read by the file provider at send
  *    time, exactly as if it had been picked from the `@` list.
  */
-import { findUriInDirs } from "core/util/uri";
 import { securityPatternHit } from "core/indexing/securityPatterns";
+import { findUriInDirs } from "core/util/uri";
 import { DropItem, FileLike, stripFragment, uriBasename } from "./classifyDrop";
 import {
   MAX_FOLDER_DEPTH,
@@ -32,11 +32,13 @@ export type RefusalReason =
   | "outside-workspace"
   | "not-found"
   | "no-location"
+  | "svg-image"
   | "untitled"
   | "unknown-type"
   | "no-vision"
   | "too-many-images"
   | "image-too-large"
+  | "unreadable-image"
   | "no-file-provider"
   | "no-folder-provider"
   | "secret-content"
@@ -287,12 +289,15 @@ const REASON_TEXT: Record<
   "not-found": (n) => `${n} was not found in the workspace`,
   "no-location": (n) =>
     `${n} came from outside the editor, so it has no location (add workspace files with @)`,
+  "svg-image": (n) =>
+    `${n} is an SVG, which is added as text, not as an image (add it from the workspace)`,
   untitled: (n) => `${n} is not saved yet`,
   "unknown-type": (n) => `${n} is not a file or a folder`,
   "no-vision": (n) => `${n}: the selected model does not read images`,
   "too-many-images": (n) =>
     `${n}: a message can hold at most ${MAX_IMAGES_PER_MESSAGE} images`,
   "image-too-large": (n) => `${n} is larger than 5 MB`,
+  "unreadable-image": (n) => `${n} could not be read as an image`,
   "no-file-provider": (n) =>
     `${n}: file context is not available in this configuration`,
   "no-folder-provider": (n) =>

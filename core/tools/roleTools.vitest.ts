@@ -217,9 +217,15 @@ describe("Plan mode and MCP tools", () => {
     expect(isToolAllowedForRole("planner", ref, { trust })).toBe(false);
   });
 
-  it("the agent may use any MCP tool: the table only restricts", () => {
+  it("the agent may use any approved MCP tool: the table only restricts", () => {
     expect(isToolAllowedForRole("agent", claim)).toBe(true);
-    expect(isToolAllowedForRole("background", claim)).toBe(true);
+    // An unattended run only the ones the person listed (TR25)
+    expect(isToolAllowedForRole("background", claim)).toBe(false);
+    expect(
+      isToolAllowedForRole("background", claim, {
+        unattendedMcpTools: [claim.mcp!.server],
+      }),
+    ).toBe(true);
   });
 
   it("the list filter drops an MCP tool the user did not list, and keeps the rest", () => {

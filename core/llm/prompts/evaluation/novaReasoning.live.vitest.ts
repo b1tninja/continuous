@@ -22,13 +22,23 @@ import { TURN_SCENARIOS } from "./scenarios";
  *
  * Opt-in, billed (under a cent per run on Nova 2 Lite):
  *
- *   RUN_BEDROCK_LIVE=1 AWS_PROFILE=torgate npx vitest run llm/prompts/evaluation/novaReasoning.live.vitest.ts
+ *   RUN_LIVE_PROVIDER_TESTS=1 RUN_BEDROCK_LIVE=1 AWS_PROFILE=torgate npx vitest run llm/prompts/evaluation/novaReasoning.live.vitest.ts
  *
  * Knobs: LIVE_MODEL (default us.amazon.nova-2-lite-v1:0), AWS_REGION
  * (default us-east-1), LIVE_RUNS (default 2), LIVE_SCENARIO (default
  * plan-reserved-choice), LIVE_PROFILE (default full).
  */
-const live = process.env.RUN_BEDROCK_LIVE === "1" ? describe : describe.skip;
+// Paid calls: RUN_LIVE_PROVIDER_TESTS=1 is the consent, RUN_BEDROCK_LIVE=1 selects Bedrock.
+// AWS credentials come from the default chain, so there is no key to check here.
+const live =
+  process.env.RUN_LIVE_PROVIDER_TESTS === "1" &&
+  process.env.RUN_BEDROCK_LIVE === "1"
+    ? describe
+    : (name: string, fn: () => void) =>
+        describe.skip(
+          `${name} (skipped: set RUN_LIVE_PROVIDER_TESTS=1 and RUN_BEDROCK_LIVE=1)`,
+          fn,
+        );
 
 const MODEL = process.env.LIVE_MODEL ?? "us.amazon.nova-2-lite-v1:0";
 const REGION = process.env.AWS_REGION ?? "us-east-1";

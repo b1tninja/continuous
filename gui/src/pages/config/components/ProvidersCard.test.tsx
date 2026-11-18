@@ -164,7 +164,7 @@ describe("ProvidersCard: provider accounts", () => {
     const { m } = messengerWith(setup);
     await renderWithProviders(<ProvidersCard />, { mockIdeMessenger: m });
     const row = await screen.findByTestId("provider-row-anthropic");
-    expect(row.textContent).toContain("account anthropic-work");
+    expect(row.textContent).toContain("Account anthropic-work");
     expect(
       screen.queryByRole("button", { name: "Turn into an account" }),
     ).toBeNull();

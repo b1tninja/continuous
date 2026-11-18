@@ -27,3 +27,24 @@ The check runs on tool results in the IDE, including subagents, and in the termi
 ## After untrusted content has come in
 
 A notice only warns the model. A separate, optional rule goes further: with `taintedSessionRule: ask` in your own `config.yaml`, once untrusted content (such as a web page or an MCP result) has entered a session, calls that send data out or change state outside the workspace ask you first, at every approval level. The setting is `toolPermissions.auto.environment.taintedSessionRule`, it is `off` by default, and it is read only from your own config file, never from a file in the project. In the terminal, `/untaint` records that you have reviewed what came in.
+
+Files in the open folder are somebody else's text too when you have not trusted the folder: a cloned repository's README, its `AGENTS.md` or a test fixture. While the rule is on, reading a file's content from a workspace folder with no [project trust](/customize/workspace-trust) record for any part of its configuration marks the session `untrusted-workspace`. Trusting any part of the folder's configuration, or starting the terminal agent with `--trust-project-config`, counts as trusting the folder. A folder listing does not mark the session.
+
+Reading a secret also marks the session, with the label `secret`: a file the protected-paths list calls secret (such as `.env`, a private key or `~/.aws/credentials`) read with a file tool, or a command that prints a credential or reads such a file (see the next section for what counts as a read). A secret on its own makes only the calls that send data out ask (network, push, publish and MCP calls); another local read or a write outside the workspace moves nothing off the machine and is left as it was. Together with untrusted content, every one of those calls asks, as before. While the session holds `secret`, a host in your `trustedDomains` counts as a destination like any other: a trusted host is often one anyone can write to (a code host, a paste site, a search box), so a secret in a URL's path or query would reach them. Without a secret, trusted hosts stay exempt. At IDGAF none of these asks stops a call; it is only recorded in the audit trail. The pair in the next section is the exception.
+
+## A secret, then a network call
+
+One pair holds whether or not `taintedSessionRule` is on: a session that has read a secret, then a call that can send data out.
+
+A secret is read when its content is: a file the protected-paths list calls secret read with a file tool (`~/.npmrc` included); a command that prints, searches or decodes such a file (`cat`, `type`, `Get-Content`, `head`, `tail`, `less`, `grep`, `awk`, `sed`, `base64`, `xxd` and the like); a redirect from it (`wc -l < .env`); a network command that sends it (`curl -d @.env`, `--data-binary @file`, `-F file=@...`, `scp`, `rsync` or `nc` with it); or a command that prints a credential (`printenv`, `echo $API_TOKEN`). Only naming the file reads nothing: `echo .env`, `ls .env`, `test -f .env`, `git add .env` and `git status` do not mark the session, and neither does `ssh -i ~/.ssh/id_rsa host` (the key is used, not sent).
+
+The call is a fetch or web search, a network command such as `curl`, `ssh` or `gh api`, a push, a package publish, or a tool of an MCP server you have not marked `trusted` under `mcpServers` in your own `permissions.yaml`. A trusted server's tools are not counted, whatever they do; a server the open folder brought never counts as trusted. A host in your `trustedDomains` counts as a destination here too.
+
+| Level | What happens to the call |
+| --- | --- |
+| Manual, Cautious, Permissive | It asks you, even where a level, an allow rule or `--allow` would run it. |
+| Automatic | It asks you; the reviewer model never answers it. |
+| Headless (`cn -p`, `serve`) below IDGAF | Nobody can be asked, so it is refused. |
+| IDGAF | It is refused, with or without Questions at IDGAF. It is not asked: IDGAF asks nothing, so the choice there is run or refuse, and a secret leaving the machine is the one call IDGAF refuses. |
+
+The reason names what read the secret and where the call would send it, such as `A secret was read in this session (read_file ~/.npmrc), and this call can send it to paste.example (network-egress)`. At IDGAF it starts `Refused at IDGAF:`. A call already refused stays refused, a tool you switched off stays off, and a call that sends nothing out (a build, a test, a local read) is unchanged. The secret read lasts for the session: `/untaint` does not clear it, and a new session starts without it. When the session is marked, the [audit trail](/ide-extensions/agent/audit-trail) gets one `secret-read` record naming what read it, with the path cut to the file's name (`read_file .npmrc`), so a later `secret-egress` decision can be traced to it.

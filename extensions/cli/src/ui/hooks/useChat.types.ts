@@ -21,7 +21,8 @@ export interface UseChatProps {
   onShowSessionSelector?: () => void;
   onShowJobsSelector?: () => void;
   onShowLoopInbox?: () => void;
-  onShowExportSelector?: () => void;
+  /** `raw`: `/export --json --raw`, the session JSON unscrubbed. */
+  onShowExportSelector?: (options?: { raw?: boolean }) => void;
   onReload?: () => Promise<void>;
   onClear?: () => void;
   onRefreshStatic?: () => void;
@@ -79,7 +80,7 @@ export interface SlashCommandResult {
   openUpdateSelector?: boolean;
   openSessionSelector?: boolean;
   openJobsSelector?: boolean;
-  openExportSelector?: boolean;
+  openExportSelector?: boolean | { raw: boolean };
   openLoopInbox?: boolean;
   compact?: boolean;
   diffContent?: string;

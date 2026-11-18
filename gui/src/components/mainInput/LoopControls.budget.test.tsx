@@ -151,34 +151,8 @@ describe("LoopControls and per-item budgets", () => {
     );
   });
 
-  it("offers the limit policy inside the budget panel, defaulting by level", async () => {
+  it("titles the item text", async () => {
     await render();
-    expect(screen.queryByTestId("loop-limit-policy")).toBeNull();
-    fireEvent.click(screen.getByTestId("loop-budget-toggle"));
-    const select = screen.getByTestId("loop-limit-policy") as HTMLSelectElement;
-    // Auto reads as Review
-    expect(select.value).toBe("review");
-    expect([...select.options].map((o) => o.value)).toEqual([
-      "suggest",
-      "force",
-      "review",
-    ]);
-  });
-
-  it("folds the limit controls behind a Limits button below xs, and titles the item text", async () => {
-    await render();
-    const toggle = screen.getByTestId("loop-limits-toggle");
-    expect(toggle.className).toContain("xs:hidden");
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    const panel = document.getElementById(
-      toggle.getAttribute("aria-controls")!,
-    )!;
-    expect(panel.className).toContain("hidden");
-    expect(panel.className).toContain("xs:block");
-    expect(panel.contains(screen.getByTestId("loop-replan"))).toBe(true);
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(panel.className).not.toContain("hidden");
     expect(
       screen.getByTestId("loop-item-1").querySelector("[title]"),
     ).toHaveAttribute("title", "1. Fix it");

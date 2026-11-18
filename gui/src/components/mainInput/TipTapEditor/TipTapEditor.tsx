@@ -16,14 +16,17 @@ import { selectSelectedChatModel } from "../../../redux/slices/configSlice";
 import InputToolbar, { ToolbarOptions } from "../InputToolbar";
 import { AttachMenu } from "../InputToolbar/AttachMenu";
 import { ComboBoxItem } from "../types";
+import { MAIN_DRAFT_INPUT } from "../../../util/drafts";
 import { DragOverlay } from "./components/DragOverlay";
+import { DraftRestoredNotice } from "./components/DraftRestoredNotice";
+import { InputBoxDiv } from "./components/StyledComponents";
 import { DropNotice } from "./drop/DropNotice";
 import { useChatInputDrop } from "./drop/useChatInputDrop";
-import { InputBoxDiv } from "./components/StyledComponents";
 import { useMainEditor } from "./MainEditorProvider";
 import "./TipTapEditor.css";
+import { useDraftPersistence } from "./useDraftPersistence";
+import { useDropSessionLoadOnTyping } from "./useDropSessionLoadOnTyping";
 import { createEditorConfig, getPlaceholderText } from "./utils/editorConfig";
-import { handleImageFile } from "./utils/imageUtils";
 import { useEditorEventHandlers } from "./utils/keyHandlers";
 
 export interface TipTapEditorProps {
@@ -58,11 +61,14 @@ function TipTapEditorInner(props: TipTapEditorProps) {
   const isStreaming = useAppSelector((state) => state.session.isStreaming);
   const historyLength = useAppSelector((store) => store.session.history.length);
   const isInEdit = useAppSelector((store) => store.session.isInEdit);
+  const sessionId = useAppSelector((store) => store.session.id);
+  const onSubmittedRef = useRef<(() => void) | undefined>(undefined);
 
   const { editor, onEnter, placeholderTextRef } = createEditorConfig({
     props,
     ideMessenger,
     dispatch,
+    onSubmittedRef,
   });
 
   // Register the main editor with the provider
@@ -100,6 +106,19 @@ function TipTapEditorInner(props: TipTapEditorProps) {
       editor?.commands.clearContent(true);
     }
   }, [editor, props.isMainInput]);
+
+  // After the clear above: the session's unsent draft comes back (NI5)
+  const draft = useDraftPersistence({
+    editor,
+    sessionId,
+    inputId: props.isMainInput ? MAIN_DRAFT_INPUT : props.inputId,
+    // Edit mode's input is about the selected code, not this session
+    enabled: !(props.isMainInput && isInEdit),
+    isSessionEmpty: historyLength === 0,
+  });
+  onSubmittedRef.current = draft.clearNow;
+  // After the draft's own listener: the text typed is saved, then carried
+  useDropSessionLoadOnTyping(editor, props.isMainInput && !isInEdit);
 
   useEffect(() => {
     if (isInEdit) {
@@ -211,17 +230,8 @@ function TipTapEditorInner(props: TipTapEditorProps) {
     setShouldHideToolbar(false);
   }, [cancelBlurTimeout]);
 
-  const onImageFileSelected = (file: File) => {
-    void handleImageFile(ideMessenger, file).then((result) => {
-      if (!editor || !result) return;
-      const [_, dataUrl] = result;
-      const { schema } = editor.state;
-      const node = schema.nodes.image.create({ src: dataUrl });
-      editor.commands.command(({ tr }) => {
-        tr.insert(0, node);
-        return true;
-      });
-    });
+  const onImageFilesSelected = (files: File[]) => {
+    void drop.addImageFiles(files);
   };
 
   return (
@@ -248,7 +258,7 @@ function TipTapEditorInner(props: TipTapEditorProps) {
                 hideImageUpload={props.toolbarOptions?.hideImageUpload}
                 hideAddContext={props.toolbarOptions?.hideAddContext}
                 onAddContextItem={() => insertCharacterWithWhitespace("@")}
-                onImageFileSelected={onImageFileSelected}
+                onImageFilesSelected={onImageFilesSelected}
               />
             </div>
           )}
@@ -265,6 +275,12 @@ function TipTapEditorInner(props: TipTapEditorProps) {
         </div>
         {drop.note && (
           <DropNotice text={drop.note} onDismiss={drop.dismissNote} />
+        )}
+        {draft.notice && (
+          <DraftRestoredNotice
+            text={draft.notice}
+            onDismiss={draft.dismissNotice}
+          />
         )}
         <InputToolbar
           isMainInput={props.isMainInput}

@@ -217,6 +217,9 @@ if (opts.stub) {
   if (!["openai", "anthropic", "bedrock"].includes(provider)) {
     fail("--provider must be openai, anthropic or bedrock");
   }
+  // The wrapper's checks (--yes before a billed API) are the consent the live
+  // test asks for; without this flag the test setup removes provider credentials.
+  env.RUN_LIVE_PROVIDER_TESTS = "1";
 
   if (provider === "bedrock") {
     // Credentials come from the AWS chain (a profile, the environment, SSO),

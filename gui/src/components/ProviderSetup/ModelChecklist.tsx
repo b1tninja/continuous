@@ -59,6 +59,14 @@ function Row({
             <span className="ml-1.5 text-description-muted">(legacy)</span>
           )}
         </span>
+        {row.priceNote && (
+          <span
+            className="truncate text-description-muted"
+            data-testid={`model-row-price-${row.model}`}
+          >
+            {row.priceNote}
+          </span>
+        )}
         {(row.description || row.needsAnthropicUseCase || row.accessNote) && (
           <span className="truncate text-description-muted">
             {/* First on the line, so truncation can't hide it */}

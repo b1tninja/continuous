@@ -1,5 +1,13 @@
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { IdeMessengerContext } from "../context/IdeMessenger";
+import { useOpenRouterPrices } from "./useOpenRouterPrices";
 
 import { FromCoreProtocol } from "core/protocol";
 import { useAppDispatch, useAppSelector } from "../redux/hooks";
@@ -13,19 +21,19 @@ import {
 } from "../redux/slices/profilesSlice";
 import {
   addContextItemsAtIndex,
-  newSession,
   setHasReasoningEnabled,
   setIsSessionMetadataLoading,
-  setMode,
+  setLoadingSessionId,
 } from "../redux/slices/sessionSlice";
 import { setTTSActive } from "../redux/slices/uiSlice";
 
 import { modelSupportsReasoning } from "core/llm/autodetect";
+import { expectsStartupResume } from "../pages/gui/resumingSession";
 import { cancelStream } from "../redux/thunks/cancelStream";
 import { handleApplyStateUpdate } from "../redux/thunks/handleApplyStateUpdate";
 import {
-  loadSession,
   refreshSessionMetadata,
+  restoreWorkspaceSession,
   saveCurrentSession,
 } from "../redux/thunks/session";
 import { updateFileSymbolsFromHistory } from "../redux/thunks/updateFileSymbols";
@@ -36,6 +44,7 @@ import {
 import { isJetBrains } from "../util";
 import { setLocalStorage } from "../util/localStorage";
 import { migrateLocalStorage } from "../util/migrateLocalStorage";
+import { currentWorkspaceDirs } from "../util/sessionWorkspace";
 import { useWebviewListener } from "./useWebviewListener";
 
 /** Coalesces quick queue edits into one save */
@@ -44,6 +53,7 @@ const QUEUE_SAVE_DELAY_MS = 250;
 function ParallelListeners() {
   const dispatch = useAppDispatch();
   const ideMessenger = useContext(IdeMessengerContext);
+  useOpenRouterPrices();
   const history = useAppSelector((store) => store.session.history);
   const isInEdit = useAppSelector((store) => store.session.isInEdit);
   const selectedProfileId = useAppSelector(
@@ -58,6 +68,28 @@ function ParallelListeners() {
   const sessionId = useAppSelector((state) => state.session.id);
   const lastSessionId = useAppSelector((store) => store.session.lastSessionId);
   const [initialSessionId] = useState(sessionId || lastSessionId);
+  const persistedTitle = useAppSelector((store) => store.session.title);
+  const sessionWorkspaceDirectory = useAppSelector(
+    (store) => store.session.sessionWorkspaceDirectory,
+  );
+
+  // The saved session is only fetched once the config has loaded, which can
+  // take a while. When this window will reopen it (a session of this
+  // workspace, restoreWorkspaceSession), mark it as loading before the first
+  // paint, so the chat shows that rather than the conversation starters.
+  useLayoutEffect(() => {
+    if (
+      sessionId &&
+      initialSessionId === sessionId &&
+      expectsStartupResume({
+        persistedTitle,
+        sessionWorkspaceDirectory,
+        workspaceDirs: currentWorkspaceDirs(),
+      })
+    ) {
+      dispatch(setLoadingSessionId(sessionId));
+    }
+  }, []);
 
   // Save queued messages with the session as soon as they change, not at the
   // end of the turn, so a reload or crash mid-turn does not lose them
@@ -143,11 +175,10 @@ function ParallelListeners() {
       }
       dispatch(setConfigLoading(false));
       if (initialSessionId) {
+        // Only a session of this window's workspace: the stored id is
+        // shared by every window
         await dispatch(
-          loadSession({
-            sessionId: initialSessionId,
-            saveCurrentSession: false,
-          }),
+          restoreWorkspaceSession({ preferredId: initialSessionId }),
         );
       }
     }
@@ -183,6 +214,17 @@ function ParallelListeners() {
   useEffect(() => {
     if (sessionId) {
       void dispatch(updateFileSymbolsFromHistory());
+    }
+  }, [sessionId]);
+
+  // A session no longer open here (a new one, or another one loaded) keeps
+  // no fetched pages in the web content store
+  const openSessionId = useRef(sessionId);
+  useEffect(() => {
+    const previous = openSessionId.current;
+    openSessionId.current = sessionId;
+    if (previous && previous !== sessionId) {
+      ideMessenger.post("web/closeSession", { sessionId: previous });
     }
   }, [sessionId]);
 

@@ -1,8 +1,8 @@
 import fs from "fs";
 import type { AddressInfo } from "net";
-import os from "os";
 import path from "path";
 
+import { removeTestTempDir, testTempDir } from "core/util/testTempDir.js";
 import express from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -101,7 +101,7 @@ describe("cn serve: Loop mode", () => {
     resetPolicyLevels();
     updateSessionLoop(undefined);
     resetLoopMemory();
-    cwd = fs.mkdtempSync(path.join(os.tmpdir(), "cn-serve-loop-"));
+    cwd = testTempDir("cn-serve-loop-");
     vi.spyOn(process, "cwd").mockReturnValue(cwd);
   });
 
@@ -112,7 +112,7 @@ describe("cn serve: Loop mode", () => {
     resetLoopMemory();
     await resetFlowState();
     vi.restoreAllMocks();
-    fs.rmSync(cwd, { recursive: true, force: true });
+    removeTestTempDir(cwd);
   });
 
   it("runs the plan, steers an answer in, and holds an approval until it is answered", async () => {

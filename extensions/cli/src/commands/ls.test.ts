@@ -2,17 +2,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as sessionModule from "../session.js";
 
+import { chat } from "./chat.js";
 import { listSessionsCommand } from "./ls.js";
+import { pickSession } from "./resumePicker.js";
 
 // Mock the session module
 vi.mock("../session.js", () => ({
-  listSessions: vi.fn(),
+  listSessionsForWorkspace: vi.fn(),
   loadSessionById: vi.fn(),
+  setResumeSessionId: vi.fn(),
 }));
 
 // Mock the TUI components
 vi.mock("../ui/SessionSelector.js", () => ({
   SessionSelector: () => null,
+}));
+
+// The picker resolves with the chosen session id
+vi.mock("./resumePicker.js", () => ({
+  pickSession: vi.fn(),
 }));
 
 // Mock ink
@@ -41,7 +49,7 @@ vi.mock("./remote.js", () => ({
 }));
 
 describe("listSessionsCommand", () => {
-  const mockListSessions = vi.mocked(sessionModule.listSessions);
+  const mockListSessions = vi.mocked(sessionModule.listSessionsForWorkspace);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -60,6 +68,8 @@ describe("listSessionsCommand", () => {
         workspaceDirectory: "/workspace",
         firstUserMessage: "Hello world",
         isRemote: false,
+        inWorkspace: true,
+        workspaceGroup: "~/workspace",
       },
       {
         sessionId: "session-2",
@@ -69,6 +79,8 @@ describe("listSessionsCommand", () => {
         firstUserMessage: "Test message",
         isRemote: true,
         remoteId: "agent-123",
+        inWorkspace: false,
+        workspaceGroup: "~/other",
       },
     ];
 
@@ -90,6 +102,8 @@ describe("listSessionsCommand", () => {
               firstUserMessage: "Hello world",
               isRemote: false,
               remoteId: undefined,
+              inWorkspace: true,
+              workspaceGroup: "~/workspace",
             },
             {
               id: "session-2",
@@ -99,6 +113,8 @@ describe("listSessionsCommand", () => {
               firstUserMessage: "Test message",
               isRemote: true,
               remoteId: "agent-123",
+              inWorkspace: false,
+              workspaceGroup: "~/other",
             },
           ],
         },
@@ -151,5 +167,61 @@ describe("listSessionsCommand", () => {
     );
 
     consoleSpy.mockRestore();
+  });
+
+  it("shows the sessions in workspace order and resumes exactly the one picked", async () => {
+    const ordered = [
+      {
+        sessionId: "here-newest",
+        title: "Newest here",
+        dateCreated: "2023-01-01T08:00:00.000Z",
+        workspaceDirectory: "/workspace",
+        inWorkspace: true,
+        workspaceGroup: "~/workspace",
+      },
+      {
+        sessionId: "elsewhere",
+        title: "Elsewhere",
+        dateCreated: "2023-01-01T10:00:00.000Z",
+        workspaceDirectory: "/other",
+        inWorkspace: false,
+        workspaceGroup: "~/other",
+      },
+    ];
+    mockListSessions.mockResolvedValue(ordered);
+    vi.mocked(pickSession).mockResolvedValue("elsewhere");
+    vi.mocked(sessionModule.loadSessionById).mockReturnValue({
+      sessionId: "elsewhere",
+      title: "Elsewhere",
+      workspaceDirectory: "/other",
+      history: [],
+    });
+
+    await listSessionsCommand({});
+
+    // The picker gets the list as ordered: its first row is selected
+    expect(vi.mocked(pickSession).mock.calls[0][0]).toBe(ordered);
+    expect(sessionModule.setResumeSessionId).toHaveBeenCalledWith("elsewhere");
+    expect(chat).toHaveBeenCalledWith(undefined, {
+      resume: true,
+      headless: false,
+    });
+  });
+
+  it("starts nothing when the picker is left", async () => {
+    mockListSessions.mockResolvedValue([
+      {
+        sessionId: "s",
+        title: "S",
+        dateCreated: "2023-01-01T08:00:00.000Z",
+        workspaceDirectory: "/workspace",
+      },
+    ]);
+    vi.mocked(pickSession).mockResolvedValue(null);
+
+    await listSessionsCommand({});
+
+    expect(sessionModule.setResumeSessionId).not.toHaveBeenCalled();
+    expect(chat).not.toHaveBeenCalled();
   });
 });

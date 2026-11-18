@@ -5,6 +5,7 @@ import * as path from "node:path";
 import type { ApprovalSettings } from "core/tools/permissions/approval.js";
 import type { PolicyLevel } from "core/tools/permissions/policy.js";
 import { needsLink, tryLink } from "core/tools/permissions/testLinks.js";
+import { removeTestTempDir, testTempDir } from "core/util/testTempDir.js";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { evaluateWithCoreRules, toCoreCall } from "./coreRules.js";
@@ -14,9 +15,7 @@ import { evaluateWithCoreRules, toCoreCall } from "./coreRules.js";
  * CLI's own path: its tool names, its arguments, and the real path and
  * workspace test the CLI works out itself because it has no IDE to do it.
  */
-const base = fs.realpathSync(
-  fs.mkdtempSync(path.join(os.tmpdir(), "cli-dep-")),
-);
+const base = testTempDir("cli-dep-");
 const ws = path.join(base, "ws");
 const outside = path.join(base, "outside");
 fs.mkdirSync(ws);
@@ -24,7 +23,7 @@ fs.mkdirSync(outside);
 fs.writeFileSync(path.join(outside, "target.txt"), "x");
 fs.writeFileSync(path.join(ws, "a.ts"), "x");
 const link = tryLink(outside, path.join(ws, "link"));
-afterAll(() => fs.rmSync(base, { recursive: true, force: true }));
+afterAll(() => removeTestTempDir(base));
 
 const levels = (l: PolicyLevel) => ({
   context: l,
@@ -281,13 +280,15 @@ describe("File edits outside the working folder, by level, through the CLI", () 
     expect(v?.decision).toBe("allow");
   });
 
-  it("IDGAF still refuses the product's own policy files", async () => {
+  it("IDGAF writes the product's own policy files too, and says it would have refused", async () => {
     const v = await run(
       "Write",
       { filepath: path.join(os.homedir(), ".continuous", "permissions.yaml") },
       "idgaf",
     );
-    expect(v?.decision).toBe("deny");
+    expect(v?.decision).toBe("allow");
+    expect(v?.source).toBe("idgaf");
+    expect(v?.reason).toContain("would have been refused");
   });
 
   it("Manual, Cautious, Automatic and Permissive hold each of them", async () => {

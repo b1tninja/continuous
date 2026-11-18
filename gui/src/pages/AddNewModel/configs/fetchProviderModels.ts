@@ -5,6 +5,7 @@ import { ModelPackage } from "./models";
 import { models } from "./models";
 import { ollamaStaticModels, providers } from "./providers";
 import type { CatalogModel } from "core/llm/openRouterCatalog";
+import { setOpenRouterCatalog } from "core/llm/utils/catalogPricing";
 
 interface FetchedModel {
   name: string;
@@ -155,6 +156,7 @@ const bundled = {
 export const resetCatalogueAnswers = () => {
   answered.clear();
   openRouterListDate = undefined;
+  setOpenRouterCatalog(undefined);
   if (providers.ollama && bundled.ollama) {
     providers.ollama.packages = bundled.ollama;
   }
@@ -175,6 +177,13 @@ function catalogToFetched(models: CatalogModel[]): FetchedModel[] {
 }
 
 function applyOpenRouterList(models: CatalogModel[], fetchedAt: string) {
+  // The same list prices the usage readouts in this window
+  setOpenRouterCatalog({
+    schemaVersion: 1,
+    source: "https://openrouter.ai/api/v1/models",
+    fetchedAt,
+    models,
+  });
   if (!providers.openrouter) return;
   providers.openrouter.packages =
     catalogToFetched(models).map(toOpenRouterPackage);
@@ -198,15 +207,21 @@ export async function loadCachedOpenRouterList(
   }
 }
 
-/** The saved answer to "ask again?", from the user's settings. */
+/**
+ * "Model information updates" for OpenRouter: `automatic` (core refreshes
+ * the list in the background, nothing is asked), `ask` (only when asked;
+ * setup offers it), `never` (only when asked; setup stays quiet), `off`
+ * (never contacts openrouter.ai).
+ */
+export type CatalogPolicy = "automatic" | "ask" | "never" | "off";
+
+/** The user's setting. When core cannot say, setup asks, as before. */
 export async function loadCatalogPolicy(
   ideMessenger: IIdeMessenger,
-): Promise<"ask" | "never"> {
+): Promise<CatalogPolicy> {
   try {
     const res = await ideMessenger.request("modelCatalog/status", undefined);
-    return res.status === "success" && res.content.policy === "never"
-      ? "never"
-      : "ask";
+    return res.status === "success" ? res.content.policy : "ask";
   } catch {
     return "ask";
   }
@@ -214,7 +229,7 @@ export async function loadCatalogPolicy(
 
 export async function saveCatalogPolicy(
   ideMessenger: IIdeMessenger,
-  policy: "ask" | "never",
+  policy: CatalogPolicy,
 ): Promise<void> {
   try {
     await ideMessenger.request("modelCatalog/setPolicy", { policy });
@@ -225,11 +240,12 @@ export async function saveCatalogPolicy(
 
 /**
  * Fetch one provider's catalogue (Ollama or OpenRouter) and fold it into the
- * provider's list. This contacts a third-party host, so it runs only when the
- * user presses Pull now / Download / Refresh, never when the setup screen
- * opens. Until then the bundled (or last downloaded) list stays. Returns
- * undefined on success, else a short reason (and changes nothing), e.g. when
- * offline.
+ * provider's list. This contacts a third-party host, so it runs when the
+ * user presses Pull now / Download / Refresh, or (OpenRouter only, with model
+ * information updates `automatic`) when OpenRouter's setup opens and no list
+ * has been downloaded yet. Ollama's list is never fetched without a press.
+ * Until then the bundled (or last downloaded) list stays. Returns undefined
+ * on success, else a short reason (and changes nothing), e.g. when offline.
  */
 export async function refreshProviderCatalogue(
   ideMessenger: IIdeMessenger,

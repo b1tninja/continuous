@@ -18,13 +18,13 @@ Open the [latest release](https://github.com/b1tninja/continuous/releases/latest
 | macOS (Intel)         | `continuous-darwin-x64-<version>.vsix`   |
 | Linux x64 / Arm64     | `continuous-linux-x64-<version>.vsix`, `continuous-linux-arm64-<version>.vsix` |
 
-With the GitHub CLI: `gh release download --repo b1tninja/continuous --pattern "continuous-win32-x64-*.vsix" --pattern SHA256SUMS.txt` (change `win32-x64` to your platform).
+With the GitHub CLI: `gh release download --repo b1tninja/continuous --pattern "continuous-win32-x64-*[0-9].vsix" --pattern SHA256SUMS.txt` (change `win32-x64` to your platform).
 </Step>
 
 <Step title="Install it in VS Code">
-Run `code --install-extension continuous-<platform>-<version>.vsix --force`, for example `continuous-win32-x64-2.4.4.vsix`, or use the Extensions view: `...` menu → **Install from VSIX…**. Then reload the window.
+Run `code --install-extension continuous-<platform>-<version>.vsix --force`, for example `continuous-win32-x64-2.16.2.vsix`, or use the Extensions view: `...` menu → **Install from VSIX…**. Then reload the window.
 
-Continuous installs alongside the original Continue extension and reads your existing `~/.continuous` configuration.
+Continuous installs alongside the original Continue extension. On first start it copies an existing `~/.continue` configuration to `~/.continuous`.
 </Step>
 
 <Step title="Move to the right sidebar (optional)">

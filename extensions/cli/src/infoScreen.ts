@@ -12,7 +12,10 @@ import {
 import { formatCacheTally, splitInputTokens } from "./util/cacheTally.js";
 import { logger } from "./util/logger.js";
 import { formatReplyTally } from "./util/replyTally.js";
-import { formatSessionCost } from "./util/sessionCost.js";
+import {
+  formatPriceSourceLines,
+  formatSessionCost,
+} from "./util/sessionCost.js";
 import { getVersion } from "./version.js";
 
 function getVersionInfo(): string[] {
@@ -83,6 +86,9 @@ function getUsageInfo(): string[] {
     const usage = getSessionUsage();
     if (usage.totalCost > 0 || usage.promptTokens > 0) {
       lines.push(`  Total Cost: ${chalk.green(formatSessionCost(usage))}`);
+      for (const line of formatPriceSourceLines(usage)) {
+        lines.push(`    ${chalk.gray(line)}`);
+      }
       // Input is what the provider processed: uncached plus cache reads plus
       // cache writes. The parts are always shown, so a session that never
       // cached does not look like one that could not.

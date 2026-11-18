@@ -1,6 +1,7 @@
 import { URL } from "node:url";
 
 import { ContinueConfig, IDE } from "../../..";
+import { assertWebEnabled } from "../../../util/webConfig";
 
 import CheerioCrawler from "./CheerioCrawler";
 import { ChromiumCrawler, ChromiumInstaller } from "./ChromiumCrawler";
@@ -41,6 +42,8 @@ class DocsCrawler {
   async *crawl(
     startUrl: URL,
   ): AsyncGenerator<PageData, DocsCrawlerType, undefined> {
+    // web.enabled: false turns the docs crawler off too (WB45)
+    assertWebEnabled("docs are not crawled");
     if (startUrl.host === this.GITHUB_HOST) {
       yield* new GitHubCrawler(
         startUrl,

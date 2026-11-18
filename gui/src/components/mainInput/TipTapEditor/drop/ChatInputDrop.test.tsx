@@ -9,6 +9,7 @@ import { triggerConfigUpdate } from "../../../../util/test/config";
 import { renderWithProviders } from "../../../../util/test/render";
 import { getMainEditor } from "../../../../util/test/utils";
 import { getAnnouncement, resetAnnouncer } from "../../../a11y/announcer";
+import { FileLike } from "./classifyDrop";
 import {
   editorTabDrag,
   explorerDrag,
@@ -22,6 +23,23 @@ import {
 } from "./dropFixtures";
 import { SNAPSHOT_DESCRIPTION, SNAPSHOT_PROVIDER } from "./osSnapshot";
 import { JETBRAINS_NOT_SUPPORTED, VSCODE_SHIFT_HINT } from "./useChatInputDrop";
+
+// jsdom cannot decode images, so the image step is replaced: a file named
+// "broken..." fails to decode, any other becomes a data URL naming it.
+vi.mock("../utils/imageUtils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../utils/imageUtils")>();
+  return {
+    ...actual,
+    handleImageFile: vi.fn(async (_messenger: unknown, file: File) =>
+      file.name.startsWith("broken")
+        ? undefined
+        : ([{} as HTMLImageElement, `data:${file.type};name=${file.name}`] as [
+            HTMLImageElement,
+            string,
+          ]),
+    ),
+  };
+});
 
 // The mock IDE's first workspace folder.
 const WS = "file:///Users/user/workspace1";
@@ -127,6 +145,36 @@ async function drop(target: HTMLElement, dataTransfer: unknown) {
   await act(async () => {
     fireEvent.drop(target, { dataTransfer });
   });
+}
+
+/** A paste event's clipboard, as Chromium hands it over. */
+function clipboard(data: Record<string, string>, files: FileLike[] = []) {
+  return {
+    types: [...Object.keys(data), ...(files.length ? ["Files"] : [])],
+    getData: (format: string) => data[format] ?? "",
+    items: files.map((f) => ({
+      kind: "file",
+      type: f.type,
+      getAsFile: () => f,
+    })),
+    files,
+  };
+}
+
+async function paste(target: HTMLElement, clipboardData: unknown) {
+  await act(async () => {
+    fireEvent.paste(target, { clipboardData });
+  });
+}
+
+function imageSources(doc: JSONContent): string[] {
+  const out: string[] = [];
+  const walk = (n: JSONContent) => {
+    if (n.type === "image") out.push(String(n.attrs?.src));
+    n.content?.forEach(walk);
+  };
+  walk(doc);
+  return out;
 }
 
 beforeEach(() => {
@@ -404,6 +452,140 @@ describe("dropping on the chat input", () => {
     await drop(target, explorerDrag([`${WS}/.env`]));
     const notice = await screen.findByTestId("chat-drop-notice");
     expect(notice.closest("[aria-live],[role=status],[role=alert]")).toBeNull();
+  });
+});
+
+describe("pasting into the chat input", () => {
+  it("adds a pasted screenshot for a vision model", async () => {
+    const { target, editor } = await setup(visionModel);
+    await paste(target, clipboard({}, [fakeFile("image.png", "image/png")]));
+    await waitFor(() =>
+      expect(imageSources(editor.getJSON())).toEqual([
+        "data:image/png;name=image.png",
+      ]),
+    );
+    expect(getAnnouncement("polite").text).toBe("Added 1 image.");
+    // A plain success needs no note: the image itself shows it.
+    expect(screen.queryByTestId("chat-drop-notice")).toBeNull();
+  });
+
+  it("keeps several pasted images in order", async () => {
+    const { target, editor } = await setup(visionModel);
+    await paste(
+      target,
+      clipboard({}, [
+        fakeFile("first.png", "image/png"),
+        fakeFile("second.jpg", "image/jpeg"),
+      ]),
+    );
+    await waitFor(() =>
+      expect(imageSources(editor.getJSON())).toEqual([
+        "data:image/png;name=first.png",
+        "data:image/jpeg;name=second.jpg",
+      ]),
+    );
+  });
+
+  it("inserts the image where the cursor is, not at the start", async () => {
+    const { target, editor } = await setup(visionModel);
+    await act(async () => {
+      editor.commands.setContent("before");
+      editor.commands.focus("end");
+    });
+    await paste(target, clipboard({}, [fakeFile("image.png", "image/png")]));
+    await waitFor(() => expect(imageSources(editor.getJSON())).toHaveLength(1));
+    const types = (editor.getJSON().content ?? []).map((n) => n.type);
+    expect(types.indexOf("paragraph")).toBeLessThan(types.indexOf("image"));
+    expect(editor.getText()).toContain("before");
+  });
+
+  it("says when the model does not read images, and adds nothing", async () => {
+    const { target, editor } = await setup(textModel);
+    await paste(target, clipboard({}, [fakeFile("image.png", "image/png")]));
+    await waitFor(() =>
+      expect(screen.getByTestId("chat-drop-notice")).toHaveTextContent(
+        "image.png: the selected model does not read images",
+      ),
+    );
+    expect(imageSources(editor.getJSON())).toEqual([]);
+  });
+
+  it("names an image that cannot be decoded instead of dropping it silently", async () => {
+    const { target, editor } = await setup(visionModel);
+    await paste(
+      target,
+      clipboard({}, [
+        fakeFile("broken.png", "image/png"),
+        fakeFile("fine.png", "image/png"),
+      ]),
+    );
+    await waitFor(() =>
+      expect(getAnnouncement("polite").text).toBe(
+        "Added 1 image. Not added: broken.png could not be read as an image.",
+      ),
+    );
+    expect(imageSources(editor.getJSON())).toEqual([
+      "data:image/png;name=fine.png",
+    ]);
+  });
+
+  it("refuses an image over 5 MB with the reason", async () => {
+    const { target, editor } = await setup(visionModel);
+    await paste(
+      target,
+      clipboard({}, [fakeFile("huge.png", "image/png", 6 * 1024 * 1024)]),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("chat-drop-notice")).toHaveTextContent(
+        "huge.png is larger than 5 MB",
+      ),
+    );
+    expect(imageSources(editor.getJSON())).toEqual([]);
+  });
+
+  it("leaves a text paste with a picture of it (Office) to the editor", async () => {
+    const { target, editor } = await setup(visionModel);
+    await paste(
+      target,
+      clipboard({ "text/plain": "Q3 revenue" }, [
+        fakeFile("image.png", "image/png"),
+      ]),
+    );
+    expect(imageSources(editor.getJSON())).toEqual([]);
+    expect(getAnnouncement("polite").seq).toBe(0);
+  });
+
+  it("adds an image chosen with the attach menu at the cursor, with the same checks", async () => {
+    const { editor } = await setup(visionModel);
+    await act(async () => {
+      editor.commands.setContent("look at this");
+      editor.commands.focus("end");
+    });
+    const input =
+      document.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    await act(async () => {
+      fireEvent.change(input!, {
+        target: {
+          files: [
+            fakeFile("pick.png", "image/png"),
+            fakeFile("logo.svg", "image/svg+xml"),
+          ],
+        },
+      });
+    });
+    await waitFor(() =>
+      expect(imageSources(editor.getJSON())).toEqual([
+        "data:image/png;name=pick.png",
+      ]),
+    );
+    // It went after the text, where the cursor was
+    const types = (editor.getJSON().content ?? []).map((n) => n.type);
+    expect(types.indexOf("paragraph")).toBeLessThan(types.indexOf("image"));
+    // The SVG was refused with the drop's reason rather than vanishing
+    await waitFor(() =>
+      expect(getAnnouncement("polite").text).toContain("logo.svg is an SVG"),
+    );
   });
 });
 

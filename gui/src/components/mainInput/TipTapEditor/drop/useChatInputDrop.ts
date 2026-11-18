@@ -9,7 +9,12 @@ import { isJetBrains } from "../../../../util";
 import { announce } from "../../../a11y/announcer";
 import { CodeBlock, Mention, PromptBlock } from "../extensions";
 import { handleImageFile } from "../utils/imageUtils";
-import { classifyDrop, isHandledDrag } from "./classifyDrop";
+import {
+  classifyDrop,
+  classifyPaste,
+  fileItem,
+  isHandledDrag,
+} from "./classifyDrop";
 import { snapshotContextItem } from "./osSnapshot";
 import {
   checkImages,
@@ -91,10 +96,11 @@ function afterLeadingBlocks(editor: Editor): number {
 }
 
 /**
- * Drag and drop for the chat input: the drop target state, the drop itself
- * and the one-line result. Handlers go on the input's outer element; the
- * drop is taken in the capture phase so ProseMirror does not also paste the
- * drag's text (VS Code puts path labels in `text/plain`).
+ * Drag and drop, paste and the image picker for the chat input: the drop
+ * target state, the items themselves and the one-line result. Handlers go on
+ * the input's outer element; drops and pasted files are taken in the capture
+ * phase so ProseMirror does not also paste the drag's or clipboard's text
+ * (VS Code puts path labels in `text/plain`, a browser an `<img>` tag).
  */
 export function useChatInputDrop({
   editor,
@@ -278,19 +284,29 @@ export function useChatInputDrop({
         }
       }
 
-      outcome.images = images.accepted.length;
-      for (const file of images.accepted) {
-        void handleImageFile(ideMessenger, file)
-          .then((result) => {
-            if (!result || editor.isDestroyed) return;
-            const node = editor.state.schema.nodes.image.create({
-              src: result[1],
-            });
-            editor.view.dispatch(editor.state.tr.replaceSelectionWith(node));
-          })
-          .catch(() => {
-            // A file the browser cannot decode adds nothing.
+      // Decoded together, then inserted at the cursor in one step and in the
+      // order given (inserting one by one would put each over the last, which
+      // is the selection after an insert). One the browser cannot decode is
+      // named instead of vanishing.
+      const decoded = await Promise.all(
+        images.accepted.map((file) =>
+          handleImageFile(ideMessenger, file).catch(() => undefined),
+        ),
+      );
+      const imageNodes: JSONContent[] = [];
+      decoded.forEach((result, i) => {
+        if (!result) {
+          refusals.push({
+            name: images.accepted[i].name,
+            reason: "unreadable-image",
           });
+          return;
+        }
+        imageNodes.push({ type: "image", attrs: { src: result[1] } });
+      });
+      if (imageNodes.length && !editor.isDestroyed) {
+        editor.chain().focus().insertContent(imageNodes).run();
+        outcome.images = imageNodes.length;
       }
 
       finish(outcome, false);
@@ -321,16 +337,42 @@ export function useChatInputDrop({
     [editor, handleItems],
   );
 
+  /**
+   * A pasted screenshot or image. Text pastes, and a paste whose text was
+   * meant (Office puts a picture of the copy next to it), are left to the
+   * editor.
+   */
+  const onPasteCapture = useCallback(
+    (e: React.ClipboardEvent) => {
+      if (!e.clipboardData) return;
+      // The clipboard is readable only during the event, so classify now.
+      const items = classifyPaste<File>(e.clipboardData);
+      if (items.length === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      void handleItems(items);
+    },
+    [handleItems],
+  );
+
+  /** Images chosen with the attach menu: the same checks and result line. */
+  const addImageFiles = useCallback(
+    (files: File[]) => handleItems(files.map((f) => fileItem(f))),
+    [handleItems],
+  );
+
   return {
     dragActive,
     hint: isJetBrains() ? null : VSCODE_SHIFT_HINT,
     note,
     dismissNote: () => setNote(null),
+    addImageFiles,
     handlers: {
       onDragEnter: onDragEnterOrOver,
       onDragOver: onDragEnterOrOver,
       onDragLeave,
       onDropCapture,
+      onPasteCapture,
     },
   };
 }

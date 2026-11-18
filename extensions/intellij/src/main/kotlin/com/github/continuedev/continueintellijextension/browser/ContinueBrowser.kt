@@ -1,5 +1,6 @@
 package com.github.continuedev.continueintellijextension.browser
 
+import com.github.continuedev.continueintellijextension.constants.PolicyGuard
 import com.github.continuedev.continueintellijextension.constants.WebviewIdeGate
 import com.github.continuedev.continueintellijextension.services.ContinuePluginService
 import com.github.continuedev.continueintellijextension.services.GsonService
@@ -40,8 +41,20 @@ class ContinueBrowser(
 
             when (WebviewIdeGate.route(messageType)) {
                 WebviewIdeGate.Route.CORE -> {
-                    project.service<ContinuePluginService>().coreMessenger?.request(messageType, data, messageId) { response ->
-                        sendToWebview(messageType, response, messageId ?: uuid())
+                    val forward = {
+                        project.service<ContinuePluginService>().coreMessenger?.request(messageType, data, messageId) { response ->
+                            sendToWebview(messageType, response, messageId ?: uuid())
+                        }
+                    }
+                    // Core asks in the IDE's own notification before a save that
+                    // loosens (core/tools/permissions/policySave.ts); here only
+                    // the shape is checked, as in VS Code
+                    if ((messageType == "policy/save" || messageType == "policy/preview") &&
+                        !PolicyGuard.savePayloadOk(data)
+                    ) {
+                        sendError(messageType, "That is not a permission settings change.", messageId)
+                    } else {
+                        forward()
                     }
                 }
 
@@ -63,15 +76,7 @@ class ContinueBrowser(
 
                 WebviewIdeGate.Route.REJECT -> {
                     log.warn("Rejected panel message: $messageType")
-                    sendToWebview(
-                        messageType ?: "",
-                        mapOf(
-                            "status" to "error",
-                            "error" to "This message is not available to the panel",
-                            "done" to true
-                        ),
-                        messageId ?: uuid()
-                    )
+                    sendError(messageType ?: "", "This message is not available to the panel", messageId)
                 }
             }
 
@@ -119,6 +124,14 @@ class ContinueBrowser(
 
     fun openDevTools() {
         browser.openDevtools()
+    }
+
+    private fun sendError(messageType: String, error: String, messageId: String?) {
+        sendToWebview(
+            messageType,
+            mapOf("status" to "error", "error" to error, "done" to true),
+            messageId ?: uuid()
+        )
     }
 
     fun sendToWebview(messageType: String, data: Any? = null, messageId: String = uuid()) {

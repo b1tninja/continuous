@@ -16,6 +16,9 @@ export function ideToolRef(tool: Tool): RoleToolRef {
         tool: tool.originalFunctionName ?? name,
         readOnlyHint: tool.readonly,
         ...(tool.mcpFromWorkspace ? { fromWorkspace: true } : {}),
+        ...(tool.mcpPendingApproval
+          ? { pendingApproval: tool.mcpPendingApproval }
+          : {}),
       },
     };
   }

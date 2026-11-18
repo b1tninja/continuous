@@ -15,6 +15,7 @@ import {
   loadConfiguration,
   unrollPackageIdentifiersAsConfigYaml,
 } from "../configLoader.js";
+import { isSafeMode } from "../safeMode.js";
 import { logger } from "../util/logger.js";
 
 import { BaseService, ServiceWithDependencies } from "./BaseService.js";
@@ -262,7 +263,13 @@ export class ConfigService
     const loadedConfig = result.config;
     const merged = mergeUnrolledAssistants(loadedConfig, additional);
 
-    const markdownRules = loadMarkdownRulesWithMetadata();
+    // --safe: rules and MCP servers from files are not used. Text passed
+    // with --rule still reaches the system message (systemMessage.ts).
+    if (isSafeMode()) {
+      merged.rules = [];
+      merged.mcpServers = [];
+    }
+    const markdownRules = isSafeMode() ? [] : loadMarkdownRulesWithMetadata();
     if (markdownRules.length > 0) {
       const existingRuleContents = new Set(
         (merged.rules ?? []).map((r) => (typeof r === "string" ? r : r?.rule)),

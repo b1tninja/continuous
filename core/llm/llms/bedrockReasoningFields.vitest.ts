@@ -1,8 +1,8 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import * as core from "./bedrockHelpers";
 import * as coreRules from "./bedrockFamilyRules";
+import * as core from "./bedrockHelpers";
 
 // Loaded at run time from a path held in a variable, not with a static import,
 // for the reason given in bedrockOneHourCache.vitest.ts.
@@ -36,6 +36,8 @@ const MODELS = [
   "anthropic.claude-haiku-4-5-20251001-v1:0",
   "us.anthropic.claude-sonnet-4-6",
   "global.anthropic.claude-opus-5-5",
+  "us.anthropic.claude-opus-4-8",
+  "anthropic.claude-fable-5-2",
   "us.amazon.nova-2-lite-v1:0",
   "us.amazon.nova-2-pro-v1:0",
   "us.amazon.nova-pro-v1:0",
@@ -149,6 +151,52 @@ describe("bedrockReasoningFields exists in core and in the adapter", () => {
       core.bedrockReasoningFields("anthropic.claude-haiku-4-5", true, 16384)
         .omitMaxTokens,
     ).toBe(false);
+  });
+
+  it("asks Claude for summarized thinking where it would arrive empty", () => {
+    for (const helpers of [core, adapter]) {
+      // 4.7 and later hide thinking by default: the request asks to see it
+      expect(
+        helpers.bedrockReasoningFields(
+          "us.anthropic.claude-opus-4-8",
+          true,
+          4096,
+        ).additionalModelRequestFields,
+      ).toEqual({
+        thinking: { type: "adaptive", display: "summarized" },
+        output_config: { effort: "medium" },
+      });
+      // 4.6 shows a summary by default; its request is unchanged
+      expect(
+        helpers.bedrockReasoningFields(
+          "us.anthropic.claude-sonnet-4-6",
+          true,
+          4096,
+        ).additionalModelRequestFields,
+      ).toEqual({
+        thinking: { type: "adaptive" },
+        output_config: { effort: "medium" },
+      });
+      // Opus 5.5 thinks with reasoning off, so its thinking is shown too,
+      // without an effort
+      for (const reasoning of [undefined, false]) {
+        expect(
+          helpers.bedrockReasoningFields(
+            "global.anthropic.claude-opus-5-5",
+            reasoning,
+            4096,
+          ).additionalModelRequestFields,
+        ).toEqual({ thinking: { type: "adaptive", display: "summarized" } });
+      }
+      // Opus 4.8 does not think with reasoning off: nothing is sent
+      expect(
+        helpers.bedrockReasoningFields(
+          "us.anthropic.claude-opus-4-8",
+          false,
+          4096,
+        ).additionalModelRequestFields,
+      ).toEqual({});
+    }
   });
 
   it("sends DeepSeek R1 and Nova Pro nothing, which is all they accept", () => {
@@ -392,7 +440,6 @@ describe("the unmeasured families (plans/model-families-2026-11.md)", () => {
       "zai.glm-5",
       "minimax.minimax-m2.5",
       "nvidia.nemotron-super-3-120b",
-      "us.xai.grok-4.6",
     ];
     for (const id of unwired) {
       for (const reasoning of REASONING) {
@@ -456,11 +503,16 @@ describe("the families measured live on 2026-11-10", () => {
         expect(row.probedOn).toBe("2026-11-10");
         expect(row.evidence!.length).toBeGreaterThan(0);
       }
-      for (const id of ["kimi-k2.5", "grok-4.6"]) {
+      for (const id of ["kimi-k2.5"]) {
         expect(rules.FAMILY_RULES.find((r) => r.id === id)!.status).toBe(
           "unprobed",
         );
       }
+      // Grok 4.6 and 4.7 were measured live on 2026-11-14
+      const grok = rules.FAMILY_RULES.find((r) => r.id === "grok-4.6")!;
+      expect(grok.status).toBe("probed");
+      expect(grok.probedOn).toBe("2026-11-14");
+      expect(grok.evidence!.length).toBeGreaterThan(0);
     }
   });
 

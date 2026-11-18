@@ -169,6 +169,9 @@ if (opts.stub) {
 
   env.REVIEWER_EVAL_PROVIDER = provider;
   env.REVIEWER_EVAL_MODEL = model;
+  // The wrapper's checks (--yes before a billed API) are the consent the live
+  // test asks for; without this flag the test setup removes provider credentials.
+  env.RUN_LIVE_PROVIDER_TESTS = "1";
   if (baseUrl) env.REVIEWER_EVAL_BASE_URL = baseUrl;
   if (key) env.REVIEWER_EVAL_API_KEY = key;
   target = `${provider}:${model}${local ? " (local)" : ""}`;

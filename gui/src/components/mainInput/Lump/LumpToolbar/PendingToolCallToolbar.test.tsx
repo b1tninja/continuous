@@ -308,7 +308,81 @@ describe("PendingToolCallToolbar: why it is asking", () => {
   it("says that sending a new message cancels what is waiting", async () => {
     await setup([call("a")]);
     expect(
-      screen.getByText(/Sending a new message cancels this command/),
+      screen.getByText(/Sending a new message cancels this action/),
     ).toBeTruthy();
+  });
+
+  const terminal = (id: string) =>
+    call(id, {
+      toolCall: {
+        id,
+        type: "function",
+        function: { name: "run_terminal_command", arguments: "{}" },
+      },
+      parsedArgs: { command: "npm test" },
+    });
+
+  it("says command only when every waiting call is a terminal command", async () => {
+    await setup([terminal("a"), terminal("b")]);
+    expect(
+      screen.getByText(/Sending a new message cancels these commands/),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("group", { name: "Approval needed for 2 commands" }),
+    ).toBeTruthy();
+  });
+
+  it("says action when a file read or an MCP tool waits with a command", async () => {
+    await setup([terminal("a"), call("b")]);
+    expect(
+      screen.getByText(/Sending a new message cancels these actions/),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("group", { name: "Approval needed for 2 actions" }),
+    ).toBeTruthy();
+    // each pair of buttons names its own call
+    expect(screen.getByTestId("accept-tool-call-button-a").title).toBe(
+      "Run this command once",
+    );
+    expect(screen.getByTestId("reject-tool-call-button-a").title).toBe(
+      "Reject this command",
+    );
+    expect(screen.getByTestId("accept-tool-call-button-b").title).toBe(
+      "Run this action once",
+    );
+    expect(screen.getByTestId("reject-tool-call-button-b").title).toBe(
+      "Reject this action",
+    );
+  });
+
+  it("writes out a hidden character in the command and says there is one", async () => {
+    await setup([
+      call("a", {
+        toolCall: {
+          id: "a",
+          type: "function",
+          function: { name: "run_terminal_command", arguments: "{}" },
+        },
+        parsedArgs: { command: "rm notes‮txt.sh" },
+      }),
+    ]);
+    expect(screen.getByTestId("pending-action-block-a").textContent).toBe(
+      "rm notes⟦U+202E⟧txt.sh",
+    );
+    expect(screen.getByTestId("hidden-characters-a").textContent).toContain(
+      "1 hidden character is in this call",
+    );
+  });
+
+  it("has no hidden-character line for an ordinary call", async () => {
+    await setup([terminal("a")]);
+    expect(screen.queryByTestId("hidden-characters-a")).toBeNull();
+  });
+
+  it("Accept all says how many calls it runs and asks to check each one", async () => {
+    await setup([terminal("a"), call("b"), call("c")]);
+    expect(screen.getByTestId("accept-all-tool-calls").title).toBe(
+      "Run all 3 waiting actions once. Scroll the list to check each one first",
+    );
   });
 });

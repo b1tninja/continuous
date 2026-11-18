@@ -9,6 +9,7 @@ import {
   applyPatch,
   createItemWorktree,
   dirtyFiles,
+  gitArgsFor,
   listLoopWorktrees,
   loopBranchName,
   patchFiles,
@@ -517,5 +518,21 @@ describe("worktree helper, pure parts", () => {
       setupCommands({ "setup-worktree": ["npm ci"] }, "/r", "darwin"),
     ).toEqual(["npm ci"]);
     expect(setupCommands({}, "/r", "linux")).toEqual([]);
+  });
+});
+
+describe("gitArgsFor", () => {
+  test("passes core.longpaths for the one command on Windows only", () => {
+    expect(gitArgsFor(["worktree", "add"], "win32")).toEqual([
+      "-c",
+      "core.longpaths=true",
+      "worktree",
+      "add",
+    ]);
+    expect(gitArgsFor(["worktree", "add"], "linux")).toEqual([
+      "worktree",
+      "add",
+    ]);
+    expect(gitArgsFor(["status"], "darwin")).toEqual(["status"]);
   });
 });

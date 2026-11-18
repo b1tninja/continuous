@@ -30,6 +30,8 @@ Trust is recorded in your Continuous folder, never in the project, against a fin
 
 When a folder in a workspace you trusted in VS Code has configuration that was held back, a dialog lists the files and offers **Trust this folder**. Dismissing it leaves the folder untrusted. In a workspace VS Code has not trusted, the dialog is not shown and nothing from the folder is applied.
 
+In a workspace VS Code has not trusted (Restricted Mode), `AGENTS.md` (or `AGENT.md`, `CLAUDE.md`) is not read either, so none of its text is sent to a model. A line above the chat input names the file and offers **Load**, which reads it for this window only. Nothing is saved: the next window asks again, and trusting the workspace in VS Code reads it from then on. The terminal agent has no Restricted Mode and always reads the file.
+
 ## Trust a folder in the terminal agent
 
 ```bash

@@ -79,7 +79,7 @@ Shift+Tab moves through four entries. The mode indicator shows the current one.
 | Entry  | What it is                                                                                                                                            | Flag at start |
 | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
 | normal | The default: reads run, edits and commands ask                                                                                                        |               |
-| plan   | Read-only. The edit tools are not offered; shell commands and MCP tools ask. The agent writes a plan file and offers **Build**, **Build in a loop** or **Keep planning** | `--readonly`  |
+| plan   | Read-only. The edit tools are not offered; shell commands and MCP tools ask. The agent writes a plan file and offers **Build**, **Build in a loop** or **Keep planning** (at Questions IDGAF the turn ends with the plan saved instead) | `--readonly`  |
 | loop   | Plan mode for the first message, then the plan is built in a loop without the Build question. See [Loop mode](/ide-extensions/agent/loop-mode)        |               |
 | auto   | Everything runs without asking. This is the IDGAF level on Context use, Tool use and File edits                                                       | `--auto`      |
 
@@ -96,19 +96,25 @@ git diff | continuous -p "Review this diff for mistakes"
 
 Piped input is placed before the prompt. `--format json` prints JSON instead of text, and `--silent` strips `<think>` blocks and extra whitespace; both work only with `-p`.
 
-Because nobody can answer a question, a headless run uses different defaults: shell commands and MCP tools are allowed, where an interactive session would ask. Read [what a headless run allows](/reference#toolpermissions) before running one on a machine that matters, and give it [run limits](/cli/run-limits).
+A headless run uses your own levels, the same as an interactive session. Nobody can answer a question, so a call that would ask is refused: the model is told why, and a line on stderr names the flag that allows it. Pass `--auto` or `--policy` (for example `--policy handsOff`) to let more run without asking. Read [what a headless run allows](/reference#toolpermissions) before running one on a machine that matters, and give it [run limits](/cli/run-limits).
 
 ## Come back to a session
 
-Sessions are saved as you go, under `~/.continuous/sessions`.
+Sessions are saved as you go, under `~/.continuous/sessions`, each with the folder it was started in.
 
 | Command                      | What it does                                             |
 | ---------------------------- | -------------------------------------------------------- |
-| `continuous --resume`        | Continue the most recent session                         |
-| `continuous ls`              | List recent sessions and pick one to resume              |
+| `continuous --resume`        | Pick a session to continue. The newest session of this folder is selected, so Enter continues it |
+| `continuous --resume <id>`   | Continue the session with that id                        |
+| `continuous -p --resume`     | Headless: continue the newest session of this folder without asking |
+| `continuous ls`              | List sessions grouped by folder and pick one to resume   |
 | `/resume`                    | The same list, from inside a session                     |
-| `continuous --fork <id>`     | Start a new session from a copy of an existing one       |
-| `/fork`                      | Print (and copy) the `--fork` command for this session   |
+| `continuous --fork <id>`     | Start a new session from a copy of an existing one (history, mode, model, task plan) |
+| `/fork`                      | Fork this session and continue in the copy; the original is unchanged |
+
+The lists show the sessions of the current folder first, newest on top, then each other folder under its own heading, ordered by its newest session, then sessions saved without a folder. A session belongs to the current folder when it was started there, in a folder inside or above it (a home folder or a folder fewer than three levels deep never counts as above), or elsewhere in the same git repository. When a headless `--resume` finds no session of this folder, it continues the newest session of any folder and prints a line on stderr naming that folder.
+
+`continuous ls --json` keeps its fields and adds `inWorkspace` (the session belongs to the current folder) and `workspaceGroup` (the heading it is listed under), in the same order.
 
 ## When something is wrong
 

@@ -35,9 +35,17 @@ export const VIEWS = {
     fixture: "attach-open",
     note: 'the "+" menu at the left of the prompt, open',
   },
-  "overflow-open": {
-    fixture: "overflow-open",
-    note: 'the "..." menu under the prompt, open',
+  "status-row": {
+    fixture: "status-row",
+    note: "the row under the prompt after a reply: usage, reasoning, prompt cache",
+  },
+  "usage-open": {
+    fixture: "usage-open",
+    note: "the usage breakdown, opened from the readout under the prompt",
+  },
+  "context-open": {
+    fixture: "context-open",
+    note: "what the context holds, opened from the context meter under the prompt",
   },
   "preset-open": {
     fixture: "preset-open",
@@ -46,6 +54,34 @@ export const VIEWS = {
   loop: {
     fixture: "loop",
     note: "Loop mode: the plan card, per-item budgets and loop controls",
+  },
+  "loop-running": {
+    fixture: "loop-running",
+    note: "Loop mode, running item 2: the status line with Now:, progress, round and budget",
+  },
+  "loop-questions": {
+    fixture: "loop-questions",
+    note: "Loop mode with three questions waiting: the Needs you tray shows one at a time",
+  },
+  "loop-replan": {
+    fixture: "loop-replan",
+    note: "Loop mode with a re-plan waiting: the Needs you tray holds Review diff, Keep planning and Accept plan",
+  },
+  "loop-failed": {
+    fixture: "loop-failed",
+    note: "Loop mode, a failed item being repaired: the red state",
+  },
+  "loop-finished": {
+    fixture: "loop-finished",
+    note: "Loop mode, every item done: the green state, Close",
+  },
+  "loop-stopped": {
+    fixture: "loop-stopped",
+    note: "Loop mode stopped by the person: Resume and Close",
+  },
+  "loop-settings-open": {
+    fixture: "loop-settings-open",
+    note: "Loop mode with the gear opened: strategy, Parallel and the note",
   },
   "loop-plan-tile": {
     fixture: "loop-plan-tile",
@@ -99,11 +135,11 @@ export const VIEWS = {
   "settings-help": { fixture: "settings-help", note: "Settings, Help tab" },
   "agents-running": {
     fixture: "agents-running",
-    note: "the agents tree with long names and unknown costs",
+    note: "the agents panel: Active and Done groups, long names, unknown costs",
   },
   "agents-ended": {
     fixture: "agents-ended",
-    note: "the agents tree after every agent ended, one interrupted",
+    note: "the agents panel after every agent ended (Done folded), one interrupted",
   },
   catalogue: {
     fixture: "catalogue",

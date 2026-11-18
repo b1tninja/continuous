@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -17,8 +18,10 @@ const ROOTS = [
 ];
 
 const ALLOWED = new Set([
-  // the alias, and the 2.4.4 approval mode that is read as a permissive level
+  // the alias, and the 2.4.4 approval mode that is read as a permissive level.
+  // The reader lives in levelText so the GUI can import it on its own.
   "core/tools/permissions/policy.ts",
+  "core/tools/permissions/levelText.ts",
   "core/util/loopMode.ts",
   "core/tools/permissions/settingsFile.ts",
   "core/util/sandboxPolicy.ts",
@@ -40,6 +43,35 @@ const SKIP_DIR = new Set(["node_modules", "dist", "out", "build", ".git"]);
 const TEXT = /\.(ts|tsx|js|mjs|json|md|mdx|yaml|yml)$/;
 const IS_TEST = /\.(test|vitest)\.[tj]sx?$|\.measure\./;
 
+/**
+ * The files git tracks or has staged under the roots: the files a commit can
+ * carry, read from the index in milliseconds. Walking the folders instead read
+ * whatever build output a working tree held, synchronously, beside the jsdom
+ * suites, and ran past the 5 s limit on Windows. Without git (a source
+ * archive) the walk is the fallback.
+ */
+function trackedFiles(): string[] | undefined {
+  try {
+    const out = execFileSync("git", ["ls-files", "-z", "--", ...ROOTS], {
+      cwd: REPO,
+      encoding: "utf-8",
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return out
+      .split("\0")
+      .filter(Boolean)
+      .filter((rel) => !rel.split("/").some((seg) => SKIP_DIR.has(seg)))
+      .filter((rel) => {
+        const name = rel.slice(rel.lastIndexOf("/") + 1);
+        return TEXT.test(name) && !IS_TEST.test(name);
+      })
+      .map((rel) => path.join(REPO, rel));
+  } catch {
+    return undefined;
+  }
+}
+
 function walk(dir: string, found: string[]) {
   let entries: fs.Dirent[];
   try {
@@ -59,25 +91,33 @@ function walk(dir: string, found: string[]) {
 }
 
 describe("the name YOLO", () => {
-  it("is not in user-visible text or new code outside the alias lines", () => {
-    const files: string[] = [];
-    for (const root of ROOTS) {
-      const dir = path.join(REPO, root);
-      if (fs.existsSync(dir)) walk(dir, files);
-    }
-    expect(files.length).toBeGreaterThan(100);
-    const offenders = files
-      .map((f) => path.relative(REPO, f).split(path.sep).join("/"))
-      .filter((rel) => !ALLOWED.has(rel))
-      .filter((rel) => {
-        try {
-          return /yolo/i.test(fs.readFileSync(path.join(REPO, rel), "utf-8"));
-        } catch {
-          return false;
+  // Reading every file stays the slow part: give it room beside the suite.
+  it(
+    "is not in user-visible text or new code outside the alias lines",
+    { timeout: 30_000 },
+    () => {
+      let files = trackedFiles();
+      if (!files) {
+        files = [];
+        for (const root of ROOTS) {
+          const dir = path.join(REPO, root);
+          if (fs.existsSync(dir)) walk(dir, files);
         }
-      });
-    expect(offenders).toEqual([]);
-  });
+      }
+      expect(files.length).toBeGreaterThan(100);
+      const offenders = files
+        .map((f) => path.relative(REPO, f).split(path.sep).join("/"))
+        .filter((rel) => !ALLOWED.has(rel))
+        .filter((rel) => {
+          try {
+            return /yolo/i.test(fs.readFileSync(path.join(REPO, rel), "utf-8"));
+          } catch {
+            return false;
+          }
+        });
+      expect(offenders).toEqual([]);
+    },
+  );
 
   it("is never shown as a label, in an allowed file either", () => {
     for (const rel of ALLOWED) {

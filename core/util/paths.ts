@@ -12,6 +12,8 @@ import dotenv from "dotenv";
 import { IdeType, SerializedContinueConfig } from "../";
 import { defaultConfig } from "../config/default";
 import Types from "../config/types";
+
+import { writeFileAtomicSync } from "./atomicWrite";
 import {
   GLOBAL_DIR_NAME,
   LEGACY_GLOBAL_DIR_NAME,
@@ -271,6 +273,21 @@ export function getSharedConfigFilePath(): string {
 
 export function getSessionFilePath(sessionId: string): string {
   return path.join(getSessionsFolderPath(), `${sessionId}.json`);
+}
+
+/** The append-only log of a session (STOR6); see core/util/sessionLog.ts. */
+export function getSessionLogFilePath(sessionId: string): string {
+  return path.join(getSessionsFolderPath(), `${sessionId}.jsonl`);
+}
+
+/** The folder of a session's own files (blobs): `sessions/<id>/`. */
+export function getSessionDataFolderPath(sessionId: string): string {
+  return path.join(getSessionsFolderPath(), sessionId);
+}
+
+/** Large strings of a session stored by hash (STOR7): `sessions/<id>/blobs/`. */
+export function getSessionBlobFolderPath(sessionId: string): string {
+  return path.join(getSessionDataFolderPath(sessionId), "blobs");
 }
 
 export function getSessionsListPath(): string {
@@ -573,34 +590,14 @@ export function restoreConfigFileText(
  * written through to its real target, so the link survives.
  */
 function writeFileAtomically(filePath: string, text: string): void {
-  let target = filePath;
-  try {
-    target = fs.realpathSync(filePath);
-  } catch {
-    // Does not exist yet; write the path as given.
-  }
-  const tmp = `${target}.${process.pid}.tmp`;
-  try {
-    fs.writeFileSync(tmp, text);
-    setConfigFilePermissions(tmp);
-    fs.renameSync(tmp, target);
-  } catch (e) {
-    try {
-      fs.rmSync(tmp, { force: true });
-    } catch {
-      // Nothing more to clean up.
-    }
-    // Windows refuses to replace a file another process has open (an editor,
-    // antivirus or indexer): EPERM/EBUSY/EACCES. Losing the user's edit is
-    // worse than a non-atomic write, so fall back to writing in place.
-    const code = (e as NodeJS.ErrnoException).code;
-    if (code === "EPERM" || code === "EBUSY" || code === "EACCES") {
-      fs.writeFileSync(target, text);
-    } else {
-      throw e;
-    }
-  }
-  setConfigFilePermissions(target);
+  // Windows refuses to replace a file another process has open (an editor,
+  // antivirus or indexer). Losing the user's edit is worse than a non-atomic
+  // write, so the helper falls back to writing in place after its retries.
+  writeFileAtomicSync(
+    filePath,
+    text,
+    os.platform() === "win32" ? {} : { mode: 0o600 },
+  );
 }
 
 /**

@@ -1,0 +1,877 @@
+{
+  "formatVersion": "v1.0",
+  "disclaimer": "This pricing list is for informational purposes only. All prices are subject to the additional terms included in the pricing pages on http://aws.amazon.com. All Free Tier prices are also subject to the terms included at https://aws.amazon.com/free/",
+  "offerCode": "AmazonBedrock",
+  "version": "20261106184538",
+  "publicationDate": "2026-11-06T18:45:38Z",
+  "products": {
+    "1108746783DC5F29": {
+      "sku": "1108746783DC5F29",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-NovaPro-input-tokens",
+        "operation": "Usage",
+        "inferenceType": "Input tokens",
+        "model": "Nova Pro",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "1E8DF0992795CAE5": {
+      "sku": "1E8DF0992795CAE5",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-NovaPro-output-tokens",
+        "operation": "Usage",
+        "inferenceType": "Output tokens",
+        "model": "Nova Pro",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "5337DC03900DF060": {
+      "sku": "5337DC03900DF060",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-NovaPro-cache-read-input-token-count",
+        "operation": "Usage",
+        "inferenceType": "Cache read input tokens",
+        "model": "Nova Pro",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "DCF1E5AA2B79B8BD": {
+      "sku": "DCF1E5AA2B79B8BD",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-NovaPro-cache-write-input-token-count",
+        "operation": "Usage",
+        "inferenceType": "Cache write input tokens",
+        "model": "Nova Pro",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "3A29FB1680A74AEE": {
+      "sku": "3A29FB1680A74AEE",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Nova2.0Lite-input-tokens",
+        "operation": "Usage",
+        "inferenceType": "Input tokens",
+        "model": "Nova 2.0 Lite",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "B8C6AA2E747423C8": {
+      "sku": "B8C6AA2E747423C8",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Nova2.0Lite-output-tokens",
+        "operation": "Usage",
+        "inferenceType": "Output tokens",
+        "model": "Nova 2.0 Lite",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "AE4C6D173B27683C": {
+      "sku": "AE4C6D173B27683C",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Nova2.0Lite-input-tokens-global",
+        "operation": "Usage",
+        "inferenceType": "Input tokens",
+        "model": "Nova 2.0 Lite",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "65F4700B55C8BD32": {
+      "sku": "65F4700B55C8BD32",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Nova2.0Lite-output-tokens-global",
+        "operation": "Usage",
+        "inferenceType": "Output tokens",
+        "model": "Nova 2.0 Lite",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "10ED121FB21FEB77": {
+      "sku": "10ED121FB21FEB77",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Llama4-Scout-17B-input-tokens",
+        "operation": "Usage",
+        "inferenceType": "Input tokens",
+        "model": "Llama 4 Scout 17B Instruct",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "BF15B86AC4823125": {
+      "sku": "BF15B86AC4823125",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Llama4-Scout-17B-output-tokens",
+        "operation": "Usage",
+        "inferenceType": "Output tokens",
+        "model": "Llama 4 Scout 17B Instruct",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "7AB6C6AE4C202F40": {
+      "sku": "7AB6C6AE4C202F40",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Llama4-Scout-17B-input-tokens-flex",
+        "operation": "Usage",
+        "inferenceType": "Input tokens",
+        "model": "Llama 4 Scout 17B Instruct",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "0EC3D59D5C3B5DB5": {
+      "sku": "0EC3D59D5C3B5DB5",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Llama4-Scout-17B-output-tokens-flex",
+        "operation": "Usage",
+        "inferenceType": "Output tokens",
+        "model": "Llama 4 Scout 17B Instruct",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "14F127A389BFA171": {
+      "sku": "14F127A389BFA171",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Llama4-Scout-17B-input-tokens-priority",
+        "operation": "Usage",
+        "inferenceType": "Input tokens",
+        "model": "Llama 4 Scout 17B Instruct",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "7F83531133C331D1": {
+      "sku": "7F83531133C331D1",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Llama4-Scout-17B-output-tokens-priority",
+        "operation": "Usage",
+        "inferenceType": "Output tokens",
+        "model": "Llama 4 Scout 17B Instruct",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "8E44E057CB86F87F": {
+      "sku": "8E44E057CB86F87F",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-DeepSeek-V3.2-input-tokens",
+        "operation": "Usage",
+        "inferenceType": "Input tokens",
+        "model": "DeepSeek V3.2",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "1D167933ADD091B0": {
+      "sku": "1D167933ADD091B0",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-DeepSeek-V3.2-output-tokens",
+        "operation": "Usage",
+        "inferenceType": "Output tokens",
+        "model": "DeepSeek V3.2",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "6DFF6964307034D8": {
+      "sku": "6DFF6964307034D8",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Qwen3-32B-mantle-input-tokens-standard",
+        "operation": "Usage",
+        "inferenceType": "Input tokens",
+        "model": "Qwen3 32B",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "F1F27DB8C466AF80": {
+      "sku": "F1F27DB8C466AF80",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Qwen3-32B-mantle-output-tokens-standard",
+        "operation": "Usage",
+        "inferenceType": "Output tokens",
+        "model": "Qwen3 32B",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "B5AFA24BEF3DBAED": {
+      "sku": "B5AFA24BEF3DBAED",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Qwen3-32B-input-tokens",
+        "operation": "Usage",
+        "inferenceType": "Input tokens",
+        "model": "Qwen3 32B",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "4FE14255F41FD69F": {
+      "sku": "4FE14255F41FD69F",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Qwen3-32B-output-tokens",
+        "operation": "Usage",
+        "inferenceType": "Output tokens",
+        "model": "Qwen3 32B",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "753BC7F99A8EA2E1": {
+      "sku": "753BC7F99A8EA2E1",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-NovaPro-ProvisionedThroughput-ModelUnits",
+        "operation": "Usage",
+        "inferenceType": "Provisioned throughput",
+        "model": "Nova Pro",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "8D12A58C98C8EEB3": {
+      "sku": "8D12A58C98C8EEB3",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-NovaPro-latency-optimized-input-tokens",
+        "operation": "Usage",
+        "inferenceType": "Input tokens",
+        "model": "Nova Pro",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "295A0A477FE359F5": {
+      "sku": "295A0A477FE359F5",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-NovaCanvas-image-output",
+        "operation": "Usage",
+        "inferenceType": "Image generation",
+        "model": "Nova Canvas",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      }
+    },
+    "3C8F7282A79DD925": {
+      "sku": "3C8F7282A79DD925",
+      "productFamily": "Amazon Bedrock",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US West (Oregon)",
+        "locationType": "AWS Region",
+        "usagetype": "USW2-NovaPro-input-tokens",
+        "operation": "Usage",
+        "inferenceType": "Input tokens",
+        "model": "Nova Pro",
+        "regionCode": "us-west-2",
+        "servicename": "Amazon Bedrock"
+      }
+    }
+  },
+  "terms": {
+    "OnDemand": {
+      "1108746783DC5F29": {
+        "1108746783DC5F29.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "1108746783DC5F29",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "1108746783DC5F29.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "1108746783DC5F29.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0008000000 per 1K tokens for USE1-NovaPro-input-tokens in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0008000000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "1E8DF0992795CAE5": {
+        "1E8DF0992795CAE5.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "1E8DF0992795CAE5",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "1E8DF0992795CAE5.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "1E8DF0992795CAE5.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0032000000 per 1K tokens for USE1-NovaPro-output-tokens in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0032000000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "5337DC03900DF060": {
+        "5337DC03900DF060.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "5337DC03900DF060",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "5337DC03900DF060.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "5337DC03900DF060.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0002000000 per 1K tokens for USE1-NovaPro-cache-read-input-token-count in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0002000000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "DCF1E5AA2B79B8BD": {
+        "DCF1E5AA2B79B8BD.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "DCF1E5AA2B79B8BD",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "DCF1E5AA2B79B8BD.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "DCF1E5AA2B79B8BD.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0000000000 per 1K tokens for USE1-NovaPro-cache-write-input-token-count in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0000000000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "3A29FB1680A74AEE": {
+        "3A29FB1680A74AEE.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "3A29FB1680A74AEE",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "3A29FB1680A74AEE.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "3A29FB1680A74AEE.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0003300000 per 1K tokens for USE1-Nova2.0Lite-input-tokens in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0003300000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "B8C6AA2E747423C8": {
+        "B8C6AA2E747423C8.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "B8C6AA2E747423C8",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "B8C6AA2E747423C8.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "B8C6AA2E747423C8.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0027500000 per 1K tokens for USE1-Nova2.0Lite-output-tokens in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0027500000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "AE4C6D173B27683C": {
+        "AE4C6D173B27683C.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "AE4C6D173B27683C",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "AE4C6D173B27683C.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "AE4C6D173B27683C.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0003000000 per 1K tokens for USE1-Nova2.0Lite-input-tokens-global in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0003000000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "65F4700B55C8BD32": {
+        "65F4700B55C8BD32.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "65F4700B55C8BD32",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "65F4700B55C8BD32.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "65F4700B55C8BD32.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0025000000 per 1K tokens for USE1-Nova2.0Lite-output-tokens-global in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0025000000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "10ED121FB21FEB77": {
+        "10ED121FB21FEB77.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "10ED121FB21FEB77",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "10ED121FB21FEB77.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "10ED121FB21FEB77.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0001700000 per 1K tokens for USE1-Llama4-Scout-17B-input-tokens in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0001700000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "BF15B86AC4823125": {
+        "BF15B86AC4823125.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "BF15B86AC4823125",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "BF15B86AC4823125.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "BF15B86AC4823125.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0006600000 per 1K tokens for USE1-Llama4-Scout-17B-output-tokens in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0006600000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "7AB6C6AE4C202F40": {
+        "7AB6C6AE4C202F40.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "7AB6C6AE4C202F40",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "7AB6C6AE4C202F40.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "7AB6C6AE4C202F40.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0000850000 per 1K tokens for USE1-Llama4-Scout-17B-input-tokens-flex in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0000850000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "0EC3D59D5C3B5DB5": {
+        "0EC3D59D5C3B5DB5.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "0EC3D59D5C3B5DB5",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "0EC3D59D5C3B5DB5.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "0EC3D59D5C3B5DB5.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0003300000 per 1K tokens for USE1-Llama4-Scout-17B-output-tokens-flex in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0003300000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "14F127A389BFA171": {
+        "14F127A389BFA171.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "14F127A389BFA171",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "14F127A389BFA171.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "14F127A389BFA171.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0002975000 per 1K tokens for USE1-Llama4-Scout-17B-input-tokens-priority in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0002975000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "7F83531133C331D1": {
+        "7F83531133C331D1.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "7F83531133C331D1",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "7F83531133C331D1.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "7F83531133C331D1.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0011550000 per 1K tokens for USE1-Llama4-Scout-17B-output-tokens-priority in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0011550000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "8E44E057CB86F87F": {
+        "8E44E057CB86F87F.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "8E44E057CB86F87F",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "8E44E057CB86F87F.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "8E44E057CB86F87F.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.6200000000 per 1M tokens for USE1-DeepSeek-V3.2-input-tokens in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1M tokens",
+              "pricePerUnit": {
+                "USD": "0.6200000000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "1D167933ADD091B0": {
+        "1D167933ADD091B0.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "1D167933ADD091B0",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "1D167933ADD091B0.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "1D167933ADD091B0.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$1.8500000000 per 1M tokens for USE1-DeepSeek-V3.2-output-tokens in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1M tokens",
+              "pricePerUnit": {
+                "USD": "1.8500000000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "6DFF6964307034D8": {
+        "6DFF6964307034D8.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "6DFF6964307034D8",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "6DFF6964307034D8.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "6DFF6964307034D8.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0001600000 per 1K tokens for USE1-Qwen3-32B-mantle-input-tokens-standard in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0001600000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "F1F27DB8C466AF80": {
+        "F1F27DB8C466AF80.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "F1F27DB8C466AF80",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "F1F27DB8C466AF80.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "F1F27DB8C466AF80.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0006200000 per 1K tokens for USE1-Qwen3-32B-mantle-output-tokens-standard in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0006200000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "B5AFA24BEF3DBAED": {
+        "B5AFA24BEF3DBAED.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "B5AFA24BEF3DBAED",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "B5AFA24BEF3DBAED.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "B5AFA24BEF3DBAED.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0001500000 per 1K tokens for USE1-Qwen3-32B-input-tokens in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0001500000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "4FE14255F41FD69F": {
+        "4FE14255F41FD69F.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "4FE14255F41FD69F",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "4FE14255F41FD69F.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "4FE14255F41FD69F.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0006000000 per 1K tokens for USE1-Qwen3-32B-output-tokens in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0006000000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "753BC7F99A8EA2E1": {
+        "753BC7F99A8EA2E1.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "753BC7F99A8EA2E1",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "753BC7F99A8EA2E1.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "753BC7F99A8EA2E1.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$20.5000000000 per Hours for USE1-NovaPro-ProvisionedThroughput-ModelUnits in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "Hours",
+              "pricePerUnit": {
+                "USD": "20.5000000000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "8D12A58C98C8EEB3": {
+        "8D12A58C98C8EEB3.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "8D12A58C98C8EEB3",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "8D12A58C98C8EEB3.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "8D12A58C98C8EEB3.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0010000000 per 1K tokens for USE1-NovaPro-latency-optimized-input-tokens in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0010000000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "295A0A477FE359F5": {
+        "295A0A477FE359F5.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "295A0A477FE359F5",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "295A0A477FE359F5.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "295A0A477FE359F5.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0400000000 per Images for USE1-NovaCanvas-image-output in us-east-1",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "Images",
+              "pricePerUnit": {
+                "USD": "0.0400000000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      },
+      "3C8F7282A79DD925": {
+        "3C8F7282A79DD925.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "3C8F7282A79DD925",
+          "effectiveDate": "2026-11-01T00:00:00Z",
+          "priceDimensions": {
+            "3C8F7282A79DD925.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "3C8F7282A79DD925.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0009000000 per 1K tokens for USW2-NovaPro-input-tokens in us-west-2",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0009000000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      }
+    }
+  }
+}
