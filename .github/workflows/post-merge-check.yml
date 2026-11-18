@@ -20,6 +20,10 @@ concurrency:
   group: post-merge-check
   cancel-in-progress: true
 
+# onnxruntime-node's postinstall fetches its CUDA libraries from GitHub releases on Linux. Packaging drops them and nothing here uses a GPU, so don't let that download fail the job.
+env:
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+
 jobs:
   core:
     runs-on: ubuntu-latest
@@ -79,8 +83,6 @@ jobs:
   cli:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      ONNXRUNTIME_NODE_INSTALL_CUDA: skip
     steps:
       - uses: actions/checkout@v7
       - name: Setup packages
