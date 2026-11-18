@@ -268,11 +268,18 @@ describe("webFetchDefault: a Fetch only the default list allowed", () => {
     }
   });
 
-  it("headless: the transition while the flag is false, follows once it is true", () => {
-    expect(HEADLESS_FETCH_FOLLOWS_WEB_LEVEL).toBe(false);
+  it("headless: follows the Web level, and the transition remains when asked for", () => {
+    expect(HEADLESS_FETCH_FOLLOWS_WEB_LEVEL).toBe(true);
     expect(webFetchDefault({ level: "cautious", headless: true })).toBe(
-      "transition",
+      "follow",
     );
+    expect(
+      webFetchDefault({
+        level: "cautious",
+        headless: true,
+        headlessFollows: false,
+      }),
+    ).toBe("transition");
     expect(
       webFetchDefault({
         level: "cautious",
