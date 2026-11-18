@@ -1,4 +1,5 @@
 import type { ModelDescription } from "core";
+import { DEFAULT_CONTEXT_LENGTH } from "core/llm/constants";
 import type { CompactionPlan } from "core/util/compactionPlan";
 import { renderChatMessage } from "core/util/messageContent";
 import { v4 as uuidv4 } from "uuid";
@@ -6,8 +7,11 @@ import type { CompactionPrefix } from "../../util/compactionPrefix";
 import { selectSelectedChatModel } from "../slices/configSlice";
 import {
   applyPreparedSummary,
+  dropTrailingEmptyAssistant,
   setCompactionLoading,
   setCompactionPlan,
+  setInactive,
+  setInlineErrorMessage,
 } from "../slices/sessionSlice";
 import type { AppThunkDispatch, RootState, ThunkExtrasType } from "../store";
 import { buildChatRequest } from "../util/buildChatRequest";
@@ -46,9 +50,12 @@ import { checkpointSession } from "./session";
  *
  * Nothing asks: the loop goes on, on `[head][summary][tail]`, which is one
  * read of the summary and the tail instead of the whole conversation, and
- * stays well under the force threshold for a long while. When no summary can
- * be had (planned compaction off, the plan's hold answered Continue anyway, no
- * boundary, the request failed) the block drop stays the fallback.
+ * stays well under the force threshold for a long while. When a summary was
+ * made or a ready one was saved, the next request goes out on the compacted
+ * conversation. When it cannot (a cloud model with no summary prepared, or
+ * the summary request failed), the next request is not sent: dropping the
+ * oldest block in silence is what made a full window look like an empty
+ * reply. The person is told the window and where to change it.
  */
 export type ToolRoundCompaction =
   "none" | "applied-prepared" | "summarized" | "aborted" | "failed";
@@ -194,4 +201,46 @@ export async function compactAtToolRound(args: {
     signal?.removeEventListener("abort", onAbort);
     dispatch(setCompactionLoading({ index, loading: false }));
   }
+}
+
+/**
+ * What the person sees when compaction cannot make the next prompt fit.
+ * A successful compact does not call this: that request still goes out.
+ */
+export function compactionBlockedDetail(
+  result: "failed" | "none",
+  model: ModelDescription,
+  plan: CompactionPlan,
+): string {
+  const tokens = model.contextLength ?? DEFAULT_CONTEXT_LENGTH;
+  const unknown =
+    model.contextLengthSource === "unknown" || model.contextLength == null;
+  const percent =
+    tokens > 0 ? Math.round((100 * plan.tokens.total) / tokens) : 0;
+  const standIn = unknown
+    ? ` No published window is known for this model, so ${tokens.toLocaleString()} is in use until you set one.`
+    : "";
+  const window = `The context window in use is ${tokens.toLocaleString()} tokens (about ${percent}% full).${standIn}`;
+  const where =
+    "Change the context length under Models → Configure → Context & cost.";
+  if (result === "none") {
+    return `Compaction was not run because this is a cloud model and no summary is prepared. Compaction did not free enough room. ${window} ${where}`;
+  }
+  return `Compaction failed and did not free enough room. The summary could not be built. ${window} ${where}`;
+}
+
+/** Stop the turn and say why, instead of pruning and sending anyway. */
+export function explainCompactionBlocked(
+  dispatch: AppThunkDispatch,
+  result: "failed" | "none",
+  need: ToolRoundCompactionNeed,
+): void {
+  dispatch(dropTrailingEmptyAssistant());
+  dispatch(setInactive());
+  dispatch(
+    setInlineErrorMessage({
+      kind: "out-of-context",
+      detail: compactionBlockedDetail(result, need.model, need.plan),
+    }),
+  );
 }

@@ -427,6 +427,7 @@ export const MODEL_EDIT_FIELDS: readonly ModelEditField[] = [
     kind: "number",
     integer: true,
     min: 1,
+    help: "The prompt and the reply share this many tokens. The slider starts at the published window for the model. 32,768 is used only when no window is known.",
   },
   {
     path: ["defaultCompletionOptions", "promptCaching"],

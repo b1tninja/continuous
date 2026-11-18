@@ -115,6 +115,13 @@ export interface ILLM
    */
   readonly routeNames?: string[];
 
+  /**
+   * Where `contextLength` came from. `unknown` means the 32,768 stand-in
+   * (`DEFAULT_CONTEXT_LENGTH`), not a published window.
+   */
+  readonly contextLengthSource?:
+    "config" | "provider" | "published" | "unknown";
+
   autocompleteOptions?: Partial<TabAutocompleteOptions>;
 
   /**
@@ -2544,6 +2551,11 @@ export interface ModelDescription {
   onPremProxyUrl?: string | null;
 
   contextLength?: number;
+  /**
+   * Where `contextLength` came from. `unknown` means 32,768 is a stand-in
+   * because no config, provider, or published window was found.
+   */
+  contextLengthSource?: "config" | "provider" | "published" | "unknown";
   maxStopWords?: number;
   template?: TemplateType;
   completionOptions?: BaseCompletionOptions;
@@ -3083,6 +3095,7 @@ export interface JSONModelDescription {
   apiBase?: string;
 
   contextLength?: number;
+  contextLengthSource?: "config" | "provider" | "published" | "unknown";
   maxStopWords?: number;
   template?: TemplateType;
   completionOptions?: BaseCompletionOptions;

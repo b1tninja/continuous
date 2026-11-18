@@ -48,6 +48,7 @@ import {
   setAppliedRulesAtIndex,
   setContextPercentage,
   setInactive,
+  dropTrailingEmptyAssistant,
   setInlineErrorMessage,
   setIsPruned,
   setPromptCacheInputTokens,
@@ -228,8 +229,14 @@ export const streamNormalInput = createAsyncThunk<
 
     if (precompiledRes.status === "error") {
       if (precompiledRes.error.includes("Not enough context")) {
-        dispatch(setInlineErrorMessage("out-of-context"));
+        dispatch(
+          setInlineErrorMessage({
+            kind: "out-of-context",
+            detail: precompiledRes.error,
+          }),
+        );
         dispatch(setInactive());
+        dispatch(dropTrailingEmptyAssistant());
         return;
       } else {
         throw new Error(precompiledRes.error);
@@ -630,6 +637,49 @@ export const streamNormalInput = createAsyncThunk<
         selectedChatModel.completionOptions?.maxTokens,
       lastStopReason,
     );
+
+    // A reply that stops at the output limit with nothing written used to
+    // look like the prompt did nothing. Say which limit it was.
+    if (lastStopReason === "length" || lastStopReason === "max_tokens") {
+      const hist = getState().session.history;
+      const lastMsg = hist[hist.length - 1]?.message;
+      const content = lastMsg?.content;
+      const text =
+        typeof content === "string"
+          ? content.trim()
+          : Array.isArray(content)
+            ? content
+                .map((part) =>
+                  part &&
+                  typeof part === "object" &&
+                  "text" in part &&
+                  typeof part.text === "string"
+                    ? part.text
+                    : "",
+                )
+                .join("")
+                .trim()
+            : "";
+      if (
+        lastMsg?.role === "assistant" &&
+        text === "" &&
+        selectCurrentToolCalls(getState()).length === 0
+      ) {
+        const maxOut =
+          completionOptions.maxTokens ??
+          selectedChatModel.completionOptions?.maxTokens;
+        dispatch(
+          setInlineErrorMessage({
+            kind: "out-of-context",
+            detail:
+              `The model stopped without a reply because the output limit was reached` +
+              `${maxOut !== undefined ? ` (${maxOut} tokens)` : ""}. ` +
+              `The context window in use is ${selectedChatModel.contextLength ?? "unknown"} tokens. ` +
+              `Change either under Models → Configure → Context & cost.`,
+          }),
+        );
+      }
+    }
 
     // A call to a tool the mode's role may not use is refused, offered or not
     refuseRoleCalls(dispatch, selectPendingToolCalls(getState()), {

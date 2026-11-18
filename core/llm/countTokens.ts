@@ -20,7 +20,7 @@ import { isSummaryMessage } from "../util/summaryMessage.js";
 import { isTaskPlanBlockText } from "../util/taskPlan.js";
 import { AsyncEncoder, LlamaAsyncEncoder } from "./asyncEncoder.js";
 import { ageRequest, type AgeingState } from "../util/contextAgeing.js";
-import { DEFAULT_PRUNING_LENGTH } from "./constants.js";
+import { DEFAULT_CONTEXT_LENGTH, DEFAULT_PRUNING_LENGTH } from "./constants.js";
 import {
   blocksToDrop,
   type ContextClass,
@@ -472,10 +472,39 @@ function dropOldestBlocks<T extends ChatMessage & { tokens: number }>(
  * @returns Processed array of chat messages that fit within context constraints
  * @throws Error if non-negotiable elements exceed available context
  */
+/**
+ * Said when the prompt cannot be made to fit. Starts with "Not enough context"
+ * so the chat UI can tell this from other compile failures, then the sizes
+ * and where the window is changed.
+ */
+function contextWindowError(p: {
+  window: number;
+  promptTokens: number;
+  systemMsgTokens: number;
+  toolTokens: number;
+  lastMessagesTokens: number;
+  reservedOutputTokens: number;
+  countingSafetyBuffer: number;
+  unknown: boolean;
+}): string {
+  const standIn = p.unknown
+    ? ` No published window is known for this model, so ${DEFAULT_CONTEXT_LENGTH} is in use until you set one.`
+    : "";
+  return (
+    `Not enough context. This prompt does not fit the model's context window. ` +
+    `The prompt is about ${p.promptTokens} tokens and the window is ${p.window} tokens ` +
+    `(system message ~${p.systemMsgTokens}, tools ~${p.toolTokens}, the latest turn ~${p.lastMessagesTokens}; ` +
+    `${p.reservedOutputTokens} kept for the reply, ${p.countingSafetyBuffer} held back for counting error). ` +
+    `Change the context length in Models → Configure → Context & cost.` +
+    standIn
+  );
+}
+
 function compileChatMessages({
   modelName,
   msgs,
   knownContextLength,
+  contextLengthUnknown = false,
   maxTokens,
   supportsImages,
   tools,
@@ -486,6 +515,8 @@ function compileChatMessages({
   modelName: string;
   msgs: ChatMessage[];
   knownContextLength: number | undefined;
+  /** The window is the 32,768 stand-in, not a published or configured limit. */
+  contextLengthUnknown?: boolean;
   maxTokens: number;
   supportsImages: boolean;
   tools?: Tool[];
@@ -598,14 +629,16 @@ function compileChatMessages({
   // Make sure there's enough context for the non-excludable items
   if (knownContextLength !== undefined && inputTokensAvailable < 0) {
     throw new Error(
-      `Not enough context available to include the system message, last user message, and tools.
-        There must be at least ${reservedOutputTokens} tokens remaining for output.
-        Request had the following token counts:
-        - contextLength: ${knownContextLength}
-        - counting safety buffer: ${countingSafetyBuffer}
-        - tools: ~${toolTokens}
-        - system message: ~${systemMsgTokens}
-        - max output tokens: ${maxTokens}`,
+      contextWindowError({
+        window: knownContextLength,
+        promptTokens: toolTokens + systemMsgTokens + lastMessagesTokens,
+        systemMsgTokens,
+        toolTokens,
+        lastMessagesTokens,
+        reservedOutputTokens,
+        countingSafetyBuffer,
+        unknown: contextLengthUnknown,
+      }),
     );
   }
 
@@ -675,6 +708,23 @@ function compileChatMessages({
 
   const inputTokens =
     currentTotal + systemMsgTokens + toolTokens + lastMessagesTokens;
+  // History that cannot be dropped (the latest user turn, the system message,
+  // the tools) can still be larger than the window. Say so, with the sizes,
+  // instead of sending a prompt the model will refuse with no explanation.
+  if (knownContextLength !== undefined && inputTokens > knownContextLength) {
+    throw new Error(
+      contextWindowError({
+        window: knownContextLength,
+        promptTokens: inputTokens,
+        systemMsgTokens,
+        toolTokens,
+        lastMessagesTokens,
+        reservedOutputTokens,
+        countingSafetyBuffer,
+        unknown: contextLengthUnknown,
+      }),
+    );
+  }
   const availableTokens =
     contextLength - countingSafetyBuffer - reservedOutputTokens;
   const contextPercentage = inputTokens / availableTokens;

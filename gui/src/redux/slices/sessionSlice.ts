@@ -281,6 +281,12 @@ export interface CompactionHoldState {
   prepared?: boolean;
   /** The last request was already pruned to fit */
   pruned?: boolean;
+  /** The window the hold is a percent of. */
+  contextLength?: number;
+  /** The prompt, with the waiting message, as a percent of that window. */
+  percent?: number;
+  /** 32,768 is standing in because no window is published for this model. */
+  contextLengthUnknown?: boolean;
   editorState: JSONContent;
   modifiers: InputModifiers;
   index?: number;
@@ -1057,6 +1063,35 @@ export const sessionSlice = createSlice({
       // Stopped or failed while the prompt was still being read
       state.promptProgress = undefined;
       state.recoveryHold = undefined;
+    },
+    /**
+     * A turn that never reached the model (compaction could not free room,
+     * or the prompt does not fit) must not sit there as a blank reply.
+     */
+    dropTrailingEmptyAssistant: (state) => {
+      const last = state.history.at(-1);
+      const content = last?.message.content;
+      const blank =
+        typeof content === "string"
+          ? content.trim() === ""
+          : Array.isArray(content)
+            ? content.every(
+                (part) =>
+                  !part ||
+                  typeof part !== "object" ||
+                  !("text" in part) ||
+                  typeof part.text !== "string" ||
+                  part.text.trim() === "",
+              )
+            : true;
+      if (
+        last?.message.role === "assistant" &&
+        !last.message.toolCalls?.length &&
+        !last.toolCallStates?.length &&
+        blank
+      ) {
+        state.history.pop();
+      }
     },
     abortStream: (state) => {
       state.streamAborter.abort();
@@ -1977,6 +2012,7 @@ export const {
   addContextItemsAtIndex,
   setAppliedRulesAtIndex,
   setInactive,
+  dropTrailingEmptyAssistant,
   streamUpdate,
   newSession,
   updateSessionTitle,

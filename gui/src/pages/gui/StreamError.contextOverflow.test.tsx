@@ -28,6 +28,7 @@ describe("stream error for a conversation longer than the model takes", () => {
     expect(box.textContent).toContain((1067710).toLocaleString());
     expect(box.textContent).toContain((1000000).toLocaleString());
     expect(box.textContent).toContain("Your message is kept");
+    expect(box.textContent).toContain("Context & cost");
   });
 
   it("offers trying again and a new session, not compacting", async () => {

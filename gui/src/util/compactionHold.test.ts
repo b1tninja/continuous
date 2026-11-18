@@ -89,6 +89,8 @@ describe("compactionHoldFor", () => {
     const hold = compactionHoldFor(stateWith(12), 10)!;
     // Where core's block drop starts: 85% of 100k / 1.05
     expect(hold.forceAtTokens).toBe(80_952);
+    expect(hold.contextLength).toBe(100_000);
+    expect(hold.percent).toBeGreaterThanOrEqual(85);
     expect(hold.plan.state).toBe("force");
     expect(hold.rereadTokens).toBe(
       hold.plan.tokens.span + hold.plan.tokens.tail + 10,
@@ -210,6 +212,8 @@ describe("the send path", () => {
     expect(state().session.compactionHold).toMatchObject({
       planId: currentCompactionPlan(state())!.id,
       editorState: text("Next"),
+      contextLength: 100_000,
+      percent: expect.any(Number),
     });
     expect(state().session.history).toHaveLength(length);
     expect(compiles).toHaveLength(0);
@@ -243,7 +247,14 @@ describe("the send path", () => {
       }) as any,
     );
     expect(state().session.compactionHold).toBeUndefined();
-    expect(compiles).toHaveLength(1);
+    // Over the force line with no summary: the loop is not held, and it is
+    // not sent into a silent prune either
+    expect(compiles).toHaveLength(0);
+    const shown = state().session.inlineErrorMessage;
+    expect(shown).toMatchObject({ kind: "out-of-context" });
+    expect(typeof shown === "object" ? shown.detail : "").toContain(
+      "Compaction failed",
+    );
   });
 
   it("Continue anyway sends, and the plan is not held again", async () => {

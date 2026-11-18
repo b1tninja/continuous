@@ -18,6 +18,7 @@ function convertModel(
     apiBase: m.apiBase,
     roles,
     requestOptions: m.requestOptions,
+    contextLength: m.contextLength,
     defaultCompletionOptions: m.completionOptions,
   };
 }
