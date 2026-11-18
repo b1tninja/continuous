@@ -3,6 +3,7 @@ import * as fs from "fs";
 import { validateSingleEdit } from "core/edit/searchAndReplace/findAndReplaceUtils.js";
 import { executeFindAndReplace } from "core/edit/searchAndReplace/performReplace.js";
 import { throwIfFileIsSecurityConcern } from "core/indexing/ignore.js";
+import { writeFileAtomicSync } from "core/util/atomicWrite.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
 
 import { telemetryService } from "../telemetry/telemetryService.js";
@@ -18,6 +19,7 @@ import {
   checkWorkspaceWrite,
   outsideWorkspacePreview,
   resolveWorkspacePath,
+  wroteOutsideResult,
 } from "./workspaceBoundary.js";
 import { generateDiff } from "./writeFile.js";
 
@@ -168,7 +170,7 @@ WARNINGS:
     oldContent: string;
   }) => {
     try {
-      fs.writeFileSync(args.resolvedPath, args.newContent, "utf-8");
+      writeFileAtomicSync(args.resolvedPath, args.newContent);
 
       // Get lines for telemetry
       const { added, removed } = calculateLinesOfCodeDiff(
@@ -195,7 +197,7 @@ WARNINGS:
         args.resolvedPath,
       );
 
-      return `Successfully edited ${args.resolvedPath}\nDiff:\n${diff}`;
+      return `Successfully edited ${args.resolvedPath}\nDiff:\n${diff}${wroteOutsideResult(args.resolvedPath)}`;
     } catch (error) {
       if (error instanceof ContinueError) {
         throw error;

@@ -8,6 +8,7 @@ import { isModelCapable } from "../utils/modelCapability.js";
 
 import { FirstRunBanner } from "./FirstRunBanner.js";
 import { ModelCapabilityWarning } from "./ModelCapabilityWarning.js";
+import { PlanResumeLine } from "./PlanResumeLine.js";
 import { TipsDisplay, shouldShowTip } from "./TipsDisplay.js";
 
 interface IntroMessageProps {
@@ -128,6 +129,7 @@ const IntroMessage: React.FC<IntroMessageProps> = ({
       )}
 
       <FirstRunBanner />
+      <PlanResumeLine />
       <Text> </Text>
 
       {/* Model capability warning */}

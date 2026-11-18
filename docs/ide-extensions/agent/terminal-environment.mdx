@@ -42,6 +42,17 @@ terminal:
 
 The agent is told that secrets are not passed and that you can allow a name here, so it can ask you to.
 
+When commands run in WSL, the names listed here are also added to `WSLENV` (with `/u`), so they reach the command inside the distribution. A Windows variable that `WSLENV` does not name never reaches WSL. Only names go into `WSLENV`; a name `WSLENV` already lists keeps its own flags.
+
+## How commands run
+
+A command the agent starts has no terminal and nobody to answer it:
+
+- **Commands cannot answer prompts.** Standard input is closed and Windows PowerShell runs with `-NonInteractive`, so `Read-Host`, a confirmation such as `Remove-Item` on a folder, a cmdlet asking for a missing parameter (the `curl` alias asking for `-Uri`) and `read` in bash fail or read nothing at once instead of waiting for the timeout. Use the command's own non-interactive flag (`git commit -m`, `npm init -y`, `-Confirm:$false`, `-Force`).
+- **Pagers print and end.** `PAGER`, `GIT_PAGER` and `MANPAGER` are `cat`, and `LESS` is `FRX` when it is not set, so `git log` and `man` do not wait in a pager. A name you list in `terminal.passEnv` is left as you set it, and with `inherit` the host's values are kept.
+- **Exit codes are real.** The result names the exit code the program chose: a script that exits 3 is reported as 3, not as Windows PowerShell's 1. As in every shell, the last statement decides, so in `a; b` a failing `a` is not reported when `b` succeeds.
+- **Output is decoded in the machine's code page on Windows.** Output that is not UTF-8 is read in the system's OEM code page (437, 850, 936 and so on), not always as GBK.
+
 ## MCP servers
 
 A stdio MCP server's own `env:` block is your explicit configuration and is passed as written, including keys. Only the variables the host passes implicitly are scrubbed.

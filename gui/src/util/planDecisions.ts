@@ -5,6 +5,7 @@ import {
   serializePlanFile,
   type PlanDecision,
 } from "core/util/planFile";
+import { autoAnswerPlanText } from "core/util/autoAnswerPlan";
 import { buildTaskPlan } from "core/util/taskPlan";
 
 /**
@@ -43,4 +44,20 @@ export async function recordPlanAnswer(
     }),
   );
   return decisions;
+}
+
+/**
+ * Questions is permissive: the plan file's open decisions are answered from
+ * what the plan offered (core/util/autoAnswer.ts) and written back, so the
+ * to-dos that wait on them can start. Returns the answers given, for the
+ * loop's record.
+ */
+export async function autoAnswerPlanFile(
+  ide: Pick<IDE, "readFile" | "writeFile">,
+  fileUri: string,
+): Promise<{ question: string; answer: string }[]> {
+  const result = autoAnswerPlanText(await ide.readFile(fileUri));
+  if (!result.ok) throw new Error(result.error);
+  if (result.answers.length > 0) await ide.writeFile(fileUri, result.text);
+  return result.answers;
 }

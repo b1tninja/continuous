@@ -41,6 +41,7 @@ import {
   type LoopWorktreeOps,
 } from "./loopWave.js";
 import type { LoopWorkerInput, LoopWorkerOutput } from "./loopWorker.js";
+import { resetWorkerIdentities } from "./workerIdentity.js";
 
 /**
  * Parallel waves in the CLI (L4 P3): the driver asks for a wave, startWave
@@ -106,6 +107,7 @@ describe("Loop mode's parallel waves in the CLI", () => {
     updateSessionLoop(undefined);
     resetLoopMemory();
     agentRegistry.reset();
+    resetWorkerIdentities();
     created.length = 0;
     applied.length = 0;
     removed.length = 0;
@@ -299,6 +301,18 @@ describe("Loop mode's parallel waves in the CLI", () => {
     const main = agentRegistry.list().find((n) => n.kind === "main");
     expect(workersNow().every((n) => n.parentId === main?.id)).toBe(true);
     expect(workersNow()[0].workspace).toEqual({ kind: "worktree", name: "1" });
+    // The node and the audit record name the worker the same way: the item's
+    // id and the mode every host uses, and the worker is told who it is
+    expect(workersNow().map((n) => [n.id, n.mode])).toEqual([
+      ["worker-1", "agent"],
+      ["worker-2", "agent"],
+    ]);
+    expect(workers.get("1")!.input.agent).toMatchObject({
+      id: "worker-1",
+      kind: "loop-worker",
+      mode: "agent",
+      role: "item 1",
+    });
 
     workers.get("1")!.end(
       output({

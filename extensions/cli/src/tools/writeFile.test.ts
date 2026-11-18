@@ -1,16 +1,32 @@
 import * as fs from "fs";
 import * as path from "path";
 
+import { writeFileAtomicSync } from "core/util/atomicWrite.js";
 import { ContinueError } from "core/util/errors.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import {
+  getPolicyLevels,
+  resetPolicyLevels,
+  setPolicyLevels,
+} from "../permissions/policyLevels.js";
 
 import { writeFileTool } from "./writeFile.js";
 
 const headless = vi.hoisted(() => ({ value: false }));
+const mode = vi.hoisted(() => ({ value: "normal" }));
 vi.mock("../services/index.js", () => ({
-  services: { toolPermissions: { isHeadless: () => headless.value } },
+  services: {
+    toolPermissions: {
+      isHeadless: () => headless.value,
+      getCurrentMode: () => mode.value,
+    },
+  },
 }));
 vi.mock("../telemetry/telemetryService.js");
+vi.mock("core/util/atomicWrite.js", () => ({
+  writeFileAtomicSync: vi.fn(),
+}));
 vi.mock("fs", async () => {
   const actual = await vi.importActual("fs");
   return {
@@ -77,7 +93,7 @@ describe("writeFileTool and the working directory", () => {
     expect(error.message).toContain("Write was not run");
     expect(error.message).toContain(outsidePath);
     expect(error.message).toContain(process.cwd());
-    expect(fs.writeFileSync).not.toHaveBeenCalled();
+    expect(writeFileAtomicSync).not.toHaveBeenCalled();
   });
 
   it("allows a headless write under the Continue home folder", async () => {
@@ -102,5 +118,92 @@ describe("writeFileTool and the working directory", () => {
     expect(writeFileTool.description).toContain(
       "counts as a file edit and is refused",
     );
+  });
+});
+
+describe("writeFileTool outside the working directory at each File edits level", () => {
+  const outsidePath = path.resolve(process.cwd(), "..", "elsewhere", "b.txt");
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    headless.value = true;
+    mode.value = "normal";
+    resetPolicyLevels();
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+  });
+
+  afterEach(() => {
+    headless.value = false;
+    mode.value = "normal";
+    resetPolicyLevels();
+  });
+
+  const withEdits = (
+    edits: "manual" | "cautious" | "automatic" | "permissive" | "idgaf",
+  ) => setPolicyLevels({ ...getPolicyLevels(), edits });
+
+  it("File edits IDGAF: a headless write outside is prepared, not refused", async () => {
+    withEdits("idgaf");
+    const result = await writeFileTool.preprocess!({
+      filepath: outsidePath,
+      content: "x",
+    });
+    expect(result.args.filepath).toBe(outsidePath);
+    expect(result.preview?.[0].content).toContain(
+      "Outside the working directory",
+    );
+  });
+
+  it("--auto is IDGAF on File edits: the same write goes through headless", async () => {
+    mode.value = "auto";
+    const result = await writeFileTool.preprocess!({
+      filepath: outsidePath,
+      content: "x",
+    });
+    expect(result.args.filepath).toBe(outsidePath);
+  });
+
+  it("the run writes the file and says it landed outside", async () => {
+    withEdits("idgaf");
+    const message = await writeFileTool.run({
+      filepath: outsidePath,
+      content: "x",
+    });
+    expect(writeFileAtomicSync).toHaveBeenCalledWith(outsidePath, "x");
+    expect(message).toContain(`Wrote outside the workspace: ${outsidePath}`);
+  });
+
+  it("a write inside the working directory carries no outside note", async () => {
+    withEdits("idgaf");
+    const inside = path.join(process.cwd(), "notes", "in.txt");
+    const message = await writeFileTool.run({ filepath: inside, content: "x" });
+    expect(message).not.toContain("outside the workspace");
+  });
+
+  it.each(["manual", "cautious", "automatic", "permissive"] as const)(
+    "File edits %s: a headless write outside is still refused",
+    async (level) => {
+      withEdits(level);
+      const error = await writeFileTool.preprocess!({
+        filepath: outsidePath,
+        content: "x",
+      }).catch((e) => e);
+      expect(error).toBeInstanceOf(ContinueError);
+      expect(error.message).toContain("Write was not run");
+      expect(writeFileAtomicSync).not.toHaveBeenCalled();
+    },
+  );
+
+  it("Tool use at IDGAF alone does not free a file write", async () => {
+    setPolicyLevels({
+      ...getPolicyLevels(),
+      tools: "idgaf",
+      edits: "cautious",
+    });
+    const error = await writeFileTool.preprocess!({
+      filepath: outsidePath,
+      content: "x",
+    }).catch((e) => e);
+    expect(error).toBeInstanceOf(ContinueError);
   });
 });

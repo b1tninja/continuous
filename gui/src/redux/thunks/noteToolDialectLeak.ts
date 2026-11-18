@@ -31,6 +31,7 @@ export async function checkToolDialectLeak(
       arguments: c.function?.arguments ?? "",
     })),
     current: model.toolDialect,
+    model: model.model,
   });
   if (!leak) return;
   // An Ollama server that parses this model's calls itself: not a leak.

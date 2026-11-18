@@ -42,7 +42,7 @@ function logRequest(
 
   // Log proxy information
   if (proxy && !shouldBypass) {
-    console.log(`Proxy: ${proxy}`);
+    console.log(`Proxy: ${redactUrl(proxy)}`);
   }
 
   const safeBody = body ? redactBody(body) : undefined;
@@ -60,7 +60,7 @@ function logRequest(
     curlCommand += ` -d '${safeBody}'`;
   }
   if (proxy && !shouldBypass) {
-    curlCommand += ` --proxy '${proxy}'`;
+    curlCommand += ` --proxy '${redactUrl(proxy)}'`;
   }
   curlCommand += ` '${safeUrl}'`;
   console.log(`Equivalent curl: ${curlCommand}`);

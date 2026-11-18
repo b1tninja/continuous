@@ -4,6 +4,27 @@ import path from "path";
 
 import { execaNode, type Subprocess } from "execa";
 
+import {
+  liveProviderSkipReason,
+  liveProviderTestsEnabled,
+} from "../test-helpers/liveProviderGuard.js";
+
+/**
+ * These tests call a paid API with a real key. A key in the environment is not
+ * consent to that: they also need RUN_LIVE_PROVIDER_TESTS=1 (or RUN_SMOKE_API=1,
+ * which the smoke-api job sets). Without it every variable reads as unset, so
+ * each suite skips.
+ */
+export function smokeEnv(name: string): string | undefined {
+  return liveProviderTestsEnabled() ? process.env[name] : undefined;
+}
+
+/** A suite title that says why the suite was skipped, if it was. */
+export function smokeTitle(title: string, keys: readonly string[]): string {
+  const reason = liveProviderSkipReason(keys);
+  return reason ? `${title} (skipped: ${reason})` : title;
+}
+
 export interface SmokeTestContext {
   cliPath: string;
   testDir: string;

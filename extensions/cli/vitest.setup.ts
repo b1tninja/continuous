@@ -3,7 +3,7 @@ import { vi } from "vitest";
 import { resetConsoleOverrides } from "./src/init.js";
 
 // Disable telemetry for tests
-process.env.CONTINUE_CLI_ENABLE_TELEMETRY = "0";
+delete process.env.CONTINUOUS_OTEL;
 process.env.CONTINUE_ALLOW_ANONYMOUS_TELEMETRY = "0";
 
 // Mock fetch to prevent actual API calls in tests

@@ -2,21 +2,50 @@ import { RequestOptions } from "@continuedev/config-types";
 import { BlockList, isIP } from "node:net";
 
 /**
- * Gets the proxy settings from environment variables
- * @param protocol The URL protocol (http: or https:)
- * @returns The proxy URL if available, otherwise undefined
+ * Proxy selection from the environment: the variable named for the URL's
+ * scheme and nothing else. `HTTPS_PROXY` serves https:, `HTTP_PROXY` serves
+ * http:. An https: request does NOT fall back to `HTTP_PROXY`: the two
+ * variables name different proxies in practice, and sending TLS tunnels to the
+ * plain-HTTP proxy was an accident of an earlier version. When only
+ * `HTTP_PROXY` is set, one warning says so.
+ *
+ * Differences, verified 2026-11-11 from the sources:
+ * - Node (built-in proxy support, `NODE_USE_ENV_PROXY`) reads `HTTP_PROXY` or
+ *   `http_proxy` for http:, `HTTPS_PROXY` or `https_proxy` for https:, and the
+ *   lower-case spelling wins when both are set; no cross-scheme fallback.
+ *   https://nodejs.org/api/http.html#built-in-proxy-support
+ * - curl reads `http_proxy` (lower case only), `HTTPS_PROXY`/`https_proxy`,
+ *   `ALL_PROXY`; the lower-case form wins. No https -> http fallback. We do not
+ *   read `ALL_PROXY`.
+ *   https://curl.se/docs/manpage.html (ENVIRONMENT)
+ * We follow Node on case: lower case first. `NO_PROXY` is handled below.
  */
 export function getProxyFromEnv(protocol: string): string | undefined {
   if (protocol === "https:") {
-    return (
-      process.env.HTTPS_PROXY ||
-      process.env.https_proxy ||
-      process.env.HTTP_PROXY ||
-      process.env.http_proxy
-    );
-  } else {
-    return process.env.HTTP_PROXY || process.env.http_proxy;
+    const https = process.env.https_proxy || process.env.HTTPS_PROXY;
+    if (!https) warnHttpsWithoutHttpsProxy();
+    return https || undefined;
   }
+  if (protocol === "http:") {
+    return process.env.http_proxy || process.env.HTTP_PROXY || undefined;
+  }
+  return undefined;
+}
+
+let warnedHttpFallback = false;
+
+function warnHttpsWithoutHttpsProxy() {
+  if (warnedHttpFallback) return;
+  if (!(process.env.http_proxy || process.env.HTTP_PROXY)) return;
+  warnedHttpFallback = true;
+  console.warn(
+    "HTTP_PROXY is set but HTTPS_PROXY is not: https requests go direct. Set HTTPS_PROXY (or requestOptions.proxy) to proxy them.",
+  );
+}
+
+/** Test hook: forget that the HTTP_PROXY warning was shown. */
+export function resetProxyWarning(): void {
+  warnedHttpFallback = false;
 }
 
 // Note that request options proxy (per model) takes precedence over environment variables
@@ -31,7 +60,7 @@ export function getProxy(
 }
 
 export function getEnvNoProxyPatterns(): string[] {
-  const envValue = process.env.NO_PROXY || process.env.no_proxy;
+  const envValue = process.env.no_proxy || process.env.NO_PROXY;
   if (envValue && typeof envValue === "string") {
     return envValue
       .split(",")

@@ -33,7 +33,6 @@ describe("Config Switching Implementation Test", () => {
     expect(SERVICE_NAMES.MODEL).toBe("model");
     expect(SERVICE_NAMES.MCP).toBe("mcp");
     expect(SERVICE_NAMES.AUTH).toBe("auth");
-    expect(SERVICE_NAMES.API_CLIENT).toBe("apiClient");
   });
 
   test("ConfigService implementation structure is correct", async () => {

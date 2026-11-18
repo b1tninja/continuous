@@ -217,7 +217,9 @@ describe("MCP OAuth end to end", { timeout: 20_000 }, () => {
   test("a busy callback port fails with a message that names the port", async () => {
     await startServer();
     const blocker = net.createServer();
-    await new Promise<void>((r) => blocker.listen(callbackPort, r));
+    await new Promise<void>((r) =>
+      blocker.listen(callbackPort, "127.0.0.1", r),
+    );
     try {
       await expect(
         performAuth(serverId, mock.mcpUrl, ide as unknown as IDE, {

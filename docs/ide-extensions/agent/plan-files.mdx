@@ -1,0 +1,50 @@
+---
+title: "Plan Files"
+description: "List the plans Plan mode wrote and build one from the command line, resuming at its first unchecked to-do"
+---
+
+Plan mode ends by writing a plan file to `.continuous/plans/<name>.md` in your workspace. Two commands work with those files.
+
+```bash
+continuous plan list
+continuous plan build add-retry
+```
+
+## List plans
+
+`continuous plan list` shows the plans in the workspace, newest first: status, to-dos done and total, modified time, path and title. `--json` prints the same as one JSON array.
+
+| Status        | Meaning                                                                       |
+| ------------- | ----------------------------------------------------------------------------- |
+| `draft`       | No to-dos, or a decision in the plan still waits for an answer                |
+| `approved`    | To-dos and no open decision; nothing started                                  |
+| `in-progress` | At least one to-do is started, completed, cancelled or blocked               |
+| `done`        | Every to-do is completed or cancelled                                         |
+
+## Build a plan
+
+`continuous plan build <name|path>` starts the agent on the plan. `<name>` is the file name without `.md`; a path must point inside `.continuous/plans`. A name with `..`, a path outside that folder and a link that leads out of it are refused.
+
+- The plan's to-dos become the task list. Completed ones stay completed, so a plan resumes at its first unchecked to-do.
+- Each status the agent reports is written back to the checkboxes in the plan file. Only the checkbox character changes; the rest of the file is left as it was.
+- A draft plan is refused unless you pass `--force`. A done plan is refused. A refusal prints the reason on stderr and exits with code 2.
+- With a terminal it opens the chat; with `-p`, or without a terminal, it runs to the end and prints the answer. The usual flags (`--auto`, `--allow`, `--config` and so on) apply wherever they stand on the line, and the permission rules are the ones you already have.
+
+### Checks
+
+A to-do can carry a command that confirms it is done, on an indented line under it:
+
+```markdown
+- [ ] Use it in upload() <!-- id: 2 -->
+  check: npm test -- upload
+```
+
+During `plan build`, when the agent marks a to-do with a `check:` completed, the harness runs the command, not the agent. If it exits 0 the to-do stays completed. If it fails, or the rules refuse the command, the to-do goes back to in progress and the agent is given the output. The command goes through the same permission decision as a Bash call: one that would ask is refused when nobody can answer, so allow it with `--allow` or a rule. This is the same `check:` that [Loop](./leave-and-resume-loop) runs.
+
+## Resume offer
+
+When you start Continuous in a terminal and the workspace has an in-progress plan, one line under the header says `Resume plan "..." (3/8 done)? Run: continuous plan build <name>`. It does not wait for an answer and is shown once for each change to the plan. It never appears with `-p`, in `serve`, or without a terminal.
+
+## Secrets
+
+Plan files are scrubbed with the same at-rest rules as the other files Continuous writes: a recognised credential is replaced before the file is saved. Write a plan the way you would write a commit message and keep real keys out of it.

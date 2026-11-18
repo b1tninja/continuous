@@ -12,7 +12,7 @@ import type { ProtectedHit } from "./protected";
  * B14 and B30), so most of what a reviewer would be asked is asked or run by
  * rules. Each is a built-in rule with a switch in the person's own settings
  * (`builtin: { id: false }`) and nothing else loosens it: an allow rule, a
- * workspace file and a level below YOLO leave it standing, the same as a
+ * workspace file and a level below IDGAF leave it standing, the same as a
  * protected path. A call that is already refused stays refused.
  *
  * - `ask-destructive-commands`  history rewrites and recursive deletes

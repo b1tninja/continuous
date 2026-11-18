@@ -1,5 +1,4 @@
-import type { ChatHistoryItem } from "core/index.js";
-
+import { idgafObjectionLine } from "../audit/idgafObjections.js";
 import { backgroundJobService } from "../services/BackgroundJobService.js";
 import { getSessionUsage } from "../session.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
@@ -7,145 +6,14 @@ import { telemetryService } from "../telemetry/telemetryService.js";
 import { formatCacheTally, splitInputTokens } from "./cacheTally.js";
 import { hadUnhandledError } from "./errorState.js";
 import { fieldFallbackLines } from "./fieldFallbackLines.js";
-import { getGitDiffSnapshot } from "./git.js";
 import { logger } from "./logger.js";
-import {
-  calculateDiffStats,
-  extractSummary,
-  getAgentIdFromArgs,
-  postAgentMetadata,
-} from "./metadata.js";
-import { formatReplyTally, getTruncatedReplies } from "./replyTally.js";
-import { formatSessionCost } from "./sessionCost.js";
-
-/**
- * Options for updating agent metadata
- */
-export interface UpdateAgentMetadataOptions {
-  /** Chat history to extract summary from */
-  history?: ChatHistoryItem[];
-  /** Set to true when the agent is exiting/completing */
-  isComplete?: boolean;
-}
-
-/**
- * Collect diff stats and add to metadata
- * @returns Whether there were any changes
- */
-async function collectDiffStats(
-  metadata: Record<string, any>,
-): Promise<boolean> {
-  try {
-    const { diff, repoFound } = await getGitDiffSnapshot();
-    if (repoFound && diff) {
-      const { additions, deletions } = calculateDiffStats(diff);
-      if (additions > 0 || deletions > 0) {
-        metadata.additions = additions;
-        metadata.deletions = deletions;
-        return true;
-      }
-    }
-  } catch (err) {
-    logger.debug("Failed to calculate diff stats (non-critical)", err as any);
-  }
-  return false;
-}
-
-/**
- * Extract summary from conversation history and add to metadata
- */
-function collectSummary(
-  metadata: Record<string, any>,
-  history: ChatHistoryItem[] | undefined,
-): void {
-  if (!history || history.length === 0) {
-    return;
-  }
-  try {
-    const summary = extractSummary(history);
-    if (summary) {
-      metadata.summary = summary;
-    }
-  } catch (err) {
-    logger.debug(
-      "Failed to extract conversation summary (non-critical)",
-      err as any,
-    );
-  }
-}
-
-/**
- * Extract session usage and add to metadata
- */
-function collectSessionUsage(metadata: Record<string, any>): void {
-  try {
-    const usage = getSessionUsage();
-    if (usage.totalCost > 0 || usage.promptTokens > 0) {
-      // promptTokens is the processed input; the cache parts are always given
-      const { cacheRead, cacheWrite } = splitInputTokens(usage);
-      metadata.usage = {
-        totalCost: parseFloat(usage.totalCost.toFixed(6)),
-        ...(usage.costEstimated && { costEstimated: true }),
-        promptTokens: usage.promptTokens,
-        completionTokens: usage.completionTokens,
-        cachedTokens: cacheRead,
-        cacheWriteTokens: cacheWrite,
-        ...(getTruncatedReplies() > 0 && {
-          truncatedReplies: getTruncatedReplies(),
-        }),
-      };
-    }
-  } catch (err) {
-    logger.debug("Failed to get session usage (non-critical)", err as any);
-  }
-}
-
-/**
- * Update agent session metadata in control plane
- * Collects diff stats and conversation summary, posts to control plane
- * This is called both during execution (after each turn) and before exit
- *
- * @param options - Options including history and completion state
- */
-export async function updateAgentMetadata(
-  options?: ChatHistoryItem[] | UpdateAgentMetadataOptions,
-): Promise<void> {
-  // Support both old signature (history array) and new signature (options object)
-  const { history, isComplete } = Array.isArray(options)
-    ? { history: options, isComplete: false }
-    : { history: options?.history, isComplete: options?.isComplete ?? false };
-
-  try {
-    const agentId = getAgentIdFromArgs();
-    if (!agentId) {
-      logger.debug("No agent ID found, skipping metadata update");
-      return;
-    }
-
-    const metadata: Record<string, any> = {};
-    const hasChanges = await collectDiffStats(metadata);
-
-    if (isComplete) {
-      metadata.isComplete = true;
-      metadata.hasChanges = hasChanges;
-    }
-
-    collectSummary(metadata, history);
-    collectSessionUsage(metadata);
-
-    if (Object.keys(metadata).length > 0) {
-      await postAgentMetadata(agentId, metadata);
-    }
-  } catch (err) {
-    // Non-critical: log but don't fail the process
-    logger.debug("Error in updateAgentMetadata (ignored)", err as any);
-  }
-}
+import { formatReplyTally } from "./replyTally.js";
+import { formatPriceSourceLines, formatSessionCost } from "./sessionCost.js";
 
 /**
  * Display session usage breakdown in verbose mode
  */
-function displaySessionUsage(): void {
+export function displaySessionUsage(): void {
   const isVerbose = process.argv.includes("--verbose");
   if (!isVerbose) {
     return;
@@ -161,6 +29,7 @@ function displaySessionUsage(): void {
     logger.info("Session Usage Summary");
     logger.info("=".repeat(60));
     logger.info(`Total Cost: ${formatSessionCost(usage)}`);
+    for (const line of formatPriceSourceLines(usage)) logger.info(line);
     logger.info("");
     logger.info("Token Usage:");
     // Input is what the provider processed: uncached plus cache reads plus
@@ -206,9 +75,22 @@ function displaySessionUsage(): void {
  * exit code is 0 (success), this will exit with code 1 instead to
  * signal that the process encountered errors.
  */
+/** One line on stderr at the end of a run in which IDGAF ran past objections. */
+export function printIdgafObjections(): void {
+  try {
+    const line = idgafObjectionLine();
+    if (line)
+      process.stderr.write(`${line}
+`);
+  } catch {
+    // the summary never holds the exit
+  }
+}
+
 export async function gracefulExit(code: number = 0): Promise<void> {
   // Display session usage breakdown in verbose mode
   displaySessionUsage();
+  printIdgafObjections();
 
   try {
     const runningJobs = backgroundJobService.getRunningJobCount();
@@ -218,6 +100,14 @@ export async function gracefulExit(code: number = 0): Promise<void> {
     }
   } catch (err) {
     logger.debug("Background job cleanup error (ignored)", err as any);
+  }
+
+  try {
+    // SessionEnd hooks, bounded so a slow hook cannot hold the exit
+    const { runSessionEndHooks } = await import("../hooks/lifecycleHooks.js");
+    await runSessionEndHooks(code === 0 ? "prompt_input_exit" : "other");
+  } catch (err) {
+    logger.debug("SessionEnd hooks error (ignored)", err as any);
   }
 
   try {

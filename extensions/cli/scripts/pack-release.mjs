@@ -7,12 +7,13 @@
 // (core and the local packages included), so the packed package.json lists no
 // dependencies: `npm i -g <asset URL>` installs it on Node 22+ without fetching
 // anything else. Only the files the CLI runs are packed.
-import { execSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
 import {
   copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -51,7 +52,8 @@ const manifest = {
   type: source.type,
   main: "dist/index.js",
   bin: source.bin,
-  files: FILES,
+  // npm adds README and LICENSE by itself; NOTICE and the generated notices are named
+  files: [...FILES, "NOTICE", "LICENSE", "THIRD_PARTY_NOTICES.txt"],
   engines: source.engines,
   license: source.license,
   repository: source.repository,
@@ -69,8 +71,35 @@ try {
     join(stage, "package.json"),
     JSON.stringify(manifest, null, 2) + "\n",
   );
-  const licence = resolve(cliDir, "../../LICENSE");
-  if (existsSync(licence)) copyFileSync(licence, join(stage, "LICENSE"));
+  // The licence, the NOTICE and the third-party notices must travel with the bundle,
+  // which contains core and every dependency. A missing one fails the pack.
+  const root = resolve(cliDir, "../..");
+  for (const legal of ["LICENSE", "NOTICE"]) {
+    if (!existsSync(join(root, legal))) {
+      console.error(`missing ${legal} at the repository root`);
+      process.exit(1);
+    }
+    copyFileSync(join(root, legal), join(stage, legal));
+  }
+  const packagesDir = join(root, "packages");
+  const localPackages = readdirSync(packagesDir, { withFileTypes: true })
+    .filter(
+      (d) =>
+        d.isDirectory() &&
+        existsSync(join(packagesDir, d.name, "package-lock.json")),
+    )
+    .map((d) => join(packagesDir, d.name));
+  execFileSync(
+    process.execPath,
+    [
+      join(root, "scripts/licenses/third-party-notices.mjs"),
+      join(stage, "THIRD_PARTY_NOTICES.txt"),
+      join(root, "core"),
+      cliDir,
+      ...localPackages,
+    ],
+    { stdio: "inherit" },
+  );
 
   mkdirSync(outDir, { recursive: true });
   const out = execSync(

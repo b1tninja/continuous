@@ -49,6 +49,8 @@ export interface EvaluatedPolicy {
   /** A command the parser vouched as only reading (core) */
   readOnly?: string;
   rule?: string;
+  /** The protection that decided, when source is protected-path. */
+  protection?: string;
   toolCallState: ToolCallState;
 }
 
@@ -95,12 +97,12 @@ export function holdInPlanMode(
   // A command the parser vouched as only reading may run in a plan turn:
   // that is how a re-plan looks at `git log` or `ls`
   if (result.readOnly) return result;
-  // An area set to YOLO runs everything, in Plan mode too: that is what the
+  // An area set to IDGAF runs everything, in Plan mode too: that is what the
   // level says. Permissive and below still wait for the person here.
   // The call's arguments matter: a vouched read-only command is Context use.
   if (
     levelOfCall(approval, name, tool, callContextFor(result.toolCallState))
-      ?.level === "yolo"
+      ?.level === "idgaf"
   ) {
     return result;
   }
@@ -138,7 +140,7 @@ export async function evaluateToolPolicy(
     history,
   );
   // Plan mode changes nothing until the plan is accepted, at every level
-  // below YOLO
+  // below IDGAF
   return mode === "plan"
     ? holdInPlanMode(result, activeTools, approval)
     : result;
@@ -243,7 +245,7 @@ async function evaluateBasePolicy(
     // call no rule, protected path or safety check has settled.
     details.source !== "allow-rule" &&
     details.source !== "permissive" &&
-    details.source !== "yolo"
+    details.source !== "idgaf"
   ) {
     return { ...details, policy: "allowedWithPermission", toolCallState }; // Cannot make more lenient
   }
@@ -313,6 +315,10 @@ async function reviewOpenCalls(
         !isEditTool(toolName) &&
         r.source !== "ask-rule" &&
         r.source !== "protected-path" &&
+        // The tainted-session rule's ask is the person's, not the reviewer's
+        r.source !== "tainted-session" &&
+        // So is the secret-read plus network pair's (B92)
+        r.source !== "secret-egress" &&
         // Plan mode's hold is for the user, not the reviewer
         r.source !== "plan-mode" &&
         // Manual asks every time; only an area set to Automatic has a reviewer
@@ -484,11 +490,13 @@ export async function evaluateToolPolicies(
 
   // Say why a call is waiting, when a rule or protected path made it wait, so
   // the prompt is not a mystery for a tool the user set to run on its own.
-  for (const { policy, source, reason, toolCallState } of policyResults) {
+  for (const { policy, source, reason, rule, toolCallState } of policyResults) {
     if (
       policy === "allowedWithPermission" &&
       reason &&
       (source === "protected-path" ||
+        source === "tainted-session" ||
+        source === "secret-egress" ||
         source === "ask-rule" ||
         source === "manual" ||
         source === "auto" ||
@@ -498,6 +506,8 @@ export async function evaluateToolPolicies(
         setToolCallPolicyNote({
           toolCallId: toolCallState.toolCallId,
           note: reason,
+          ...(rule ? { rule } : {}),
+          ...(source ? { source } : {}),
         }),
       );
     }
@@ -512,7 +522,7 @@ export async function evaluateToolPolicies(
         source === "auto" ||
         source === "once" ||
         source === "permissive" ||
-        source === "yolo")
+        source === "idgaf")
     ) {
       dispatch(
         setToolCallDecision({
@@ -534,6 +544,7 @@ export async function evaluateToolPolicies(
     reason,
     rule,
     category,
+    protection,
     toolCallState,
   } of disabledResults) {
     dispatch(errorToolCall({ toolCallId: toolCallState.toolCallId }));
@@ -558,6 +569,7 @@ export async function evaluateToolPolicies(
         source: blockedSource,
         ...(reason ? { reason } : {}),
         ...(category ? { category } : {}),
+        ...(protection ? { protection } : {}),
         parsedArgs: toolCallState.parsedArgs ?? {},
         at: Date.now(),
       }),

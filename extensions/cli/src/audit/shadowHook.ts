@@ -1,6 +1,10 @@
 import type { ChatHistoryItem } from "core/index.js";
 import { getAuditTrail } from "core/tools/permissions/audit/global.js";
-import { shadowSpend } from "core/tools/permissions/audit/shadowReport.js";
+import { sharedLedger } from "core/tools/permissions/audit/shadowLedger.js";
+import {
+  shadowSeed,
+  shadowSpend,
+} from "core/tools/permissions/audit/shadowReport.js";
 import {
   readShadowSettings,
   type ShadowSettings,
@@ -88,6 +92,8 @@ export function startShadowReview(
       environment: { workspaceDirs: [process.cwd()], os: process.platform },
       guidance: () => readUserGuidance(),
       spentSoFar: () => shadowSpend(trail.dir),
+      // One ledger for every process that shares this audit directory
+      ledger: sharedLedger(trail.dir, () => shadowSeed(trail.dir)),
     }));
     return reviewer.observe({
       session: cliAuditSession(),

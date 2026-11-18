@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 
 import { VsCodeExtension } from "../extension/VsCodeExtension";
 import { removeStaleYamlSchemaEntries } from "../lang-server/yamlSchemas";
+import { registerSessionCleanup } from "../sessionCleanup";
 import { isUnsupportedPlatform } from "../util/util";
 import { migrateContinueSettings } from "../util/migrateSettings";
 
@@ -41,6 +42,8 @@ export async function activateExtension(context: vscode.ExtensionContext) {
   setupInlineTips(context);
 
   const vscodeExtension = new VsCodeExtension(context);
+  // "Clean up old sessions", and its one notice after an update
+  registerSessionCleanup(context);
 
   // Load Continuous configuration
   if (!context.globalState.get("hasBeenInstalled")) {

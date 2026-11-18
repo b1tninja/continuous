@@ -16,6 +16,7 @@ import {
   replaySequences,
 } from "./lib/replay.mjs";
 import { buildCacheReport, cacheRequestCount, runCache } from "./lib/cache.mjs";
+import { INHERIT } from "./lib/sampling.mjs";
 import { APIS, Engine, isLlamaApi, THINK_VALUES } from "./lib/transports.mjs";
 import { DEFAULT_EXE, startServer, stopFromPidFile } from "./lib/server.mjs";
 import { roots as makeRoots, writeText } from "./lib/paths.mjs";
@@ -26,6 +27,7 @@ import { modelGuard } from "./lib/guards.mjs";
 import fs from "node:fs";
 import { agentTools, loadSuite, SUITE_NAMES } from "./lib/suites.mjs";
 import { writeProfiles } from "./lib/suggest.mjs";
+import { analyze, formatWhitespaceReport } from "./lib/whitespace.mjs";
 
 const HELP = `usage: node bench/lab/lab.mjs <command> [options]
 
@@ -33,9 +35,12 @@ commands
   inventory                 installed models, preset rows, machine facts, which are safe
   plan                      dry run: cases x models x passes and estimated time
   run --run                 run for real (without --run it only prints the plan)
-  report                    markdown tables with Wilson 95% intervals
+  report                    markdown tables with Wilson 95% intervals on the effective n (distinct prompts), raw n beside it
+  whitespace [--file F ...] whitespace fidelity of string arguments from args-whitespace results (offline, no model; vLLM issue 48753)
   diff <before> <after>     compare two result files
-  compare <A> <B>           pair two result sets by case and pass: rates, McNemar exact, flipped cases
+  compare <A> <B>           pair two result sets: rates, McNemar exact (per pass and per prompt), flipped cases;
+                            --unit prompt|pass|auto (auto: prompt when the passes ran at temperature 0)
+  envshell <cmd>            the env-shell-tasks suite (does telling the agent its shell reduce failed commands?): list, plan, run, selftest, replay, report, power; envshell help
   replay --dumps PATH       send recorded request dumps through the cache path, report cached/evaluated tokens
   suggest                   write profiles/<model>.json from the results
   fixtures --suite S        write observed corpus fixtures from raw replies
@@ -46,12 +51,18 @@ suites: ${SUITE_NAMES.join(", ")}  (or a path to a suite JSON file)
 
 transports (README "Transports")
   --api ollama-chat|ollama-v1|ollama-raw|openai-chat|llamacpp-raw   (default ollama-chat)
-  --base-url URL (default 127.0.0.1:11434; 127.0.0.1:8080 for openai-chat and llamacpp-raw)
-  --think on|off|default|low|medium|high   --temperature T   --num-predict N (-1 = no cap)
-  --tool-choice auto|required|none|<tool name>   --seed N   --body-extra '{"json":"merged into the body"}'
+  --base-url URL (default 127.0.0.1:11434; 127.0.0.1:8080 for openai-chat and llamacpp-raw; with --serve and
+                  --port P the lab starts and talks to P itself. Where Strata holds 8080 use --port 18080 --base-url http://127.0.0.1:18080)
+  --think on|off|default|low|medium|high   --num-predict N (-1 = no cap)
+  --temperature T|inherit   a number is sent on every request; "inherit" sends NO sampling option
+                            (no temperature, top_p, top_k, penalties), so the server and its Modelfile apply
+  --seed N                  base seed: pass p sends N+p-1 (distinct, reproducible draws at temperature > 0)
+  --tool-choice auto|required|none|<tool name>   --body-extra '{"json":"merged into the body"}'
   --gguf FILE (llama-server apis: size guard; with --serve, the file to start)  --serve (start and stop llama-server for the run)
   --exe FILE  --port N  --ctx N  --ngl N  --parallel N  --alias NAME  --chat-template NAME  --chat-template-file FILE
   --metrics  --slots (llama-server: start with the endpoint on, and poll /slots and /metrics after each request)
+  --size-gb N --alias NAME (instead of --gguf, for a server whose weights are not a local file, such as vLLM: N is the size guard, NAME the served model name)
+  --tool-parser NAME (the tool-call parser the server was started with, for vLLM's --tool-call-parser: it reports none; recorded as engine.parserDeclared)
   --server-log FILE (the log to read the Chat format: line from when the server was not started by --serve)
   --dumps PATH (replay)  --model-a M  --model-b M (compare, when a side holds several models)
   --cache-reuse N  --reasoning-format F  --server-arg ARG (repeatable)  --no-vram-check  --ready-timeout S
@@ -59,13 +70,16 @@ transports (README "Transports")
   --log-dir DIR  --allow-root DIR (repeatable extra write roots)  --ollama-url URL (the "is anything loaded" check)
 
 common options
-  --suite S  --models a,b|smallest-safe|all-safe  --passes N  --limit N
+  --suite S  --models a,b|smallest-safe|all-safe  --limit N
+  --passes N                repeat every case N times. At temperature 0 a pass repeats the same output: n stays the
+                            prompt count and passes only check determinism. Use temperature > 0 with --seed, or more
+                            prompts, for a bigger n; the plan and every report print raw and effective n.
   --base-url URL (loopback only unless --allow-remote)  --product DIR
   --max-vram GB (default 8)  --max-ram GB (default 16)
   --max-requests N (60)  --max-minutes N (30)  --model-minutes N (15)
   --request-timeout S (120)  --cooldown S (15)  --retry-errors  --ignore-loaded
   --styles auto|all|a,b  --modes native,text  --variants FILE  --deliveries native,text
-  --dataset FILE  --tool-counts 2,14,60,agent  --temperatures 0,0.7  --streams false,true
+  --dataset FILE  --tool-counts 2,14,60,agent  --temperatures 0,0.7 (one value with --temperature inherit)  --streams false,true
   --num-ctx N (default 8192; the leaks suite uses 16384)  --full-grid  --warmup (plan: send one tiny request per model)  --out FILE  --file F (repeatable)
 `;
 
@@ -99,6 +113,8 @@ const OPTIONS = {
   metrics: { type: "boolean" },
   slots: { type: "boolean" },
   "server-log": { type: "string" },
+  "tool-parser": { type: "string" },
+  "size-gb": { type: "string" },
   dumps: { type: "string" },
   "model-a": { type: "string" },
   "model-b": { type: "string" },
@@ -133,6 +149,7 @@ const OPTIONS = {
   concurrency: { type: "string" },
   "num-ctx": { type: "string" },
   "min-n": { type: "string", default: "8" },
+  unit: { type: "string", default: "auto" },
   "only-leaks": { type: "boolean" },
   "results-dir": { type: "string" },
   "profiles-dir": { type: "string" },
@@ -189,6 +206,9 @@ async function pickModels(spec, inv) {
 }
 
 export async function main(argv, env = process.env) {
+  // the env-shell-tasks suite has its own options (envshell/cli.mjs)
+  if (argv[0] === "envshell")
+    return (await import("./envshell/cli.mjs")).main(argv.slice(1), env);
   let parsed;
   try {
     parsed = parseArgs({
@@ -207,7 +227,9 @@ export async function main(argv, env = process.env) {
       "the lab runs one request at a time; --concurrency is fixed at 1",
     );
   // --out is a file for report/diff/snapshot-tools and a results folder for the rest
-  const outIsFile = ["report", "diff", "snapshot-tools"].includes(cmd);
+  const outIsFile = ["report", "diff", "snapshot-tools", "whitespace"].includes(
+    cmd,
+  );
   const roots = makeRoots({
     results: v["results-dir"] ?? (outIsFile ? undefined : v.out),
     profiles: v["profiles-dir"],
@@ -221,7 +243,12 @@ export async function main(argv, env = process.env) {
   const cfg = { api: v.api };
   if (v.think) cfg.think = v.think;
   if (v.temperature != null)
-    cfg.temperature = num(v.temperature, "temperature");
+    cfg.temperature =
+      v.temperature === INHERIT ? INHERIT : num(v.temperature, "temperature");
+  if (cfg.temperature === INHERIT && v.temperatures?.split(",").length > 1)
+    return die(
+      "--temperature inherit sends no temperature, so a --temperatures grid of several values would run the same request several times: give one value",
+    );
   if (v["num-predict"] != null) {
     cfg.numPredict = Number(v["num-predict"]);
     if (!Number.isInteger(cfg.numPredict))
@@ -270,6 +297,14 @@ export async function main(argv, env = process.env) {
       ? log("wrote " + writeText(v.out, md, roots))
       : process.stdout.write(md);
   }
+  if (cmd === "whitespace") {
+    const recs = v.file?.length ? readAll(v.file) : readAll(roots.results);
+    const suite = loadSuite(v.suite ?? "args-whitespace");
+    const md = formatWhitespaceReport(analyze(labelArms(recs), suite));
+    return v.out
+      ? log("wrote " + writeText(v.out, md, roots))
+      : process.stdout.write(md);
+  }
   if (cmd === "diff") {
     if (rest.length !== 2)
       return die("diff needs two result files: diff <before> <after>");
@@ -295,6 +330,7 @@ export async function main(argv, env = process.env) {
         {
           modelA: v["model-a"],
           modelB: v["model-b"],
+          unit: v.unit,
         },
       );
     } catch (e) {
@@ -383,7 +419,7 @@ export async function main(argv, env = process.env) {
     });
     for (const w of written)
       log(
-        `profile ${w.model}: ${w.file}\n  best: ${w.profile.best ? `${w.profile.best.arm} ${w.profile.best.k}/${w.profile.best.n}` : "not enough evidence"}; ${w.profile.comparison}`,
+        `profile ${w.model}: ${w.file}\n  best: ${w.profile.best ? `${w.profile.best.arm} ${w.profile.best.k}/${w.profile.best.n} effective, raw ${w.profile.best.rawK}/${w.profile.best.rawN}` : "not enough evidence"}; ${w.profile.comparison}`,
       );
     return written.length || log("no results to learn from");
   }
@@ -411,6 +447,7 @@ export async function main(argv, env = process.env) {
     signal: ctl.signal,
     sidecar: { slots: v.slots, metrics: v.metrics },
     serverLog: v["server-log"],
+    declaredParser: v["tool-parser"],
   });
   const facts = machineFacts({ env });
   let server;
@@ -419,9 +456,9 @@ export async function main(argv, env = process.env) {
     // llama-server lists no sizes: the GGUF file is the size fact. A running
     // server already holds its VRAM, so the free-VRAM check belongs to the
     // server helper (before it starts), not to the model guard.
-    if (!v.gguf)
+    if (!v.gguf && !(v["size-gb"] && v.alias))
       return die(
-        `--api ${v.api} needs --gguf FILE (its size is the guard; --serve starts it)`,
+        `--api ${v.api} needs --gguf FILE (its size is the guard; --serve starts it), or --size-gb N with --alias NAME for a server whose weights are not a local file (vLLM)`,
       );
     if (v.serve && cmd === "run" && v.run) {
       server = await startServer(serverOpts(), roots, { signal: ctl.signal });
@@ -431,7 +468,9 @@ export async function main(argv, env = process.env) {
       client.origin = server.baseUrl;
       client.serverLog = server.logFile;
     }
-    const size = fs.statSync(v.gguf).size;
+    const size = v.gguf
+      ? fs.statSync(v.gguf).size
+      : num(v["size-gb"], "size-gb") * 1e9;
     const name = v.alias ?? path.basename(v.gguf).replace(/\.gguf$/i, "");
     const row = {
       name,
@@ -611,7 +650,8 @@ export async function main(argv, env = process.env) {
       const g = inv.models.find((x) => x.name === p.model);
       total += p.estSeconds;
       log(
-        `  ${p.model}: ${p.cases} cases x ${p.passes} = ${p.total}, ${p.remaining} to run, ~${(p.estSeconds / 60).toFixed(1)} min at ${p.tps ? p.tps.toFixed(1) : "20 (assumed)"} tok/s (${p.tpsSource}); ${g?.safe ? "safe" : "REFUSED: " + (g?.guard.reasons.join("; ") ?? "?")}`,
+        `  ${p.model}: ${p.cases} cases x ${p.passes} = ${p.total} raw n, effective n ${p.effN ?? "estimated after the run"}; ${p.nNote}
+    ${p.remaining} to run, ~${(p.estSeconds / 60).toFixed(1)} min at ${p.tps ? p.tps.toFixed(1) : "20 (assumed)"} tok/s (${p.tpsSource}); ${g?.safe ? "safe" : "REFUSED: " + (g?.guard.reasons.join("; ") ?? "?")}`,
       );
     }
     log(

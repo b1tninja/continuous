@@ -16,14 +16,24 @@ import { HelperVars } from "./util/HelperVars";
  * filters and post-processing the editor uses. Fails if a model returns
  * prose instead of code, or nothing.
  *
- * Opt-in: RUN_BEDROCK_LIVE=1 and a Bedrock credential in the environment.
+ * Opt-in: RUN_LIVE_PROVIDER_TESTS=1 RUN_BEDROCK_LIVE=1 and a Bedrock credential in the environment.
  *
- *   RUN_BEDROCK_LIVE=1 npx vitest run autocomplete/Bedrock.tab.live.vitest.ts
+ *   RUN_LIVE_PROVIDER_TESTS=1 RUN_BEDROCK_LIVE=1 npx vitest run autocomplete/Bedrock.tab.live.vitest.ts
  *
  * Knobs: LIVE_TAB_MODELS, LIVE_TAB_RUNS (default 2; the first run can be a
  * cold start), LIVE_TAB_MAX_TTFT_MS (fails a warm run slower than this).
  */
-const live = process.env.RUN_BEDROCK_LIVE === "1" ? describe : describe.skip;
+// Paid calls: RUN_LIVE_PROVIDER_TESTS=1 is the consent, RUN_BEDROCK_LIVE=1 selects Bedrock.
+// AWS credentials come from the default chain, so there is no key to check here.
+const live =
+  process.env.RUN_LIVE_PROVIDER_TESTS === "1" &&
+  process.env.RUN_BEDROCK_LIVE === "1"
+    ? describe
+    : (name: string, fn: () => void) =>
+        describe.skip(
+          `${name} (skipped: set RUN_LIVE_PROVIDER_TESTS=1 and RUN_BEDROCK_LIVE=1)`,
+          fn,
+        );
 
 const MODELS = (
   process.env.LIVE_TAB_MODELS ??

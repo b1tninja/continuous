@@ -1,0 +1,8 @@
+```json
+"context_servers": {
+  "mcp-server-sentry": {
+    "command": "python",
+    "args": ["-m", "mcp_server_sentry", "--auth-token", "YOUR_SENTRY_TOKEN"]
+  }
+},
+```

@@ -1,6 +1,8 @@
 import type { ChatHistoryItem } from "core/index.js";
 import { readAuditSession } from "core/tools/permissions/audit/reader.js";
+import type { AuditRecord } from "core/tools/permissions/audit/record.js";
 import { auditToSteps } from "core/tools/permissions/audit/steps.js";
+import { stuckAgentNoteOf } from "core/tools/permissions/audit/stuckAgents.js";
 import { stepsFromHistory } from "core/util/stuckHistory.js";
 import {
   stripStuckNote,
@@ -52,6 +54,7 @@ function hasNote(output: { content?: string }[] | undefined): boolean {
 export function stuckNoteForHistory(
   history: ChatHistoryItem[],
   auditSteps?: () => StuckStep[],
+  auditRecords?: () => readonly AuditRecord[],
 ): string | undefined {
   if (!stuckNotesEnabled()) return undefined;
   let steps = stepsFromHistory(withoutNotes(history));
@@ -62,7 +65,26 @@ export function stuckNoteForHistory(
       // the audit is an optional second source
     }
   }
-  return stuckNote(detectStuck(steps));
+  // The main agent's own note first; else the note of an agent that is not
+  // the main one (a subagent or a Loop worker), named, so one agent's repeats
+  // are neither hidden by another's calls nor charged to it (S7).
+  return stuckNote(detectStuck(steps)) ?? otherAgentNote(auditRecords);
+}
+
+function otherAgentNote(
+  auditRecords?: () => readonly AuditRecord[],
+): string | undefined {
+  if (!auditRecords) return undefined;
+  try {
+    return stuckAgentNoteOf(auditRecords());
+  } catch {
+    return undefined;
+  }
+}
+
+/** The records of a session read from the audit trail in `dir`. */
+export function auditRecordsOf(dir: string, session: string): AuditRecord[] {
+  return readAuditSession(dir, session);
 }
 
 /** The steps of a session read from the audit trail in `dir`. */

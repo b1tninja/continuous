@@ -2,7 +2,7 @@
   "name": "continuous",
   "icon": "media/icon.png",
   "author": "b1tninja",
-  "version": "2.12.1",
+  "version": "2.36.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/b1tninja/continuous"
@@ -196,6 +196,35 @@
           "scope": "machine",
           "markdownDescription": "The image for `#continuous.terminal.shell#` set to `container`. It needs `bash` and `base64`. Empty uses `ubuntu:24.04`. The runtime pulls it on first use."
         },
+        "continuous.modelInformationUpdates": {
+          "type": "string",
+          "enum": [
+            "automatic",
+            "manual",
+            "off"
+          ],
+          "enumItemLabels": [
+            "Automatic",
+            "Only when I ask",
+            "Off"
+          ],
+          "enumDescriptions": [
+            "Refresh OpenRouter's public model list in the background when the copy on this computer is older than the refresh interval: at start-up and while running.",
+            "Contact openrouter.ai only when you choose Pull now or Refresh now, or run `continuous models refresh`.",
+            "Never contact openrouter.ai; use the bundled model data."
+          ],
+          "default": "automatic",
+          "scope": "application",
+          "markdownDescription": "Model information updates: OpenRouter's public model list (names, context sizes, per-token prices for cost estimates and `--max-budget-usd`, tool support). `automatic` sends one GET to `openrouter.ai/api/v1/models`, with no key, account or prompt, when the copy is older than `#continuous.modelInformationRefreshHours#`. Saved as `modelCatalog:` in the user-level `config.yaml`, so JetBrains and the terminal agent follow it too. Ollama's model list is not affected: it is fetched only from Ollama's own setup. `automatic` also looks up the selected Anthropic or OpenAI chat model at its own API base, with your key, for its context window, output cap and deprecation date; `off` stops that too."
+        },
+        "continuous.modelInformationRefreshHours": {
+          "type": "number",
+          "default": 24,
+          "minimum": 1,
+          "maximum": 720,
+          "scope": "application",
+          "markdownDescription": "With `#continuous.modelInformationUpdates#` set to `automatic`: how old, in hours, the OpenRouter model list may get before it is refreshed. Saved as `modelCatalogRefreshHours:` in the user-level `config.yaml`."
+        },
         "continuous.shareMcpServersWithVSCode": {
           "type": "boolean",
           "default": true,
@@ -238,6 +267,19 @@
           "default": false,
           "markdownDescription": "Pause Continuous's tab autocomplete feature when your battery is low."
         },
+        "continuous.debugPromptLog": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "markdownDescription": "Keep each request's full prompt in `~/.continuous/logs/prompts/`, for debugging what a model was sent. Secrets the scanner recognises are masked; the files are capped at 50 MB together and deleted after 14 days. Off: dev data keeps only sizes, token counts and a hash of each prompt."
+        },
+        "continuous.sessionCleanup.deleteBackupsAfterDays": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "scope": "application",
+          "markdownDescription": "When **Continuous: Clean up old sessions** runs, also delete its backup folders older than this many days. 0 keeps them until you delete `~/.continuous/cleanup-backups/` yourself."
+        },
         "continuous.pauseCodebaseIndexOnStart": {
           "type": "boolean",
           "default": false,
@@ -268,6 +310,12 @@
       }
     },
     "commands": [
+      {
+        "command": "continuous.cleanUpOldSessions",
+        "category": "Continuous",
+        "title": "Clean up old sessions",
+        "group": "Continuous"
+      },
       {
         "command": "continuous.applyCodeFromChat",
         "category": "Continuous",
@@ -350,13 +398,25 @@
       },
       {
         "command": "continuous.forceAutocomplete",
-        "title": "Continuous: Force Autocomplete",
+        "title": "Force Autocomplete",
         "category": "Continuous"
       },
       {
         "command": "continuous.selectFilesAsContext",
         "category": "Continuous",
         "title": "Select Files as Context",
+        "group": "Continuous"
+      },
+      {
+        "command": "continuous.addToChat",
+        "category": "Continuous",
+        "title": "Add to Continuous Chat",
+        "group": "Continuous"
+      },
+      {
+        "command": "continuous.addOpenTabsToChat",
+        "category": "Continuous",
+        "title": "Add All Open Tabs to Continuous Chat",
         "group": "Continuous"
       },
       {
@@ -453,15 +513,63 @@
         "group": "Continuous"
       },
       {
-        "command": "continuous.focusContinuousInput",
+        "command": "continuous.openPermissions",
         "category": "Continuous",
-        "title": "Focus Continuous Chat",
+        "title": "Open Permissions",
         "group": "Continuous"
       },
       {
-        "command": "continuous.enterEnterpriseLicenseKey",
+        "command": "continuous.openProviders",
         "category": "Continuous",
-        "title": "Enter Enterprise License Key",
+        "title": "Open Providers",
+        "group": "Continuous"
+      },
+      {
+        "command": "continuous.openAuditInbox",
+        "category": "Continuous",
+        "title": "Open the Audit Inbox",
+        "group": "Continuous"
+      },
+      {
+        "command": "continuous.openStats",
+        "category": "Continuous",
+        "title": "Open Stats",
+        "group": "Continuous"
+      },
+      {
+        "command": "continuous.startLoop",
+        "category": "Continuous",
+        "title": "Start Loop",
+        "group": "Continuous"
+      },
+      {
+        "command": "continuous.stopLoop",
+        "category": "Continuous",
+        "title": "Stop Loop",
+        "group": "Continuous"
+      },
+      {
+        "command": "continuous.stopResponse",
+        "category": "Continuous",
+        "title": "Stop Response",
+        "group": "Continuous"
+      },
+      {
+        "command": "continuous.resumeResponse",
+        "category": "Continuous",
+        "title": "Resume Response",
+        "group": "Continuous"
+      },
+      {
+        "command": "continuous.showAgents",
+        "category": "Continuous",
+        "title": "Show Agents",
+        "group": "Continuous"
+      },
+      {
+        "command": "continuous.testConnection",
+        "category": "Continuous",
+        "title": "Test Connection of the Chat Model",
         "group": "Continuous"
       },
       {
@@ -481,17 +589,17 @@
       {
         "command": "continuous.forceNextEdit",
         "category": "Continuous",
-        "title": "Continuous: Force Next Edit"
+        "title": "Force Next Edit"
       },
       {
         "command": "continuous.acceptJump",
         "category": "Continuous",
-        "title": "Continuous: Accept Jump Suggestion"
+        "title": "Accept Jump Suggestion"
       },
       {
         "command": "continuous.rejectJump",
         "category": "Continuous",
-        "title": "Continuous: Reject Jump Suggestion"
+        "title": "Reject Jump Suggestion"
       },
       {
         "command": "continuous.openInNewWindow",
@@ -639,16 +747,36 @@
           "command": "continuous.newSession"
         },
         {
-          "command": "continuous.enterEnterpriseLicenseKey"
+          "command": "continuous.openInNewWindow"
         },
         {
-          "command": "continuous.openInNewWindow"
+          "command": "continuous.selectFilesAsContext",
+          "when": "false"
+        },
+        {
+          "command": "continuous.addToChat",
+          "when": "editorIsOpen && resourceScheme =~ /^(file|vscode-remote|vscode-vfs)$/"
+        },
+        {
+          "command": "continuous.addOpenTabsToChat",
+          "when": "editorIsOpen"
         }
       ],
       "editor/context": [
         {
           "submenu": "continuous.continueSubMenu",
           "group": "0_acontinue"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "continuous.addToChat",
+          "group": "continuous@1",
+          "when": "resourceScheme =~ /^(file|vscode-remote|vscode-vfs)$/"
+        },
+        {
+          "command": "continuous.addOpenTabsToChat",
+          "group": "continuous@2"
         }
       ],
       "editor/title/run": [
@@ -667,12 +795,18 @@
           "command": "continuous.focusEdit",
           "group": "Continuous",
           "when": "!editorReadonly"
+        },
+        {
+          "command": "continuous.addToChat",
+          "group": "Continuous",
+          "when": "!editorHasSelection && resourceScheme =~ /^(file|vscode-remote|vscode-vfs)$/"
         }
       ],
       "explorer/context": [
         {
-          "command": "continuous.selectFilesAsContext",
-          "group": "1_debug@1"
+          "command": "continuous.addToChat",
+          "group": "1_debug@1",
+          "when": "resourceScheme =~ /^(file|vscode-remote|vscode-vfs)$/"
         }
       ],
       "view/title": [
@@ -843,7 +977,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "1.6.4",
-    "@openapitools/openapi-generator-cli": "^2.23.1",
+    "@openapitools/openapi-generator-cli": "^2.42.2",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.6",
     "@types/follow-redirects": "^1.14.4",
@@ -852,18 +986,18 @@
     "@types/node": "16.x",
     "@types/uuid": "^10.0.0",
     "@types/vscode": "1.105",
-    "@vscode/vsce": "^4.1.0",
+    "@vscode/vsce": "^4.1.1",
     "cargo-cp-artifact": "^0.1",
     "chai": "^6.3.0",
     "esbuild": "^0.28.0",
     "esbuild-visualizer": "^0.7.0",
     "eslint": "^9.39.5",
     "eslint-plugin-import": "^2.32.0",
-    "ovsx": "^1.3.0",
+    "ovsx": "^1.4.0",
     "rimraf": "^6.1.4",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.72.1",
-    "vite": "^8.3.6",
+    "vite": "^8.3.8",
     "vscode-extension-tester": "^8.14.1"
   },
   "dependencies": {
@@ -884,7 +1018,7 @@
     "node-machine-id": "^1.1.12",
     "strip-ansi": "^7.1.0",
     "svg-builder": "^3.0.4",
-    "systeminformation": "^5.30.8",
+    "systeminformation": "^5.33.21",
     "undici": "^8.12.4",
     "uuid": "^11.1.1",
     "vectordb": "0.4.20",

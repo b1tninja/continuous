@@ -37,7 +37,7 @@ describe.skip("DocsCrawler", () => {
     const pages: PageData[] = [];
     const generator = docsCrawler.crawl(new URL(url));
     let done = false;
-    let crawler: DocsCrawlerType = "default";
+    let crawler: DocsCrawlerType = "cheerio";
     while (!done) {
       const result = await generator.next();
       if (result.done) {
@@ -61,7 +61,7 @@ describe.skip("DocsCrawler", () => {
     let crawlerUsed: DocsCrawlerType;
 
     beforeAll(async () => {
-      docsCrawler = new DocsCrawler(mockIde, config, 5, 5, false);
+      docsCrawler = new DocsCrawler(mockIde, config, 5, 5);
       const { pages, crawler } = await runCrawl(repoUrl);
       crawlerUsed = crawler;
       crawlResults = pages;
@@ -112,7 +112,7 @@ describe.skip("DocsCrawler", () => {
     let shouldUseChromiumSpy: any;
 
     beforeAll(async () => {
-      docsCrawler = new DocsCrawler(mockIde, config, 5, 5, true);
+      docsCrawler = new DocsCrawler(mockIde, config, 5, 5);
       await chromiumInstaller.install();
       shouldUseChromiumSpy = jest
         .spyOn(docsCrawler as any, "shouldUseChromium")
@@ -138,7 +138,7 @@ describe.skip("DocsCrawler", () => {
 
   describe("Default Crawler", () => {
     beforeAll(() => {
-      docsCrawler = new DocsCrawler(mockIde, config, 2, 2, false);
+      docsCrawler = new DocsCrawler(mockIde, config, 2, 2);
     });
 
     test(
@@ -184,7 +184,7 @@ describe.skip("DocsCrawler", () => {
 
   describe("Cheerio Crawler", () => {
     beforeAll(() => {
-      docsCrawler = new DocsCrawler(mockIde, config, 2, 2, true);
+      docsCrawler = new DocsCrawler(mockIde, config, 2, 2);
     });
     test(
       "works on static site",

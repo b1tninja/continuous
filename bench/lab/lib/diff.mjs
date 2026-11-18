@@ -1,10 +1,10 @@
 // `diff`: two result files (before and after a prompt change) side by side.
 import { armOf, groupBy, usable } from "./report.mjs";
-import { disjoint, fmtRate, wilson } from "./stats.mjs";
+import { disjoint, effectiveRate, fmtRate } from "./stats.mjs";
 
 const validRate = (rs) => {
   const scored = rs.filter((r) => r.score);
-  return wilson(scored.filter((r) => r.score.valid).length, scored.length);
+  return effectiveRate(scored, (r) => r.score.valid);
 };
 
 /** Rows of {model, arm, a, b, delta, moved}; moved = the intervals do not overlap. */

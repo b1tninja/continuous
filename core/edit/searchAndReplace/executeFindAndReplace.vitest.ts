@@ -328,3 +328,94 @@ describe("executeFindAndReplace", () => {
     });
   });
 });
+
+describe("executeFindAndReplace line endings", () => {
+  const bytes = (s: string) => Buffer.from(s, "utf8").toString("hex");
+  const crlf = "alpha\r\nbeta\r\ngamma\r\ndelta";
+
+  it("multi-line LF edit on a CRLF file writes CRLF (exact bytes)", () => {
+    const result = executeFindAndReplace(
+      crlf,
+      "beta\ngamma",
+      "BETA\nGAMMA",
+      false,
+    );
+    expect(result).toBe("alpha\r\nBETA\r\nGAMMA\r\ndelta");
+    expect(bytes(result)).toBe(bytes("alpha\r\nBETA\r\nGAMMA\r\ndelta"));
+  });
+
+  it("single-line edit on a CRLF file is unchanged", () => {
+    expect(executeFindAndReplace(crlf, "beta", "BETA", false)).toBe(
+      "alpha\r\nBETA\r\ngamma\r\ndelta",
+    );
+  });
+
+  it("a single-line match gaining lines takes the file's CRLF", () => {
+    expect(executeFindAndReplace(crlf, "beta", "b1\nb2", false)).toBe(
+      "alpha\r\nb1\r\nb2\r\ngamma\r\ndelta",
+    );
+  });
+
+  it("does not double the CR when new_string already uses CRLF", () => {
+    expect(
+      executeFindAndReplace(crlf, "beta\r\ngamma", "BETA\r\nGAMMA", false),
+    ).toBe("alpha\r\nBETA\r\nGAMMA\r\ndelta");
+  });
+
+  it("replace_all converts every replacement", () => {
+    const content = "a\r\nb\r\nx\r\na\r\nb\r\ny\r\n";
+    expect(executeFindAndReplace(content, "a\nb", "1\n2\n3", true)).toBe(
+      "1\r\n2\r\n3\r\nx\r\n1\r\n2\r\n3\r\ny\r\n",
+    );
+  });
+
+  it("mixed endings keep each line's own ending when the region is mixed", () => {
+    const content = "one\r\ntwo\nthree\r\nfour\n";
+    expect(
+      executeFindAndReplace(content, "one\ntwo\nthree", "A\nB\nC", false),
+    ).toBe("A\r\nB\nC\r\nfour\n");
+  });
+
+  it("mixed file: an all-LF region stays LF, an all-CRLF region stays CRLF", () => {
+    const content = "a\r\nb\r\nc\r\nx\ny\nz\n";
+    expect(executeFindAndReplace(content, "x\ny", "X\nY", false)).toBe(
+      "a\r\nb\r\nc\r\nX\nY\nz\n",
+    );
+    expect(executeFindAndReplace(content, "a\nb", "A\nB", false)).toBe(
+      "A\r\nB\r\nc\r\nx\ny\nz\n",
+    );
+  });
+
+  it("empty old_string inserts at the start of a CRLF file with CRLF", () => {
+    expect(executeFindAndReplace("x\r\ny\r\n", "", "h1\nh2\n", false)).toBe(
+      "h1\r\nh2\r\nx\r\ny\r\n",
+    );
+  });
+
+  it("empty old_string on an empty file leaves new_string as written", () => {
+    expect(executeFindAndReplace("", "", "a\nb\n", false)).toBe("a\nb\n");
+  });
+
+  it("preserves a missing trailing newline", () => {
+    const content = "alpha\r\nbeta\r\ngamma";
+    expect(executeFindAndReplace(content, "beta\ngamma", "B\nG", false)).toBe(
+      "alpha\r\nB\r\nG",
+    );
+  });
+
+  it("preserves a trailing CRLF", () => {
+    expect(executeFindAndReplace("a\r\nb\r\n", "a\nb\n", "A\nB\n", false)).toBe(
+      "A\r\nB\r\n",
+    );
+  });
+
+  it("LF files are unchanged, and CRLF in new_string follows the LF region", () => {
+    const content = "alpha\nbeta\ngamma\n";
+    expect(executeFindAndReplace(content, "beta\ngamma", "B\nG", false)).toBe(
+      "alpha\nB\nG\n",
+    );
+    expect(executeFindAndReplace(content, "beta\ngamma", "B\r\nG", false)).toBe(
+      "alpha\nB\nG\n",
+    );
+  });
+});

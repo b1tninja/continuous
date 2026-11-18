@@ -15,7 +15,7 @@ import { skipWrapperFlags } from "./wrapperWords";
  * locked policy files) read a path as it is written in the command. A target
  * with a run-time part cannot be read that way: `$d`, `$env:USERPROFILE`,
  * `` `pwd` ``, `*.yaml`, `?`, or a bare name after a `cd` into the home
- * folder. At YOLO such a command asks instead of running.
+ * folder. At IDGAF such a command asks instead of running.
  *
  * This is a text scan that only ever adds an ask. It finds a target by the
  * program's known effect (`commandSpecs.ts`: it writes or deletes), takes the

@@ -10,10 +10,10 @@ import { looksSecret } from "./secretCommands";
  * file, or points a tool at another server. So the name decides.
  *
  *   dangerous  loads code, runs a program, or changes which program a name
- *              means: asks at every level, YOLO included (like a command whose
+ *              means: asks at every level below IDGAF, where it is recorded (like a command whose
  *              name is a variable)
  *   sensitive  redirects configuration, credentials, network or where files
- *              go: asks below YOLO, like a protected path
+ *              go: asks below IDGAF, like a protected path
  *   harmless   reviewed as inert (colour, locale, log level): never asks
  *   unknown    nothing says it matters: no extra ask. The command is still
  *              never read as read-only (readOnlyCommand.ts), and every rule

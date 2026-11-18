@@ -17,7 +17,7 @@ buildscript {
     dependencies {
         classpath(platform("com.fasterxml.jackson:jackson-bom:2.21.7"))
         constraints {
-            classpath("org.jsoup:jsoup:1.23.2")
+            classpath("org.jsoup:jsoup:1.24.1")
         }
     }
 }
@@ -63,7 +63,7 @@ dependencies {
     // Assertions such as assertDoesNotThrow; this used to arrive transitively
     // through the video recorder.
     testImplementation("org.junit.jupiter:junit-jupiter-api:6.1.3")
-    testImplementation("io.mockk:mockk:1.14.11") {
+    testImplementation("io.mockk:mockk:1.14.12") {
         // this transitive dependency (1.6.4) conflicts with built-in version (1.7.3)
         // otherwise e2e tests (runIdeForUiTests) will have linkage errors
         exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
@@ -83,19 +83,19 @@ dependencies {
     // lz4-java 1.8.0, OpenTelemetry 1.41.0, Ktor 2.3.12 and jsoup 1.18.1, all
     // with known advisories. Raise them to fixed releases;
     // newer Starter releases still carry some of them and need Java 21.
-    testIntegrationImplementation(platform("io.netty:netty-bom:4.2.18.Final"))
+    testIntegrationImplementation(platform("io.netty:netty-bom:4.2.20.Final"))
     testIntegrationImplementation(platform("com.fasterxml.jackson:jackson-bom:2.21.7"))
     testIntegrationImplementation(platform("io.opentelemetry:opentelemetry-bom:1.68.0"))
     testIntegrationImplementation(platform("io.opentelemetry:opentelemetry-bom-alpha:1.68.0-alpha"))
-    testIntegrationImplementation(platform("io.ktor:ktor-bom:2.3.13"))
+    testIntegrationImplementation(platform("io.ktor:ktor-bom:3.6.1"))
     constraints {
-        testIntegrationImplementation("org.bouncycastle:bcprov-jdk18on:1.86")
+        testIntegrationImplementation("org.bouncycastle:bcprov-jdk18on:1.87")
         testIntegrationImplementation("org.bouncycastle:bcpkix-jdk18on:1.86")
-        testIntegrationImplementation("org.bouncycastle:bcutil-jdk18on:1.86")
-        testIntegrationImplementation("com.google.guava:guava:33.7.2-jre")
-        testIntegrationImplementation("com.google.protobuf:protobuf-java:3.25.5")
+        testIntegrationImplementation("org.bouncycastle:bcutil-jdk18on:1.87")
+        testIntegrationImplementation("com.google.guava:guava:33.8.0-jre")
+        testIntegrationImplementation("com.google.protobuf:protobuf-java:4.36.2")
         testIntegrationImplementation("com.thoughtworks.xstream:xstream:1.4.21")
-        testIntegrationImplementation("org.jsoup:jsoup:1.23.2")
+        testIntegrationImplementation("org.jsoup:jsoup:1.24.1")
     }
 }
 

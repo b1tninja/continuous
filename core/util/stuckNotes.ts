@@ -52,11 +52,11 @@ function ordinal(n: number): string {
 }
 
 /**
- * The note for a report, or undefined when no signal that has a note is
+ * The signal that gets the note, or undefined when none that has a note is
  * active. One note per call: a signal that names the cause (repeated-block,
  * persistent-failure) wins, then the most severe, then the first.
  */
-export function stuckNote(report: StuckReport): string | undefined {
+function pickSignal(report: StuckReport): StuckSignal | undefined {
   const candidates = report.signals.filter((s) => !NO_NOTE.has(s.kind));
   // A signal that names the cause outranks the generic repeat-error and
   // retry-after-fail it fires beside (a refused call is also a repeated error)
@@ -64,12 +64,49 @@ export function stuckNote(report: StuckReport): string | undefined {
     (s) => s.kind === "repeated-block" || s.kind === "persistent-failure",
   );
   const pool = specific.length > 0 ? specific : candidates;
-  const pick =
+  return (
     pool.find((s) => s.level === "stuck") ??
-    pool.find((s) => s.level === "note");
+    pool.find((s) => s.level === "note")
+  );
+}
+
+/** The note for a report, or undefined when no signal that has a note is active. */
+export function stuckNote(report: StuckReport): string | undefined {
+  const pick = pickSignal(report);
   if (!pick) return undefined;
   const say = WORDING[pick.kind as keyof typeof WORDING];
   return `${STUCK_NOTE_MARK}${say(pick)}`;
+}
+
+const AGENT_PHRASE: Record<
+  Exclude<StuckSignalKind, "repeat-call" | "monologue">,
+  string
+> = {
+  "near-repeat": "repeating a call with small changes",
+  "repeat-error": "hitting the same error with different calls",
+  "ping-pong": "alternating between the same two calls",
+  "edit-revert": "putting a file back to content it already had",
+  "no-progress": "taking steps that change and learn nothing",
+  "retry-after-fail": "retrying a failing command with no change in between",
+  "repeated-block": "retrying calls that were refused or held",
+  "persistent-failure": "failing the same command the same way across edits",
+};
+
+/**
+ * The note for an agent that is not the main one (S7): which agent repeats,
+ * said of it and not of the reader, since the main agent cannot change what a
+ * subagent or a Loop worker does with its own calls. `who` is the agent's
+ * label (role and id, masked by the caller). Same choice of signal as
+ * `stuckNote`.
+ */
+export function stuckAgentNote(
+  who: string,
+  report: StuckReport,
+): string | undefined {
+  const pick = pickSignal(report);
+  if (!pick) return undefined;
+  const phrase = AGENT_PHRASE[pick.kind as keyof typeof AGENT_PHRASE];
+  return `${STUCK_NOTE_MARK}Agent ${who} (not the main agent) is ${phrase} (${pick.count}). Stop it or send it a different instruction.`;
 }
 
 /** A tool result without the note a host appended to it. */

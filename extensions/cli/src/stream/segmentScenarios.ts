@@ -24,7 +24,13 @@ import { writeFileTool } from "../tools/writeFile.js";
  * the manifest tests.
  */
 
-export const SCENARIO_DIR = path.join(os.tmpdir(), "cli-segment-scenario");
+// The resolved temp folder: on macOS os.tmpdir() is under /var, a link to
+// /private/var, and after chdir the working directory is the /private spelling,
+// which normalize() would not replace. On Windows it expands an 8.3 name.
+export const SCENARIO_DIR = path.join(
+  fs.realpathSync.native(os.tmpdir()),
+  "cli-segment-scenario",
+);
 export const MODEL_ID = "claude-sonnet-4-6";
 
 export interface CliScenarioSpec {
@@ -179,6 +185,12 @@ export async function buildCliScenario(
     typeof import("../systemMessage.js")
   >("../systemMessage.js");
   const { buildChatRequestBody } = await import("./requestBody.js");
+  // The user's own settings file must not leak into a golden.
+  const priorGlobalDir = process.env.CONTINUOUS_GLOBAL_DIR;
+  process.env.CONTINUOUS_GLOBAL_DIR = path.join(
+    os.tmpdir(),
+    "continuous-golden-no-settings",
+  );
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date(`${spec.date ?? "2026-11-10"}T09:00:00Z`));
   resetEnvironmentContextBlock();
@@ -211,5 +223,7 @@ export async function buildCliScenario(
     };
   } finally {
     vi.useRealTimers();
+    if (priorGlobalDir === undefined) delete process.env.CONTINUOUS_GLOBAL_DIR;
+    else process.env.CONTINUOUS_GLOBAL_DIR = priorGlobalDir;
   }
 }

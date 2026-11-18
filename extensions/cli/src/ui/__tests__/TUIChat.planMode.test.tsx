@@ -4,8 +4,13 @@ import path from "path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  loadPolicyFile,
+  resetPolicyLevels,
+} from "../../permissions/policyLevels.js";
 import { services } from "../../services/index.js";
 import { getSessionPlanFile, getSessionTaskPlan } from "../../session.js";
+import { CONFIRM_ARM_MS } from "../hooks/useInterruptConfirm.js";
 
 import {
   ENTER,
@@ -31,13 +36,14 @@ const planArgs = {
 
 /**
  * Plan mode through the TUI: PresentPlan saves the plan file and asks Build
- * or Keep planning; Build leaves plan mode. Bash and MCP tools ask first.
+ * or Keep planning; Build leaves plan mode. Bash is not offered unless plan.allowTerminal opts it in, and then it asks first, as MCP tools do.
  */
 describe("TUIChat - plan mode", () => {
   let cwd: string;
 
   beforeEach(async () => {
     await resetFlowState();
+    resetPolicyLevels();
     // PresentPlan writes .continuous/plans under the working directory
     cwd = fs.mkdtempSync(path.join(os.tmpdir(), "cn-plan-"));
     vi.spyOn(process, "cwd").mockReturnValue(cwd);
@@ -142,7 +148,30 @@ describe("TUIChat - plan mode", () => {
     }
   });
 
-  it("asks before Bash in plan mode", async () => {
+  it("does not offer Bash in plan mode by default", async () => {
+    const llm = new ScriptedLlm([textTurn("just reading")]);
+    await registerFlowServices({ llm, mode: "plan" });
+    const ui = renderFlow();
+    try {
+      await type(ui.stdin, "look around");
+      await type(ui.stdin, ENTER);
+      await waitUntil(
+        () => ui.allOutput().includes("just reading"),
+        "the reply",
+        ui.lastFrame,
+      );
+      const offered = llm.requests[0].tools.map((t) => t.function.name);
+      expect(offered).not.toContain("Bash");
+      expect(offered).toContain("Read");
+    } finally {
+      ui.unmount();
+    }
+  });
+
+  it("asks before Bash in plan mode when plan.allowTerminal opts it in", async () => {
+    const policyFile = path.join(cwd, "permissions.yaml");
+    fs.writeFileSync(policyFile, "plan:\n  allowTerminal: true\n");
+    loadPolicyFile(policyFile);
     const llm = new ScriptedLlm([
       // Not a command that only reads: those run in a plan turn
       toolTurn("Bash", { command: "npm install should-not-run" }),
@@ -163,8 +192,10 @@ describe("TUIChat - plan mode", () => {
         "Bash",
       );
 
-      // "n" refuses and stops the turn
+      // "n" refuses and stops the turn, after the stop question
       await type(ui.stdin, "n");
+      await tick(CONFIRM_ARM_MS);
+      await type(ui.stdin, ENTER);
       await waitUntil(
         () => ui.allOutput().includes("Tool canceled"),
         "the refusal",
@@ -178,7 +209,61 @@ describe("TUIChat - plan mode", () => {
     }
   });
 
-  it("asks before an MCP tool in plan mode, and runs it once approved", async () => {
+  it("hides an MCP tool the user did not list in plan mode, whatever its server claims", async () => {
+    const runTool = vi
+      .spyOn(services.mcp, "runTool")
+      .mockResolvedValue({ content: [{ type: "text", text: "mcp ran" }] });
+    const llm = new ScriptedLlm([
+      toolTurn("lookup_issue", { id: "42" }),
+      textTurn("done"),
+    ]);
+    await registerFlowServices({
+      llm,
+      mode: "plan",
+      mcpTools: [
+        {
+          name: "lookup_issue",
+          serverName: "docs",
+          annotations: { readOnlyHint: true },
+          description: "Look up an issue",
+          inputSchema: {
+            type: "object",
+            properties: { id: { type: "string" } },
+          },
+        },
+      ],
+    });
+    const ui = renderFlow();
+    try {
+      await type(ui.stdin, "read issue 42");
+      await type(ui.stdin, ENTER);
+      await waitUntil(
+        () => llm.requests.length === 2,
+        "the request after the refused call",
+        ui.lastFrame,
+      );
+      expect(runTool).not.toHaveBeenCalled();
+      expect(JSON.stringify(llm.requests[0].tools ?? [])).not.toContain(
+        "lookup_issue",
+      );
+      const result = llm.requests[1].messages.find((m) => m.role === "tool");
+      expect(messageText(result!)).toContain("not found");
+    } finally {
+      ui.unmount();
+    }
+  });
+
+  it("asks before an MCP tool the user listed for plan mode, and runs it once approved", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "plan-mcp-"));
+    const file = path.join(dir, "permissions.yaml");
+    fs.writeFileSync(
+      file,
+      ["plan:", "  mcpTools:", "    - docs/*", ""].join(
+        String.fromCharCode(10),
+      ),
+    );
+    loadPolicyFile(file);
+    fs.rmSync(dir, { recursive: true, force: true });
     const runTool = vi
       .spyOn(services.mcp, "runTool")
       .mockResolvedValue({ content: [{ type: "text", text: "mcp ran" }] });
@@ -192,6 +277,7 @@ describe("TUIChat - plan mode", () => {
       mcpTools: [
         {
           name: "lookup_issue",
+          serverName: "docs",
           description: "Look up an issue",
           inputSchema: {
             type: "object",
@@ -218,7 +304,11 @@ describe("TUIChat - plan mode", () => {
         "the request after the MCP call",
         ui.lastFrame,
       );
-      expect(runTool).toHaveBeenCalledWith("lookup_issue", { id: "42" });
+      expect(runTool).toHaveBeenCalledWith(
+        "lookup_issue",
+        { id: "42" },
+        "docs",
+      );
       const result = llm.requests[1].messages.find((m) => m.role === "tool");
       expect(messageText(result!)).toContain("mcp ran");
     } finally {

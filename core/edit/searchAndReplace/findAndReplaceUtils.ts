@@ -20,6 +20,12 @@ export function validateSingleEdit(
       `${context}string old_string is required`,
     );
   }
+  if (oldString !== "" && oldString.trim() === "") {
+    throw new ContinueError(
+      ContinueErrorReason.FindAndReplaceWhitespaceOnlyOldString,
+      `${context}old_string contains only whitespace (${oldString.length} characters), which is almost certainly not what was intended. The inference server probably stripped or damaged the whitespace in the tool-call argument (known vLLM issue 48753 with Qwen3 tool-call parsing). Retry with old_string containing the actual non-whitespace text to replace plus its surrounding lines; use an empty old_string only to insert at the top of a file or create a new one.`,
+    );
+  }
   if (newString === undefined || typeof newString !== "string") {
     throw new ContinueError(
       ContinueErrorReason.FindAndReplaceMissingNewString,

@@ -4,10 +4,14 @@ import { MockIdeMessenger } from "../../context/MockIdeMessenger";
 import { EMPTY_CONFIG, updateConfig } from "../../redux/slices/configSlice";
 import { setPolicyLevel } from "../../redux/slices/uiSlice";
 import { setupStore } from "../../redux/store";
-import { loadPolicySettings } from "../../redux/thunks/policySettings";
+import {
+  applyPolicyPreset,
+  changePolicyLevel,
+  loadPolicySettings,
+} from "../../redux/thunks/policySettings";
 import { renderWithProviders } from "../../util/test/render";
 import { PolicyCard } from "./PolicyCard";
-import { PolicyControls, YoloBanner } from "./PolicyControls";
+import { PolicyControls, IdgafChip } from "./PolicyControls";
 
 async function setup(experimental = false) {
   const ideMessenger = new MockIdeMessenger();
@@ -15,7 +19,7 @@ async function setup(experimental = false) {
   const view = await renderWithProviders(
     <>
       <PolicyControls />
-      <YoloBanner />
+      <IdgafChip />
       <PolicyCard />
     </>,
     { store, mockIdeMessenger: ideMessenger },
@@ -50,7 +54,7 @@ describe("PolicyControls", () => {
     expect(screen.getAllByTestId("policy-preset")[0].textContent).toContain(
       "Careful",
     );
-    expect(screen.queryByTestId("yolo-banner")).toBeNull();
+    expect(screen.queryByTestId("idgaf-chip")).toBeNull();
   });
 
   it("the toolbar chip is an icon whose colour and name follow the level", async () => {
@@ -74,7 +78,7 @@ describe("PolicyControls", () => {
       "sr-only",
     );
     await act(async () => {
-      store.dispatch(setPolicyLevel({ area: "tools", level: "yolo" }));
+      store.dispatch(setPolicyLevel({ area: "tools", level: "idgaf" }));
     });
     expect(chip("tools").className).toContain("bg-error/20");
   });
@@ -82,7 +86,7 @@ describe("PolicyControls", () => {
   it("each area has its own five levels, and choosing one changes only that area", async () => {
     const { user, store } = await setup();
     await user.click(screen.getAllByTestId("policy-select-tools")[0]);
-    for (const level of ["manual", "cautious", "permissive", "yolo"]) {
+    for (const level of ["manual", "cautious", "permissive", "idgaf"]) {
       expect(screen.getByTestId(`policy-option-tools-${level}`)).toBeDefined();
     }
     await user.click(screen.getByTestId("policy-option-tools-permissive"));
@@ -104,47 +108,74 @@ describe("PolicyControls", () => {
     expect(auto.getAttribute("data-disabled")).not.toBeNull();
   });
 
-  it("Plan edits and Questions call their top level IDGAF; the others call it YOLO", async () => {
+  it("every area calls its top level IDGAF", async () => {
     const { user } = await setup();
     await user.click(screen.getAllByTestId("policy-select-questions")[0]);
     expect(
-      screen.getByTestId("policy-option-questions-yolo").textContent,
+      screen.getByTestId("policy-option-questions-idgaf").textContent,
     ).toContain("IDGAF");
   });
 
-  it("an area at YOLO shows a banner that names it and stays", async () => {
+  it("an area at IDGAF shows a one-line chip; the sentence is its tooltip and description", async () => {
     const { store } = await setup();
     await act(async () => {
-      store.dispatch(setPolicyLevel({ area: "questions", level: "yolo" }));
+      store.dispatch(setPolicyLevel({ area: "questions", level: "idgaf" }));
     });
-    const banner = screen.getByTestId("yolo-banner");
-    expect(banner.textContent).toContain("Questions (IDGAF)");
-    expect(banner.textContent).toContain("Never rules");
+    const chip = screen.getByTestId("idgaf-chip");
+    // One line: the word, not the sentence
+    expect(chip.textContent).not.toContain("Every rule is ignored");
+    expect(chip.textContent).toContain("IDGAF");
+    // The sentence is the tooltip and the described-by text
+    expect(chip.getAttribute("title")).toBe(
+      "Every rule is ignored, locked rules included. Select to go back to Careful.",
+    );
+    expect(chip.getAttribute("title")).toContain("Every rule is ignored");
+    const description = document.getElementById(
+      chip.getAttribute("aria-describedby")!,
+    )!;
+    // It does not list the areas: the selectors already show them
+    expect(description.textContent).toBe(
+      "Every rule is ignored, locked rules included.",
+    );
+    // It is not an alert: a standing state is not announced as an interruption
+    expect(chip.getAttribute("role")).toBeNull();
     // Unrelated state changes do not remove it.
     await act(async () => {
       store.dispatch(setPolicyLevel({ area: "context", level: "manual" }));
     });
-    expect(screen.getByTestId("yolo-banner")).toBeDefined();
+    expect(screen.getByTestId("idgaf-chip")).toBeDefined();
   });
 
-  it("the banner's button goes back to Careful", async () => {
+  it("choosing the chip goes back to Careful", async () => {
     const { user, store } = await setup();
     await act(async () => {
-      store.dispatch(setPolicyLevel({ area: "tools", level: "yolo" }));
+      store.dispatch(setPolicyLevel({ area: "tools", level: "idgaf" }));
     });
-    await user.click(screen.getByText("Back to Careful"));
+    await user.click(screen.getByTestId("idgaf-chip"));
     expect(store.getState().ui.policyLevels.tools).toBe("cautious");
-    expect(screen.queryByTestId("yolo-banner")).toBeNull();
+    expect(screen.queryByTestId("idgaf-chip")).toBeNull();
   });
 
   it("a preset sets every area at once", async () => {
     const { user, store } = await setup();
     await user.click(screen.getAllByTestId("policy-preset")[0]);
-    await user.click(screen.getByTestId("policy-preset-yolo"));
+    await user.click(screen.getByTestId("policy-preset-idgaf"));
     expect(Object.values(store.getState().ui.policyLevels)).toEqual(
-      Array(5).fill("yolo"),
+      Array(5).fill("idgaf"),
     );
-    expect(screen.getByTestId("yolo-banner")).toBeDefined();
+    // At the top-level preset the preset chip is the warning: one chip, not two
+    expect(screen.queryByTestId("idgaf-chip")).toBeNull();
+    const chip = screen.getAllByTestId("policy-preset")[0];
+    expect(chip.textContent).toContain("nothing asks");
+    const description = document.getElementById(
+      chip.getAttribute("aria-describedby")!,
+    )!;
+    expect(description.textContent).toBe(
+      "Every rule is ignored, locked rules included.",
+    );
+    expect(chip.parentElement!.getAttribute("title")).toContain(
+      "Every rule is ignored",
+    );
   });
 
   it("the preset chip has a glyph, a tone from its levels and a name for screen readers", async () => {
@@ -167,12 +198,12 @@ describe("PolicyControls", () => {
     await user.click(screen.getByTestId("policy-preset-reviewer"));
     expect(chip().className).toContain("bg-link/20");
     await user.click(chip());
-    await user.click(screen.getByTestId("policy-preset-yolo"));
+    await user.click(screen.getByTestId("policy-preset-idgaf"));
     expect(chip().className).toContain("bg-error/20");
-    expect(store.getState().ui.policyLevels.tools).toBe("yolo");
+    expect(store.getState().ui.policyLevels.tools).toBe("idgaf");
   });
 
-  it("a set of levels that matches no preset reads as Custom, neutral unless one is YOLO", async () => {
+  it("a set of levels that matches no preset reads as Custom, neutral unless one is IDGAF", async () => {
     const { user, store } = await setup();
     await act(async () => {
       store.dispatch(setPolicyLevel({ area: "tools", level: "permissive" }));
@@ -185,14 +216,14 @@ describe("PolicyControls", () => {
       screen.getAllByTestId("policy-preset-tone")[0].textContent,
     ).toContain("matches no preset");
     await act(async () => {
-      store.dispatch(setPolicyLevel({ area: "edits", level: "yolo" }));
+      store.dispatch(setPolicyLevel({ area: "edits", level: "idgaf" }));
     });
     expect(chip.className).toContain("bg-error/20");
     expect(chip.textContent).toContain("Custom");
     await user.click(chip);
-    expect(
-      screen.getByTestId("policy-preset-custom-note").textContent,
-    ).toContain("your current set");
+    expect(screen.getByTestId("policy-preset-custom").textContent).toContain(
+      "your current set",
+    );
   });
 
   it("each preset row has a glyph, what it sets and a check on the current one", async () => {
@@ -203,7 +234,7 @@ describe("PolicyControls", () => {
       "acceptEdits",
       "handsOff",
       "reviewer",
-      "yolo",
+      "idgaf",
     ]) {
       const row = screen.getByTestId(`policy-preset-${name}`);
       expect(row.querySelector("svg[aria-hidden=true]")).not.toBeNull();
@@ -211,15 +242,15 @@ describe("PolicyControls", () => {
     expect(screen.getByTestId("policy-preset-careful").textContent).toContain(
       "Cautious: Tool use, Plan edits, Questions.",
     );
-    expect(screen.getByTestId("policy-preset-yolo").textContent).toContain(
-      "All five areas YOLO.",
+    expect(screen.getByTestId("policy-preset-idgaf").textContent).toContain(
+      "All five areas IDGAF.",
     );
     const checks = (name: string) =>
       screen
         .getByTestId(`policy-preset-${name}`)
         .querySelector("svg:last-of-type")!.classList;
     expect(checks("careful").contains("opacity-0")).toBe(false);
-    expect(checks("yolo").contains("opacity-0")).toBe(true);
+    expect(checks("idgaf").contains("opacity-0")).toBe(true);
   });
 
   it("Settings shows the same five rows", async () => {
@@ -300,29 +331,92 @@ describe("the settings beside the levels", () => {
     expect(store.getState().ui.policyLevels.tools).toBe("permissive");
     expect(store.getState().ui.policyExtras.floor).toHaveLength(1);
     expect(screen.getByTestId("policy-floor").textContent).toContain(
-      "1 floor rule",
+      "1 locked rule",
     );
   });
 
-  it("a YOLO left from an earlier session is dropped by the load", async () => {
+  const fileLevels = {
+    context: "permissive",
+    tools: "cautious",
+    edits: "manual",
+    plan: "cautious",
+    questions: "cautious",
+  };
+  const hostWith = (session: string[] | "unsupported") => {
     const ideMessenger = new MockIdeMessenger();
-    ideMessenger.responseHandlers["policy/load"] = (async () => ({
-      settings: {
-        levels: {
-          context: "permissive",
-          tools: "cautious",
-          edits: "manual",
-          plan: "cautious",
-          questions: "cautious",
-        },
-      },
+    const h = ideMessenger.responseHandlers as any;
+    h["policy/load"] = async () => ({
+      settings: { levels: fileLevels },
       notices: [],
-    })) as any;
+    });
+    const posted: unknown[] = [];
+    h["policy/sessionIdgaf"] = async (data: { areas?: string[] }) => {
+      if (session === "unsupported") throw new Error("not handled");
+      if (data?.areas !== undefined) posted.push(data.areas);
+      return { areas: session };
+    };
+    h["policy/save"] = async () => undefined;
+    return { ideMessenger, posted };
+  };
+
+  it("a webview reload or extension host restart keeps the session's IDGAF", async () => {
+    const { ideMessenger } = hostWith(["tools"]);
     const store = setupStore({ ideMessenger });
     await act(async () => {
-      store.dispatch(setPolicyLevel({ area: "tools", level: "yolo" }));
+      await store.dispatch(loadPolicySettings());
+    });
+    expect(store.getState().ui.policyLevels.tools).toBe("idgaf");
+    // the other areas come from the file
+    expect(store.getState().ui.policyLevels.context).toBe("permissive");
+    expect(store.getState().ui.policyLevels.edits).toBe("manual");
+  });
+
+  it("a new editor session starts at the saved levels, whatever the webview remembered", async () => {
+    const { ideMessenger } = hostWith([]);
+    const store = setupStore({ ideMessenger });
+    await act(async () => {
+      store.dispatch(setPolicyLevel({ area: "tools", level: "idgaf" }));
       await store.dispatch(loadPolicySettings());
     });
     expect(store.getState().ui.policyLevels.tools).toBe("cautious");
+  });
+
+  it("a host that does not keep session state starts at the saved levels", async () => {
+    const { ideMessenger } = hostWith("unsupported");
+    const store = setupStore({ ideMessenger });
+    await act(async () => {
+      store.dispatch(setPolicyLevel({ area: "tools", level: "idgaf" }));
+      await store.dispatch(loadPolicySettings());
+    });
+    expect(store.getState().ui.policyLevels.tools).toBe("cautious");
+  });
+
+  it("choosing IDGAF tells the host, for the rest of the editor session", async () => {
+    const { ideMessenger, posted } = hostWith([]);
+    const store = setupStore({ ideMessenger });
+    await act(async () => {
+      await store.dispatch(
+        applyPolicyPreset({
+          context: "idgaf",
+          tools: "idgaf",
+          edits: "idgaf",
+          plan: "idgaf",
+          questions: "idgaf",
+        }),
+      );
+    });
+    expect(posted.at(-1)).toEqual([
+      "context",
+      "tools",
+      "edits",
+      "plan",
+      "questions",
+    ]);
+    await act(async () => {
+      await store.dispatch(
+        changePolicyLevel({ area: "tools", level: "cautious" }),
+      );
+    });
+    expect(posted.at(-1)).not.toContain("tools");
   });
 });

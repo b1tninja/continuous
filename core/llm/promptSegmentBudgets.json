@@ -48,7 +48,7 @@
     "turn.plan@full": {
       "maxTokens": 810
     },
-    "commit-signature": {
+    "attribution": {
       "maxTokens": 67
     },
     "env.date+git": {

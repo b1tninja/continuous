@@ -193,6 +193,7 @@ Parameters that control the behavior of text generation and completion settings.
 - `useMmap`: For Ollama, this parameter allows the model to be mapped into memory. If disabled can enhance response time on low end devices but will slow down the stream.
 - `reasoning`: Enables thinking/reasoning for Anthropic Claude 3.7+ and some Ollama models.
 - `reasoningBudgetTokens`: Sets budget tokens for thinking/reasoning in Anthropic Claude 3.7+ models.
+- `omitSampling`: Advanced. `true` leaves `temperature`, `topP` and `topK` out of the request for this model; `false` sends them even to a Claude model that refuses them. Unset follows the model: Claude 4.7 and later, Fable and Mythos refuse the three, so they are left out whatever the config sets, with one debug-log line per model.
 
 Example
 
@@ -272,7 +273,7 @@ List of documentation sites to index.
 
 - `maxDepth`: Maximum link depth for crawling. Default `4`
 - `favicon`: URL for site favicon (default is `/favicon.ico` from `startUrl`).
-- `useLocalCrawling`: Crawl on this machine. This is the default. Set to `false` to send the site URL to the upstream crawl service.
+- `useLocalCrawling`: Ignored. Documentation sites are always crawled on this machine; no crawl service is used. Kept so existing configs still load.
 
 Example
 

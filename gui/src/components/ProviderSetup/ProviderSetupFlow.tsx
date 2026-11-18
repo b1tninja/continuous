@@ -5,7 +5,7 @@ import type {
   ProviderSetupInfo,
 } from "core/config/providerSetup";
 import { defaultSecretName } from "core/config/providerSecretName";
-import { hasOpenAICompatDefault } from "core/util/openaiCompatTest";
+import { hasConnectionTest } from "core/util/anthropicSurfaceTest";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Input } from "..";
@@ -30,7 +30,15 @@ import {
 import {
   fetchedToPackages,
   fetchProviderModels,
-  initializeDynamicModels,
+  CATALOGUE_HOSTS,
+  catalogueAnswered,
+  loadCachedOpenRouterList,
+  loadCatalogPolicy,
+  markCatalogueAnswered,
+  openRouterListFetchedAt,
+  refreshProviderCatalogue,
+  saveCatalogPolicy,
+  type CatalogPolicy,
 } from "../../pages/AddNewModel/configs/fetchProviderModels";
 import {
   DisplayInfo,
@@ -41,6 +49,8 @@ import {
   providers,
 } from "../../pages/AddNewModel/configs/providers";
 import ModelSelectionListbox from "../modelSelection/ModelSelectionListbox";
+import { ModelInfoFreshness } from "../ModelInfoFreshness";
+import { OpenRouterCataloguePrompt } from "./CataloguePrompt";
 import { LocalServerPicker } from "./LocalServerPicker";
 import { ModelChecklist } from "./ModelChecklist";
 import {
@@ -66,6 +76,12 @@ export interface ProviderSetupFlowProps {
   initialProvider?: string;
   /** Edit this configured connection instead of starting a new one. */
   initialConnection?: ProviderConnectionKey;
+  /**
+   * Open at this step. "models" applies only with `initialConnection` (a
+   * connection that is already set up has its credentials); otherwise the
+   * flow starts at the credentials.
+   */
+  initialStep?: SetupStep;
   /**
    * Only ask for the key of this secret and store it; config.yaml is not
    * changed (the reference in it is already correct).
@@ -134,6 +150,7 @@ function providerLists() {
 export function ProviderSetupFlow({
   initialProvider,
   initialConnection,
+  initialStep,
   enterKey,
   onDone,
   onCancel,
@@ -144,7 +161,11 @@ export function ProviderSetupFlow({
   const [provider, setProvider] = useState<ProviderInfo>(() =>
     startingProvider(initialProvider, initialConnection),
   );
-  const [step, setStep] = useState<SetupStep>("credentials");
+  const startAtModels =
+    initialStep === "models" && !!initialConnection && !enterKey;
+  const [step, setStep] = useState<SetupStep>(
+    startAtModels ? "models" : "credentials",
+  );
   const [setup, setSetup] = useState<ProviderSetupInfo>();
   const formMethods = useForm();
   const values = formMethods.watch();
@@ -158,6 +179,8 @@ export function ProviderSetupFlow({
   const [liveModels, setLiveModels] = useState<ModelPackage[]>([]);
   const [refreshError, setRefreshError] = useState<string>();
   const [refreshing, setRefreshing] = useState(false);
+  // Bumped when a fetched catalogue replaces a provider's bundled list.
+  const [, setCatalogueVersion] = useState(0);
   const providerRef = useRef(provider.provider);
   providerRef.current = provider.provider;
 
@@ -173,7 +196,6 @@ export function ProviderSetupFlow({
 
   // What is configured today, and where keys can be kept.
   useEffect(() => {
-    void initializeDynamicModels(ideMessenger);
     let cancelled = false;
     void ideMessenger
       .request("config/getProviderSetup", undefined)
@@ -211,7 +233,7 @@ export function ProviderSetupFlow({
   const isBedrock = isBedrockProvider(provider.provider);
   const isLocal = !!provider.localServer;
   const isOpenAICompat =
-    !isBedrock && (isLocal || hasOpenAICompatDefault(provider.provider));
+    !isBedrock && (isLocal || hasConnectionTest(provider.provider));
   const allFields = provider.collectInputFor ?? [];
   const apiKeyField = allFields.find((f) => f.key === "apiKey");
   // Set when the key is only one of several ways to sign in, as on Bedrock.
@@ -258,7 +280,48 @@ export function ProviderSetupFlow({
     }
   }, [configured?.key.secretName]);
 
-  const modelLists = computeModelLists(provider, liveModels);
+  const rawLists = computeModelLists(provider, liveModels);
+  const real = (p: ModelPackage) => p.params.model !== "placeholder";
+  const modelLists = {
+    ...rawLists,
+    top: rawLists.top.filter(real),
+    other: rawLists.other?.filter(real),
+  };
+  const noModelsYet = modelLists.top.length === 0 && !modelLists.other?.length;
+  const [, setAnswerTick] = useState(0);
+  // OpenRouter: what the user's settings say about asking, and whether a dated
+  // copy of its list is already on this computer. Both are local reads; until
+  // they arrive the prompt is not shown.
+  const [orState, setOrState] = useState<{
+    policy: CatalogPolicy;
+    haveCopy: boolean;
+  }>();
+  const isOpenRouter = provider.provider === "openrouter";
+  useEffect(() => {
+    if (!isOpenRouter) return;
+    let cancelled = false;
+    void (async () => {
+      const [policy, date] = await Promise.all([
+        loadCatalogPolicy(ideMessenger),
+        loadCachedOpenRouterList(ideMessenger),
+      ]);
+      if (cancelled) return;
+      setOrState({ policy, haveCopy: !!date });
+      if (date) setCatalogueVersion((v) => v + 1);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpenRouter, ideMessenger]);
+  // Only "Only when I ask" offers the OpenRouter download here. Automatic
+  // needs no question (core keeps the list current); off never fetches.
+  // Ollama always asks: its list is fetched only from its own setup.
+  const showCataloguePrompt =
+    !!CATALOGUE_HOSTS[provider.provider] &&
+    !catalogueAnswered(provider.provider) &&
+    (!isOpenRouter ||
+      (orState !== undefined && orState.policy === "ask" && !orState.haveCopy));
+  const openRouterOff = isOpenRouter && orState?.policy === "off";
   const groups = useMemo(
     () => buildChecklistRows(modelLists, configuredModels),
     [modelLists.top, modelLists.other, configuredModels],
@@ -317,18 +380,51 @@ export function ProviderSetupFlow({
     diff.add.length > 0 || diff.remove.length > 0 || sendKey || connectionMoved;
   const needsConfirm = diff.remove.length > 0 && !confirmedRemoval;
 
+  const catalogueHost = CATALOGUE_HOSTS[provider.provider];
   const canRefresh =
     isBedrock || isLocal
       ? fieldsFilled
-      : !!keyChoice.value &&
-        provider.provider !== "ollama" &&
-        provider.provider !== "openrouter";
+      : catalogueHost
+        ? !openRouterOff
+        : !!keyChoice.value;
+
+  // Automatic updates and no list on this computer yet (the background
+  // refresh has not run, or could not): get it now instead of asking.
+  const autoPulled = useRef(false);
+  useEffect(() => {
+    if (
+      !isOpenRouter ||
+      orState?.policy !== "automatic" ||
+      orState.haveCopy ||
+      autoPulled.current
+    ) {
+      return;
+    }
+    autoPulled.current = true;
+    void refreshModels();
+  }, [isOpenRouter, orState]);
 
   async function refreshModels() {
     const forProvider = provider.provider;
     setRefreshing(true);
     setRefreshError(undefined);
     try {
+      if (CATALOGUE_HOSTS[forProvider]) {
+        // The only request that leaves the machine for these providers.
+        const result = await refreshProviderCatalogue(
+          ideMessenger,
+          forProvider,
+        );
+        if (!result.ok) {
+          return setRefreshError(
+            `Could not reach ${CATALOGUE_HOSTS[forProvider]}${
+              result.error ? ` (${result.error})` : ""
+            }. Showing the ${openRouterListFetchedAt() && forProvider === "openrouter" ? "last downloaded" : "bundled"} list.`,
+          );
+        }
+        setCatalogueVersion((v) => v + 1);
+        return;
+      }
       if (isBedrockProvider(forProvider)) {
         const result = await listBedrockModelsFor(
           ideMessenger,
@@ -365,6 +461,16 @@ export function ProviderSetupFlow({
       setRefreshing(false);
     }
   }
+
+  // Opened at the checklist (Manage models): a local server's own list is the
+  // only one that applies, as after Next. Waits for the prefilled address.
+  const pendingLocalList = useRef(startAtModels);
+  useEffect(() => {
+    if (!pendingLocalList.current || !isLocal || !connection.apiBase) return;
+    if (connectionMoved) return; // the field default, before the prefill
+    pendingLocalList.current = false;
+    if (liveModels.length === 0) void refreshModels();
+  }, [isLocal, connection.apiBase, connectionMoved]);
 
   /** Each Bedrock entry lists its own endpoint's models only. */
   function applyBedrock(models: BedrockEndpointModel[]) {
@@ -613,6 +719,60 @@ export function ProviderSetupFlow({
         </div>
       )}
 
+      {showCataloguePrompt && !enterKey && isOpenRouter && (
+        <OpenRouterCataloguePrompt
+          onPull={(dontAskAgain) => {
+            if (dontAskAgain) void saveCatalogPolicy(ideMessenger, "never");
+            markCatalogueAnswered(provider.provider);
+            setAnswerTick((v) => v + 1);
+            void refreshModels();
+          }}
+          onNotNow={(dontAskAgain) => {
+            if (dontAskAgain) {
+              void saveCatalogPolicy(ideMessenger, "never");
+              setOrState((s) => ({ haveCopy: false, ...s, policy: "never" }));
+            }
+            markCatalogueAnswered(provider.provider);
+            setAnswerTick((v) => v + 1);
+          }}
+        />
+      )}
+
+      {showCataloguePrompt && !enterKey && !isOpenRouter && (
+        <div
+          role="region"
+          aria-label="Download model list"
+          className="flex flex-col gap-2 rounded border border-solid border-description-muted p-2 text-xs"
+        >
+          <span>
+            Download the latest model list from {catalogueHost}? This contacts
+            that site.
+          </span>
+          <div className="flex gap-2">
+            <Button
+              className="flex-1"
+              onClick={() => {
+                markCatalogueAnswered(provider.provider);
+                setAnswerTick((v) => v + 1);
+                void refreshModels();
+              }}
+            >
+              Download
+            </Button>
+            <Button
+              variant="secondary"
+              className="flex-1"
+              onClick={() => {
+                markCatalogueAnswered(provider.provider);
+                setAnswerTick((v) => v + 1);
+              }}
+            >
+              Not now
+            </Button>
+          </div>
+        </div>
+      )}
+
       {step === "credentials" && (
         <div className="flex flex-col gap-4">
           {!enterKey && !initialConnection && (
@@ -728,6 +888,7 @@ export function ProviderSetupFlow({
               apiBase={isLocal ? connection.apiBase : values.apiBase}
               apiKey={values.apiKey}
               model={provider.packages[0].params.model}
+              modelTitle={provider.packages[0].title}
               canTest={fieldsFilled}
             />
           )}
@@ -776,8 +937,16 @@ export function ProviderSetupFlow({
             <label className="text-sm font-medium">Models</label>
             <button
               type="button"
-              aria-label="Refresh model list"
-              title="Use the entered credentials to list the models available to you"
+              aria-label={
+                catalogueHost
+                  ? `Refresh from ${catalogueHost}`
+                  : "Refresh model list"
+              }
+              title={
+                catalogueHost
+                  ? `Contacts ${catalogueHost} to fetch the latest model list`
+                  : "Use the entered credentials to list the models available to you"
+              }
               className={`cursor-pointer border-none bg-transparent p-0 ${
                 canRefresh
                   ? "text-description-muted hover:text-foreground"
@@ -786,8 +955,13 @@ export function ProviderSetupFlow({
               onClick={refreshModels}
               disabled={refreshing}
             >
+              {catalogueHost && (
+                <span className="mr-1 text-xs">
+                  Refresh from {catalogueHost}
+                </span>
+              )}
               <ArrowPathIcon
-                className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
+                className={`inline h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
               />
             </button>
           </div>
@@ -795,6 +969,25 @@ export function ProviderSetupFlow({
             <span className="text-xs whitespace-pre-wrap text-warning">
               Couldn't refresh the model list: {refreshError}
             </span>
+          )}
+          {catalogueHost && noModelsYet && !openRouterOff && (
+            <span className="text-xs text-description-muted">
+              Model list not downloaded. Refresh from {catalogueHost}, or type a
+              model id.
+            </span>
+          )}
+          {isOpenRouter && (
+            <ModelInfoFreshness
+              key={openRouterListFetchedAt() ?? "none"}
+              onRefresh={() =>
+                refreshProviderCatalogue(ideMessenger, "openrouter").then(
+                  (r) => {
+                    if (r.ok) setCatalogueVersion((v) => v + 1);
+                    return r;
+                  },
+                )
+              }
+            />
           )}
           <ModelChecklist
             groups={groups}

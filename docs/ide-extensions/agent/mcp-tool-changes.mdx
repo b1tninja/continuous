@@ -2,22 +2,61 @@
 title: "MCP Tool Changes"
 ---
 
-Continuous records what each MCP server told the model about its tools (names, descriptions, parameter schemas, annotations) and asks again when that changes. A server that shows a harmless description when you approve it and a different one later is the "rug pull" attack; this check catches that change. It does not see a change in what the server does, only in what it says it does.
+Continuous records what each MCP server told the model about its tools (names, descriptions, parameter schemas, annotations). A tool you have not approved is not offered to the model: a new server's tools, a tool a server adds later, and a tool whose definition changed. A server that shows a harmless description when you approve it and a different one later is the "rug pull" attack. This check catches that change before the model reads the new text. It does not see a change in what the server does, only in what it says it does.
 
 ## What triggers it
 
-| State       | Meaning                                                                  | Behavior                                                               |
-| ----------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
-| `new`       | First time this server is seen                                           | The normal approval flow. The tools are recorded after the first call. |
-| `unchanged` | Definitions match what was recorded                                      | The normal approval flow.                                              |
-| `changed`   | A tool's description or schema differs, or a tool was added, since then | That tool asks before every level except YOLO.                         |
-| `launch`    | The server's command, arguments, URL or environment variable names differ | Every tool of the server asks before every level except YOLO.          |
+| State       | Meaning                                                                   | Behavior                                                                                         |
+| ----------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `new`       | First time this server is seen                                            | Its tools are not offered until you approve them, one by one or all at once                      |
+| `unchanged` | Definitions match what was recorded                                       | The normal approval flow                                                                         |
+| `changed`   | A tool's description or schema differs, or a tool was added, since then | That tool is not offered until you approve it again; the server's other tools stay as they were |
+| `launch`    | The server's command, arguments, URL or environment variable names differ | Every tool of the server asks before every level except IDGAF                                    |
 
-The check runs when the server connects and again on every `tools/list_changed` notification, so a change made mid-session is held the same way.
+At IDGAF on Tool use the tools that wait are offered anyway, and the first call to one pins it, because IDGAF never asks and never refuses.
+
+A server you marked `trusted` in your own `permissions.yaml` does not wait:
+
+```yaml
+mcpServers:
+  docs: trusted
+```
+
+Its new and changed tools are pinned as soon as they are listed. A notice names them, and the audit trail records the approval as the system's (source `mcp-trusted-server`). The tool list still changes, so while the prompt cache is warm the new tools wait for it to go cold like any other change. A server that came with the open folder is never trusted this way, whatever its name. Every other server's tools wait for you.
+
+## Approve a new or changed tool
+
+- **IDE**: Settings > Tools lists the waiting tools under their server, with the description the model will read and **Approve** (one tool) or **Approve all**.
+- **Terminal agent**: `/mcp pending` lists them with their descriptions. `/mcp approve <server> [tool...]` approves the tools you name, or every waiting tool of the server when you name none.
+
+Approving a tool changes the tool list. While the prompt cache is warm the change waits like any other tool list change, so the tool is offered from the first request after the cache goes cold, or at once if you apply waiting changes (Tools page, or `/tools apply`). See "Changing tools during a session" in the prompt caching docs.
+
+## Plan mode and unattended runs
+
+Plan mode only offers MCP tools that are approved and that you marked read-only in your own `permissions.yaml` (a trusted server's `readOnlyHint`, or `plan.mcpTools`).
+
+Runs nobody is watching get no MCP tools unless you list them. These are headless `continuous -p` and `continuous serve`, Loop workers, and background agents. List them in `permissions.yaml`:
+
+```yaml
+background:
+  mcpTools:
+    - docs/search # one tool
+    - wiki/* # every tool of a server
+```
+
+A listed tool of a server you never approved is offered to such a run, because the list is your approval by name, and its first call pins that tool only. A listed tool that was added or changed after an approval still waits until you approve it in the IDE or the terminal UI. At IDGAF (`--auto` or `--policy idgaf`) every MCP tool is offered. Builds before 2.18.0 treat `background` as an unknown key and refuse the file, so add it once every machine that reads the file is updated.
+
+## After upgrading
+
+Tools you already use stay approved. A server was pinned on its first approved call before this release, so its tools are in `mcp-tool-pins.json` and nothing changes for them. For a server used before pinning existed, the sessions saved before the upgrade are read once. A server is pinned as it is now when the history ties a call to that server and that tool: the session recorded which server the call went to, or the IDE's tool name carries the server's name. A terminal-agent call recorded only by the tool's own name (such as `search`) names no server, so it approves nothing, and that server's tools wait for you. A server nobody called waits for your approval. The moment of the upgrade is kept in `mcp-tool-hold.json` beside the pin file.
+
+The check runs when the server connects and again on every `tools/list_changed` notification, so a change made mid-session is held the same way. A tool that changes mid-session while the prompt cache is warm stays in the request's tool list until the cache goes cold, and a call to it is refused with a result that says it waits for approval.
 
 ## What you see
 
-The approval prompt and the decision chip say why it is asking:
+A waiting tool is listed under its server on the Tools page (and by `/mcp pending`) with the description it would be offered with, marked `changed` when its definition changed. A model can still name a tool it was not offered; that call is not run, and its result says the tool waits for your approval.
+
+At IDGAF a changed tool is offered, and the approval prompt and the decision chip of the other levels' path say what changed:
 
 ```
 This MCP tool's definition changed since you approved it (changed, search
@@ -27,7 +66,7 @@ accepts the new definition.
 
 The summary names the tool and what changed: the description (with its old and new length), the parameters, or the title and annotations. Added and removed tools are listed too.
 
-This is a protection like a protected path. Hands-off, Automatic, and an allow rule do not loosen it, and the auto-approval reviewer does not decide it. YOLO still passes it, as your explicit choice.
+This is a protection like a protected path. Hands-off, Automatic, and an allow rule do not loosen it, and the auto-approval reviewer does not decide it. IDGAF still passes it, as your explicit choice.
 
 ## Launch definition
 
@@ -38,11 +77,11 @@ This MCP server is started differently than when you approved it (launch
 definition changed: arguments), so every one of its tools asks again.
 ```
 
-The message names the parts that changed and the new command; arguments and URLs are not shown because they can hold secrets. At YOLO nothing asks, so when the first call runs the new definition is pinned, a one-line notice is shown and an entry is written to the audit trail (source `mcp-launch-changed`). A server defined by a folder you have not trusted does not start at all (see project trust).
+The message names the parts that changed and the new command; arguments and URLs are not shown because they can hold secrets. At IDGAF nothing asks, so when the first call runs the new definition is pinned, a one-line notice is shown and an entry is written to the audit trail (source `mcp-launch-changed`). A server defined by a folder you have not trusted does not start at all (see project trust).
 
 ## Approve the change
 
-Approving a call to a changed tool records that tool's new definition. Other changed tools on the same server keep asking until you approve a call to each. A server seen for the first time is recorded as a whole after its first successful call: that first approval pins every tool the server listed, and a notice names them.
+Approving a tool records that tool's new definition. Other new or changed tools on the same server keep waiting until you approve each. At IDGAF, the first call to a server seen for the first time pins every tool the server listed, and a notice names them.
 
 ## Where approvals are stored
 

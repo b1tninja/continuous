@@ -1,8 +1,8 @@
 name: Supply Chain
 
-# Advisory checks, NOT required: the merge gate (docs/ci-merge-gate.md) waits only for the two
-# aggregate jobs in its REQUIRED_CHECKS, so nothing here can block or stall a merge. Do not add these
-# jobs to an aggregate `needs`. Policy: docs/supply-chain.md.
+# Advisory checks, NOT required: the merge gate (docs/ci-merge-gate.md) evaluates only the PR Checks
+# and CLI PR Checks workflows it calls, so nothing here can block or stall a merge. Do not add these
+# jobs to the gate's `needs`. Policy: docs/supply-chain.md.
 on:
   pull_request:
     branches:
@@ -37,7 +37,19 @@ jobs:
         with:
           fail-on-severity: high
           comment-summary-in-pr: never
-          license-check: false
+          # Licence check on changed dependencies (runtime scope). Strong copyleft and
+          # non-commercial or source-available licences are denied; LGPL is not on the list
+          # because sharp's prebuilt libvips (LGPL, dynamically loaded) is already shipped
+          # and reviewed (scripts/licenses/exceptions.json). Checked on 2026-11-11 against all
+          # lockfiles: only three runtime or dev packages carry a denied id, each in a
+          # dual-licence expression with a permissive option, so they are allowed by purl:
+          #   node-forge (BSD-3-Clause OR GPL-2.0), elkjs (EPL-2.0 OR GPL-3.0-or-later),
+          #   jszip (MIT OR GPL-3.0-or-later).
+          # mintlify (Elastic-2.0) is docs tooling in the dev scope, which is not evaluated.
+          # The build-time gate for what ships is scripts/licenses/third-party-notices.mjs.
+          license-check: true
+          deny-licenses: GPL-2.0, GPL-2.0-only, GPL-2.0-or-later, GPL-3.0, GPL-3.0-only, GPL-3.0-or-later, AGPL-3.0, AGPL-3.0-only, AGPL-3.0-or-later, SSPL-1.0, BUSL-1.1, Elastic-2.0, CC-BY-NC-3.0, CC-BY-NC-4.0, CC-BY-NC-SA-3.0, CC-BY-NC-SA-4.0, CC-BY-NC-ND-4.0
+          allow-dependencies-licenses: pkg:npm/node-forge, pkg:npm/elkjs, pkg:npm/jszip
 
   pins-and-notice:
     runs-on: ubuntu-latest
@@ -58,8 +70,10 @@ jobs:
         run: |
           node scripts/ci/check-notice.mjs --strict
           node --test scripts/ci/check-notice.test.mjs scripts/ci/backfill-fixture-licence.test.mjs
+      - name: Shipped legal files (artefact checker and notices generator tests)
+        run: node --test scripts/ci/check-artefact-licences.test.mjs scripts/licenses/third-party-notices.test.mjs
       - name: Process-guard scripts (merge-tree matrix, worktree hygiene, stash guard, checkpoint)
-        run: node --test scripts/ci/combine.test.mjs scripts/ci/check-stash.test.mjs scripts/ci/worktree-hygiene.test.mjs "scripts/agents/*.test.mjs"
+        run: node --test scripts/ci/combine.test.mjs scripts/ci/changed-areas.test.mjs scripts/ci/affected-tests.test.mjs scripts/ci/check-stash.test.mjs scripts/ci/worktree-hygiene.test.mjs "scripts/agents/*.test.mjs"
       - name: Lab boundary (the product never imports bench/; contract, result schema, governor)
         run: |
           node scripts/ci/check-bench-boundary.mjs

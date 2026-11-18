@@ -113,6 +113,7 @@ export function UserSetting(props: UserSettingProps) {
                   e.currentTarget.blur();
                 }
               }}
+              aria-label={props.title}
               min={props.min ?? 0}
               max={props.max ?? 100}
               disabled={disabled}
@@ -165,6 +166,7 @@ export function UserSetting(props: UserSettingProps) {
                   <input
                     type="text"
                     value={props.value}
+                    aria-label={props.title}
                     onChange={(e) => props.onChange(e.target.value)}
                     placeholder={props.placeholder}
                     disabled={disabled}
@@ -196,6 +198,7 @@ export function UserSetting(props: UserSettingProps) {
             <input
               type="text"
               value={props.value}
+              aria-label={props.title}
               onChange={(e) => props.onChange(e.target.value)}
               disabled={disabled}
               className="flex-1 border-none bg-inherit px-1.5 py-1 text-vsc-foreground ring-0 outline-hidden focus:border-none focus:ring-0 focus:outline-hidden disabled:cursor-not-allowed"

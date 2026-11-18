@@ -1,6 +1,6 @@
 // Markdown reports from result records: per model and per case-group, with
 // Wilson 95% intervals. Pure functions of the records.
-import { fmtRate, median, wilson } from "./stats.mjs";
+import { effectiveRate, fmtRate, median, wilson } from "./stats.mjs";
 
 const OUTCOMES = [
   "structured",
@@ -24,8 +24,10 @@ function groupBy(records, keyFn) {
 }
 
 const count = (rs, f) => rs.filter(f).length;
-const rateOf = (rs, f) => wilson(count(rs, f), rs.length);
+/** Rate of `f` counted over distinct prompts (effective n), raw counts kept. */
+const rateOf = (rs, f) => effectiveRate(rs, f);
 const num = (x, d = 0) => (x == null ? "-" : x.toFixed(d));
+const cnt = (x) => (Number.isInteger(x) ? String(x) : x.toFixed(1));
 
 /** Key of the arm a record belongs to: what was varied, not what was asked. */
 export function armOf(r) {
@@ -42,6 +44,7 @@ function metricsRow(rs) {
   const withCalls = rs.filter((r) => r.score);
   return {
     n: rs.length,
+    nEff: rateOf(rs, () => true).n,
     valid: rateOf(withCalls, (r) => r.score.valid),
     schema: rateOf(
       withCalls.filter((r) => !r.score.falseCall && r.calls.length),
@@ -75,6 +78,7 @@ function armsTable(records, keyFn, label) {
     rows.push([
       k,
       m.n,
+      cnt(m.nEff),
       fmtRate(m.valid),
       m.falseCalls.n ? fmtRate(m.falseCalls) : "-",
       ...m.outcomes,
@@ -86,8 +90,9 @@ function armsTable(records, keyFn, label) {
   return table(
     [
       label,
-      "n",
-      "valid call (95% CI)",
+      "n raw",
+      "n effective",
+      "valid call (95% CI, effective n)",
       "false calls (no-tool cases)",
       ...OUTCOMES,
       "median tokens",
@@ -106,6 +111,7 @@ function reviewerSection(records) {
     rows.push([
       cls,
       rs.length,
+      cnt(rateOf(rs, () => true).n),
       fmtRate(rateOf(rs, (r) => r.score?.valid)),
       dec("allow"),
       dec("ask"),
@@ -117,7 +123,8 @@ function reviewerSection(records) {
     table(
       [
         "labelled",
-        "n",
+        "n raw",
+        "n effective",
         "acceptable (95% CI)",
         "allow",
         "ask",
@@ -130,7 +137,12 @@ function reviewerSection(records) {
   const risky = records.filter((r) => r.score?.dangerousAllow);
   out.push(
     "",
-    `Dangerous allows (a deny or ask case the model allowed): ${fmtRate(wilson(risky.length, records.filter((r) => r.group !== "allow").length))}`,
+    `Dangerous allows (a deny or ask case the model allowed): ${fmtRate(
+      rateOf(
+        records.filter((r) => r.group !== "allow"),
+        (r) => r.score?.dangerousAllow,
+      ),
+    )}`,
   );
   if (risky.length)
     out.push("", "Cases: " + risky.map((r) => r.caseId).join(", "));
@@ -173,7 +185,7 @@ export function buildReport(records, { title = "Local lab report" } = {}) {
   const errs = records.length - usable(records).length;
   const ok = usable(records);
   L.push(
-    `${records.length} records, ${errs} errors (errors are excluded from every rate). Rates are k/n with a Wilson 95% interval.`,
+    `${records.length} records, ${errs} errors (errors are excluded from every rate). Rates are k/n with a Wilson 95% interval computed on the EFFECTIVE n: passes of one prompt are not independent, so n counts distinct prompts (a rate whose passes all agreed, as at temperature 0, has n = the number of prompts; otherwise n is the raw n divided by the design effect, never below the prompt count). Every rate shows its raw count after the interval whenever the two differ.`,
     "",
   );
   for (const [suite, srs] of groupBy(ok, (r) => r.suite)) {
@@ -194,6 +206,14 @@ export function buildReport(records, { title = "Local lab report" } = {}) {
         armsTable(ms, (r) => `${r.group} (${armOf(r)})`, "group"),
         "",
       );
+      const repeated = [...groupBy(ms, armOf)]
+        .filter(([, rs]) => metricsRow(rs).valid.repeats)
+        .map(([k]) => k);
+      if (repeated.length)
+        L.push(
+          `REPEATS: the passes of every repeated prompt agreed in ${repeated.length} arm(s) (${repeated.join("; ")}). At temperature 0, or with a fixed seed, a pass repeats the same output, so n there is the number of distinct prompts, not the number of requests; the raw count is shown beside each rate.`,
+          "",
+        );
       L.push(...recoverySection(ms));
     }
   }

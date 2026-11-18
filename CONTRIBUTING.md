@@ -275,6 +275,38 @@ merge.
 
 When contributing, please update or create the appropriate tests to help verify the correctness of your implementation.
 
+#### Live provider tests
+
+A few suites call a real, paid model API: `core/llm/llm.test.ts`, the Bedrock and evaluation `*.live.vitest.ts` files,
+`packages/openai-adapters/src/test/{main,vercel-sdk,cli-tools}.test.ts` and `*.live.test.ts`, and
+`extensions/cli/src/smoke-api`. An API key in your environment is not consent to spend money on it, so these run only
+when you also set `RUN_LIVE_PROVIDER_TESTS=1`. Without it they are skipped, and the suite title says why.
+
+As a backstop, the test setup in `core`, `packages/openai-adapters` and `extensions/cli` removes provider credentials
+from `process.env` before any test file loads unless `RUN_LIVE_PROVIDER_TESTS=1` is set: every `*_API_KEY` variable,
+the AWS credential variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_PROFILE`,
+`AWS_BEARER_TOKEN_BEDROCK`, ...) and `GOOGLE_APPLICATION_CREDENTIALS`. It also points `AWS_CONFIG_FILE` and
+`AWS_SHARED_CREDENTIALS_FILE` at a path that does not exist, so the AWS SDK cannot fall back to `~/.aws`. A live test
+that forgets to check the flag finds no key and fails; it cannot make a billed call. The guard prints the names (never
+the values) it removed. The guard lives in `core/test/liveProviderGuard.ts`, with copies in
+`packages/openai-adapters/src/test/` and `extensions/cli/src/test-helpers/`.
+
+To run them on purpose:
+
+```bash
+# in core/
+RUN_LIVE_PROVIDER_TESTS=1 ANTHROPIC_API_KEY=... npm test -- llm/llm.test.ts
+RUN_LIVE_PROVIDER_TESTS=1 RUN_BEDROCK_LIVE=1 AWS_PROFILE=... npx vitest run llm/llms/Bedrock.turns.live.vitest.ts
+# in extensions/cli/ (RUN_SMOKE_API=1 also works here)
+RUN_LIVE_PROVIDER_TESTS=1 ANTHROPIC_API_KEY=... npm run test:smoke-api
+```
+
+The Bedrock suites also need `RUN_BEDROCK_LIVE=1`, because their credentials come from the AWS default chain rather
+than a key variable. The evaluation wrappers (`npm run eval:turns`, `npm run eval:reviewer`,
+`scripts/reviewerCacheProbe.mjs --run`) set `RUN_LIVE_PROVIDER_TESTS=1` themselves after their own `--yes` check. In CI,
+the jobs that pass provider secrets (`core-checks` and the package tests in `pr-checks.yaml`) set the flag explicitly;
+the CLI `smoke-api` job sets `RUN_SMOKE_API=1`.
+
 ### Review Process
 
 - **Initial Review** - A maintainer will be assigned as primary reviewer

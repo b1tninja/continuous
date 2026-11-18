@@ -1,10 +1,13 @@
+import type { AuditOverview } from "core/tools/permissions/audit/auditOverview";
 import type { EffectiveRule } from "core/tools/permissions/effectiveRules";
 import type { PolicyArea } from "core/tools/permissions/policy";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../../components/ui";
+import type { ReviewRequest } from "./AuditOverviewPanel";
 import { RuleChangeForm, type FormMode } from "./RuleChangeForm";
-import { RuleList, type RowExtra } from "./RuleList";
+import { RuleList, type RowExtra, type RuleUseInfo } from "./RuleList";
 import { KINDS_BY_AREA } from "./RuleTester";
+import { auditKeyOf } from "./useAuditOverview";
 import { SAVED_TEXT } from "./useRuleChange";
 
 export interface EditorEnv {
@@ -44,15 +47,44 @@ export function EditableRules({
   rules,
   highlight,
   env,
+  audit,
+  review,
+  onReviewOpened,
 }: {
   area: PolicyArea;
   rules: EffectiveRule[];
   highlight?: string[];
   env: EditorEnv;
+  /** The audit figures: per-rule use, shown under each rule */
+  audit?: AuditOverview;
+  /** A rule from the most-asked list to open in the form; `nonce` makes each press new */
+  review?: ReviewRequest & { nonce: number };
+  /** The review was turned into an open form, so the page can forget it */
+  onReviewOpened?: () => void;
 }) {
   const [open, setOpen] = useState<OpenForm | undefined>();
   const addButton = useRef<HTMLButtonElement>(null);
   const tool = KINDS_BY_AREA[area]?.[0]?.tool ?? "";
+  const handled = useRef(0);
+  useEffect(() => {
+    if (!review || review.nonce === handled.current || !env.editable) return;
+    handled.current = review.nonce;
+    setOpen({
+      id: "new",
+      mode: {
+        kind: "add",
+        prefix: review.rule,
+        example: EXAMPLES[tool] ?? "toolName(pattern)",
+        decision: review.decision,
+      },
+    });
+    onReviewOpened?.();
+  }, [review, env.editable, tool, onReviewOpened]);
+  const useFor = (r: EffectiveRule): RuleUseInfo | undefined => {
+    const use =
+      audit?.state === "ready" ? audit.rules[auditKeyOf(r)] : undefined;
+    return use ? { use, coverageDays: audit?.coverageDays ?? 0 } : undefined;
+  };
   const ownCount = rules.filter((r) => r.source === "user-config").length;
 
   const close = () => {
@@ -192,6 +224,7 @@ export function EditableRules({
         rules={rules}
         highlight={highlight}
         extraFor={extraFor}
+        useFor={useFor}
         emptyText={
           env.editable
             ? "No rules yet. Press Add a rule to say what this area should never do, always ask about, or always allow. Until then the locks and built-in rules above apply, then the level."

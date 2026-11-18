@@ -1,0 +1,328 @@
+{
+  "schemaVersion": 1,
+  "id": "nemotron-nano-v2-two-calls-one-array",
+  "family": "nemotron-toolcall",
+  "dialect": "toolcall-json",
+  "kind": "positive",
+  "failureMode": "none",
+  "flag": "synthesised",
+  "provenance": {
+    "source": "synthesised, built from template, not recorded from a model: https://huggingface.co/nvidia/NVIDIA-Nemotron-Nano-9B-v2/raw/main/tokenizer_config.json (chat_template), assistant tool_calls branch rendered with jinja2",
+    "license": "other",
+    "retrieved": "2026-11-11",
+    "note": "built from template, not recorded from a model. Two calls in one <TOOLCALL> array. The Nemotron-H-8B-Reasoning, 47B-Reasoning and 4B-Instruct templates render no tools or calls at all (read 2026-11-11), so this Nano-v2 form is the only Nemotron-H-lineage call text there is. The trailing <SPECIAL_12> end-of-turn token is a control token and is not in the text."
+  },
+  "policy": "must",
+  "tools": [
+    {
+      "name": "search",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "exact": {
+            "type": "boolean"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "read_file",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": ["path"]
+      }
+    }
+  ],
+  "text": "<TOOLCALL>[{\"name\": \"search\", \"arguments\": {\"query\": \"a & b\", \"limit\": 5, \"exact\": true}}, {\"name\": \"read_file\", \"arguments\": {\"path\": \"src/a.ts\"}}]</TOOLCALL>",
+  "markers": ["<TOOLCALL>", "</TOOLCALL>", "<think>", "</think>"],
+  "streams": [
+    {
+      "label": "whole",
+      "encoding": "utf8",
+      "chunks": [
+        "<TOOLCALL>[{\"name\": \"search\", \"arguments\": {\"query\": \"a & b\", \"limit\": 5, \"exact\": true}}, {\"name\": \"read_file\", \"arguments\": {\"path\": \"src/a.ts\"}}]</TOOLCALL>"
+      ],
+      "splitInside": null
+    },
+    {
+      "label": "char",
+      "encoding": "utf8",
+      "chunks": [
+        "<",
+        "T",
+        "O",
+        "O",
+        "L",
+        "C",
+        "A",
+        "L",
+        "L",
+        ">",
+        "[",
+        "{",
+        "\"",
+        "n",
+        "a",
+        "m",
+        "e",
+        "\"",
+        ":",
+        " ",
+        "\"",
+        "s",
+        "e",
+        "a",
+        "r",
+        "c",
+        "h",
+        "\"",
+        ",",
+        " ",
+        "\"",
+        "a",
+        "r",
+        "g",
+        "u",
+        "m",
+        "e",
+        "n",
+        "t",
+        "s",
+        "\"",
+        ":",
+        " ",
+        "{",
+        "\"",
+        "q",
+        "u",
+        "e",
+        "r",
+        "y",
+        "\"",
+        ":",
+        " ",
+        "\"",
+        "a",
+        " ",
+        "&",
+        " ",
+        "b",
+        "\"",
+        ",",
+        " ",
+        "\"",
+        "l",
+        "i",
+        "m",
+        "i",
+        "t",
+        "\"",
+        ":",
+        " ",
+        "5",
+        ",",
+        " ",
+        "\"",
+        "e",
+        "x",
+        "a",
+        "c",
+        "t",
+        "\"",
+        ":",
+        " ",
+        "t",
+        "r",
+        "u",
+        "e",
+        "}",
+        "}",
+        ",",
+        " ",
+        "{",
+        "\"",
+        "n",
+        "a",
+        "m",
+        "e",
+        "\"",
+        ":",
+        " ",
+        "\"",
+        "r",
+        "e",
+        "a",
+        "d",
+        "_",
+        "f",
+        "i",
+        "l",
+        "e",
+        "\"",
+        ",",
+        " ",
+        "\"",
+        "a",
+        "r",
+        "g",
+        "u",
+        "m",
+        "e",
+        "n",
+        "t",
+        "s",
+        "\"",
+        ":",
+        " ",
+        "{",
+        "\"",
+        "p",
+        "a",
+        "t",
+        "h",
+        "\"",
+        ":",
+        " ",
+        "\"",
+        "s",
+        "r",
+        "c",
+        "/",
+        "a",
+        ".",
+        "t",
+        "s",
+        "\"",
+        "}",
+        "}",
+        "]",
+        "<",
+        "/",
+        "T",
+        "O",
+        "O",
+        "L",
+        "C",
+        "A",
+        "L",
+        "L",
+        ">"
+      ],
+      "splitInside": null
+    },
+    {
+      "label": "inside-marker",
+      "encoding": "utf8",
+      "chunks": [
+        "<TOOL",
+        "CALL>[{\"name\": \"search\", \"arguments\": {\"query\": \"a & b\", \"limit\": 5, \"exact\": true}}, {\"name\": \"read_file\", \"arguments\": {\"path\": \"src/a.ts\"}}]</TOOLCALL>"
+      ],
+      "splitInside": "<TOOLCALL>"
+    },
+    {
+      "label": "around-markers",
+      "encoding": "utf8",
+      "chunks": [
+        "<TOOLCALL>",
+        "[{\"name\": \"search\", \"arguments\": {\"query\": \"a & b\", \"limit\": 5, \"exact\": true}}, {\"name\": \"read_file\", \"arguments\": {\"path\": \"src/a.ts\"}}]",
+        "</TOOLCALL>"
+      ],
+      "splitInside": null
+    },
+    {
+      "label": "random-1-5",
+      "encoding": "utf8",
+      "chunks": [
+        "<T",
+        "OOLC",
+        "AL",
+        "L>",
+        "[{",
+        "\"nam",
+        "e\"",
+        ": \"s",
+        "earc",
+        "h\", ",
+        "\"argu",
+        "ment",
+        "s\": ",
+        "{",
+        "\"quer",
+        "y\": ",
+        "\"",
+        "a & ",
+        "b\", ",
+        "\"",
+        "li",
+        "m",
+        "it\"",
+        ": 5,",
+        " \"ex",
+        "ac",
+        "t\": t",
+        "rue}",
+        "}, {",
+        "\"nam",
+        "e\"",
+        ":",
+        " ",
+        "\"rea",
+        "d_",
+        "file",
+        "\"",
+        ", \"ar",
+        "gu",
+        "ments",
+        "\": {\"",
+        "path\"",
+        ": \"sr",
+        "c/",
+        "a",
+        ".ts\"}",
+        "}]</",
+        "T",
+        "OOL",
+        "CAL",
+        "L>"
+      ],
+      "splitInside": null
+    }
+  ],
+  "expected": {
+    "calls": [
+      {
+        "name": "search",
+        "arguments": {
+          "query": "a & b",
+          "limit": 5,
+          "exact": true
+        }
+      },
+      {
+        "name": "read_file",
+        "arguments": {
+          "path": "src/a.ts"
+        }
+      }
+    ],
+    "text": ""
+  }
+}

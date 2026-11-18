@@ -1,10 +1,10 @@
 import { URL } from "node:url";
 
 import { ContinueConfig, IDE } from "../../..";
+import { assertWebEnabled } from "../../../util/webConfig";
 
 import CheerioCrawler from "./CheerioCrawler";
 import { ChromiumCrawler, ChromiumInstaller } from "./ChromiumCrawler";
-import { DefaultCrawler } from "./DefaultCrawler";
 import GitHubCrawler from "./GitHubCrawler";
 
 export type PageData = {
@@ -13,7 +13,7 @@ export type PageData = {
   content: string;
 };
 
-export type DocsCrawlerType = "default" | "cheerio" | "chromium" | "github";
+export type DocsCrawlerType = "cheerio" | "chromium" | "github";
 
 class DocsCrawler {
   private readonly GITHUB_HOST = "github.com";
@@ -24,7 +24,6 @@ class DocsCrawler {
     private readonly config: ContinueConfig,
     private readonly maxDepth: number = 4,
     private readonly maxRequestsPerCrawl: number = 1000,
-    private readonly useLocalCrawling: boolean = true,
     private readonly githubToken: string | undefined = undefined,
   ) {
     this.chromiumInstaller = new ChromiumInstaller(this.ide, this.config);
@@ -43,27 +42,15 @@ class DocsCrawler {
   async *crawl(
     startUrl: URL,
   ): AsyncGenerator<PageData, DocsCrawlerType, undefined> {
+    // web.enabled: false turns the docs crawler off too (WB45)
+    assertWebEnabled("docs are not crawled");
     if (startUrl.host === this.GITHUB_HOST) {
-      yield* new GitHubCrawler(startUrl, this.githubToken).crawl();
+      yield* new GitHubCrawler(
+        startUrl,
+        this.githubToken,
+        this.config.requestOptions,
+      ).crawl();
       return "github";
-    }
-
-    // The upstream crawl service receives the page URL. It runs only when a
-    // site explicitly sets useLocalCrawling: false.
-    if (!this.useLocalCrawling) {
-      try {
-        const pageData = await new DefaultCrawler(
-          startUrl,
-          this.maxRequestsPerCrawl,
-          this.maxDepth,
-        ).crawl();
-        if (pageData.length > 0) {
-          yield* pageData;
-          return "default";
-        }
-      } catch (e) {
-        console.error("Default crawler failed, trying backup: ", e);
-      }
     }
 
     if (this.shouldUseChromium()) {
@@ -71,6 +58,7 @@ class DocsCrawler {
         startUrl,
         this.maxRequestsPerCrawl,
         this.maxDepth,
+        this.config.requestOptions,
       ).crawl();
       return "chromium";
     } else {
@@ -80,6 +68,7 @@ class DocsCrawler {
         startUrl,
         this.maxRequestsPerCrawl,
         this.maxDepth,
+        this.config.requestOptions,
       ).crawl()) {
         yield pageData;
         didCrawlSinglePage = true;
@@ -107,6 +96,7 @@ class DocsCrawler {
             startUrl,
             this.maxRequestsPerCrawl,
             this.maxDepth,
+            this.config.requestOptions,
           ).crawl();
           return "chromium";
         }

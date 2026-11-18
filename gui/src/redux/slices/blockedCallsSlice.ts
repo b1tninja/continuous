@@ -13,6 +13,8 @@ export interface BlockedCall {
   reason?: string;
   /** The reviewer's category, for Auto refusals. */
   category?: string;
+  /** The protection that refused it, when source is protected-path. */
+  protection?: string;
   /** The args, kept only to build the allow-once key. */
   parsedArgs: Record<string, unknown>;
   /** The user allowed this exact call once. */

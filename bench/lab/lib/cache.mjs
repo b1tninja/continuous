@@ -12,6 +12,7 @@ import { Budget, modelGuard, sleep } from "./guards.mjs";
 import { LabError } from "./ollama.mjs";
 import { appendRecord, resultFile } from "./results.mjs";
 import { probeThink, thinkRefusal } from "./probe.mjs";
+import { temperatureToSend } from "./sampling.mjs";
 
 const stamp = (n) => `2026-11-10T10:00:${String(n).padStart(2, "0")}Z`;
 
@@ -109,6 +110,8 @@ export function cacheRecord({
     model,
     api: cfg.api,
     cfg,
+    // what the request carried ("inherited" when no sampling option was sent)
+    sampling: reply?.meta?.request?.sampling,
     engine,
     run: nonce,
     seq: seq.id,
@@ -247,7 +250,7 @@ export async function runCache({
               tools: step.tools,
               stream,
               options: {
-                temperature: cfg.temperature ?? suite.defaults.temperature,
+                temperature: temperatureToSend(cfg, suite.defaults.temperature),
                 num_predict: cfg.numPredict ?? suite.defaults.numPredict,
                 num_ctx: numCtx,
                 seed: cfg.seed,

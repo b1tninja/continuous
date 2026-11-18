@@ -1,0 +1,88 @@
+---
+title: "Web search"
+description: "Offer the search_web tool and the @web context provider with a search provider you pick"
+---
+
+```yaml ~/.continuous/config.yaml
+web:
+  search:
+    provider: searxng
+    url: http://127.0.0.1:8888/search
+```
+
+Web search is off until you pick a provider in `web.search` of your own `config.yaml`. Continuous has no default provider and sends your queries to no service of its own. While search is off, the `search_web` tool and the `@web` context provider do not exist: the model is not told about them, and `@web` is reported as unavailable with the reason.
+
+## Providers
+
+| `provider` | What it calls                                                                                                                                                    | Who sees the query                                                          |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `searxng`  | `GET <url>?q=<query>&format=json` on your [SearXNG](https://docs.searxng.org/) server. The JSON format must be enabled in its `settings.yml`, or it answers 403 | your server, and the search engines it queries, from your server's address |
+| `custom`   | an endpoint you run, in the SearXNG shape (`custom.method: GET`, the default) or with a `{"q": "..."}` JSON body (`custom.method: POST`)                         | your endpoint                                                               |
+| `off`      | nothing                                                                                                                                                          | nobody                                                                      |
+
+`brave`, `mojeek`, `kagi`, `tavily`, `exa`, `mcp` and `native` (the selected model's own search) are reserved names for providers that later releases add. In this release they turn search off, and `@web` says why. An unknown name also turns search off, with a warning. A `url` with no `provider` is read as `searxng`.
+
+### SearXNG
+
+```yaml ~/.continuous/config.yaml
+web:
+  search:
+    provider: searxng
+    url: https://search.example.org/search
+    apiKey: ${{ secrets.SEARXNG_SEARCH_KEY }} # optional, sent as a bearer token
+    safeSearch: moderate # optional: off | moderate | strict, sent as safesearch=0|1|2
+```
+
+The reply is read from `results[].title`, `url` and `content`.
+
+### Custom endpoint
+
+```yaml ~/.continuous/config.yaml
+web:
+  search:
+    provider: custom
+    url: https://search.intranet.example/api/search
+    apiKey: ${{ secrets.CUSTOM_SEARCH_KEY }}
+    custom:
+      method: POST
+```
+
+With `POST`, the request body is `{"q": "<query>"}` and the reply is `{"results": [{"title": "...", "url": "...", "snippet": "..."}]}`, the shape of Claude Desktop's custom search server, so a server written for it works unchanged. With `GET`, it is the SearXNG request and reply.
+
+## Keys
+
+Keep a key in secret storage and refer to it as `${{ secrets.NAME }}`, for example `${{ secrets.SEARXNG_SEARCH_KEY }}`. In VS Code, secrets live in the editor's secret storage; in the terminal agent, in `~/.continuous/.env`. A key typed into `apiKey` still works in this release, with a warning in the config errors and in `continuous doctor config`. A later release refuses it.
+
+The key is sent only to the provider's endpoint. If the endpoint redirects to another origin, the key is not sent there.
+
+## Settings
+
+Every key under `web.search` is read only from your own `~/.continuous/config.yaml`. A workspace, assistant or hub config may only tighten: it may set `provider: off`, lower `maxResults`, `maxPerTurn` and `monthlyLimit`, or set a stricter `safeSearch`. Anything else it sets is ignored with a notice, because a repository must not choose where your queries go.
+
+| Key                                         | Default    | Meaning                                                                                    |
+| ------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------ |
+| `provider`                                  | none       | see [Providers](#providers)                                                                |
+| `url`                                       | none       | the endpoint for `searxng` and `custom`                                                    |
+| `apiKey`                                    | none       | a `${{ secrets.NAME }}` reference                                                          |
+| `maxResults`                                | 5          | results per search, 1 to 10; `@web` asks for 6 unless its `n` param or this key says fewer |
+| `safeSearch`                                | none       | `off`, `moderate` or `strict`, where the provider has it                                   |
+| `fallback`, `fallbackUrl`, `fallbackApiKey` | none       | with `provider: native`, the provider used for a model without search of its own           |
+| `maxPerTurn`, `monthlyLimit`, `country`     | 5, 0, none | accepted; read by later releases                                                           |
+| `native`, `mcp`                             | none       | accepted; read by later releases                                                           |
+
+The old variables still work and are announced as deprecated: `CONTINUOUS_WEB_SEARCH_URL` is `web.search.url` and `CONTINUOUS_WEB_SEARCH_KEY` is `web.search.apiKey`. They are used only while your `web.search` names no `provider` and no `url`.
+
+## What a search sends
+
+The request carries the query, the key if you set one, `Accept: application/json` and `User-Agent: Continuous-User/<major>.<minor>` (or your `web.userAgent` preset, if you chose another). It carries no machine id, no patch version and no operating system. The `requestOptions.headers` of your config are not sent to it; its proxy and certificate settings are used. The reply is read up to the same 2 MiB and 20-second limits as a fetched page (`web.limits`), a larger reply is refused, and an error says the HTTP status without quoting the reply. A redirect to a private address is refused.
+
+The search tool is still subject to the permission rules (`searchWeb`), so you can set it to ask or to deny.
+
+To add the context provider as well:
+
+```yaml config.yaml
+context:
+  - provider: web
+    params:
+      n: 5
+```

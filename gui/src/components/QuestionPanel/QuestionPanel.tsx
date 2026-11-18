@@ -2,23 +2,20 @@ import { maskCommandForDisplay } from "core/tools/permissions/displayMask";
 import { QuestionMarkCircleIcon } from "@heroicons/react/24/outline";
 import type { LoopQuestion } from "core";
 import { LOOP_LIMITS } from "core/util/loopMode";
-import {
-  answeredDecisions,
-  parsePlanFile,
-  validatePlanArgs,
-  type PlanDecision,
-} from "core/util/planFile";
+import { answeredDecisions, type PlanDecision } from "core/util/planFile";
 import { createContext, useContext, useEffect, useState } from "react";
 import { IdeMessengerContext } from "../../context/IdeMessenger";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
-import { selectPlanCallToDecide } from "../../redux/selectors/selectPlanDecisions";
 import {
   answerLoopQuestion,
   type LoopAnswerInput,
 } from "../../redux/thunks/loop";
 import { answerLimitQuestionThunk } from "../../redux/thunks/loopBudget";
-import { recordPlanAnswer } from "../../util/planDecisions";
+import { autoAnswerPlanFile, recordPlanAnswer } from "../../util/planDecisions";
+import { policyLevelLabel } from "core/tools/permissions/policy";
+import { autoAnsweredLine } from "core/util/autoAnswer";
 import { AnswerChoices } from "./AnswerChoices";
+import { useOpenQuestions } from "./useOpenQuestions";
 
 /**
  * True below the Questions panel's provider: the plan card then leaves its
@@ -36,7 +33,7 @@ const buttonClass =
   "cursor-pointer rounded border border-solid border-border bg-transparent px-1.5 text-xs text-foreground hover:bg-input disabled:cursor-default disabled:opacity-50";
 
 /** One question a loop item holds: choices and Other, or a free answer. */
-function LoopQuestionRow({
+export function LoopQuestionRow({
   question,
   itemText,
 }: {
@@ -168,7 +165,7 @@ function LoopQuestionRow({
 }
 
 /** One decision a plan leaves to the person. The answer goes in the plan file. */
-function PlanDecisionRow({
+export function PlanDecisionRow({
   decision,
   fileUri,
   onRecorded,
@@ -230,84 +227,100 @@ function PlanDecisionRow({
  * the agent's choices and "Other". Without a question it renders nothing.
  */
 export function QuestionPanel() {
-  const loop = useAppSelector((s) => s.session.loop);
-  const taskPlan = useAppSelector((s) => s.session.taskPlan);
-  const planCall = useAppSelector(selectPlanCallToDecide);
+  const {
+    open,
+    decisions,
+    fileUri,
+    fileDecisions,
+    setFileDecisions,
+    itemText,
+    count,
+    level,
+    neverAsk,
+  } = useOpenQuestions();
   const ideMessenger = useContext(IdeMessengerContext);
-  const [fileDecisions, setFileDecisions] = useState<PlanDecision[]>();
 
-  const args = planCall
-    ? validatePlanArgs(planCall.parsedArgs ?? {})
-    : undefined;
-  const fileUri =
-    planCall?.output?.[0]?.uri?.type === "file"
-      ? planCall.output[0].uri.value
-      : undefined;
-  const callId = planCall?.toolCallId;
-
-  // The plan file is the source of truth for which decisions are answered
+  // Questions is IDGAF: a plan's open decisions are answered from what it
+  // offered, so the person is shown a line and nothing waits (a plan made
+  // earlier or opened later is covered here; present_plan covers a new one)
+  const [autoLines, setAutoLines] = useState<string[]>([]);
   useEffect(() => {
-    setFileDecisions(undefined);
-    if (!fileUri) return;
+    if (!neverAsk || !fileUri || !fileDecisions) return;
+    if (fileDecisions.every((d) => d.answer)) return;
     let cancelled = false;
-    void ideMessenger.ide
-      .readFile(fileUri)
-      .then((text) => {
-        if (!cancelled) setFileDecisions(parsePlanFile(text).decisions);
+    void autoAnswerPlanFile(ideMessenger.ide, fileUri)
+      .then((answers) => {
+        if (cancelled || answers.length === 0) return;
+        const source = `Questions: ${policyLevelLabel("questions", level)}`;
+        setFileDecisions((previous) =>
+          answeredDecisions(previous ?? [], answers),
+        );
+        setAutoLines((lines) => [
+          ...lines,
+          ...answers.map((a) => autoAnsweredLine(a.question, a.answer)),
+        ]);
+        answers.forEach((a, i) => {
+          void ideMessenger.request("audit/autoAnswer", {
+            callId: `plan-decision-${Date.now()}-${i}`,
+            question: a.question,
+            answer: a.answer,
+            source,
+          });
+        });
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [fileUri, callId, ideMessenger]);
+  }, [neverAsk, fileUri, fileDecisions, ideMessenger, level]);
 
-  const open = (loop?.questions ?? []).filter(
-    (q) => !q.answerId && !q.decidedAlone,
+  const autoNotice = autoLines.length > 0 && (
+    <div
+      data-testid="auto-answered"
+      className="mx-1 mb-1 px-2 text-2xs text-description-muted"
+    >
+      {autoLines.map((line) => (
+        <div key={line} className="break-words">
+          {line}
+        </div>
+      ))}
+    </div>
   );
-  const decisions =
-    args?.ok && fileUri
-      ? answeredDecisions(
-          args.decisions,
-          (fileDecisions ?? []).flatMap((d) =>
-            d.answer ? [{ question: d.question, answer: d.answer }] : [],
-          ),
-        ).filter((d) => !d.answer)
-      : [];
-  const itemText = (id?: string) =>
-    taskPlan?.items.find((i) => i.id === id)?.text;
-  const count = open.length + decisions.length;
-  if (count === 0) return null;
+  if (count === 0) return autoNotice || null;
 
   return (
-    <div
-      data-testid="question-panel"
-      role="region"
-      aria-label="Questions for you"
-      className="mx-1 mb-1 rounded border border-solid border-link px-2 py-1 text-xs"
-    >
-      <div className="flex items-center gap-1 text-description">
-        <QuestionMarkCircleIcon className="h-3 w-3 shrink-0" />
-        <span className="font-medium text-foreground">
-          {count} question{count === 1 ? "" : "s"} for you
-        </span>
+    <>
+      {autoNotice}
+      <div
+        data-testid="question-panel"
+        role="region"
+        aria-label="Questions for you"
+        className="mx-1 mb-1 rounded border border-solid border-link px-2 py-1 text-xs"
+      >
+        <div className="flex items-center gap-1 text-description">
+          <QuestionMarkCircleIcon className="h-3 w-3 shrink-0" />
+          <span className="font-medium text-foreground">
+            {count} question{count === 1 ? "" : "s"} for you
+          </span>
+        </div>
+        <ul className="m-0 max-h-72 list-none overflow-y-auto p-0">
+          {decisions.map((d) => (
+            <PlanDecisionRow
+              key={d.question}
+              decision={d}
+              fileUri={fileUri!}
+              onRecorded={setFileDecisions}
+            />
+          ))}
+          {open.map((q) => (
+            <LoopQuestionRow
+              key={q.id}
+              question={q}
+              itemText={itemText(q.itemId)}
+            />
+          ))}
+        </ul>
       </div>
-      <ul className="m-0 max-h-72 list-none overflow-y-auto p-0">
-        {decisions.map((d) => (
-          <PlanDecisionRow
-            key={d.question}
-            decision={d}
-            fileUri={fileUri!}
-            onRecorded={setFileDecisions}
-          />
-        ))}
-        {open.map((q) => (
-          <LoopQuestionRow
-            key={q.id}
-            question={q}
-            itemText={itemText(q.itemId)}
-          />
-        ))}
-      </ul>
-    </div>
+    </>
   );
 }

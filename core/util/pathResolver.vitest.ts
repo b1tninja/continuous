@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import type { IDE } from "..";
 import { resolveRelativePathInDir } from "./ideUtils";
+import { tryLink } from "../tools/permissions/testLinks";
 import { resolveInputPath } from "./pathResolver";
 
 const roots: string[] = [];
@@ -74,7 +75,7 @@ describe("resolveInputPath workspace boundary", () => {
     expect(fileURLToPath(stayed!.uri)).toBe(path.join(workspace, "inside.txt"));
   });
 
-  it("follows a symlink to the file it names", async () => {
+  it("follows a symlink to the file it names", async (ctx) => {
     const parent = fs.realpathSync(
       fs.mkdtempSync(path.join(os.tmpdir(), "cn-link-")),
     );
@@ -85,9 +86,14 @@ describe("resolveInputPath workspace boundary", () => {
     fs.mkdirSync(workspace);
     fs.writeFileSync(inside, "in");
     fs.writeFileSync(outside, "out");
-    fs.symlinkSync(outside, path.join(workspace, "notes"));
-    fs.symlinkSync(inside, path.join(workspace, "alias"));
-    fs.symlinkSync(parent, path.join(workspace, "outdir"));
+    // File links need Developer Mode on Windows: skip there, with the reason
+    const links = [
+      tryLink(outside, path.join(workspace, "notes"), "file"),
+      tryLink(inside, path.join(workspace, "alias"), "file"),
+      tryLink(parent, path.join(workspace, "outdir")),
+    ];
+    const failed = links.find((l) => !l.ok);
+    if (failed) return ctx.skip(failed.reason);
     const ide = ideFor(workspace);
 
     const escaped = await resolveInputPath(ide, "notes");

@@ -66,8 +66,20 @@ export const GradientBorder = styled.div<{
           @media (prefers-reduced-motion: reduce) {
             animation: none;
           }
+          body.vscode-reduce-motion & {
+            animation: none;
+          }
         `
       : ""}
+  /* Gradients are dropped in forced colours: a plain border says the same */
+  @media (forced-colors: active) {
+    background: ButtonText;
+    padding: ${(props) => (props.loading ? "2px" : "1px")};
+  }
+  body.vscode-high-contrast &,
+  body.vscode-high-contrast-light & {
+    background: var(--vscode-contrastBorder, currentColor);
+  }
   width: 100%;
   display: flex;
   flex-direction: row;

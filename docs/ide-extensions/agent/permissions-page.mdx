@@ -11,17 +11,38 @@ One word for each idea, in the page, the toolbar, `/policy` in the terminal agen
 | Word           | It means                                                                                                                                                                                     | Stored as                                              |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
 | Area           | One of the five things the agent can do: Context use, Tool use, File edits, Plan edits, Questions                                                                                            | `context`, `tools`, `edits`, `plan`, `questions`       |
-| Level          | How far one area is trusted, from Manual (you decide everything) through Cautious, Automatic and Permissive to YOLO (nothing asks; IDGAF on Plan edits and Questions). Each area has its own | `levels.<area>`                                        |
-| Preset         | A named bundle that sets all five levels at once: Careful, Accept edits, Hands off, Reviewer, YOLO. Custom is any set of levels that matches no preset                                       | the five levels; the preset is worked out, never saved |
+| Level          | How far one area is trusted, from Manual (you decide everything) through Cautious, Automatic and Permissive to IDGAF (nothing asks). Each area has its own | `levels.<area>`                                        |
+| Preset         | A named bundle that sets all five levels at once: Careful, Accept edits, Hands off, Reviewer, IDGAF. Custom is any set of levels that matches no preset                                       | the five levels; the preset is worked out, never saved |
 | Rule           | A line `toolName(pattern)` that gives a call one decision. Yours live in `config.yaml`; others come from elsewhere                                                                           | `toolPermissions`                                      |
 | Never          | A rule that refuses the call                                                                                                                                                                 | `deny`                                                 |
 | Ask            | A rule that stops and asks you                                                                                                                                                               | `ask`                                                  |
 | Always         | A rule that lets the call run without asking                                                                                                                                                 | `allow`                                                |
 | Built-in rule  | A protection that ships with the product, listed per area with its on or off state. It cannot be edited here                                                                                 | `builtin`                                              |
-| Always-on rule | A Never rule in `permissions.yaml` that binds at every level, YOLO included. Locked on this page                                                                                             | `floor`                                                |
-| Lock           | Something no rule can change: always-on rules, protected paths, your policy files                                                                                                            |                                                        |
+| Locked rule    | A Never rule in `permissions.yaml` that binds at every level below IDGAF. Locked on this page                                                                                                | `floor`                                                |
+| Lock           | Something no rule can change: locked rules, protected paths, your policy files                                                                                                               |                                                        |
+
+Each level and each preset has a glyph and a tone on the toolbar chips and in the overview card. Levels: Manual a raised hand, Cautious a shield, Automatic sparkles, Permissive an open lock, IDGAF a bolt, tinted green, green, blue, amber and red. Presets: Careful a shield, Accept edits a check badge, Hands off a fast-forward, Reviewer sparkles, IDGAF a bolt, Custom sliders. A preset takes the tone of its loosest level other than Context use; Custom is neutral unless an area is at IDGAF. The glyph and the colour never carry the meaning alone: every chip has its text.
 
 A level and a preset are different ideas: "Cautious" is a level, "Careful" is a preset. The Careful preset is the default set: Permissive for Context use, Manual for File edits and Cautious for the other three.
+
+## IDGAF
+
+IDGAF is the top level, and the last preset. It is short for "I don't give a f---", and it means what it says: the agent decides, and nothing asks.
+
+- Nothing asks: every tool call, read and edit runs, and every question is answered by the agent itself.
+- Nothing is refused by the permission layer either, with one exception (below). Never rules, Ask rules, the locked (`floor`) rules, protected paths and secret files, the built-in rule check and safety floor, a command that hides what it runs, a write to a path built when it runs, the locked policy and configuration files, the tainted-session rule and a changed MCP tool definition are all ignored, including rules you set as Never.
+- The exception: a secret, then a network call. Once a secret's content has been read in the session (a protected secret file such as `.env`, `~/.npmrc` or `~/.aws/credentials` read with a file tool or a command such as `cat`, or a command that prints a credential; only naming the file does not count), a call that can send data out (a fetch, `curl`, `git push`, `npm publish`, a tool of an MCP server you have not marked trusted) is **refused** at IDGAF, with or without Questions at IDGAF. It is never asked: IDGAF still asks nothing. The refusal starts `Refused at IDGAF:` and names what read the secret and where the call would send it. To send it anyway, set that area below IDGAF, where the call asks you, or run it yourself. See [A secret, then a network call](/ide-extensions/agent/prompt-injection#a-secret-then-a-network-call).
+- What would have stopped a call is still recorded: the decision says `Below IDGAF this call would have been refused` (or `asked`) with the rule or guard and its reason, in the decision chip and the [audit trail](/ide-extensions/agent/audit-trail). The model is not told.
+- What stays: a tool you switched off (it is not offered to the model at all), Plan mode (a mode with its own role, including `--readonly`), the tools an `--agent` file gives its agent, a subagent's limits (it cannot start a subagent or write the parent's task list), and hooks you wrote yourself, which run at every level.
+- Edits can land anywhere the agent can write, not only in the workspace.
+
+A session at IDGAF says so once, when it starts or when an area is first raised to it: "IDGAF is on for this session only: your rules, locked rules and protected files stop nothing; each call runs and the audit trail records what would have stopped it. Tools you switched off stay off." In the extension it is a dismissible line above the input, once per chat session; in `cn` it is one line in the chat or on stderr, with the flag that turned it on (`--auto`, `--policy idgaf`), and the audit trail gets one `idgaf-session` setting record. It is a notice, not a question: nothing waits for it. A loosening that comes from an environment variable, such as `CONTINUOUS_HEADLESS_LEGACY_ALLOW=1`, is told apart: its line says it holds for every run while the variable is set, and it is recorded as `env-loosening`.
+
+The risk is the one you accept by choosing it: a mistake, or text from a web page or a repository that steers the agent, runs with no one in between. Use it in a throwaway checkout or a sandbox, not on a machine that holds anything you cannot lose.
+
+IDGAF is never saved to `permissions.yaml`, and a saved `yolo` or `idgaf` there is read as the area's default, with a notice. An area you set to IDGAF stays at IDGAF for the editor session, so an unattended run is not dropped back to asking. In VS Code a reload of the chat panel or a restart of the extension host keeps it, and starting the editor again or opening a new window starts at your saved levels. In JetBrains IDEs a reload of the chat panel keeps it for that project window, and closing the project or starting the IDE again starts at your saved levels; IDGAF is held in memory and never written to disk. In `cn` it lasts for the process: pass `--policy idgaf` again when you start or resume a session, and a resumed loop follows the levels of the process that resumes it. `cn --resume` of a session that ran at IDGAF starts at your configured levels and says so in one line: "Resumed at your configured levels: this session ran at IDGAF, and IDGAF is not restored." The audit overview on this page counts the calls IDGAF ran in the last 30 days that a rule or guard would have refused or asked about; `cn` prints the same count as one line on stderr at the end of a run and as `numIdgafObjections` in the `--format stream-json` result. A red IDGAF chip stays above the input for as long as any area is at it. Sessions and files written by earlier versions that call this level `yolo` still work.
+
+An organisation cannot cap or disable this level yet. A managed policy layer that can do that is planned but not built.
 
 ## Five areas
 
@@ -35,22 +56,80 @@ The page has one tab for each policy area. Each tab shows the area's level (chan
 | Plan edits  | none: a level, the number of new to-dos a re-plan may add, and the check-keeping switch                                |
 | Questions   | none: a level and the two lists of question types you or the agent decide                                              |
 
+## What Plan edits and Questions do for a loop
+
+A loop exists to go on without you, so these two areas decide whether it ever stops to ask. They bind the loop's own gates only: below IDGAF on the call's own area, a call that a Never rule, a protected path or a built-in protection refuses is still refused, and a call that would ask is still held as an approval question, except at Questions IDGAF, where nothing is held (see below). A call whose area is at IDGAF runs.
+
+| Level                   | A re-plan (a repair, changed checks, added or dropped to-dos)                                                                                                | A question the agent asks, or a decision in a plan                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| Manual                  | Waits on its card.                                                                                                                                           | Waits in the Questions panel.                                                                                         |
+| Cautious                | Goes on if it adds no new to-dos and weakens no check; otherwise waits on its card.                                                                          | Waits, except the types the agent may decide (details by default).                                                    |
+| Automatic and Permissive | Goes on by itself, even when it replaces a check. At Permissive a re-plan that adds more new to-dos than the limit on the Plan edits tab still waits.        | Answered by the system. A type on your own "you decide" list still waits.                                             |
+| IDGAF                   | Goes on by itself, with no limit.                                                                                                                            | Answered by the system, whatever its type, and your "you decide" list does not apply. The `irreversible` label does not change that. |
+
+When the loop goes on by itself it leaves a one-line notice in the loop panel, for example `Plan updated: 11 kept, 1 added, 1 dropped; check of item 1 replaced`. It never blocks.
+
+An answered question is chosen in this order: the option labelled `(recommended)`, then the plan decision's own pick, then the first option. A question with no options gets `No one is available to answer; use your best judgment and state the assumption`. The answer is recorded on the loop as given by `system` (never `person`), with the setting that allowed it, such as `Questions: IDGAF`, and the panel shows `Auto-answered: <question> -> <answer>`. A late answer from you still overrules it. The same rules apply in the extension, in `cn` and under `cn serve`.
+
+## Questions at IDGAF: nothing asks
+
+At Questions IDGAF no question waits for you, in a loop or outside one, in the extension, in the `cn` terminal, in `cn -p` and under `cn serve`. Never rules, Ask rules, protected paths and the built-in rule check are ignored for these, and so is your own "you decide" list. Every place a question could appear is answered the same way, by the rule above (`(recommended)`, then the plan's pick, then the first option, then `No one is available to answer; use your best judgment and state the assumption`), recorded as `by: system` in the audit trail with the source `Questions: IDGAF`, and shown as one line, `Auto-answered: <question> -> <answer>`, that never blocks.
+
+| Where a question could appear | At Questions IDGAF |
+| ----------------------------- | ------------------------- |
+| The agent's question in `cn` (`AskQuestion`), in the terminal UI | Answered; the question box does not open. |
+| `AskQuestion` in `cn -p` and `cn serve` | Answered; nothing is added to the pending questions that serve shows. |
+| `HoldQuestion` in a loop | Answered, and the item goes on. |
+| A plan's decisions (the `Plan decision` rows), made in or outside a loop | Answered from the plan's options and written into the plan file before the plan card or the Questions panel shows them. A plan opened later is answered when it is on the table. |
+| Questions already held when you move a loop to IDGAF | Answered at once (an approval is refused). |
+| An item over its own limit with the limit policy Suggest | Decided by the review rule (extend, split or stop) instead of asking. |
+| A call that would ask for approval in a loop | Not held. It is refused and the agent is told nobody was asked. |
+| A call at an IDGAF-level area that a guard would hold (a command that hides what it runs, a write to a path built when it runs) | Runs. What would have held it is recorded in the decision and the audit trail. |
+| An MCP server's `elicitation/create` request | Answered with the server's own default for every field when it gives one. Declined, and noted in the audit trail, when a field has no default, asks for a secret, or when the form sends you to a page (url mode). A value is never invented. |
+| The Recently blocked list | Lists refusals only. Nothing in it waits for you. |
+
+Two things are not questions and stay as they are. An approval for a tool call is decided by the Tool use, File edits and Context use levels, not by Questions: a call at a level below the top one asks as that level says, outside a loop. The plan question of Plan mode (Build, Build in a loop, Keep planning) is how you leave Plan mode, not a question the agent asks; at Questions IDGAF nobody is there to answer it, so in `cn` the turn ends with the plan file saved and Plan mode kept, as the extension's plan card already does. At every level below IDGAF the Questions behaviour is unchanged.
+
 The tool name in a rule decides the tab. A terminal command rule is listed under Tool use, but a command the parser can show only reads is Context use for that one call, so the page says the area is decided per command. Rules for tools that only touch the session (the task list, Loop's tools) and rules that cannot be read are listed at the bottom under "Rules with no area".
 
-Rules are shown grouped as Never, Ask and Always (the files keep the names `deny`, `ask` and `allow`). The order does not matter, and there is no way to reorder them: a call is weighed by decision (always-on rules, then Never rules, then protected paths, then Ask rules, then Always rules, then the level), never by where a rule sits in a list.
+Rules are shown grouped as Never, Ask and Always (the files keep the names `deny`, `ask` and `allow`). The order does not matter, and there is no way to reorder them: a call is weighed by decision (locked rules, then Never rules, then protected paths, then Ask rules, then Always rules, then the level), never by where a rule sits in a list.
 
 ## Where a rule came from
 
-| Badge     | Source                                                                                                                                                                                        |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| You       | the `toolPermissions` of your own `config.yaml`                                                                                                                                               |
-| CLI file  | the `allow`, `ask` and `exclude` lists in `permissions.yaml`, written in the CLI's dialect (`Bash(npm test)`). The CLI weighs them first, and the page shows the config.yaml form beside them |
-| Always on | the `floor:` rules in `permissions.yaml`. They bind at every level, YOLO included, and are locked here                                                                                        |
-| Assistant | a hub or assistant configuration                                                                                                                                                              |
-| Workspace | a file that came with the folder you opened                                                                                                                                                   |
-| Built-in  | a built-in rule that ships with the product, listed per area with its on or off state                                                                                                         |
+| Badge       | Source                                                                                                                                                                                        |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| You         | the `toolPermissions` of your own `config.yaml`                                                                                                                                               |
+| CLI file    | the `allow`, `ask` and `exclude` lists in `permissions.yaml`, written in the CLI's dialect (`Bash(npm test)`). The CLI weighs them first, and the page shows the config.yaml form beside them |
+| Locked rule | the `floor:` rules in `permissions.yaml`. They bind at every level below IDGAF, and are locked here                                                                                           |
+| Assistant   | a hub or assistant configuration                                                                                                                                                              |
+| Workspace   | a file that came with the folder you opened                                                                                                                                                   |
+| Built-in    | a built-in rule that ships with the product, listed per area with its on or off state                                                                                                         |
 
-A rule that is **Ignored** is struck through with the reason: an `allow` rule that came with the workspace is ignored (a repository can add deny and ask rules, not allow rules), allow rules are not consulted while an area is Manual (file edits excepted), and every rule but the always-on rules is ignored while an area is at YOLO. A rule the page can warn about says so: a pattern after an MCP tool name never matches, and an allow rule written with `host:`, `net:` or `effect:` never allows anything.
+A rule that is **Ignored** is struck through with the reason: an `allow` rule that came with the workspace is ignored (a repository can add deny and ask rules, not allow rules), allow rules are not consulted while an area is Manual (file edits excepted), and every rule, the locked rules included, is ignored while an area is at IDGAF. A rule the page can warn about says so: a pattern after an MCP tool name never matches, and an allow rule written with `host:`, `net:` or `effect:` never allows anything.
+
+## Files outside the workspace
+
+At **File edits = IDGAF** (the top level), the agent can create, edit and write files outside the workspace without asking, in the editor, the terminal UI, headless runs and `serve`. The audit trail lists the call as allowed by the level with the absolute path, and the tool result says `Wrote outside the workspace: <path>`.
+
+Below that level nothing changes: Manual, Cautious and Automatic ask, and Permissive holds it with the outside-paths protection. Only the File edits level counts: Tool use at IDGAF does not free the file tools.
+
+At IDGAF the locked policy and configuration files and the **locked rules** you wrote no longer hold: such a write runs and is recorded as one they would have refused. These still hold: a tool you switched off, an organisation ceiling, and Plan mode (including `--readonly`), which holds every write by design.
+
+## Custom policy
+
+Every policy control (the preset and each area, in the toolbar and in **Settings, Tools**) ends with **Custom…**. It opens the **Custom policy** editor at the top of this page, started from the preset you are on (or from the current levels when they match none). The page's **Custom policy…** button opens it too. From an area's control it opens at the levels with that area selected.
+
+1. **Start from**: a preset, or what is set now. This sets the five levels; your rules and settings start as they are.
+2. **Levels and settings**: the five levels, the built-in rules, the plan limit, what happens while a question waits, and who decides each type of question.
+3. **Rules**: your **Never**, **Ask** and **Always** lists (your own `config.yaml`) and the **Locked rules** list (`floor:` in `permissions.yaml`). Add a rule, remove one, or move one to another list. A new rule is checked as you type and matched against your recent calls from the audit trail, with the same matching the agent uses, so you see what it would catch before you add it. Rules the audit trail shows you always answered the same way, and recent calls, can be added from there. Rules from a workspace, an assistant or the terminal agent's file are not in these lists and are not copied into yours.
+4. **Read-only and trust**: the MCP servers whose read-only hints you trust, the MCP tools Plan mode may use, and whether the terminal agent offers the terminal in Plan mode. What counts as read-only is not a list: a tool marked read-only, a command the parser vouches for as read-only, and an MCP tool a trusted server marks read-only.
+5. **Review and save**: every setting that changes, old and new, marked where it loosens; the exact `permissions.yaml` the save will write, as a diff worked out by the extension's own writer without writing anything; every rule change, checked as a single edit would be; how a call is decided; and that Ask means Deny when nobody can answer. **Save** writes `permissions.yaml` once, then each rule change through the same checks, confirmation dialog and audit record as **Add a rule**. If a change cannot be saved, the editor stops there and says what was saved.
+
+A save that loosens `permissions.yaml` (an area's level raised, a built-in rule switched off, a locked rule removed, an MCP server trusted, an MCP tool added for Plan mode, the terminal offered in Plan mode) waits for your editor's own confirmation dialog, listing each of them, as rule changes do; there is no checkbox in the page. The review lists what the dialog will ask. If you decline, nothing is saved: not `permissions.yaml` and not one rule. The same dialog guards the toolbar and **Settings, Tools**: raising a level or switching a built-in rule off there asks too, and a "no" leaves the control as it was.
+
+When the levels you save match no preset, the set is kept in `permissions.yaml` (`levels.custom`) with the preset it started from. The chip then says **Custom (from Careful)** rather than **Custom**, and after you choose a preset, the preset menu offers your custom set back. Choosing it is a save like any other: a raised level asks first.
+
+IDGAF chosen here is for this session only, as everywhere else, and a set with IDGAF in it is not kept.
 
 ## Edit your rules
 
@@ -63,15 +142,27 @@ Every change is checked by the same code before anything is written, and the for
 - what a sample call gets now and with the rule (type your own under **Try a call**, or one is made from the pattern)
 - the lines of `config.yaml` that would change
 
-Nothing is written until you press **Save**. If the file cannot be written, or was changed by someone else since the page read it, you are told and nothing changes. After a save, **Undo last change** puts the file back as it was, as long as it is unchanged since; if you edited it in between, it is left alone and you are told.
+Nothing is written until you press **Save**. A change that loosens (a new Always rule, a removed Never or Ask rule, a rule moved to a looser list, an undo that restores less) also waits for your editor's own confirmation dialog, described below. If the file cannot be written, or was changed by someone else since the page read it, you are told and nothing changes. After a save, **Undo last change** puts the file back as it was, as long as it is unchanged since; if you edited it in between, it is left alone and you are told.
 
 If `config.yaml` cannot be read (a syntax error, or `toolPermissions` of the wrong shape) the page shows the reason, says your rules cannot be shown, and turns editing off. It never shows a broken file as "no rules".
 
 ### Friction
 
-An Always rule that matches everything or a broad wildcard needs a typed confirmation: you type `allow everything` before Save turns on, and the form says plainly what the rule would allow. That covers a bare tool name (`runTerminalCommand`), a pattern of only `*`, a command rule whose first word is a wildcard or an interpreter that runs whatever follows (`bash*`, `sudo*`, `python*`), an MCP rule for every server, a fetch rule for every host, and a path rule that covers `/`, your home folder or a credentials folder such as `~/.ssh`. Removing a Never, or moving a rule to a looser list, asks for one confirmation.
+An Always rule that matches everything or a broad wildcard needs a typed confirmation: you type `allow everything` before Save turns on, and the form says plainly what the rule would allow. That covers a bare tool name (`runTerminalCommand`), a pattern of only `*`, a command rule whose first word is a wildcard or an interpreter that runs whatever follows (`bash*`, `sudo*`, `python*`), an MCP rule for every server, a fetch rule for every host, and a path rule that covers `/`, your home folder or a credentials folder such as `~/.ssh`. The typed phrase is checked before the editor's dialog opens.
 
-What no rule can change is shown under **Locks**: always-on rules, protected paths (credentials always ask), and your policy files (`config.yaml`, `permissions.yaml` and the files that change what runs later), which the agent cannot write without asking you. The page's write is a message from the page to the app, not a tool, so the model cannot reach it.
+### Confirmation in your editor
+
+A change that loosens is confirmed in a dialog the editor opens itself (a modal warning in VS Code, a notification with an Allow action in other IDEs), not by a checkbox in the page, because text in the page can be made to send a click. The page says "Your editor will ask you to confirm before it is saved" and then "Waiting for your answer in the window your editor opened". If you decline, close the dialog, it times out, or the host has no dialog, nothing is written. In IntelliJ the notification has no modal form and an unanswered one after 15 seconds counts as no. A change that only tightens, and every preview, never asks. The **Always allow** button on an approval prompt goes through the same path, and the audit record says the change was confirmed natively.
+
+### Refusals
+
+An Always rule is refused, and nothing is written, when a locked rule or a built-in rule already holds everything it would allow, or when its own sample call would still be held by a protected path, a locked rule or a built-in rule. The result shows the verdict that held the call.
+
+### The rule as a command
+
+The form shows the rule as `continuous permissions add always '<rule>'` with a **Copy** button. Copy does not run it. Pasting that command, or a `NEVER  rule` line from `continuous audit suggest`, into the Rule field sets the list and the rule, and the change goes through the same preview, confirmation and audit record. Flags in pasted text are refused.
+
+What no rule can change is shown under **Locks**: locked rules, protected paths (credentials always ask), and your policy files (`config.yaml`, `permissions.yaml` and the files that change what runs later), which the agent cannot write without asking you. The page's write is a message from the page to the app, not a tool, so the model cannot reach it.
 
 ### Rules from elsewhere: Adopt
 
@@ -87,7 +178,7 @@ Each of Context use, Tool use and File edits has a **Try a call** box. Choose wh
 
 - the decision: runs, asks or refused, and the sentence the agent would be given, naming the file the matching rule came from
 - every rule that matches, with its source, and the one that decided
-- a step-by-step explanation: the command check, the built-in rule check, always-on rules, Never rules, protected paths, Ask rules, Always rules, the area's level, and whether the reviewer would be consulted
+- a step-by-step explanation: the command check, the built-in rule check, locked rules, Never rules, protected paths, Ask rules, Always rules, the area's level, and whether the reviewer would be consulted
 - command-check findings, and whether a tool result with the text you give would be marked by the injection notice
 
 The test runs the same check the agent uses. Nothing is run, written or sent, and no model is asked: when the call would reach the reviewer model, the result says "would ask the reviewer".
@@ -96,9 +187,21 @@ The test runs the same check the agent uses. Nothing is run, written or sent, an
 
 The page shows grey placeholders while it reads your rules. If that takes more than eight seconds it says so and offers **Try again**. If the read fails, it says the rules could not be read, names `config.yaml` and `permissions.yaml`, and offers **Retry**; it never shows a failed read as "no rules". An area with no rules says to press **Add a rule**.
 
-## First-run overview
+## First-run notices
 
 The first time you open the page, a short card explains the five areas, the five levels and the presets, using the same glyph and colour as the toolbar chips. Press **Got it** and it does not come back: the choice is saved as `permissionsIntroDismissed` in your own settings.
+
+An empty chat shows the same tip as one dismissible line: "New here? Each area has a level and a preset sets them all; locked rules apply first. Open Permissions". It shares `permissionsIntroDismissed` with the card, so dismissing either hides both.
+
+The interactive terminal agent shows one line in its header, once per user: "Permissions: Careful preset. Change it with /policy (presets, or area=level). Shown once." It names "a custom mix" when the levels match no preset. It never shows with `-p`, in `serve` or without a terminal, and its flag (`cliFirstRunBannerShown`) lives in the global context file, separate from the editor's.
+
+## A permissions.yaml that does not parse
+
+`~/.continuous/permissions.yaml` that exists but is not valid YAML, or has the wrong structure (an unknown top-level key, or `allow`, `ask` or `exclude` that is not a list), is no longer read as "no rules". `cn -p` and `cn serve` refuse to start and exit with code 2, naming the file and the line and column of the error, never its contents. Pass `--ignore-broken-config` to continue with the file ignored; headless runs then use only the defaults, where `Bash` asks and is refused. The interactive agent starts and prints a WARNING block. A missing file is fine. `continuous permissions add` will not write over a broken file.
+
+## Raising a level in the terminal agent
+
+`/policy` asks once before it moves an area up to Automatic, Permissive or IDGAF from a lower level. The first run changes nothing and prints one line naming each area and both levels, such as `Permission levels: tools cautious to permissive. Fewer calls will ask first. Nothing was changed. Run "/policy tools=permissive --yes" to apply it.` Run it again with `--yes` to apply it. Lowering a level, or moving from Manual to Cautious, never asks. `--policy` on the command line is already explicit, so it does not ask. Every change, asked or not, is written to the [audit trail](/ide-extensions/agent/audit-trail#setting-changes) with where it came from.
 
 ## From the terminal agent
 
@@ -112,4 +215,12 @@ continuous permissions adopt '<rule>' --from <file> [--yes-allow-everything] [--
 
 `list` prints the same data as the page. `test` takes a tool (`runTerminalCommand` or `Bash`, `readFile`, `writeFile`, `listDirectory`, `fetchUrl`, `grepSearch`, `searchWeb`, or `mcp__server__tool`) and the call's argument, for example `continuous permissions test Bash git push origin main`. `--level area=level` tries another level for one area and may be repeated. The command reads your `config.yaml` and `permissions.yaml` and does not load an assistant, so rules that come from an assistant are not listed by the terminal command.
 
-`add`, `remove` and `adopt` change your own `config.yaml` with the same checks and friction as the page, and write the same audit record (source `cli`). They exit 0 when the change was made (or previewed with `--dry-run`), 2 when a confirmation is missing and 1 on any refusal: a rule that cannot be read, a file that cannot be read or written, or a rule that is not there. A broad Always rule needs `--yes-allow-everything`; removing a Never needs `--yes`. `adopt` reads the rule from the workspace or assistant file you name with `--from`, shows what it changes, and copies it.
+`add`, `remove` and `adopt` change your own `config.yaml` with the same checks and friction as the page, and write the same audit record (source `cli`). They exit 0 when the change was made (or previewed with `--dry-run`), 2 when a confirmation is missing and 1 on any refusal: a rule that cannot be read, an Always rule that is already held (see Refusals), a file that cannot be read or written, or a rule that is not there. A change that loosens needs `--yes` (removing a Never or Ask rule, or adding an Always rule); a broad Always rule needs `--yes-allow-everything`. There is no editor dialog in the terminal: the flag is the confirmation. `adopt` reads the rule from the workspace or assistant file you name with `--from`, shows what it changes, and copies it.
+
+## When the rule check itself fails
+
+If the rule check throws an error (a bug, or a settings read that fails mid-call), the call is never allowed on the strength of a default. The editor refuses it. The terminal agent asks you; a loop holds it as an approval question; `continuous -p`, `continuous serve` and a run with nobody to ask refuse it and tell the model why. The audit trail records the decision as the system's, with the reason "The permission rules could not be checked (internal error), so this call was not allowed automatically."
+
+## Agent files can only narrow
+
+An agent file passed with `continuous --agent <file or slug>` can take tools away but never widens your policy. A tool its `tools:` key leaves out is excluded in every mode. A tool it lists is decided by your own `--allow`, `--ask` and `--exclude` flags, `permissions.yaml`, the mode and the five levels, exactly as without the file: a file that lists `Bash` does not make `Bash` run without asking. The file's list no longer ends in an implicit "allow everything else". An agent file with no `tools:` key changes nothing.

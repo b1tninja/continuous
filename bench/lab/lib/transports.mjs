@@ -22,6 +22,13 @@ import {
 } from "./ollama.mjs";
 import { renderToolsPrompt } from "./prompts.mjs";
 import { readChatFormat } from "./server.mjs";
+import {
+  chatFormatFromProps,
+  llamaSamplingDefaults,
+  mergeBodyExtra,
+  parseModelfileParameters,
+  samplingSent,
+} from "./sampling.mjs";
 
 export const APIS = [
   "ollama-chat",
@@ -189,7 +196,7 @@ export function buildRequest(api, a) {
       notes.push("tool_choice has no meaning on /completion: not sent");
     if (stream) notes.push("llamacpp-raw is not streamed");
   } else throw new LabError("refused", `unknown --api ${api}`);
-  if (bodyExtra) Object.assign(body, bodyExtra);
+  if (bodyExtra) mergeBodyExtra(body, bodyExtra);
   return { path, body, stream: Boolean(body.stream), notes };
 }
 
@@ -334,6 +341,7 @@ export class Engine extends OllamaClient {
     ollamaUrl = "http://127.0.0.1:11434",
     sidecar = {},
     serverLog,
+    declaredParser,
     ...rest
   } = {}) {
     super(rest);
@@ -342,6 +350,7 @@ export class Engine extends OllamaClient {
     this.api = api;
     this.sidecar = sidecar; // { slots, metrics } booleans: poll after each request
     this.serverLog = serverLog; // llama-server log file, for the Chat format: line
+    this.declaredParser = declaredParser; // what the operator says the tool parser is (--tool-parser); vLLM reports none
     this.ollamaOrigin = assertLoopback(ollamaUrl, rest.allowRemote);
   }
 
@@ -378,12 +387,30 @@ export class Engine extends OllamaClient {
   async describe(model) {
     if (isLlamaApi(this.api)) {
       const props = await this.get("/props");
-      let chatFormat = readChatFormat(this.serverLog);
-      let chatFormatSource = chatFormat ? "log" : undefined;
+      if (!props) {
+        // no llama-server /props: vLLM answers GET /version with {"version": "0.25.1"}
+        const ver = await this.get("/version");
+        if (typeof ver?.version === "string")
+          return {
+            engine: "vllm",
+            api: this.api,
+            version: ver.version,
+            parserDeclared: this.declaredParser,
+          };
+      }
+      // /props first (b12206 prints no "Chat format:" log line), then the log
+      let chatFormat = chatFormatFromProps(props);
+      let chatFormatSource = chatFormat ? "props" : undefined;
+      if (!chatFormat) {
+        chatFormat = readChatFormat(this.serverLog);
+        if (chatFormat) chatFormatSource = "log";
+      }
       if (!chatFormat) {
         // no log to read (a server the lab did not start): /slots may name it
         const sl = await this.get("/slots");
-        const cf = Array.isArray(sl) ? sl[0]?.chat_format : undefined;
+        const cf = Array.isArray(sl)
+          ? (sl[0]?.chat_format ?? sl[0]?.params?.chat_format)
+          : undefined;
         if (typeof cf === "string") {
           chatFormat = cf;
           chatFormatSource = "slots";
@@ -400,6 +427,9 @@ export class Engine extends OllamaClient {
         modelPath: props?.model_path,
         nCtx: props?.default_generation_settings?.n_ctx,
         chatTemplateSha: sha(props?.chat_template),
+        // what a request that sends no sampling options gets from the server
+        samplingDefaults: llamaSamplingDefaults(props),
+        parserDeclared: this.declaredParser,
       };
     }
     const version = await this.get("/api/version");
@@ -416,6 +446,9 @@ export class Engine extends OllamaClient {
       parser: show?.parser,
       renderer: show?.renderer,
       quant: show?.details?.quantization_level,
+      // the Modelfile PARAMETER lines a request inherits (see README)
+      parameters: parseModelfileParameters(show?.parameters),
+      parserDeclared: this.declaredParser,
     };
   }
 
@@ -543,6 +576,7 @@ export class Engine extends OllamaClient {
       path: req.path,
       notes: req.notes,
       toolChoice: a.toolChoice,
+      sampling: samplingSent(api, req.body),
     };
     if (req.stream) out.chunks = [];
     const acc = { list: [], byId: new Map() };

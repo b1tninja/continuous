@@ -45,7 +45,6 @@ describe("ConfigService", () => {
     ],
     systemMessage: "Test system message",
   } as any;
-  const mockApiClient = { get: vi.fn(), post: vi.fn() };
   const mockAgentFileState: AgentFileServiceState = {
     slug: null,
     agentFile: null,
@@ -88,7 +87,6 @@ describe("ConfigService", () => {
       const state = await service.doInitialize({
         authConfig: null,
         configPath: "/path/to/config.yaml",
-        apiClient: mockApiClient as any,
         agentFileState: mockAgentFileState,
       });
 
@@ -111,13 +109,12 @@ describe("ConfigService", () => {
     test("should initialize with undefined config path", async () => {
       vi.mocked(configLoader.loadConfiguration).mockResolvedValue({
         config: mockConfig as any,
-        source: { type: "remote-default-config" } as any,
+        source: { type: "no-config" } as any,
       });
 
       const state = await service.doInitialize({
         authConfig: null,
         configPath: undefined,
-        apiClient: mockApiClient as any,
         agentFileState: mockAgentFileState,
       });
 
@@ -143,7 +140,6 @@ describe("ConfigService", () => {
       const state = await service.doInitialize({
         authConfig: null,
         configPath: "/config.yaml",
-        apiClient: mockApiClient as any,
         agentFileState: mockAgentFileState,
         injectedConfigOptions: { rule: ["rule1", "rule2"] },
       });
@@ -174,7 +170,6 @@ describe("ConfigService", () => {
       await service.doInitialize({
         authConfig: null,
         configPath: "/old.yaml",
-        apiClient: mockApiClient as any,
         agentFileState: mockAgentFileState,
       });
 
@@ -189,7 +184,6 @@ describe("ConfigService", () => {
       const state = await service.switchConfig({
         authConfig: null,
         configPath: "/new.yaml",
-        apiClient: mockApiClient as any,
         agentFileState: mockAgentFileState,
       });
 
@@ -204,7 +198,6 @@ describe("ConfigService", () => {
       await service.doInitialize({
         authConfig: null,
         configPath: "/old.yaml",
-        apiClient: mockApiClient as any,
         agentFileState: mockAgentFileState,
       });
 
@@ -216,7 +209,6 @@ describe("ConfigService", () => {
         service.switchConfig({
           authConfig: null,
           configPath: "/bad.yaml",
-          apiClient: mockApiClient as any,
           agentFileState: mockAgentFileState,
         }),
       ).rejects.toThrow("Config not found");
@@ -233,7 +225,6 @@ describe("ConfigService", () => {
       await service.doInitialize({
         authConfig: null,
         configPath: "/config.yaml",
-        apiClient: mockApiClient as any,
         agentFileState: mockAgentFileState,
       });
 
@@ -247,7 +238,6 @@ describe("ConfigService", () => {
 
       const state = await service.reload({
         authConfig: null,
-        apiClient: mockApiClient as any,
         agentFileState: mockAgentFileState,
       });
 
@@ -261,19 +251,17 @@ describe("ConfigService", () => {
       // Initialize without config path
       vi.mocked(configLoader.loadConfiguration).mockResolvedValue({
         config: mockConfig as any,
-        source: { type: "remote-default-config" } as any,
+        source: { type: "no-config" } as any,
       });
       await service.doInitialize({
         authConfig: null,
         configPath: undefined,
-        apiClient: mockApiClient as any,
         agentFileState: mockAgentFileState,
       });
 
       await expect(
         service.reload({
           authConfig: null,
-          apiClient: mockApiClient as any,
           agentFileState: mockAgentFileState,
         }),
       ).rejects.toThrow("No configuration path available for reload");
@@ -290,14 +278,12 @@ describe("ConfigService", () => {
       await service.doInitialize({
         authConfig: null,
         configPath: "/old.yaml",
-        apiClient: mockApiClient as any,
         agentFileState: mockAgentFileState,
       });
 
       // Mock service container
       vi.mocked(workos.loadAuthConfig).mockReturnValue(null);
       vi.mocked(serviceContainer.get)
-        .mockResolvedValueOnce({ apiClient: mockApiClient })
         .mockResolvedValueOnce(mockAgentFileState)
         .mockResolvedValueOnce({
           isHeadless: false,
@@ -326,24 +312,6 @@ describe("ConfigService", () => {
       );
       expect(vi.mocked(serviceContainer.reload)).toHaveBeenCalledWith(
         SERVICE_NAMES.MCP,
-      );
-    });
-
-    test("should handle missing API client", async () => {
-      await service.doInitialize({
-        authConfig: null,
-        configPath: "/old.yaml",
-        apiClient: mockApiClient as any,
-        agentFileState: mockAgentFileState,
-      });
-
-      vi.mocked(workos.loadAuthConfig).mockReturnValue(null);
-      vi.mocked(serviceContainer.get).mockResolvedValue({
-        apiClient: null,
-      });
-
-      await expect(service.updateConfigPath("/new.yaml")).rejects.toThrow(
-        "API client not available",
       );
     });
   });
@@ -426,10 +394,9 @@ describe("ConfigService", () => {
   });
 
   describe("getDependencies()", () => {
-    test("should declare auth, apiClient, and agentFile dependencies", () => {
+    test("should declare auth and agentFile dependencies", () => {
       expect(service.getDependencies()).toEqual([
         SERVICE_NAMES.AUTH,
-        SERVICE_NAMES.API_CLIENT,
         SERVICE_NAMES.AGENT_FILE,
       ]);
     });
@@ -444,7 +411,6 @@ describe("ConfigService", () => {
       await service.doInitialize({
         authConfig: null,
         configPath: "/old.yaml",
-        apiClient: mockApiClient as any,
         agentFileState: mockAgentFileState,
       });
 
@@ -461,7 +427,6 @@ describe("ConfigService", () => {
       await service.switchConfig({
         authConfig: null,
         configPath: "/new.yaml",
-        apiClient: mockApiClient as any,
         agentFileState: mockAgentFileState,
       });
 
@@ -478,7 +443,6 @@ describe("ConfigService", () => {
       await service.doInitialize({
         authConfig: null,
         configPath: "/old.yaml",
-        apiClient: mockApiClient as any,
         agentFileState: mockAgentFileState,
       });
 
@@ -492,7 +456,6 @@ describe("ConfigService", () => {
         service.switchConfig({
           authConfig: null,
           configPath: "/bad.yaml",
-          apiClient: mockApiClient as any,
           agentFileState: mockAgentFileState,
         }),
       ).rejects.toThrow();
@@ -523,11 +486,7 @@ describe("ConfigService", () => {
         models: [defaultModel],
       });
 
-      const result = await service.addDefaultChatModelIfNone(
-        config,
-        mockApiClient as any,
-        null,
-      );
+      const result = await service.addDefaultChatModelIfNone(config, null);
 
       expect(
         vi.mocked(configLoader.unrollPackageIdentifiersAsConfigYaml),
@@ -544,7 +503,6 @@ describe("ConfigService", () => {
         ],
         null,
         null,
-        mockApiClient,
       );
 
       expect(result.models).toHaveLength(2);
@@ -564,11 +522,7 @@ describe("ConfigService", () => {
         ],
       } as any;
 
-      const result = await service.addDefaultChatModelIfNone(
-        config,
-        mockApiClient as any,
-        null,
-      );
+      const result = await service.addDefaultChatModelIfNone(config, null);
 
       // Should not call the unroll function since chat model exists
       expect(
@@ -590,11 +544,7 @@ describe("ConfigService", () => {
         ],
       } as any;
 
-      const result = await service.addDefaultChatModelIfNone(
-        config,
-        mockApiClient as any,
-        null,
-      );
+      const result = await service.addDefaultChatModelIfNone(config, null);
 
       expect(
         vi.mocked(configLoader.unrollPackageIdentifiersAsConfigYaml),
@@ -617,11 +567,7 @@ describe("ConfigService", () => {
         models: [defaultModel],
       });
 
-      const result = await service.addDefaultChatModelIfNone(
-        config,
-        mockApiClient as any,
-        null,
-      );
+      const result = await service.addDefaultChatModelIfNone(config, null);
 
       expect(result.models).toHaveLength(1);
       expect(result.models![0]).toEqual(defaultModel);
@@ -642,11 +588,7 @@ describe("ConfigService", () => {
         models: [defaultModel],
       });
 
-      const result = await service.addDefaultChatModelIfNone(
-        config,
-        mockApiClient as any,
-        null,
-      );
+      const result = await service.addDefaultChatModelIfNone(config, null);
 
       expect(result.models).toHaveLength(1);
       expect(result.models![0]).toEqual(defaultModel);
@@ -665,12 +607,7 @@ describe("ConfigService", () => {
       ).mockRejectedValue(error);
 
       await expect(
-        service.addDefaultChatModelIfNone(
-          config,
-          mockApiClient as any,
-          null,
-          true,
-        ),
+        service.addDefaultChatModelIfNone(config, null, true),
       ).rejects.toThrow(
         "No model specified in headless mode (and failed to load default model)",
       );
@@ -693,12 +630,7 @@ describe("ConfigService", () => {
       });
 
       await expect(
-        service.addDefaultChatModelIfNone(
-          config,
-          mockApiClient as any,
-          null,
-          true,
-        ),
+        service.addDefaultChatModelIfNone(config, null, true),
       ).rejects.toThrow(
         "No model specified in headless mode (and failed to load default model)",
       );
@@ -721,7 +653,6 @@ describe("ConfigService", () => {
 
       const result = await service.addDefaultChatModelIfNone(
         config,
-        mockApiClient as any,
         undefined, // No auth config
       );
 
@@ -731,7 +662,6 @@ describe("ConfigService", () => {
         expect.any(Array),
         null, // Should pass null for access token
         null, // Should pass null for organization ID
-        mockApiClient,
       );
 
       expect(result.models).toHaveLength(1);

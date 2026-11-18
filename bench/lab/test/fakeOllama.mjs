@@ -76,6 +76,7 @@ export async function startFake({
       return json({
         capabilities: m.capabilities,
         template: "{{ if .Tools }}tools{{ end }}",
+        ...(m.parameters ? { parameters: m.parameters } : {}),
         model_info: {
           "general.architecture": "fake",
           "fake.context_length": 8192,

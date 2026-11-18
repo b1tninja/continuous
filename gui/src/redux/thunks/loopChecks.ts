@@ -229,14 +229,16 @@ export async function runLoopCheck(
       commitLoop(
         dispatch,
         getState,
-        held.ok
+        held.ok && !held.question.decidedAlone
           ? holdCheck(held.loop)
           : recordCheck(
-              loop,
+              held.ok ? held.loop : loop,
               {
                 status: "refused",
                 command,
-                output: `The check needs your approval and could not be held: ${held.error}`,
+                output: held.ok
+                  ? "The check was not run: it needs approval, and Questions is IDGAF, so nobody is asked."
+                  : `The check needs your approval and could not be held: ${held.error}`,
               },
               new Date(),
             ),

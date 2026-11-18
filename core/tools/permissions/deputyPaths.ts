@@ -25,7 +25,7 @@ import { hasWindowsShortName } from "./protectedPaths";
  * host here, so a Windows spelling is judged the same on a Linux CI machine
  * and a POSIX one on Windows. A hit makes the call ask. It never refuses and
  * never loosens: the caller applies it after the tool's own check, and only
- * YOLO or the person's own `builtin` switch reaches past it.
+ * IDGAF or the person's own `builtin` switch reaches past it.
  */
 export type PathFlavor = "win32" | "posix";
 
@@ -52,6 +52,12 @@ export interface DeputyInput {
   home?: string;
   /** The workspace folder; relative paths are resolved against it. */
   cwd?: string;
+  /**
+   * Every workspace folder, for a window with several roots: a path inside
+   * any of them is inside the workspace. `cwd` (the first) still resolves
+   * relative paths.
+   */
+  roots?: readonly string[];
   /** The tool's own answer: is the real path inside a workspace folder? */
   withinWorkspace?: boolean;
   /** Normalised global product folders (selfProtect.globalDirsFor). */
@@ -153,11 +159,12 @@ function outsideLexically(
   home: string,
   cwd: string,
   flavor: PathFlavor,
+  others: readonly string[] = [],
 ): boolean {
   const target = normalizeProtectedPath(raw, home, cwd);
-  const root = normalizeProtectedPath(cwd, home);
-  if (!comparable(target) || !comparable(root)) return false;
-  return !insideFolder(target, root, flavor);
+  const roots = [cwd, ...others].map((r) => normalizeProtectedPath(r, home));
+  if (!comparable(target) || !comparable(roots[0])) return false;
+  return !roots.some((r) => comparable(r) && insideFolder(target, r, flavor));
 }
 
 /**
@@ -200,7 +207,7 @@ export function deputyPathHit(input: DeputyInput): DeputyHit | undefined {
     input.withinWorkspace === false ||
     (input.withinWorkspace === undefined &&
       input.cwd !== undefined &&
-      outsideLexically(raw, home, input.cwd, flavor));
+      outsideLexically(raw, home, input.cwd, flavor, input.roots));
   return outside
     ? {
         kind: "file-deputy",

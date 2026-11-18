@@ -4,22 +4,25 @@
 import "./init.js";
 
 import { Command } from "commander";
+import { dismissCurrentNotice } from "core/util/retirementStartup.js";
 
 import { acp } from "./commands/acp.js";
 import { agentsCommand } from "./commands/agents.js";
 import { auditCommand } from "./commands/audit.js";
 import { addAuditSuggestOptions } from "./commands/auditSuggest.js";
 import { chat } from "./commands/chat.js";
-import { checks } from "./commands/checks.js";
-import { registerCleanCommand } from "./commands/clean.js";
+import { doctorCommand } from "./commands/doctor.js";
 import { hooksCommand } from "./commands/hooks.js";
 import { listSessionsCommand } from "./commands/ls.js";
 import { permissionsCommand } from "./commands/permissions.js";
 import { projectCommand } from "./commands/project.js";
+import { registerExportCommand } from "./commands/registerExportCommand.js";
+import { registerLocalCommands } from "./commands/registerLocalCommands.js";
+import { registerRecoveryCommands } from "./commands/registerRecoveryCommands.js";
+import { prepareResume, RESUME_FLAG_HELP } from "./commands/resumePicker.js";
 import { review } from "./commands/review.js";
 import { registerReviewerCommand } from "./commands/reviewEval.js";
 import { sandboxCommand } from "./commands/sandbox.js";
-import { registerSecretsCommand } from "./commands/secrets.js";
 import { serve } from "./commands/serve.js";
 import { terminalEnvCommand } from "./commands/terminalEnv.js";
 import { testConnectionCommand } from "./commands/testConnection.js";
@@ -28,23 +31,20 @@ import {
   validateFlags,
 } from "./flags/flagValidator.js";
 import { configureConsoleForHeadless, safeStderr } from "./init.js";
-import { addCommonOptions, mergeParentOptions } from "./shared-options.js";
-import { post } from "./util/apiClient.js";
+import { applySafeMode, SAFE_FLAG_HELP } from "./safeMode.js";
+import { addRootOptions, mergeParentOptions } from "./shared-options.js";
 import { markUnhandledError } from "./util/errorState.js";
 import { gracefulExit } from "./util/exit.js";
 import { logger } from "./util/logger.js";
 import { exitBecause } from "./util/processErrors.js";
 import { readStdinSync } from "./util/stdin.js";
-import { getVersion } from "./version.js";
+import { startupVersion } from "./webAgentVersion.js";
 
 // TUI lifecycle and two-stage exit state management
 let tuiUnmount: (() => void) | null;
 let showExitMessage: boolean;
 let exitMessageCallback: (() => void) | null;
 let lastCtrlCTime: number;
-
-// Agent ID for serve mode - set when serve command is invoked with --id
-let agentId: string | undefined;
 
 // Initialize state immediately to avoid temporal dead zone issues with exported functions
 (function initializeTUIState() {
@@ -53,11 +53,6 @@ let agentId: string | undefined;
   exitMessageCallback = null;
   lastCtrlCTime = 0;
 })();
-
-// Set the agent ID for error reporting (called by serve command)
-export function setAgentId(id: string | undefined) {
-  agentId = id;
-}
 
 // Register TUI cleanup function for graceful shutdown
 export function setTUIUnmount(unmount: () => void) {
@@ -109,27 +104,6 @@ export function shouldShowExitMessage(): boolean {
   return showExitMessage;
 }
 
-// Helper to report unhandled errors to the API when running in serve mode
-async function reportUnhandledErrorToApi(error: Error): Promise<void> {
-  if (!agentId) {
-    // Not running in serve mode with an agent ID, skip API reporting
-    return;
-  }
-
-  try {
-    await post(`agents/${agentId}/status`, {
-      status: "FAILED",
-      errorMessage: `Unhandled error: ${error.message}`,
-    });
-    logger.debug(`Reported unhandled error to API for agent ${agentId}`);
-  } catch (apiError) {
-    // If API reporting fails, just log it - don't crash
-    logger.debug(
-      `Failed to report error to API: ${apiError instanceof Error ? apiError.message : String(apiError)}`,
-    );
-  }
-}
-
 // Add global error handlers to prevent uncaught errors from crashing the process
 process.on("unhandledRejection", (reason, promise) => {
   // Mark that an unhandled error occurred - this will cause non-zero exit
@@ -145,20 +119,12 @@ process.on("unhandledRejection", (reason, promise) => {
   // If reason is an Error, use it directly for better stack traces
   if (reason instanceof Error) {
     logger.error("Unhandled Promise Rejection", reason, errorDetails);
-    // Report to API if running in serve mode
-    reportUnhandledErrorToApi(reason).catch(() => {
-      // Silently fail if API reporting errors - already logged in helper
-    });
   } else {
     // Convert non-Error reasons to Error for consistent handling
     const error = new Error(`Unhandled rejection: ${String(reason)}`);
     logger.error("Unhandled Promise Rejection", error, {
       ...errorDetails,
       originalReason: String(reason),
-    });
-    // Report to API if running in serve mode
-    reportUnhandledErrorToApi(error).catch(() => {
-      // Silently fail if API reporting errors - already logged in helper
     });
   }
 
@@ -167,9 +133,8 @@ process.on("unhandledRejection", (reason, promise) => {
 
 process.on("uncaughtException", (error) => {
   const asError = error instanceof Error ? error : new Error(String(error));
-  // Report to API if running in serve mode, then leave. Staying up after an
-  // uncaught exception leaves serve idle with no listener.
-  void reportUnhandledErrorToApi(asError);
+  // Leave: staying up after an uncaught exception leaves serve idle with no
+  // listener.
   exitBecause(asError, "Uncaught Exception:");
 });
 
@@ -178,29 +143,35 @@ process.on("SIGINT", async () => {
   await gracefulExit(130);
 });
 
-const program = new Command();
+// Exported for tests that run the real option wiring without a network.
+export const program = new Command();
 
 program
   .name("continuous")
   .description(
     "Continuous CLI - AI-powered development assistant. Starts an interactive session by default, use -p/--print for non-interactive output.",
   )
-  .version(getVersion(), "-v, --version", "Display version number");
+  .version(startupVersion(), "-v, --version", "Display version number");
 
 // Root command - chat functionality (default)
 // Add common options to the root command
-addCommonOptions(program)
+addRootOptions(program)
+  .option("--safe", SAFE_FLAG_HELP)
   .argument("[prompt]", "Optional prompt to send to the assistant")
   .option("-p, --print", "Print response and exit (useful for pipes)")
   .option(
     "--format <format>",
-    "Output format for headless mode (json). Only works with -p/--print flag.",
+    "Output format for headless mode: json, or stream-json (one JSON event per line on stdout). Only works with -p/--print flag.",
+  )
+  .option(
+    "--output-schema <file>",
+    "Headless (-p): check the final answer against this JSON Schema file; exit 6 when it does not match",
   )
   .option(
     "--silent",
     "Strip <think></think> tags and excess whitespace from output. Only works with -p/--print flag.",
   )
-  .option("--resume", "Resume from last session")
+  .option("--resume [sessionId]", RESUME_FLAG_HELP)
   .option("--fork <sessionId>", "Fork from an existing session ID")
   .option(
     "--beta-subagent-tool",
@@ -209,6 +180,10 @@ addCommonOptions(program)
   .option(
     "--trust-project-hooks",
     "Run this project's hooks for this session without asking (see `continuous hooks`)",
+  )
+  .option(
+    "--ignore-broken-config",
+    "Headless (-p, serve): continue when a hook settings file or permissions.yaml is present but unparseable, with that file ignored. Without it the run exits with code 2",
   )
   .option(
     "--trust-project-config",
@@ -246,12 +221,14 @@ addCommonOptions(program)
     const validation = validateFlags({
       print: options.print,
       format: options.format,
+      outputSchema: options.outputSchema,
       silent: options.silent,
       readonly: options.readonly,
       auto: options.auto,
       config: options.config,
       resume: options.resume,
       fork: options.fork,
+      sessionPersistence: options.sessionPersistence,
       allow: options.allow,
       ask: options.ask,
       exclude: options.exclude,
@@ -262,6 +239,9 @@ addCommonOptions(program)
     if (!validation.isValid) {
       handleValidationErrors(validation.errors);
     }
+
+    // --safe, before anything reads a settings or project file
+    applySafeMode(options);
 
     if (options.verbose) {
       logger.setLevel("debug");
@@ -292,18 +272,21 @@ addCommonOptions(program)
       }
     }
 
+    // --resume <id>, or the session picker (commands/resumePicker.ts)
+    prompt = await prepareResume(options, prompt);
+
     // In headless mode, ensure we have a prompt unless using --agent flag or --resume flag
     // Agent files can provide their own prompts, and resume can work without new input
     if (options.print && !prompt && !options.agent && !options.resume) {
       safeStderr(
-        "Error: A prompt is required when using the -p/--print flag, unless --prompt, --agent, or --resume is provided.\n\n",
+        "Error: A prompt is required when using the -p/--print flag, unless --agent or --resume is provided.\n\n",
       );
       safeStderr("Usage examples:\n");
       safeStderr('  cn -p "please review my current git diff"\n');
       safeStderr('  echo "hello" | cn -p\n');
       safeStderr('  cn -p "analyze the code in src/"\n');
-      safeStderr("  cn -p --agent my-org/my-agent\n");
-      safeStderr("  cn -p --prompt my-org/my-prompt\n");
+      safeStderr("  cn -p --agent ./agents/my-agent.md\n");
+      safeStderr("  cn -p --prompt ./notes.md 'summarize these notes'\n");
       safeStderr("  cn -p --resume\n");
       await gracefulExit(1);
     }
@@ -325,6 +308,9 @@ program
     });
   });
 
+// Export subcommand: a masked transcript, never the session JSON
+registerExportCommand(program);
+
 // Serve subcommand
 program
   .command("serve [prompt]", { hidden: true })
@@ -337,24 +323,24 @@ program
   .option("--port <port>", "Port to run the server on (default: 8000)", "8000")
   .option(
     "--host <host>",
-    "Interface to listen on (default: 127.0.0.1). Off loopback, --token is required and must be at least 16 characters",
+    "Interface to listen on (default: 127.0.0.1). Anything else listens beyond this computer and requires --token",
     "127.0.0.1",
   )
   .option(
     "--token <token>",
-    "Require this bearer token on every request (also read from CONTINUOUS_SERVE_TOKEN). Optional on loopback",
+    "Require this bearer token on every request, at least 16 characters (also read from CONTINUOUS_SERVE_TOKEN). Optional on loopback, required off it",
   )
   .option(
-    "--id <storageId>",
-    "Upload session snapshots to Continue-managed storage using the provided identifier",
+    "--allow-origin <origin...>",
+    "A browser origin that may call the server, exactly (http://localhost:3000). Default: none",
   )
-  .option(
-    "--beta-upload-artifact-tool",
-    "Enable beta UploadArtifact tool for uploading screenshots, videos, and logs",
-  )
+  .option("--safe", SAFE_FLAG_HELP)
   .action(async (prompt, options) => {
     // Merge parent options with subcommand options
     const mergedOptions = mergeParentOptions(program, options);
+    // `cn --safe serve` and `cn serve --safe` are the same
+    if (program.opts().safe) mergedOptions.safe = true;
+    applySafeMode(mergedOptions);
 
     if (mergedOptions.verbose) {
       logger.setLevel("debug");
@@ -373,14 +359,6 @@ program
   .action(async (options) => {
     const mergedOptions = mergeParentOptions(program, options);
     await acp(mergedOptions);
-  });
-
-// Checks subcommand
-program
-  .command("checks [action] [pr-url]")
-  .description("Show CI check statuses for a PR")
-  .action(async (action: string | undefined, prUrl: string | undefined) => {
-    await checks(action, prUrl);
   });
 
 // Review subcommand
@@ -412,13 +390,45 @@ program
 
 // Hooks subcommand
 program
-  .command("hooks [action]")
+  .command("hooks [action] [event]")
   .description(
-    "Show, trust or revoke this project's hooks (list, trust, revoke)",
+    "Show, trust or revoke hooks (list, trust, revoke), or try the hooks for a sample event without running a tool (test <event>)",
   )
   .option("-y, --yes", "Trust without asking, for scripts")
-  .action(async (action: string | undefined, options) => {
-    const code = await hooksCommand(action, { yes: options.yes });
+  .option(
+    "--tool <name>",
+    "test: the tool name for a tool event (default Bash)",
+  )
+  .option("--server <name>", "test: the MCP server, for a tool event")
+  .option(
+    "--input <json>",
+    "test: a JSON object merged over the sample hook input",
+  )
+  .action(
+    async (action: string | undefined, event: string | undefined, options) => {
+      const code = await hooksCommand(action, {
+        yes: options.yes,
+        event,
+        tool: options.tool,
+        server: options.server,
+        input: options.input,
+      });
+      await gracefulExit(code);
+    },
+  );
+
+// Connection diagnostics
+program
+  .command("doctor [topic] [urls...]")
+  .description(
+    "Read-only diagnostics: doctor config (settings files and each control's value and source), doctor network [url...] (proxy and certificates)",
+  )
+  .option("--json", "config: machine-readable output")
+  .action(async (topic: string | undefined, urls: string[], options) => {
+    const code = await doctorCommand(topic, urls, {
+      json: options.json,
+      flags: program.opts(),
+    });
     await gracefulExit(code);
   });
 
@@ -470,11 +480,11 @@ program
     },
   );
 
-// Secrets subcommand: scan files for secrets (exit 3 on a finding)
-registerSecretsCommand(program);
+// Local-file subcommands: secrets, clean, plan
+registerLocalCommands(program);
 
-// Clean: retention for the product's own persisted files (dry run unless --yes)
-registerCleanCommand(program);
+// Recovery subcommands: config check
+registerRecoveryCommands(program);
 
 // Sandbox status subcommand
 program
@@ -517,7 +527,7 @@ addAuditSuggestOptions(
   program
     .command("audit [action] [session]")
     .description(
-      "Read the audit trail of tool call decisions (list, show <session>, inbox, suggest, shadow, prune)",
+      "Read the audit trail of tool call decisions (list, show <session>, changes, inbox, suggest, shadow, prune)",
     )
     .option("--json", "Machine-readable output")
     .option("--session <id>", "Only this session")
@@ -544,16 +554,34 @@ addAuditSuggestOptions(
 program
   .command("test-connection")
   .description(
-    "Check an OpenAI-compatible endpoint: models listed, and with --model how it answers a tool call",
+    "Check an endpoint: models listed, and with --model how it answers a tool call (Anthropic: whether the model is deprecated or retiring)",
   )
-  .option("--provider <name>", "Provider (openai, ollama, llama.cpp, ...)")
+  .option(
+    "--provider <name>",
+    "Provider (openai, anthropic, ollama, llama.cpp, ...)",
+  )
   .option("--api-base <url>", "API base URL (defaults per provider)")
   .option("--api-key-env <name>", "Environment variable holding the API key")
   .option("--model <id>", "Also send one tool-call probe to this model")
   .option("--json", "Machine-readable output")
+  .option("--no-record", "Do not write the result to the local facts file")
   .action(async (options) => {
     const code = await testConnectionCommand(options);
     await gracefulExit(code);
+  });
+
+// Hide the retirement notice for a model (it is shown at start-up once a day)
+program
+  .command("dismiss-notice <model>")
+  .description(
+    "Hide the deprecation or retirement notice shown at start-up for an Anthropic model",
+  )
+  .action(async (model: string) => {
+    const hidden = dismissCurrentNotice({ provider: "anthropic", model });
+    console.log(
+      hidden ? `Notice for ${model} hidden.` : `No notice for ${model}.`,
+    );
+    await gracefulExit(0);
   });
 
 // Handle unknown commands

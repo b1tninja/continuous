@@ -1,5 +1,6 @@
 import { createAsyncThunk } from "@reduxjs/toolkit";
 import {
+  IDE,
   LoopAutonomy,
   LoopBudget,
   LoopState,
@@ -11,6 +12,12 @@ import {
   TaskPlan,
 } from "core";
 import { BuiltInToolNames } from "core/tools/builtIn";
+import {
+  policyLevelLabel,
+  questionsAutoAnswer,
+} from "core/tools/permissions/policy";
+import { autoAnsweredLine } from "core/util/autoAnswer";
+import { autoAnswerPlanFile } from "../../util/planDecisions";
 import { finishItemNudge, presentPlanNudge } from "core/util/turnEnd";
 import type { PlanBudgetSetup } from "core/util/planBudget";
 import { applyBudgetStep, applyLimitAfterRun } from "./loopBudget";
@@ -60,6 +67,7 @@ import {
   startReplan,
   stopLoop,
   withLoopPlanBlock,
+  addAutoDecision,
 } from "core/util/loopMode";
 import { costMarkOf } from "core/util/loopCost";
 import {
@@ -222,12 +230,51 @@ export const startLoopFromPlan = createAsyncThunk<
       fallbackCheck,
     });
     if (parallel) loop = setLoopParallel(loop, true);
+    loop = await autoAnswerPlanDecisions(
+      loop,
+      planFile,
+      extra.ideMessenger.ide,
+    );
     // The plan card's budget step; without it the strategy is None
     loop = applyBudgetStep(dispatch, getState, loop, budget);
     dispatch(setMode("agent"));
     commitLoop(dispatch, getState, loop);
   },
 );
+
+/**
+ * Questions is permissive (Automatic, Permissive, IDGAF): the plan's open
+ * decisions are answered from its own options and recorded on the loop as
+ * the system's, so nothing waits for the person.
+ */
+async function autoAnswerPlanDecisions(
+  loop: LoopState,
+  planFile: string | undefined,
+  ide: Pick<IDE, "readFile" | "writeFile">,
+): Promise<LoopState> {
+  if (
+    !planFile ||
+    !loop.policy ||
+    !questionsAutoAnswer(loop.policy.questions)
+  ) {
+    return loop;
+  }
+  const source = `Questions: ${policyLevelLabel("questions", loop.policy.questions)}`;
+  try {
+    return (await autoAnswerPlanFile(ide, planFile)).reduce(
+      (l, a) =>
+        addAutoDecision(l, {
+          kind: "question",
+          source,
+          text: autoAnsweredLine(a.question, a.answer),
+        }),
+      loop,
+    );
+  } catch (e) {
+    console.warn("Could not answer the plan's decisions", e);
+    return loop;
+  }
+}
 
 /** The loop's re-plan card: accept it and start the next round. */
 export const acceptLoopPlan = createAsyncThunk<void, undefined, ThunkApiType>(
@@ -243,10 +290,15 @@ export const acceptLoopPlan = createAsyncThunk<void, undefined, ThunkApiType>(
     const plan = getState().session.taskPlan;
     if (!plan) return;
     dispatch(setMode("agent"));
+    const answered = await autoAnswerPlanDecisions(
+      loop,
+      planFile,
+      extra.ideMessenger.ide,
+    );
     commitLoop(
       dispatch,
       getState,
-      acceptReplan(loop, plan, {
+      acceptReplan(answered, plan, {
         now: new Date(),
         sessionTokens: sessionTokens(getState()),
       }),
@@ -312,11 +364,11 @@ export const leaveLoopMode = createAsyncThunk<void, MessageModes, ThunkApiType>(
 
 /**
  * A plan presented while the person is in Loop is the first plan of the run,
- * and Plan edits decides whether it goes on by itself: Permissive and IDGAF
- * start the loop, Manual and Cautious leave the plan card for the person
- * (Build or Build in a loop), and Automatic waits too, as no reviewer for
- * plans exists yet. A loop already going is left alone: its own re-plan is
- * accepted as before.
+ * and Plan edits decides whether it goes on by itself: Automatic, Permissive
+ * and IDGAF start the loop (no reviewer for plans exists yet, so Automatic
+ * works as Permissive, its cap on new to-dos included), and Manual and
+ * Cautious leave the plan card for the person (Build or Build in a loop). A
+ * loop already going is left alone: its own re-plan is accepted as before.
  */
 export const startLoopIfRequested = createAsyncThunk<
   boolean,

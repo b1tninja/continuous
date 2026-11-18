@@ -7,7 +7,7 @@ import { cn } from "../../../../util/cn";
 
 export const SOURCE_LABEL: Record<RuleSource, string> = {
   builtin: "Built-in",
-  floor: "Always on",
+  floor: "Locked rule",
   "user-config": "You",
   "permissions-yaml": "CLI file",
   assistant: "Assistant",
@@ -17,7 +17,7 @@ export const SOURCE_LABEL: Record<RuleSource, string> = {
 export const SOURCE_HELP: Record<RuleSource, string> = {
   builtin: "A built-in rule: shipped with the product",
   floor:
-    "An always-on rule (floor:) in your permissions.yaml. It binds at every level.",
+    "A locked rule (floor:) in your permissions.yaml. It binds at every level below IDGAF; at IDGAF it is recorded, not applied.",
   "user-config": "Your own config.yaml",
   "permissions-yaml":
     "The CLI's lists in your permissions.yaml. Weighed by the CLI first.",
@@ -37,12 +37,21 @@ const DECISION_STYLE: Record<RuleDecision, string> = {
   allow: "text-success border-success",
 };
 
+const DECISION_TONE: Record<RuleDecision, string> = {
+  deny: "error",
+  ask: "warning",
+  allow: "ok",
+};
+
 const chip =
-  "inline-block rounded-sm border border-solid px-1 text-2xs leading-4 whitespace-nowrap";
+  "gui-chip inline-block rounded-sm border border-solid px-1 text-2xs leading-4 whitespace-nowrap";
 
 export function DecisionChip({ decision }: { decision: RuleDecision }) {
   return (
-    <span className={cn(chip, DECISION_STYLE[decision])}>
+    <span
+      className={cn(chip, DECISION_STYLE[decision])}
+      data-tone={DECISION_TONE[decision]}
+    >
       {DECISION_LABEL[decision]}
     </span>
   );
@@ -69,7 +78,12 @@ export function StateBadge({
   return (
     <>
       {state === "ignored" && (
-        <span className={cn(chip, "border-warning text-warning")}>Ignored</span>
+        <span
+          className={cn(chip, "border-warning text-warning")}
+          data-tone="warning"
+        >
+          Ignored
+        </span>
       )}
       {locked && (
         <span className={cn(chip, "border-border text-description")}>

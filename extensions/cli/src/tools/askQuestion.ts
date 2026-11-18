@@ -1,5 +1,7 @@
+import { notifyPerson } from "../notify/attention.js";
 import { services } from "../services/index.js";
 import { quizService } from "../services/QuizService.js";
+import { answerIfIdgaf } from "../util/idgafQuestions.js";
 import {
   heldQuestionResult,
   holdPendingQuestion,
@@ -25,7 +27,7 @@ export const QUESTION_TYPES = [
 export const askQuestionTool: Tool = {
   name: "AskQuestion",
   displayName: "Ask Question",
-  description: `Ask the person one question. An interactive run waits for the answer; in cn serve and headless runs the question is held for the person and the result says how to go on. Use it for a preference or trade-off that would change the result and that reading the code cannot settle; facts about the code are found, not asked. Give two to four options with your recommended one first and in defaultAnswer; the person can always answer in their own words, so do not add "other". Set type to what a wrong answer would cost: access (something only the person can supply), irreversible, security, cost, scope, design or detail. If the answer does not come, decide a small thing with your default and say so; a choice that is the person's goes in PresentPlan's decisions in plan mode and is not settled by you.`,
+  description: `Ask the person one question. An interactive run waits for the answer; in continuous serve and headless runs the question is held for the person and the result says how to go on. Use it for a preference or trade-off that would change the result and that reading the code cannot settle; facts about the code are found, not asked. Give two to four options with your recommended one first and in defaultAnswer; the person can always answer in their own words, so do not add "other". Set type to what a wrong answer would cost: access (something only the person can supply), irreversible, security, cost, scope, design or detail. If the answer does not come, decide a small thing with your default and say so; a choice that is the person's goes in PresentPlan's decisions in plan mode and is not settled by you.`,
   parameters: {
     type: "object",
     required: ["question", "options"],
@@ -64,6 +66,12 @@ export const askQuestionTool: Tool = {
   }): Promise<string> => {
     const { question, options, defaultAnswer } = args;
 
+    // Questions is IDGAF: nobody is asked, in the TUI, headless or serve
+    const auto = answerIfIdgaf({ question, options, pick: defaultAnswer });
+    if (auto) {
+      return `${auto.line} (${auto.source}). Nobody was asked; go on with it and say so in your summary.`;
+    }
+
     // cn serve and headless runs: nobody is at a question box, so the
     // question is held in the inbox (serve /state) and the model goes on with
     // its default; the answer, if one comes, arrives as a later message.
@@ -78,6 +86,7 @@ export const askQuestionTool: Tool = {
       );
     }
 
+    notifyPerson({ kind: "question" });
     const answer = await quizService.askQuestion({
       question,
       options,

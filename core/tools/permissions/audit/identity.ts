@@ -1,5 +1,16 @@
-import { mainAgentId } from "../../../agents/fromRuns";
+import {
+  LOOP_WORKER_MODE,
+  loopWorkerAgentId,
+  mainAgentId,
+} from "../../../agents/fromRuns";
+import { toolRoleOfMode } from "../../roleTools";
 import type { AuditAgent } from "./record";
+
+/** The tool table's role for a mode word, as the audit field. */
+const withToolRole = (mode?: string): { toolRole?: string } => {
+  const toolRole = toolRoleOfMode(mode);
+  return toolRole ? { toolRole } : {};
+};
 
 /**
  * Who is calling, for the audit record. The ids are the agent map's
@@ -7,7 +18,7 @@ import type { AuditAgent } from "./record";
  * in step.
  */
 export const subagentAgentId = (toolCallId: string) => `sub-${toolCallId}`;
-export const loopWorkerAgentId = (itemId: string) => `worker-${itemId}`;
+export { LOOP_WORKER_MODE, loopWorkerAgentId };
 export const backgroundAgentId = (taskId: string) => `bg-${taskId}`;
 
 export function mainAuditAgent(sessionId: string, mode?: string): AuditAgent {
@@ -15,6 +26,7 @@ export function mainAuditAgent(sessionId: string, mode?: string): AuditAgent {
     id: mainAgentId(sessionId),
     kind: "main",
     ...(mode ? { mode } : {}),
+    ...withToolRole(mode),
   };
 }
 
@@ -30,16 +42,10 @@ export function subagentAuditAgent(
     kind: "subagent",
     role,
     ...(mode ? { mode } : {}),
+    ...withToolRole(mode),
     parentId: mainAgentId(sessionId),
   };
 }
-
-/**
- * The mode a Loop worker runs in: Agent mode's tools with the loop's three
- * (`loopWorkerTools`). Loop is not a mode, so a worker's mode is this, or the
- * mode its caller says; "loop" marks the kind, which is `loop-worker`.
- */
-export const LOOP_WORKER_MODE = "agent" as const;
 
 export function loopWorkerAuditAgent(
   sessionId: string,
@@ -51,6 +57,7 @@ export function loopWorkerAuditAgent(
     kind: "loop-worker",
     role: `item ${itemId}`,
     mode,
+    ...withToolRole(mode),
     parentId: mainAgentId(sessionId),
   };
 }
@@ -71,6 +78,7 @@ export function backgroundAuditAgent(
     kind: "background",
     role,
     mode,
+    ...withToolRole(mode),
     parentId: mainAgentId(sessionId),
   };
 }

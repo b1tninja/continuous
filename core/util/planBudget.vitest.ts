@@ -21,7 +21,7 @@ describe("budgetAuthority", () => {
     ["cautious", "planner", true],
     ["automatic", "reviewer", true],
     ["permissive", "planner", true],
-    ["yolo", "planner", true],
+    ["idgaf", "planner", true],
   ] as const)("%s: %s", (level, who, applies) => {
     expect(budgetAuthority(level)).toBe(who);
     expect(plannerBudgetsApply(level)).toBe(applies);

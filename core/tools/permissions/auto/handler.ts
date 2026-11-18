@@ -6,6 +6,7 @@ import type { ShellKind } from "../../../util/shell";
 import { DecisionSource } from "../decide";
 import { uriToPath } from "../names";
 import { EvaluateInput, evaluateToolPolicyWithRules } from "../evaluate";
+import { deputyWorkspace } from "../workspaceRoots";
 import type { ToolPermissions } from "../rules";
 import type { AuditAgent, AuditReviewer } from "../audit/record";
 import { ReviewCategory } from "./categories";
@@ -14,6 +15,7 @@ import {
   findReviewerAddressedText,
 } from "./reviewerAddressed";
 import { ReviewResult } from "./parse";
+import { promptText, type ReviewerPromptVariant } from "./promptV3";
 import { assembleGuidance, guidanceHash, type GuidanceInput } from "./guidance";
 import {
   ReviewEnvironment,
@@ -27,6 +29,8 @@ import {
   unavailable,
 } from "./review";
 import { AutoReviewSessions, reviewContextKey } from "./state";
+import { reasonOf, TAINTED_SESSION_SOURCE } from "../taint/taintRule";
+import { taintInput } from "../taint/taintWiring";
 
 export interface AutoReviewRequest {
   sessionId: string;
@@ -64,7 +68,7 @@ export interface AutoReviewReply {
   /** The reviewer's reply could not be read, so the call was left for the user. */
   unusable?: boolean;
   /**
-   * YOLO only: the call carries text addressed to the reviewer. YOLO runs it
+   * IDGAF only: the call carries text addressed to the reviewer. IDGAF runs it
    * anyway; the notice is for the person to see.
    */
   notice?: string;
@@ -94,6 +98,12 @@ export interface AutoReviewDeps {
   trustedDomains?: readonly string[];
   /** The person's own `toolPermissions.auto.environment.envNames`, and nothing else. */
   envNames?: EnvNameOptions;
+  /**
+   * `toolPermissions.auto.reviewerPrompt` from the person's own config.yaml
+   * and nothing else (userReviewerPrompt.ts). `v3` is the tightened prompt;
+   * absent is the shipped one.
+   */
+  reviewerPrompt?: ReviewerPromptVariant;
   sessions: AutoReviewSessions;
   timeoutMs?: number;
   signal?: AbortSignal;
@@ -112,6 +122,9 @@ const FINAL_SOURCES: DecisionSource[] = [
   "allow-rule",
   "protected-path",
   "safety-floor",
+  "tainted-session",
+  // B92: a secret read then a network call is the person's to approve
+  "secret-egress",
 ];
 
 /**
@@ -127,6 +140,7 @@ export async function autoReviewToolCall(
   deps: AutoReviewDeps,
   req: AutoReviewRequest,
 ): Promise<AutoReviewReply> {
+  const tainted = taintInput(req.sessionId, req.callId);
   const evaluated = evaluateToolPolicyWithRules({
     tool: deps.tool,
     toolName: req.toolName,
@@ -136,9 +150,11 @@ export async function autoReviewToolCall(
     permissions: deps.permissions,
     approval: req.approval,
     cwd: folderPath(deps.environment.workspaceDirs?.[0]),
+    ...deputyWorkspace(deps.environment.workspaceDirs ?? []),
     shell: deps.shell,
     trustedDomains: deps.trustedDomains,
     envNames: deps.envNames,
+    ...tainted,
   });
   const base = { displayValue: evaluated.displayValue };
   const settled = (
@@ -157,7 +173,7 @@ export async function autoReviewToolCall(
   }
   if (evaluated.policy === "allowedWithoutPermission") {
     const allowed = settled("allow", "Allowed without review.");
-    if (evaluated.source === "yolo") {
+    if (evaluated.source === "idgaf") {
       const hits = findReviewerAddressedText(req.parsedArgs);
       if (hits.length > 0) {
         return { ...allowed, notice: addressedReason(hits) };
@@ -181,6 +197,14 @@ export async function autoReviewToolCall(
   }
   if (evaluated.source && FINAL_SOURCES.includes(evaluated.source)) {
     return settled("ask", "Your rules ask before this runs.");
+  }
+  // A sink in a tainted session is the person's to approve, not the reviewer's
+  if (evaluated.taintSink && tainted.taint) {
+    return {
+      ...settled("ask", ""),
+      reason: reasonOf(evaluated.taintSink, tainted.taint),
+      ruleSource: TAINTED_SESSION_SOURCE,
+    };
   }
 
   // Only an area set to Automatic has a reviewer: the others leave an open
@@ -237,12 +261,18 @@ export async function autoReviewToolCall(
     );
   }
   const guidance = assembled.guidance;
-  const promptVersion = reviewerPromptVersion(guidance);
+  const variant = deps.reviewerPrompt === "v3" ? "v3" : "default";
+  const promptVersion = reviewerPromptVersion(
+    guidance,
+    undefined,
+    promptText(variant),
+  );
 
   const state = deps.sessions.get(req.sessionId);
   const limits = deps.permissions?.auto?.limits;
   // A verdict is only reused under the same words and the same guidance
-  const context = `${reviewContextKey(req.history.userMessages)}:${guidanceHash(guidance)}`;
+  const taintKey = tainted.taint?.kinds.join("+") ?? "";
+  const context = `${reviewContextKey(req.history.userMessages)}:${guidanceHash(guidance)}:${variant}:${taintKey}`;
   const cached = state.cached(req.toolName, req.parsedArgs, context);
   // A cached answer is not counted again. The cap is for new refusals.
   if (cached) {
@@ -270,7 +300,10 @@ export async function autoReviewToolCall(
       toolName: req.toolName,
       args: req.parsedArgs,
       history: req.history,
-      environment: deps.environment,
+      environment: {
+        ...deps.environment,
+        ...(tainted.taint ? { taint: tainted.taint } : {}),
+      },
       settings: deps.permissions?.auto,
       guidance,
     },
@@ -279,6 +312,7 @@ export async function autoReviewToolCall(
       signal: deps.signal,
       headless: req.headless,
       reasoning: deps.reviewerReasoning,
+      promptVariant: variant,
     },
   );
   state.remember(req.toolName, req.parsedArgs, raw, context);

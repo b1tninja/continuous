@@ -33,6 +33,29 @@ function workspacePackages() {
     }));
 }
 
+/**
+ * core/util/paths.ts runs a migration of ~/.continue at import (os.homedir,
+ * fs.cpSync). A browser has neither; the harness never reads the folder, so
+ * the constant is fixed and the migration never runs.
+ */
+function skipGlobalDirMigration() {
+  const marker = "const CONTINUE_GLOBAL_DIR = (() => {";
+  return {
+    name: "harness-skip-global-dir-migration",
+    enforce: "pre",
+    transform(code, id) {
+      if (!id.replaceAll("\\", "/").endsWith("core/util/paths.ts")) return null;
+      if (!code.includes(marker)) return null;
+      return code.replace(
+        marker,
+        `const CONTINUE_GLOBAL_DIR = "/harness/.continue";
+const _migration = (() => {
+  if (true) return "";`,
+      );
+    },
+  };
+}
+
 export default async function config() {
   const { defineConfig } = await import(
     pathToFileURL(fromGui.resolve("vite")).href
@@ -44,7 +67,7 @@ export default async function config() {
   return defineConfig({
     root: path.join(here, "harness"),
     base: "./",
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), skipGlobalDirMigration()],
     resolve: {
       alias: [
         { find: "@gui", replacement: path.join(gui, "src") },

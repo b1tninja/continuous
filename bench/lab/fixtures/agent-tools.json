@@ -476,20 +476,6 @@
     }
   },
   {
-    "name": "search_web",
-    "description": "Performs a web search, returning top results. Use this tool sparingly - only for questions that require specialized, external, and/or up-to-date knowledege. Common programming questions do not require web search.",
-    "parameters": {
-      "type": "object",
-      "required": ["query"],
-      "properties": {
-        "query": {
-          "type": "string",
-          "description": "The natural language search query"
-        }
-      }
-    }
-  },
-  {
     "name": "edit_existing_file",
     "description": "Use this tool to edit an existing file. If you don't know the contents of the file, read it first.\n  When addressing code modification requests, present a concise code snippet that\n  emphasizes only the necessary changes and uses abbreviated placeholders for\n  unmodified sections. For example:\n\n  ```language /path/to/file\n  // ... existing code ...\n\n  {{ modified code here }}\n\n  // ... existing code ...\n\n  {{ another modification }}\n\n  // ... rest of code ...\n  ```\n\n  In existing files, you should always restate the function or class that the snippet belongs to:\n\n  ```language /path/to/file\n  // ... existing code ...\n\n  function exampleFunction() {\n    // ... existing code ...\n\n    {{ modified code here }}\n\n    // ... rest of function ...\n  }\n\n  // ... rest of code ...\n  ```\n\n  Since users have access to their complete file, they prefer reading only the\n  relevant modifications. It's perfectly acceptable to omit unmodified portions\n  at the beginning, middle, or end of files using these \"lazy\" comments. Only\n  provide the complete file when explicitly requested. Include a concise explanation\n  of changes unless the user specifically asks for code only.\n\nThis tool CANNOT be called in parallel with any other tools, including itself",
     "parameters": {

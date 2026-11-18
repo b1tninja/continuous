@@ -39,11 +39,15 @@ describe("Permissions loading and error states", () => {
     expect(screen.getByTestId("permissions-loading").textContent).toContain(
       "Reading your permission rules",
     );
-    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(
+      screen.queryByRole("tablist", { name: "Permission areas" }),
+    ).toBeNull();
     expect(screen.queryByTestId("permissions-slow")).toBeNull();
     await act(async () => release(report));
     expect(screen.queryByTestId("permissions-loading")).toBeNull();
-    expect(screen.getByRole("tablist")).toBeDefined();
+    expect(
+      screen.getByRole("tablist", { name: "Permission areas" }),
+    ).toBeDefined();
   });
 
   it("says it is slow after the timeout and offers to try again", async () => {
@@ -94,11 +98,11 @@ describe("Permissions first-run overview", () => {
     const card = screen.getByTestId("permissions-intro");
     expect(card.textContent).toContain("Context use");
     expect(card.textContent).toContain("Questions");
-    for (const preset of ["Careful", "Accept edits", "Hands off", "YOLO"]) {
+    for (const preset of ["Careful", "Accept edits", "Hands off", "IDGAF"]) {
       expect(card.textContent).toContain(preset);
     }
     const dismiss = screen.getByRole("button", {
-      name: "Dismiss the permissions overview",
+      name: "Got it, dismiss the permissions overview",
     });
     expect(dismiss.className).toContain("h-6");
     expect(document.querySelectorAll("[id]").length).toBe(

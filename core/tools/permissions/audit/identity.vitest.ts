@@ -59,6 +59,7 @@ describe("agent identity in the audit record", () => {
       kind: "loop-worker",
       role: "item 3",
       mode: "agent",
+      toolRole: "agent",
       parentId: "main-s1",
     });
     expect(loopWorkerAuditAgent("s1", "3", "plan").mode).toBe("plan");
@@ -71,6 +72,7 @@ describe("agent identity in the audit record", () => {
       kind: "background",
       role: "background task",
       mode: "background",
+      toolRole: "background",
       parentId: "main-s1",
     });
     expect(auditAgentOf(a)).toEqual(a);
@@ -104,6 +106,7 @@ describe("agent identity in the audit record", () => {
       kind: "subagent",
       role: "Explore",
       mode: "agent",
+      toolRole: "agent",
       parentId: "main-s1",
     });
     expect(row.decisions[0].mode).toBe("agent");
@@ -204,5 +207,24 @@ describe("the inbox", () => {
     ).toHaveLength(0);
     t.answer("c1", false);
     expect(listInbox(dir)).toHaveLength(0);
+  });
+});
+
+describe("the role the tool table applied", () => {
+  it("is recorded for each kind of agent, from its mode", () => {
+    expect(mainAuditAgent("s1", "plan").toolRole).toBe("planner");
+    expect(mainAuditAgent("s1", "agent").toolRole).toBe("agent");
+    expect(mainAuditAgent("s1").toolRole).toBeUndefined();
+    expect(subagentAuditAgent("s1", "c1", "Explore", "plan").toolRole).toBe(
+      "planner",
+    );
+    expect(loopWorkerAuditAgent("s1", "i1").toolRole).toBe("agent");
+    expect(backgroundAuditAgent("s1", "t1").toolRole).toBe("background");
+  });
+
+  it("survives the copy a record makes of an agent", () => {
+    expect(auditAgentOf(mainAuditAgent("s1", "plan"))?.toolRole).toBe(
+      "planner",
+    );
   });
 });

@@ -23,7 +23,7 @@ describe("TelemetryService - Session Metadata", () => {
     originalArgv = [...process.argv];
 
     // Enable telemetry for tests
-    process.env.CONTINUE_CLI_ENABLE_TELEMETRY = "1";
+    process.env.CONTINUOUS_OTEL = "1";
     process.env.OTEL_METRICS_EXPORTER = "console";
   });
 

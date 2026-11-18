@@ -16,13 +16,13 @@ Each level answers one question: **who decides a call that your rules leave open
 | **Cautious**   | You, unless an allow rule covers it                   | all                                              |
 | **Automatic**  | A reviewer model; you, when it is unsure              | all                                              |
 | **Permissive** | The agent: it runs unless a deny or ask rule stops it | all                                              |
-| **YOLO**       | The agent, and no rule is consulted                   | none (see "YOLO")                                |
+| **IDGAF**      | The agent, and no rule is consulted                   | none (see "IDGAF")                               |
 
-The order is from least to most done without you: each step down means fewer decisions reach you. It is not an order of outcomes. A reviewer may refuse what you would have allowed, so Automatic's dropdown line says so. On Questions and Plan edits the top level is labelled **IDGAF**; only the label differs.
+The order is from least to most done without you: each step down means fewer decisions reach you. It is not an order of outcomes. A reviewer may refuse what you would have allowed, so Automatic's dropdown line says so. The top level is called **IDGAF** on every area. Versions before 2.15 called it YOLO on three areas and IDGAF on two; a stored `yolo` is read as `idgaf` and nothing writes the old word.
 
-**Names.** Manual, Cautious, Automatic, Permissive and YOLO are the user's words for the five concepts and are kept here. The research on level naming (`research-controls-ux.md`) finds that two adjacent attitude words do not sort for users (Tor's Safer and Safest failed in testing) and that no 2026 vendor uses such words; it proposes names that say who decides, in order: Ask, Rules, Reviewer, Allow, Everything (or, on Plan and Questions: You decide, Your rules else you, Reviewer decides, Agent decides unless a rule says you, Agent decides everything). The review carries this as a decision for the user. Whatever the words, each dropdown has a header line, "fewer prompts as you go down", and each line names who decides.
+**Names.** Manual, Cautious, Automatic, Permissive and IDGAF are the user's words for the five concepts and are kept here. The research on level naming (`research-controls-ux.md`) finds that two adjacent attitude words do not sort for users (Tor's Safer and Safest failed in testing) and that no 2026 vendor uses such words; it proposes names that say who decides, in order: Ask, Rules, Reviewer, Allow, Everything (or, on Plan and Questions: You decide, Your rules else you, Reviewer decides, Agent decides unless a rule says you, Agent decides everything). The review carries this as a decision for the user. Whatever the words, each dropdown has a header line, "fewer prompts as you go down", and each line names who decides.
 
-|                                                                   | Manual                                   | Cautious                                                                    | Automatic                                                                                                          | Permissive                                                                          | YOLO / IDGAF                                                   |
+|                                                                   | Manual                                   | Cautious                                                                    | Automatic                                                                                                          | Permissive                                                                          | IDGAF / IDGAF                                                  |
 | ----------------------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | **Context use** (reads: tools, read-only commands, read-only MCP) | Asks each read                           | Reads what an allow rule or the tool's own setting covers, asks otherwise   | As Cautious; the reviewer decides what is left, except in-workspace reads, which run                               | Reads unless a deny or ask rule stops it                                            | Reads everything                                               |
 | **Tool use** (commands, MCP, web)                                 | Asks each call                           | Runs what an allow rule or the tool's own setting covers, asks otherwise    | As Cautious; the reviewer decides what is left                                                                     | Runs unless a deny or ask rule stops it                                             | Runs everything                                                |
@@ -105,11 +105,11 @@ Two lists, and each level consults the lists the way the tool levels consult rul
 For a question:
 
 1. `access`: you, at every level.
-2. IDGAF: the agent decides.
+2. IDGAF: the agent decides, and nothing asks anywhere. Your own "you decide" list does not apply. Every surface (the extension's Questions panel, `cn`'s AskQuestion in the terminal UI, `-p` and `serve`, a loop's HoldQuestion, a plan's decisions made outside a loop, a held question left over from before the level changed, an item over its limit under Suggest, an MCP server's elicitation) answers by one rule: the `(recommended)` option, else the plan decision's pick, else the first option, else "No one is available to answer; use your best judgment and state the assumption". The record is `by: system`, source `Questions: IDGAF`, and the person sees one non-blocking line, `Auto-answered: <question> -> <answer>`. MCP elicitation takes the server's own defaults, or is declined with a note when a field has none, asks for a secret, or the form is a url (never an invented value). An approval that a loop would hold is refused instead, and a call at an IDGAF-level area that still asks (the floors no level lifts) is refused with its reason. An approval outside a loop stays with the Tool use, File edits and Context use levels, and Plan mode's own Build question is not a question the agent asks.
 3. Manual: you decide.
 4. Cautious: the type is on "agent decides": the agent decides. Otherwise you decide.
-5. Permissive: the type is on "you decide": you decide. Otherwise the agent decides.
-6. Automatic: "you decide" and `scope` send it to you, "agent decides" to the agent, and the reviewer answers `design` and `detail`; unsure or any failure sends it to you. The reviewer has no more information about your intent than the agent, so it is not asked about scope.
+5. Permissive: the type is on your own "you decide" list (not the default list): you decide. Otherwise the agent decides, and in a loop the system answers it (the `(recommended)` option, else the first, else "No one is available to answer; use your best judgment and state the assumption"), recorded as `system`.
+6. Automatic (the reviewer is not built, so as Permissive): your own "you decide" list sends it to you, otherwise the system answers it. The reviewer design below is the plan: "you decide" and `scope` send it to you, "agent decides" to the agent, and the reviewer answers `design` and `detail`; unsure or any failure sends it to you. The reviewer has no more information about your intent than the agent, so it is not asked about scope.
 
 A missing or unknown type counts as "you decide" at every level but IDGAF.
 
@@ -185,7 +185,7 @@ For a call in a given area:
 1. An organisation ceiling caps the level (see "Settings"). Nothing below raises it.
 2. The tool is switched off: off. Nothing overrides this.
 3. A hook (CLI) says deny or ask: it tightens. A hook's allow counts as an allow rule. Hooks are the user's own programs, not rules, so they run at every level.
-4. Level is YOLO: run. Rules, built-ins and the reviewer are not consulted.
+4. Level is IDGAF: run. Rules, built-ins and the reviewer are not consulted.
 5. A deny rule matches any part: refused, and the agent is told and carries on.
 6. An enabled built-in refuses (safety check) or asks (protected path).
 7. An ask rule matches any part: ask.
@@ -230,11 +230,11 @@ A vouched read-only command also runs in a plan turn, which is what lets a re-pl
 
 **Commands that read or write named files are checked against the file rules.** The parser extracts the files a read-only command names (`cat`, `head`, `tail`, `sed -n`, `grep` on a file) and matches them against the Context area's deny and ask rules and the protected paths, so a Context deny on `.env` stops `cat .env`. It extracts the paths a command would write (redirect targets `>`, `>>`, `2>`, `tee`, `sed -i`, and the targets of `mv`, `cp`, `rm`, `touch`, `mkdir`, `git checkout --`) and matches them against the File edits area's deny and ask rules and the protected paths. A hit tightens the call. This never loosens: an allow rule on an edit path does not make a command run. Claude Code ships this check and says itself what it misses: `grep -r` from inside a directory, scripts and interpreters that open files, writes by flag (`git diff --output`, `rg --pre`), other spellings of a program, and anything behind `$()`. It closes the accidental case, not the adversarial one.
 
-What it does not close, the controls say: when Tool use is looser than File edits, the File edits control shows "commands can still write files"; when Tool use is looser than Context use, the Context control shows "commands can still read files"; the Tool use Permissive and YOLO lines repeat it. The `sandbox:` key is reserved beside `levels` in the settings file now, so that adding a sandbox later never changes what a level means (Cursor's allowlist-replaced-by-sandbox complaint). On Windows the text check is the only layer most users will have for some time: Claude Code runs native Windows unsandboxed, VS Code dropped Windows sandboxing for local sessions, Cursor's runs inside WSL2, and only Codex ships a native one on recent Windows 11 builds.
+What it does not close, the controls say: when Tool use is looser than File edits, the File edits control shows "commands can still write files"; when Tool use is looser than Context use, the Context control shows "commands can still read files"; the Tool use Permissive and IDGAF lines repeat it. The `sandbox:` key is reserved beside `levels` in the settings file now, so that adding a sandbox later never changes what a level means (Cursor's allowlist-replaced-by-sandbox complaint). On Windows the text check is the only layer most users will have for some time: Claude Code runs native Windows unsandboxed, VS Code dropped Windows sandboxing for local sessions, Cursor's runs inside WSL2, and only Codex ships a native one on recent Windows 11 builds.
 
 ## Built-in rules
 
-Protected paths and the safety check become rules you can see and switch off, by id. Cautious, Automatic and Permissive honour them; YOLO ignores them.
+Protected paths and the safety check become rules you can see and switch off, by id. Cautious, Automatic and Permissive honour them; IDGAF ignores them.
 
 | id                          | Effect | Covers                                                                                                                                                                                                                                                                                                                                                                                  |
 | --------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -246,21 +246,29 @@ Protected paths and the safety check become rules you can see and switch off, by
 
 Two things are not switchable:
 
-- **Writes to the policy itself** (`config.yaml`, `permissions.yaml`, `mcp-tool-pins.json`, the audit files, and project `.continue` or `.continuous` rule and block files and `.continuerc.*`; PR #516, `selfProtect`) ask below Automatic and are refused at Automatic and YOLO. No setting switches this off, and `protect-config` does not govern it. It covers edit tools, terminal commands that name the path and non-read-only MCP tools naming it. A repository or the agent must not be able to turn this off. Decided 2026-11-10: files the product loads as hooks, rules or settings join this list as locks (ROADMAP B6a, B18).
-- **YOLO and IDGAF are never read from disk.** They are set from the picker or a flag and last for the session (see "Settings"). So an agent that writes `yolo` into the policy file changes nothing for the next session.
+- **Writes to the policy itself** (`config.yaml`, `permissions.yaml`, `mcp-tool-pins.json`, the audit files, and project `.continue` or `.continuous` rule and block files and `.continuerc.*`; PR #516, `selfProtect`) ask below Automatic and are refused at Automatic and IDGAF. No setting switches this off, and `protect-config` does not govern it. It covers edit tools, terminal commands that name the path and non-read-only MCP tools naming it. A repository or the agent must not be able to turn this off. Decided 2026-11-10: files the product loads as hooks, rules or settings join this list as locks (ROADMAP B6a, B18).
+- **IDGAF is never read from disk.** They are set from the picker or a flag and last for the session (see "Settings"). So an agent that writes `yolo` into the policy file changes nothing for the next session.
 
 Built-ins are stored as switches by id, never copied into your file, so new built-ins arrive with updates and nothing is lost by omission. Switching one off is how a false alarm such as `\\w.py` gets fixed.
 
-## YOLO
+## IDGAF
 
-YOLO approves everything: no rule, built-in or reviewer is consulted. This is by decision. Four things still bind, because they are not approval:
+IDGAF approves everything: no rule, built-in or reviewer is consulted. This is by decision. Four things still bind, because they are not approval:
 
 - a tool that is switched off stays off;
-- the locked files, which are refused at YOLO: the policy files (PR #516) and, since B6a, every file the product loads as config, code, rules or hooks, read from one registry (`core/util/productPaths.ts`; see "Writes to the policy itself");
+- the locked files, which are refused at IDGAF: the policy files (PR #516) and, since B6a, every file the product loads as config, code, rules or hooks, read from one registry (`core/util/productPaths.ts`; see "Writes to the policy itself");
 - an organisation ceiling (below);
 - hooks, which are the user's own programs.
 
-The dropdown line says so and counts the deny rules YOLO will ignore. Optionally, for a user who wants one hard line while keeping YOLO's meaning everywhere else, the settings file takes a `floor:` list of deny rules that bind at every level including YOLO. It is empty by default and never written by anything but the person, so YOLO's default behaviour is exactly "approve everything".
+The dropdown line says so and counts the deny rules IDGAF will ignore. Optionally, for a user who wants one hard line while keeping IDGAF's meaning everywhere else, the settings file takes a `floor:` list of deny rules that bind at every level including IDGAF. It is empty by default and never written by anything but the person, so IDGAF's default behaviour is exactly "approve everything".
+
+### File edits outside the workspace at the top level
+
+At File edits = IDGAF (`--auto` sets it) an edit, a write or a new file outside the workspace folders is carried out: no prompt and no refusal, in the IDE, the CLI terminal UI, headless `-p` and `serve`, from one question (`editsAllowOutsideWorkspace`, `core/tools/permissions/outsideEdits.ts`). The decision is the evaluator's (source `idgaf`, by rules); its reason names the resolved absolute path, so the audit trail lists it, and the tool result says `Wrote outside the workspace: <path>`.
+
+Where a tool enforced containment itself, it now takes a per-call option the host sets only at that level (`allowOutsideWorkspace` on `tools/call` and `tools/preprocessArgs`; `ResolveOptions.allowOutside` in `core/util/ideUtils.ts`; the CLI reads the effective levels in `workspaceBoundary.ts`). Without it the checks are as before. Only File edits decides: Tool use at the top level does not free a file tool.
+
+Floors that hold at this level: the locked policy and config files, a tool switched off, an organisation ceiling, and the person's own `floor:` rules. Not changed: the tainted-session rule (opt-in, applies at every level as specified in `design/tainted-session.md`), the secret-name check inside the file tools, the webview write guard for plan files, the Plan role (Plan mode and `--readonly` hold writes by design). Manual, Cautious and Automatic ask; Permissive holds it through the outside-paths protection.
 
 ## Settings
 
@@ -281,7 +289,7 @@ questions:
   agentDecides: [detail]
 builtin:
   protect-network-paths: off
-floor: [] # optional deny rules that bind even at YOLO
+floor: [] # optional deny rules that bind even at IDGAF
 mcpServers:
   github: trusted # a server's readOnlyHint moves tools to Context only when trusted
 # sandbox: reserved for later; never changes what a level means
@@ -289,13 +297,13 @@ mcpServers:
 
 Rules stay where they are (`toolPermissions` in config.yaml, `allow`/`ask`/`exclude` in the CLI's file).
 
-**Scope and lifetime.** Levels are per user. YOLO and IDGAF are per session: they are not saved, and a saved value of `yolo` is read as that area's default with a notice. A change takes effect as a snapshot per turn: a tightening applies at the next tool call, a loosening from the next turn, except that it may answer a prompt already waiting.
+**Scope and lifetime.** Levels are per user. IDGAF is per session: it is not saved, and a saved value of `idgaf` or `yolo` is read as that area's default with a notice. A change takes effect as a snapshot per turn: a tightening applies at the next tool call, a loosening from the next turn, except that it may answer a prompt already waiting.
 
 **Repository files cannot set levels, presets, lists, built-ins or the floor.** They are read from user settings only. A repository that tries is ignored with a notice naming the keys.
 
 **Repository files cannot add allow rules or reviewer guidance without trust.** Today `.continue/*.yaml` blocks in the workspace are merged into the config and `toolPermissions.allow` lists are concatenated, so a cloned repository can allow anything and write the reviewer's "fine to allow" guidance. Each rule carries its source. `deny`, `ask` and `exclude` from a workspace file apply at once. `allow` and `auto.guidance.allow` from a workspace file apply only after a dialog that lists the exact rules, keyed to a hash of the file so a change asks again; until then they are ignored with a notice. This is the mistake behind CVE-2025-53773 and the later VS Code report, and the Cursor MCPoison report is why the trust is keyed to the file's content.
 
-**Organisation ceiling.** An organisation's config may set `ceiling.<area>: <level>`. A level above the ceiling is shown as capped, and YOLO within a ceiling runs at the ceiling. It is the one thing that binds at YOLO besides tools switched off and hooks.
+**Organisation ceiling.** An organisation's config may set `ceiling.<area>: <level>`. A level above the ceiling is shown as capped, and IDGAF within a ceiling runs at the ceiling. It is the one thing that binds at IDGAF besides tools switched off and hooks.
 
 A level that does not exist for an area, or an unknown name, falls back to that area's default and reports it. Nothing silently does nothing.
 
@@ -309,7 +317,7 @@ A preset writes the five levels and nothing else; rules are untouched. Anything 
 | Accept edits | Permissive | Cautious   | Permissive | Cautious   | Cautious   |
 | Hands off    | Permissive | Permissive | Permissive | Permissive | Permissive |
 | Reviewer     | Permissive | Automatic  | Automatic  | Automatic  | Automatic  |
-| YOLO         | YOLO       | YOLO       | YOLO       | IDGAF      | IDGAF      |
+| IDGAF        | IDGAF      | IDGAF      | IDGAF      | IDGAF      | IDGAF      |
 
 Reviewer leaves Context at Permissive: a reviewer on in-workspace reads costs a call per read for nothing, and every comparable tool skips them.
 
@@ -323,7 +331,7 @@ Saved settings are normalised on read and not rewritten until you change somethi
 | Auto-approve                                    | Careful, then each switch: read files → Context Permissive; edit files → Edits Permissive; run all commands → Tools Permissive; browser and MCP stay under Tools at Cautious, with per-tool settings carrying them |
 | Auto                                            | Reviewer, for Tools; the rest as Careful                                                                                                                                                                           |
 | Review                                          | Context and Tools Permissive; the rest as Careful                                                                                                                                                                  |
-| YOLO                                            | The same as Review. A saved `yolo` comes from 2.4.4, where YOLO still honoured deny rules and protected paths, so carrying it over as today's YOLO would loosen it; and YOLO is now session-only in any case       |
+| YOLO                                            | The same as Review. A saved `yolo` comes from 2.4.4, where YOLO still honoured deny rules and protected paths, so carrying it over as today's IDGAF would loosen it; and IDGAF is now session-only in any case     |
 | A per-tool "run without asking" on an edit tool | Edits Cautious (the setting becomes an allow rule for that tool)                                                                                                                                                   |
 | Loop level on a saved session                   | Ignored; the levels in force apply. Note: at the default Plan Cautious, a Loop started from a prompt now waits on its first plan, where before it did not; the first run after upgrading says so once              |
 
@@ -336,9 +344,9 @@ Only `manual`, `autoApprove`, `auto` and `yolo` shipped in 2.4.4. Review and Loo
 - _Five icons (decided):_ each icon shows its level with a fill mark as well as colour, and its tooltip is a plain sentence naming who decides ("Tool use: runs what your rules allow, asks you about the rest"). Clicking one opens a dropdown of its levels, with a header line, one line each on what that level does in that area, and the reviewer line's caveat. Presets live in one place, the first icon's dropdown or a Settings page, not in all five: Roo's history with a global switch beside per-area toggles is a record of state bugs.
 - _One picker (recommended by the evidence):_ a labelled control showing the preset name or Custom, red when any area is at the top level. Its popover lists the presets first and the five rows beneath, each row a dropdown as above. The tooltip and status line show only the rows that differ from the preset.
 
-In either shape, an area at the top level turns the control red, replacing the YOLO banner. Settings gets a page for the same five rows, plus the built-in rules, the question lists and the floor. The File edits control shows the "commands can still write files" note when Tool use is looser than it.
+In either shape, an area at the top level turns the control red, replacing the IDGAF banner. Settings gets a page for the same five rows, plus the built-in rules, the question lists and the floor. The File edits control shows the "commands can still write files" note when Tool use is looser than it.
 
-**The label IDGAF.** The user chose it for the top level of Questions and Plan edits. The evidence against it is specific: the Visual Studio Marketplace terms bar offensive content and Microsoft scans listings, Open VSX's terms bar profanity, the acronym expands to an expletive and does not localise, and comparable jokey labels (Chromium's download-recovery button, Firefox's about:config warning, Cursor's YOLO) were all renamed once the audience widened. The review asks the user to decide; the alternative is "Everything" or "Agent decides everything" with the red icon carrying the warning, and YOLO kept as the CLI alias for the preset.
+**The label IDGAF.** The user chose it for the top level of Questions and Plan edits, then for every area in place of YOLO. The evidence against it is specific: the Visual Studio Marketplace terms bar offensive content and Microsoft scans listings, Open VSX's terms bar profanity, the acronym expands to an expletive and does not localise, and comparable jokey labels (Chromium's download-recovery button, Firefox's about:config warning, Cursor's IDGAF) were all renamed once the audience widened. The review asks the user to decide; the alternative is "Everything" or "Agent decides everything" with the red icon carrying the warning, and IDGAF kept as the CLI alias for the preset.
 
 **Always allow.** Cautious is only usable if rules are easy to make. From a prompt or the inbox: "Always allow `npm test`" writes a command rule; "Always allow edits in `src/**`" writes an edit rule; "Always let the agent decide `detail` questions" adds the type to the list. The rule is shown before it is saved, and only the one-time option is offered when the rule cannot be shown.
 
@@ -352,7 +360,7 @@ In either shape, an area at the top level turns the control red, replacing the Y
 
 ## Accountability
 
-At the end of a Loop run, and as a summary chip after an Agent turn, a report lists: rules that were not consulted (YOLO), questions the agent or the reviewer decided and what they chose, checks a re-plan changed, calls refused and by whom, and the snapshot to revert to. Loop takes a `git stash create` snapshot at the start of each item (the L6 proposal) so revert is per item.
+At the end of a Loop run, and as a summary chip after an Agent turn, a report lists: rules that were not consulted (IDGAF), questions the agent or the reviewer decided and what they chose, checks a re-plan changed, calls refused and by whom, and the snapshot to revert to. Loop takes a `git stash create` snapshot at the start of each item (the L6 proposal) so revert is per item.
 
 The reviewer's calls count against Loop's token budget: they are tokens spent on the run. The reviewer prompt is a fixed prefix plus the call, so it caches like any other request.
 
@@ -366,7 +374,7 @@ Taken from it: deny, ask, allow with no specificity; built-ins switched by id; l
 
 Not taken, on purpose:
 
-- **YOLO keeps your deny rules.** Claude Code, Zed and Devin all do this, and the research recommends it. We don't: YOLO is defined as ignoring every rule, by decision. The dropdown says so and counts the deny rules it will ignore. The optional `floor:` list is there for a user who wants one hard line and says so.
+- **IDGAF keeps your deny rules.** Claude Code, Zed and Devin all do this, and the research recommends it. We don't: IDGAF is defined as ignoring every rule, by decision. The dropdown says so and counts the deny rules it will ignore. The optional `floor:` list is there for a user who wants one hard line and says so.
 - **Three levels on Plan and Questions.** Both keep all five. On Plan, Cautious and Permissive have clear meanings (no new to-dos, at most N); on Questions, the two lists give Cautious and Permissive something to match on.
 - **No reviewer on in-workspace edits.** Vendors skip them, but that path is where the published misses are, and the user asked for a reviewer that accepts edits. It reviews the edit as a tool call, the same as everything else.
 - **`overrides` for MCP or web.** Not in the first version; per-tool settings and rules cover it.

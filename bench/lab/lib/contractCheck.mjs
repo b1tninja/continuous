@@ -5,7 +5,7 @@
 import { wilson as ownWilson } from "./stats.mjs";
 
 /** The contract version this lab was written against. */
-export const EXPECTED_CONTRACT_VERSION = 1;
+export const EXPECTED_CONTRACT_VERSION = 3;
 
 const close = (a, b) => Math.abs(a - b) < 1e-12;
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -72,6 +72,15 @@ export function checkContract(
   for (const v of golden.validateProbeResult ?? [])
     attempt(`validateProbeResult(${JSON.stringify(v.input)})`, () =>
       same(contract.validateProbeResult(v.input), v.problems),
+    );
+  for (const v of golden.validateServerIdentity ?? [])
+    attempt(`validateServerIdentity(${JSON.stringify(v.input)})`, () =>
+      same(contract.validateServerIdentity(v.input), v.problems),
+    );
+  for (const v of golden.serverIdentityLabel ?? [])
+    attempt(
+      `serverIdentityLabel(${JSON.stringify(v.input)})`,
+      () => contract.serverIdentityLabel(v.input) === v.output,
     );
   return problems;
 }

@@ -365,7 +365,7 @@ export function envAssignments(
 }
 
 export interface EnvHit {
-  /** `dangerous` asks at every level; `sensitive` asks below YOLO */
+  /** `dangerous` asks at every level; `sensitive` asks below IDGAF */
   severity: "dangerous" | "sensitive";
   name: string;
   /** For the prompt: the name and what it does. Never the value. */

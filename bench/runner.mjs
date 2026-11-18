@@ -11,7 +11,7 @@
 // scenarios moved to bench/scenarios/*.json, the model rows to
 // bench/matrix.yaml, the settings to flags.
 import { execFileSync, execSync, spawn, spawnSync } from "child_process";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import fs from "fs";
 import net from "net";
 import os from "os";
@@ -35,6 +35,14 @@ import {
   toolCalls,
   writeJson,
 } from "./src/common.mjs";
+
+/**
+ * Where bench/fixtures/web is served from by default: this repository's main
+ * branch, so a page a scenario fetches comes from outside the run's
+ * workspace and over the network, as an attacker's page would.
+ */
+const DEFAULT_FIXTURE_BASE =
+  "https://raw.githubusercontent.com/b1tninja/continuous/main/bench/fixtures/web";
 
 const HELP = `Usage: node bench/runner.mjs --model <row> --scenarios a,b [options]
 
@@ -61,7 +69,8 @@ Settings
                            for none, or a text of your own; default: the CLI's own (on for Loop items
                            and the short and tailored profiles, off elsewhere)
   --level <area=level,..>  policy levels, recorded on every record; applied where the CLI has the
-                           knob today (tool-use=yolo adds --auto, tool-use=manual removes it;
+                           knob today (tool-use=idgaf adds --auto, tool-use=manual removes it,
+                           tool-use=cautious, automatic or permissive passes --policy tools=<level>;
                            plan-edits and questions pick the loop autonomy); the rest is recorded only
   --effort <x>             reasoning effort as the family spells it (see matrix.yaml efforts)
   --max-tokens <n>         defaultCompletionOptions.maxTokens (default: the provider's)
@@ -180,12 +189,16 @@ const AREAS = [
   "plan-edits",
   "questions",
 ];
-const LEVELS = ["manual", "cautious", "automatic", "permissive", "yolo"];
+const LEVELS = ["manual", "cautious", "automatic", "permissive", "idgaf"];
 
 function parseLevels(text) {
   const levels = {};
   for (const part of text.split(",")) {
-    const [area, level] = part.split("=").map((s) => s?.trim().toLowerCase());
+    const [area, rawLevel] = part
+      .split("=")
+      .map((s) => s?.trim().toLowerCase());
+    // "yolo" is the old name of idgaf
+    const level = rawLevel === "yolo" ? "idgaf" : rawLevel;
     if (!AREAS.includes(area))
       throw new Error(`--level: unknown area ${area} (${AREAS.join(", ")})`);
     if (!LEVELS.includes(level))
@@ -302,6 +315,11 @@ function buildConfig(settings, scenario) {
     config.modeModels = { loop: { tail }, agent: { tail } };
   const perms = scenario.policy.toolPermissions;
   if (perms && Object.keys(perms).length) config.toolPermissions = perms;
+  // MCP servers the scenario starts. They are in the run's own config
+  // (--config), so none is a server the person vouched for
+  // (extensions/cli/src/tools/mcpTrust.ts): their output comes from outside.
+  if (scenario.config.mcpServers?.length)
+    config.mcpServers = scenario.config.mcpServers;
   return { config, effortNotes };
 }
 
@@ -314,7 +332,7 @@ function applyLevels(levels, scenario) {
   const applied = {};
   const toolUse = levels["tool-use"];
   if (
-    toolUse === "yolo" &&
+    toolUse === "idgaf" &&
     scenario.kind === "agent" &&
     !serve.includes("--auto")
   ) {
@@ -323,6 +341,15 @@ function applyLevels(levels, scenario) {
   } else if (toolUse === "manual" && serve.includes("--auto")) {
     serve.splice(serve.indexOf("--auto"), 1);
     applied["tool-use"] = "no --auto";
+  } else if (
+    ["cautious", "automatic", "permissive"].includes(toolUse) &&
+    !serve.includes("--policy")
+  ) {
+    // Headless runs are at the person's levels since 2.18.0 (CO2); the level
+    // goes in as --policy, and --auto (IDGAF) would override it
+    if (serve.includes("--auto")) serve.splice(serve.indexOf("--auto"), 1);
+    serve.push("--policy", `tools=${toolUse}`);
+    applied["tool-use"] = `--policy tools=${toolUse}`;
   }
   let loop = scenario.loop ? { ...scenario.loop } : undefined;
   const loopLevel = levels["plan-edits"] ?? levels["questions"];
@@ -332,7 +359,7 @@ function applyLevels(levels, scenario) {
       cautious: "supervised",
       automatic: "auto",
       permissive: "auto",
-      yolo: "unattended",
+      idgaf: "unattended",
     }[loopLevel];
     applied[levels["plan-edits"] ? "plan-edits" : "questions"] =
       `loopAutonomy ${loop.autonomy}`;
@@ -587,13 +614,31 @@ async function runOnce({
     repoDir: repo,
     outsidePath,
     outsidePathRe: escapeRe(outsidePath).replace(/\\\\/g, "[/\\\\]"),
+    // The bench folder, for a stub server a scenario starts (bench/stubs)
+    benchDir: BENCH_ROOT,
+    // Where a scenario's web page is served from: outside the workspace, over
+    // the network. Pages live in bench/fixtures/web; BENCH_FIXTURE_BASE points
+    // at another copy (a fork's branch)
+    fixtureBase: process.env.BENCH_FIXTURE_BASE ?? DEFAULT_FIXTURE_BASE,
   };
   const prompt = substitute(scenario.prompt, vars);
   const expectations = substitute(scenario.expectations, vars);
 
-  const { config, effortNotes } = buildConfig(settings, scenario);
+  const { config, effortNotes } = buildConfig(
+    settings,
+    substitute(scenario, vars),
+  );
   const configFile = path.join(runDir, "config.yaml");
   fs.writeFileSync(configFile, YAML.stringify(config));
+  // The person's own config.yaml in the run's Continue home: settings that are
+  // read only from there, such as taintedSessionRule (core/tools/permissions/
+  // taint/taintSetting.ts), never from --config
+  if (scenario.globalConfig) {
+    fs.writeFileSync(
+      path.join(gdir, "config.yaml"),
+      YAML.stringify(substitute(scenario.globalConfig, vars)),
+    );
+  }
   let permissionsFile = null;
   if (scenario.policy.permissionsYaml) {
     permissionsFile = path.join(gdir, "permissions.yaml");
@@ -615,8 +660,12 @@ async function runOnce({
     "--verbose",
     ...levels.serve,
   ];
+  // serve needs a bearer token; this run makes its own and sends it on every call
+  const serveToken = randomBytes(24).toString("hex");
+  const authHeaders = { Authorization: `Bearer ${serveToken}` };
   const env = {
     ...process.env,
+    CONTINUOUS_SERVE_TOKEN: serveToken,
     CONTINUE_GLOBAL_DIR: gdir,
     CONTINUE_DUMP_REQUESTS: dumps,
     ...(settings.profile ? { CONTINUE_PROMPT_PROFILE: settings.profile } : {}),
@@ -751,7 +800,7 @@ async function runOnce({
   const post = async (body) => {
     const res = await fetch(`${base}/message`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders },
       body: JSON.stringify(body),
     });
     return { status: res.status, body: await res.json().catch(() => ({})) };
@@ -793,7 +842,9 @@ async function runOnce({
   };
   class BudgetExceeded extends Error {}
   const state = async () => {
-    const s = await (await fetch(`${base}/state`)).json();
+    const s = await (
+      await fetch(`${base}/state`, { headers: authHeaders })
+    ).json();
     lastState = s;
     const len = s.session?.history?.length ?? 0;
     if (len !== lastLen) {
@@ -1033,7 +1084,10 @@ async function runOnce({
         at: Math.round((Date.now() - started) / 1000),
       };
       log(`budget: ${error.message}; stopping the serve`);
-      await fetch(`${base}/pause`, { method: "POST" }).catch(() => {});
+      await fetch(`${base}/pause`, {
+        method: "POST",
+        headers: authHeaders,
+      }).catch(() => {});
     } else {
       result.error = String(error?.stack ?? error);
       log(`error: ${result.error}`);
@@ -1043,7 +1097,7 @@ async function runOnce({
   // What there is at the end, whatever happened
   let s = lastState;
   try {
-    s = await (await fetch(`${base}/state`)).json();
+    s = await (await fetch(`${base}/state`, { headers: authHeaders })).json();
   } catch {}
   if (s) {
     writeJson(path.join(runDir, "state.json"), s);
@@ -1067,7 +1121,9 @@ async function runOnce({
     });
   } catch {}
 
-  await fetch(`${base}/exit`, { method: "POST" }).catch(() => {});
+  await fetch(`${base}/exit`, { method: "POST", headers: authHeaders }).catch(
+    () => {},
+  );
   await sleep(1500);
   killTree(server);
   await sleep(300);

@@ -290,7 +290,7 @@ describe.runIf(liveDocker)(
       });
       const args = network
         ? containerArgs(command, { runtime: "docker", cwd, network: "bridge" })
-        : executor.invocation(command).args;
+        : executor.invocation(command, cwd).args;
       const r = spawnSync("docker", args, {
         encoding: "utf8",
         timeout: 60_000,

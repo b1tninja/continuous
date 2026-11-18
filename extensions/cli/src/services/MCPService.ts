@@ -1,21 +1,25 @@
 import { decodeFQSN, getTemplateVariables } from "@continuedev/config-yaml";
-import { type AssistantConfig } from "@continuedev/sdk";
+import type { AssistantUnrolled as AssistantConfig } from "@continuedev/config-yaml";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { announcePins } from "core/context/mcp/mcpPinNotices.js";
 import {
-  adoptLegacyPin,
-  evaluatePins,
-  getToolPinStore,
-  launchSpec,
-  pinKey,
-  recordApproval,
-  type ApprovalEvents,
-} from "core/context/mcp/mcpToolPins.js";
+  listPromptsPaged,
+  listToolsPaged,
+} from "core/context/mcp/mcpClientLists.js";
+import { connectModernIfSupported } from "core/context/mcp/mcpModernConnect.js";
+import type { McpPendingApproval } from "core/tools/roleTools.js";
 
 import { getErrorString } from "../util/error.js";
 import { logger } from "../util/logger.js";
 
 import { BaseService, ServiceWithDependencies } from "./BaseService.js";
+import {
+  approveConnectionTools,
+  listPendingTools,
+  pendingNotice,
+  recordConnectionPins,
+  refreshConnectionPins,
+  type PendingMcpTool,
+} from "./mcpApproval.js";
 import {
   constructHttpTransport,
   constructSseTransport,
@@ -37,7 +41,11 @@ interface ServerConnection extends MCPConnectionInfo {
     string,
     { kind: "changed" | "added" | "launch"; summary: string }
   >;
+  /** Tools the person has not approved (TR4): not offered until they are */
+  pendingTools?: Map<string, McpPendingApproval>;
 }
+
+export type { PendingMcpTool };
 
 export const EMPTY_MCP_STATE: MCPServiceState = {
   mcpService: null,
@@ -51,6 +59,12 @@ export class MCPService
   implements ServiceWithDependencies
 {
   private connections: Map<string, ServerConnection> = new Map();
+  /**
+   * Whether this run is unattended (headless, a Loop worker): its first call
+   * to a server that was never approved pins only that tool, since the person
+   * approved it by listing it (`background.mcpTools`), not the whole server.
+   */
+  public isUnattended: () => boolean = () => false;
   private assistant: AssistantConfig | null = null;
   private isShuttingDown = false;
   private isHeadless: boolean | undefined;
@@ -204,57 +218,63 @@ export class MCPService
 
   /** Compare a server's tools and launch definition with what was approved. */
   public async refreshPins(connection: ServerConnection): Promise<void> {
-    try {
-      const options = this.pinOptions(connection);
-      const store = getToolPinStore();
-      await adoptLegacyPin(options, store);
-      const { flagged } = await evaluatePins(
-        pinKey(options),
-        connection.tools as never,
-        store,
-        launchSpec(options),
-      );
-      connection.pinChanges = flagged;
-    } catch (error) {
-      logger.warn("Could not check the saved MCP pins", {
-        name: connection.config?.name,
-        error: getErrorString(error),
-      });
-    }
+    await refreshConnectionPins(connection, this.pinOptions(connection));
   }
 
   /**
-   * A call ran, so it was approved (or the person runs at YOLO): pin it. The
-   * first call to a server pins all of its tools, and a changed launch
-   * definition is accepted here; both are announced.
+   * A call ran, so it was approved (or the person runs at IDGAF): pin it. The
+   * first call to a server pins all of its tools (only the called one in an
+   * unattended run), and a changed launch definition is accepted here; both
+   * are announced.
    */
   public async recordPins(
     connection: ServerConnection,
     toolName: string,
   ): Promise<void> {
-    try {
-      const options = this.pinOptions(connection);
-      const events: ApprovalEvents = {};
-      await adoptLegacyPin(options, getToolPinStore());
-      const changed = await recordApproval(
-        pinKey(options),
-        connection.tools as never,
-        getToolPinStore(),
-        toolName,
-        new Date(),
-        launchSpec(options),
-        events,
-      );
-      if (!changed) return;
-      announcePins(connection.config.name, events, connection.warnings, (m) =>
-        logger.warn(m),
-      );
-      await this.refreshPins(connection);
-    } catch (error) {
-      logger.warn("Could not save the MCP pin", {
-        error: getErrorString(error),
-      });
-    }
+    await recordConnectionPins(
+      connection,
+      this.pinOptions(connection),
+      toolName,
+      this.isUnattended(),
+    );
+  }
+
+  /** Whether this tool waits for the person's approval (TR4), and why. */
+  public getPendingApproval(
+    serverName: string,
+    toolName: string,
+  ): McpPendingApproval | undefined {
+    return this.connections.get(serverName)?.pendingTools?.get(toolName);
+  }
+
+  /** Every tool waiting for approval, by server. */
+  public listPendingApproval(): PendingMcpTool[] {
+    return listPendingTools(this.connections as never);
+  }
+
+  /** The `/mcp` line for a server with tools waiting, or undefined. */
+  public pendingApprovalNotice(serverName: string): string | undefined {
+    return pendingNotice(serverName, this.connections.get(serverName) as never);
+  }
+
+  /**
+   * The person approved these tools (`/mcp approve`): pin their current
+   * definitions. The next request's tool list then includes them, through the
+   * warm-cache hold like any other change (src/tools/toolListHold.ts).
+   */
+  public async approveTools(
+    serverName: string,
+    names: readonly string[] | "all",
+  ): Promise<string[]> {
+    const connection = this.connections.get(serverName);
+    if (!connection) throw new Error(`No MCP server named ${serverName}`);
+    const pinned = await approveConnectionTools(
+      connection as never,
+      this.pinOptions(connection),
+      names,
+    );
+    await this.refreshPins(connection);
+    return pinned;
   }
 
   /** What the policy needs to know before it lets a call to this tool run. */
@@ -263,28 +283,45 @@ export class MCPService
   }
 
   /**
-   * Run a tool by name
+   * Run a tool of one server. With `serverName` the call goes to that server
+   * and no other. Without it the name must belong to exactly one connected
+   * server: when two offer it the call is refused, because running "whichever
+   * connected first" is how an approval card and the executed server differ.
    */
-  public async runTool(name: string, args: Record<string, any>) {
-    for (const connection of this.connections.values()) {
-      if (connection.status === "connected" && connection.client) {
-        const tool = connection.tools.find((t) => t.name === name);
-        if (tool) {
-          const serverName = connection.config!.name;
-          return await this.withTokenRefresh(serverName, async () => {
-            const conn = this.connections.get(serverName);
-            if (!conn?.client) {
-              throw new Error(`Client for ${serverName} not available`);
-            }
-            const result = await conn.client.callTool({
-              name,
-              arguments: args,
-            });
-            await this.recordPins(conn, name);
-            return result;
-          });
+  public async runTool(
+    name: string,
+    args: Record<string, any>,
+    serverName?: string,
+  ) {
+    const owners = [...this.connections.values()].filter(
+      (c) =>
+        c.status === "connected" &&
+        c.client &&
+        (serverName === undefined || c.config?.name === serverName) &&
+        c.tools.some((t) => t.name === name),
+    );
+    if (owners.length > 1) {
+      throw new Error(
+        `Tool ${name} is offered by more than one MCP server (${owners
+          .map((c) => c.config?.name)
+          .join(", ")}); refusing to guess which one to run`,
+      );
+    }
+    const [owner] = owners;
+    if (owner) {
+      const ownerName = owner.config!.name;
+      return await this.withTokenRefresh(ownerName, async () => {
+        const conn = this.connections.get(ownerName);
+        if (!conn?.client) {
+          throw new Error(`Client for ${ownerName} not available`);
         }
-      }
+        const result = await conn.client.callTool({
+          name,
+          arguments: args,
+        });
+        await this.recordPins(conn, name);
+        return result;
+      });
     }
     throw new Error(`Tool ${name} not found`);
   }
@@ -345,8 +382,7 @@ export class MCPService
     try {
       if (unrendered.length > 0) {
         const message = `${serverConfig.name} MCP Server has unresolved secrets: ${unrendered.join(", ")}
-For personal use you can set the secret in the hub at https://continue.dev/settings/secrets or pass it to the CLI environment.
-Org-level secrets can only be used for MCP by Background Agents (https://docs.continue.dev/hub/agents/overview) when \"Include in Env\" is enabled for the secret.`;
+Set each secret as an environment variable or in a .env file (~/.continuous/.env, .continuous/.env, .continue/.env or .env in the project). Secrets are never fetched from a server.`;
         if (this.isHeadless) {
           throw new Error(message);
         } else {
@@ -371,7 +407,9 @@ Org-level secrets can only be used for MCP by Background Agents (https://docs.co
               if (!conn?.client) {
                 throw new Error(`Client for ${serverName} not available`);
               }
-              return (await conn.client.listPrompts()).prompts;
+              const { items, warning } = await listPromptsPaged(conn.client);
+              if (warning) connection.warnings.push(warning);
+              return items;
             },
           );
         } catch (error) {
@@ -393,7 +431,9 @@ Org-level secrets can only be used for MCP by Background Agents (https://docs.co
               if (!conn?.client) {
                 throw new Error(`Client for ${serverName} not available`);
               }
-              return (await conn.client.listTools()).tools;
+              const { items, warning } = await listToolsPaged(conn.client);
+              if (warning) connection.warnings.push(warning);
+              return items;
             },
           );
         } catch (error) {
@@ -491,9 +531,31 @@ Org-level secrets can only be used for MCP by Background Agents (https://docs.co
     connection: ServerConnection,
   ): Promise<Client> {
     const client = new Client(
-      { name: "continue-cli-client", version: "1.0.0" },
+      { name: "continuous-cli-client", version: "1.0.0" },
       { capabilities: {} },
     );
+
+    // Revision 2026-07-28 servers answer `server/discover` and need no handshake;
+    // everything else (and any failure of the probe) takes the classic path.
+    if (
+      !("command" in serverConfig) &&
+      (serverConfig.type === undefined ||
+        serverConfig.type === "streamable-http") &&
+      serverConfig.requestOptions?.verifySsl !== false
+    ) {
+      const modern = await connectModernIfSupported({
+        url: serverConfig.url,
+        clientInfo: { name: "continuous-cli-client", version: "1.0.0" },
+        headers: {
+          ...serverConfig.requestOptions?.headers,
+          ...((serverConfig.apiKey ||
+            this.apiKeyCache.get(serverConfig.name)) && {
+            Authorization: `Bearer ${serverConfig.apiKey ?? this.apiKeyCache.get(serverConfig.name)}`,
+          }),
+        },
+      });
+      if (modern) return modern as unknown as Client;
+    }
 
     if ("command" in serverConfig) {
       // STDIO: no need to check type, just if command is present

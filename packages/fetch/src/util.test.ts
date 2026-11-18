@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   getProxyFromEnv,
   patternMatchesHostname,
+  resetProxyWarning,
   shouldBypassProxy,
 } from "./util.js";
 
@@ -44,10 +45,10 @@ test("getProxyFromEnv returns lowercase http_proxy for http protocol", () => {
   expect(getProxyFromEnv("http:")).toBe("http://proxy.example.com");
 });
 
-test("getProxyFromEnv prefers HTTP_PROXY over http_proxy for http protocol", () => {
+test("getProxyFromEnv prefers lower case http_proxy over HTTP_PROXY (as Node and curl do)", () => {
   process.env.HTTP_PROXY = "http://upper.example.com";
   process.env.http_proxy = "http://lower.example.com";
-  expect(getProxyFromEnv("http:")).toBe("http://upper.example.com");
+  expect(getProxyFromEnv("http:")).toBe("http://lower.example.com");
 });
 
 test("getProxyFromEnv returns HTTPS_PROXY for https protocol", () => {
@@ -60,14 +61,55 @@ test("getProxyFromEnv returns lowercase https_proxy for https protocol", () => {
   expect(getProxyFromEnv("https:")).toBe("https://secure.example.com");
 });
 
-test("getProxyFromEnv falls back to HTTP_PROXY for https protocol when HTTPS_PROXY is not set", () => {
-  process.env.HTTP_PROXY = "http://fallback.example.com";
-  expect(getProxyFromEnv("https:")).toBe("http://fallback.example.com");
+test("getProxyFromEnv does not use HTTP_PROXY for https and warns once", () => {
+  resetProxyWarning();
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  process.env.HTTP_PROXY = "http://plain.example.com";
+  expect(getProxyFromEnv("https:")).toBeUndefined();
+  expect(getProxyFromEnv("https:")).toBeUndefined();
+  expect(warn).toHaveBeenCalledTimes(1);
+  expect(String(warn.mock.calls[0][0])).toContain("HTTPS_PROXY");
+  warn.mockRestore();
 });
 
-test("getProxyFromEnv prefers HTTPS_PROXY over other env vars for https protocol", () => {
-  process.env.HTTPS_PROXY = "https://preferred.example.com";
-  process.env.https_proxy = "https://notused1.example.com";
+test("getProxyFromEnv does not use HTTPS_PROXY for http", () => {
+  process.env.HTTPS_PROXY = "http://secure.example.com";
+  expect(getProxyFromEnv("http:")).toBeUndefined();
+});
+
+test("getProxyFromEnv ignores other schemes", () => {
+  process.env.HTTP_PROXY = "http://p.example.com";
+  process.env.HTTPS_PROXY = "http://p.example.com";
+  expect(getProxyFromEnv("ws:")).toBeUndefined();
+});
+
+test("NO_PROXY: lower case no_proxy wins over NO_PROXY", () => {
+  process.env.NO_PROXY = "a.example.com";
+  process.env.no_proxy = "b.example.com";
+  expect(shouldBypassProxy("b.example.com", undefined)).toBe(true);
+  expect(shouldBypassProxy("a.example.com", undefined)).toBe(false);
+});
+
+test("NO_PROXY matching rules: suffix on a dot boundary, wildcard, port, CIDR, star", () => {
+  process.env.NO_PROXY =
+    "example.com,*.wild.test,host.test:8443,10.0.0.0/8,[::1]";
+  const bypass = (h: string) => shouldBypassProxy(h, undefined);
+  expect(bypass("example.com")).toBe(true);
+  expect(bypass("api.example.com")).toBe(true);
+  expect(bypass("notexample.com")).toBe(false);
+  expect(bypass("wild.test")).toBe(false);
+  expect(bypass("x.wild.test")).toBe(true);
+  expect(bypass("host.test")).toBe(false);
+  expect(bypass("host.test:8443")).toBe(true);
+  expect(bypass("10.1.2.3")).toBe(true);
+  expect(bypass("11.1.2.3")).toBe(false);
+  process.env.NO_PROXY = "*";
+  expect(bypass("anything.test")).toBe(true);
+});
+
+test("getProxyFromEnv prefers https_proxy over other env vars for https protocol", () => {
+  process.env.https_proxy = "https://preferred.example.com";
+  process.env.HTTPS_PROXY = "https://notused1.example.com";
   process.env.HTTP_PROXY = "http://notused2.example.com";
   process.env.http_proxy = "http://notused3.example.com";
   expect(getProxyFromEnv("https:")).toBe("https://preferred.example.com");

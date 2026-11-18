@@ -113,18 +113,3 @@ export function readDotEnvFile(filePath: string): Record<string, string> {
     return {};
   }
 }
-
-/**
- * API base for the CLI. The real environment wins. Otherwise the global
- * ~/.continuous/.env is used. A working-directory .env is not consulted.
- */
-export function resolveApiBase(
-  processEnv: NodeJS.ProcessEnv,
-  fileEnv: Record<string, string>,
-): string {
-  return (
-    processEnv.CONTINUE_API_BASE ||
-    fileEnv.CONTINUE_API_BASE ||
-    "https://api.continue.dev/"
-  );
-}

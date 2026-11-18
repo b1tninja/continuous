@@ -27,7 +27,7 @@ test("checkContract reports a version, a vector and a missing module", () => {
   assert.deepEqual(checkContract(null, {}), ["contract module not loaded"]);
   assert.deepEqual(checkContract({}, null), ["golden vectors not found"]);
   const fake = {
-    LAB_CONTRACT_VERSION: 2,
+    LAB_CONTRACT_VERSION: 99,
     wilson: () => ({ k: 0, n: 0, rate: 0, lo: 0, hi: 1 }),
     formatRate: () => "x",
     slug: (s) => s,
@@ -45,8 +45,8 @@ test("checkContract reports a version, a vector and a missing module", () => {
     slug: [{ input: "A", output: "a" }],
   };
   const p = checkContract(fake, golden).join("\n");
-  assert.match(p, /contract version 2 but this lab expects 1/);
-  assert.match(p, /golden vectors are for version 1, module is 2/);
+  assert.match(p, /contract version 99 but this lab expects 3/);
+  assert.match(p, /golden vectors are for version 1, module is 99/);
   assert.match(p, /wilson\(1, 2\) in the product disagrees/);
   assert.match(p, /formatRate\(1, 2\) disagrees/);
   assert.match(p, /slug\("A"\) disagrees/);

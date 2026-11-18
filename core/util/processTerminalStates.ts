@@ -1,5 +1,12 @@
 import { ChildProcess } from "child_process";
 
+import { listCommands } from "./commandOutputStore";
+import {
+  isStartedProcess,
+  killProcessTree,
+  killProcessTreeNow,
+} from "./killProcessTree";
+
 // Track which processes have been backgrounded
 const processTerminalBackgroundStates = new Map<string, boolean>();
 
@@ -72,7 +79,10 @@ export async function killTerminalProcess(toolCallId: string): Promise<void> {
   if (processInfo && !processInfo.process.killed) {
     const { process } = processInfo;
 
-    process.kill("SIGTERM");
+    // The whole tree: on Windows `kill` ends only the shell, and what it
+    // started keeps running and printing
+    if (isStartedProcess(process)) killProcessTree(process, "SIGTERM");
+    else process.kill("SIGTERM");
 
     // Force kill after 5 seconds if still running
     setTimeout(() => {
@@ -116,4 +126,33 @@ export function getAllBackgroundedProcessIds(): string[] {
 // Utility function for testing - clears all background process states
 export function clearAllBackgroundProcesses(): void {
   processTerminalBackgroundStates.clear();
+}
+
+/**
+ * Every command the agent started that is still running, foreground or
+ * background. Ended when the host exits (the window closes, the extension
+ * deactivates), so nothing it started outlives it.
+ */
+export function killEveryCommandNow(): void {
+  const seen = new Set<ChildProcess>();
+  for (const { process } of processTerminalForegroundStates.values()) {
+    seen.add(process);
+  }
+  for (const record of listCommands()) {
+    if (record.process) seen.add(record.process);
+  }
+  for (const child of seen) {
+    if (child.exitCode === null && child.signalCode === null) {
+      if (isStartedProcess(child)) killProcessTreeNow(child);
+    }
+  }
+}
+
+let exitHookInstalled = false;
+
+/** Installs killEveryCommandNow on the host's exit, once. */
+export function killCommandsOnExit(): void {
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  process.once("exit", killEveryCommandNow);
 }

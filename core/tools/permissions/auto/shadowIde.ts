@@ -1,5 +1,6 @@
 import type { ToolPolicy } from "@continuedev/terminal-security";
-import { shadowSpend } from "../audit/shadowReport";
+import { shadowSeed, shadowSpend } from "../audit/shadowReport";
+import { sharedLedger } from "../audit/shadowLedger";
 import { readShadowSettings } from "../audit/shadowSettings";
 import { getAuditTrail } from "../audit/global";
 import { auditPolicyOf, clampPolicy } from "../audit/hook";
@@ -159,6 +160,7 @@ export class IdeShadow {
           },
           guidance: () => readUserGuidance(),
           spentSoFar: () => shadowSpend(trail.dir),
+          ledger: sharedLedger(trail.dir, () => shadowSeed(trail.dir)),
         }),
       };
     }

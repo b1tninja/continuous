@@ -65,6 +65,8 @@ import {
 } from "../session.js";
 import { reloadPlanFile } from "../util/planFileReload.js";
 
+import { autoAnswerOpenDecisions } from "./loopAutoAnswer.js";
+
 /**
  * Loop mode in the CLI: the session side. The decisions are core's
  * (core/util/loopMode.ts); this applies them to the CLI session, keeps the
@@ -327,13 +329,14 @@ export function startLoopFromPlan(
   if (file) reloadPlanFile(file);
   const plan = getSessionTaskPlan();
   if (!plan) return undefined;
-  const loop = createLoop(plan, {
+  const created = createLoop(plan, {
     now,
     sessionTokens: sessionTokens(),
     costMark: sessionCostMark(),
     policy: cliLoopPolicy(mode),
     fallbackCheck: envFallbackCheck(),
   });
+  const loop = autoAnswerOpenDecisions(created, file);
   pendingSteers.length = 0;
   turnEndRequested = false;
   commitLoop(loop);
@@ -351,7 +354,8 @@ export function acceptLoopPlan(now = new Date()): boolean {
   if (file) reloadPlanFile(file);
   const plan: TaskPlan | undefined = getSessionTaskPlan();
   if (!plan) return false;
-  commitLoop(acceptReplan(loop, plan, { now, sessionTokens: sessionTokens() }));
+  const ctx = { now, sessionTokens: sessionTokens() };
+  commitLoop(acceptReplan(autoAnswerOpenDecisions(loop, file), plan, ctx));
   return true;
 }
 
@@ -389,12 +393,18 @@ export function setWaveAbort(abort: (() => void) | undefined): void {
 export function resumeStoppedLoop(now = new Date()): boolean {
   const loop = getSessionLoop();
   if (!loop || loop.status !== "stopped") return false;
+  // The policy saved with the session is the one of the process that saved
+  // it: the loop goes on at this process's levels (`--policy idgaf` now means
+  // IDGAF, and a saved IDGAF is not carried into a run without it)
   commitLoop(
-    resumeLoop(loop, {
-      now,
-      sessionTokens: sessionTokens(),
-      costMark: sessionCostMark(),
-    }),
+    setLoopPolicy(
+      resumeLoop(loop, {
+        now,
+        sessionTokens: sessionTokens(),
+        costMark: sessionCostMark(),
+      }),
+      cliLoopPolicy(services.toolPermissions.getCurrentMode()),
+    ),
   );
   return true;
 }

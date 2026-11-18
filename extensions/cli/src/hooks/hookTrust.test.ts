@@ -7,6 +7,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
+import { tryLink } from "core/tools/permissions/testLinks.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getProjectHookFiles, loadHooksConfig } from "./hookConfig.js";
@@ -75,11 +76,45 @@ describe("what loads without trust", () => {
     expect(load().untrustedProject).toBeUndefined();
   });
 
-  it("loads the user's ~/.claude hooks", () => {
+  it("does not load the user's ~/.claude hooks unless opted in (D-023)", () => {
+    const claudeFile = path.join(home, ".claude", "settings.json");
+    writeJson(claudeFile, { hooks: hook("claude-user") });
+    const unset = load();
+    expect(commandsOf(unset.hooks)).toEqual([]);
+    expect(unset.skippedClaudeHooks).toEqual({
+      path: claudeFile,
+      handlers: 1,
+      settingUnset: true,
+    });
+
+    writeJson(userSettings(), { hooks: { readClaudeSettings: false } });
+    const off = load();
+    expect(commandsOf(off.hooks)).toEqual([]);
+    expect(off.skippedClaudeHooks?.settingUnset).toBe(false);
+  });
+
+  it("loads the user's ~/.claude hooks with hooks.readClaudeSettings: true", () => {
     writeJson(path.join(home, ".claude", "settings.json"), {
       hooks: hook("claude-user"),
     });
-    expect(commandsOf(load().hooks)).toEqual(["claude-user"]);
+    writeJson(userSettings(), {
+      hooks: { readClaudeSettings: true, ...hook("own") },
+    });
+    const loaded = load();
+    expect(commandsOf(loaded.hooks)).toEqual(["claude-user", "own"]);
+    expect(loaded.skippedClaudeHooks).toBeUndefined();
+    // the setting is not an event
+    expect(Object.keys(loaded.hooks)).toEqual(["PreToolUse"]);
+  });
+
+  it("only the user's Continuous file can opt in", () => {
+    writeJson(path.join(home, ".claude", "settings.json"), {
+      hooks: { readClaudeSettings: true, ...hook("claude-user") },
+    });
+    writeJson(projectSettings(), {
+      hooks: { readClaudeSettings: true },
+    });
+    expect(commandsOf(load().hooks)).toEqual([]);
   });
 
   it("does not load project hooks, and reports what it held back", () => {
@@ -346,13 +381,10 @@ describe("a repository cannot choose where the user's settings live", () => {
     expect(getGlobalDir(project, home)).toBe(sibling);
   });
 
-  it("is not fooled by a symlink into the project", () => {
+  it("is not fooled by a symlink into the project", (ctx) => {
     const link = path.join(root, "link-to-project");
-    try {
-      fs.symlinkSync(project, link, "junction");
-    } catch {
-      return; // symlinks are not allowed here
-    }
+    const made = tryLink(project, link);
+    if (!made.ok) return ctx.skip(made.reason);
     process.env.CONTINUE_GLOBAL_DIR = link;
     expect(getGlobalDir(project, home)).toBeUndefined();
   });

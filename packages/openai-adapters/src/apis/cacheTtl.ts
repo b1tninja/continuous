@@ -41,6 +41,24 @@ export function isCachePinned(message: unknown): boolean {
 export type CacheTtl = "5m" | "1h";
 
 /**
+ * The debug override: `CONTINUOUS_FORCE_CACHE_5M=1` puts every cache entry on
+ * the 5-minute lifetime, whatever `cacheBehavior.ttl` (or "auto") says. It wins
+ * over every other lifetime control. Keep in sync with `cacheTtlForcedTo5m` in
+ * core/llm/llms/anthropicCache.ts.
+ */
+export const FORCE_CACHE_5M_ENV = "CONTINUOUS_FORCE_CACHE_5M";
+
+function processEnv(): Record<string, string | undefined> | undefined {
+  return typeof process === "undefined" ? undefined : process.env;
+}
+
+export function cacheTtlForcedTo5m(
+  env: Record<string, string | undefined> | undefined = processEnv(),
+): boolean {
+  return env?.[FORCE_CACHE_5M_ENV] === "1";
+}
+
+/**
  * The lifetime a request asks for: the per-request value if it is one, else the
  * configured one. "auto" is a policy, not a lifetime, so here it (and anything
  * else) means the provider's default; `AutoCacheTtl` below turns it into "5m"
@@ -51,6 +69,7 @@ export function resolveCacheTtl(
   requested: unknown,
   configured: unknown,
 ): CacheTtl | undefined {
+  if (cacheTtlForcedTo5m()) return "5m";
   for (const value of [requested, configured]) {
     if (value === "5m" || value === "1h") return value;
   }
@@ -114,6 +133,7 @@ export function requestedCacheTtl(
   now: number = Date.now(),
 ): CacheTtl | undefined {
   if (!cachingOn) return undefined;
+  if (cacheTtlForcedTo5m()) return "5m";
   if (configured === "auto") return auto.next(now);
   return resolveCacheTtl(undefined, configured);
 }

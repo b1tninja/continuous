@@ -5,7 +5,12 @@ import { ContinueError, ContinueErrorReason } from "../util/errors";
 import { canParseUrl } from "../util/url";
 import { BuiltInToolNames } from "./builtIn";
 
+import { CommandOutputToolNames } from "./definitions/commandOutput";
 import { codebaseToolImpl } from "./implementations/codebaseTool";
+import {
+  readCommandOutputImpl,
+  stopCommandImpl,
+} from "./implementations/commandOutputTools";
 import { createNewFileImpl } from "./implementations/createNewFile";
 import { createRuleBlockImpl } from "./implementations/createRuleBlock";
 import {
@@ -19,8 +24,8 @@ import { lsToolImpl } from "./implementations/lsTool";
 import { readCurrentlyOpenFileImpl } from "./implementations/readCurrentlyOpenFile";
 import { readFileImpl } from "./implementations/readFile";
 
-import { readFileRangeImpl } from "./implementations/readFileRange";
 import { codeNavigationImpl } from "./implementations/codeNavigation";
+import { readFileRangeImpl } from "./implementations/readFileRange";
 import { readSkillImpl } from "./implementations/readSkill";
 import { recallMaskedResultImpl } from "./implementations/recallMaskedResult";
 import { requestRuleImpl } from "./implementations/requestRule";
@@ -31,6 +36,7 @@ import { viewDiffImpl } from "./implementations/viewDiff";
 import { viewRepoMapImpl } from "./implementations/viewRepoMap";
 import { viewSubdirectoryImpl } from "./implementations/viewSubdirectory";
 import { coerceArgsToSchema, safeParseToolCallArgs } from "./parseArgs";
+import { noteCoreToolResult } from "./taintResult";
 
 async function callHttpTool(
   url: string,
@@ -214,6 +220,10 @@ export async function callBuiltInTool(
       return await fileGlobSearchImpl(args, extras);
     case BuiltInToolNames.RunTerminalCommand:
       return await runTerminalCommandImpl(args, extras);
+    case CommandOutputToolNames.ReadCommandOutput:
+      return await readCommandOutputImpl(args, extras);
+    case CommandOutputToolNames.StopCommand:
+      return await stopCommandImpl(args, extras);
     case BuiltInToolNames.SearchWeb:
       return await searchWebImpl(args, extras);
     case BuiltInToolNames.FetchUrlContent:
@@ -271,6 +281,7 @@ export async function callTool(
       : {
           contextItems: await callBuiltInTool(tool.function.name, args, extras),
         };
+    await noteCoreToolResult(tool, toolCall.id, args, extras);
     if (tool.faviconUrl) {
       contextItems.forEach((item) => {
         item.icon = tool.faviconUrl;

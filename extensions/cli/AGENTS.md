@@ -28,19 +28,13 @@ This is a CLI tool for Continue Dev that provides an interactive AI-assisted dev
    - `ensureAuth.ts`: Handles authentication flow
    - `workos.ts`: WorkOS configuration and token management
 
-3. **Continue SDK Integration** (`src/continueSDK.ts`): Initializes the Continue SDK client with:
-
-   - API key authentication
-   - Assistant configuration (slug-based)
-   - Organization support
-
-4. **Terminal UI** (`src/ui/`): React/Ink-based TUI components
+3. **Terminal UI** (`src/ui/`): React/Ink-based TUI components
 
    - `TUIChat.tsx`: Main chat interface component
    - `UserInput.tsx`: Input handling with multi-line support
    - `TextBuffer.ts`: Text display utilities
 
-5. **Tools System** (`src/tools/`): Built-in development tools including:
+4. **Tools System** (`src/tools/`): Built-in development tools including:
 
    - File operations (read, write, list)
    - Code search functionality
@@ -48,16 +42,16 @@ This is a CLI tool for Continue Dev that provides an interactive AI-assisted dev
    - Diff viewing
    - Exit tool (headless mode only)
 
-6. **MCP Integration** (`src/mcp.ts`): Model Context Protocol service for extended tool capabilities
+5. **MCP Integration** (`src/mcp.ts`): Model Context Protocol service for extended tool capabilities
 
-7. **Hooks System** (`src/hooks/`): Event interception system for extending CLI behavior
+6. **Hooks System** (`src/hooks/`): Event interception system for extending CLI behavior
    - `HookService.ts`: Service container integration, loads config and fires events
    - `hookConfig.ts`: Loads hooks from settings files, merges configs from multiple sources
    - `hookRunner.ts`: Executes hook handlers (command, HTTP) with exit code semantics
    - `fireHook.ts`: Convenience functions for firing events from integration points
    - `types.ts`: Claude Code-compatible type definitions for hook inputs/outputs
    - **Config locations** (lowest to highest precedence):
-     - `~/.claude/settings.json`, `~/.continue/settings.json` (user-global)
+     - `~/.claude/settings.json` (only with `hooks.readClaudeSettings: true` in the global `settings.json`), `~/.continuous/settings.json` (user-global)
      - `.claude/settings.json`, `.continue/settings.json` (project)
      - `.claude/settings.local.json`, `.continue/settings.local.json` (project-local)
    - **Exit code semantics**: 0 = proceed, 2 = block (stderr becomes feedback), other = non-blocking error
@@ -78,6 +72,7 @@ This is a CLI tool for Continue Dev that provides an interactive AI-assisted dev
 - Tests should be written with `.test.ts` extension
 - No existing test files found - tests should be added when writing new functionality
 - Run tests using `npm run test path/or/pattern`
+- Tests that call a real, paid provider API (`src/smoke-api`) run only with `RUN_LIVE_PROVIDER_TESTS=1` (or `RUN_SMOKE_API=1`). Without it, the test setup removes provider credentials such as `ANTHROPIC_API_KEY` from the environment; see "Live provider tests" in `CONTRIBUTING.md`.
 
 ### Build System
 

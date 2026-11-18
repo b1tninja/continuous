@@ -21,9 +21,11 @@ async function setup() {
   await act(async () => {
     addAndSelectMockLlm(rendered.store, rendered.ideMessenger);
   });
-  // Keep the first turn streaming long enough to type during it
-  rendered.ideMessenger.chatStreamDelay = 150;
-  return rendered;
+  // Keep the first turn open until the test releases it. A wall-clock delay
+  // raced the test: on a slow machine the turn ended before the test had typed
+  // into the queue, or before the debounced queue save fired.
+  const release = rendered.ideMessenger.holdStream();
+  return { ...rendered, release };
 }
 
 /** Type into the main input and press Enter, as a person would */
@@ -47,9 +49,13 @@ const userMessages = (store: { getState: () => any }) =>
         : h.message.content.map((p: any) => p.text).join(""),
     );
 
+// Each test mounts the whole chat UI; on a loaded CI runner that alone can take
+// seconds. The turn itself no longer depends on timing (see setup()).
+vi.setConfig({ testTimeout: 15000 });
+
 describe("Queued messages", () => {
   test("Enter while the agent works queues the message and sends it when the turn ends", async () => {
-    const { ideMessenger, store } = await setup();
+    const { ideMessenger, store, release } = await setup();
 
     await sendInputWithMockedResponse(ideMessenger, "first", SLOW_REPLY);
     await waitFor(() =>
@@ -65,16 +71,15 @@ describe("Queued messages", () => {
     expect(userMessages(store)).toEqual(["first"]);
 
     // When the turn ends, both go as one message
-    ideMessenger.chatStreamDelay = 0;
-    await waitFor(
-      () => expect(userMessages(store)).toEqual(["first", "second\nthird"]),
-      { timeout: 5000 },
+    release();
+    await waitFor(() =>
+      expect(userMessages(store)).toEqual(["first", "second\nthird"]),
     );
     expect(store.getState().session.queuedMessages).toHaveLength(0);
-  }, 15000);
+  });
 
   test("Stop pauses the queue instead of sending it", async () => {
-    const { ideMessenger, store } = await setup();
+    const { ideMessenger, store, release } = await setup();
 
     await sendInputWithMockedResponse(ideMessenger, "first", SLOW_REPLY);
     await waitFor(() =>
@@ -92,7 +97,7 @@ describe("Queued messages", () => {
     expect(userMessages(store)).toEqual(["first"]);
 
     // Sent by hand
-    ideMessenger.chatStreamDelay = 0;
+    release();
     const sendAll = await getElementByTestId("queued-messages-send-all");
     await act(async () => {
       sendAll.click();
@@ -195,7 +200,7 @@ describe("Queued messages", () => {
   });
 
   test("A session saved while a tool ran restores the tool as interrupted, and its queue can be sent", async () => {
-    const { ideMessenger, store } = await setup();
+    const { ideMessenger, store, release } = await setup();
     const queued = {
       id: "saved-1",
       editorState: {
@@ -255,7 +260,7 @@ describe("Queued messages", () => {
     expect(toolCall.output?.[0]?.name).toBe("Interrupted");
 
     // Nothing looks busy, so Send all sends rather than waiting on the tool
-    ideMessenger.chatStreamDelay = 0;
+    release();
     const sendAll = await getElementByTestId("queued-messages-send-all");
     await act(async () => {
       sendAll.click();
@@ -266,7 +271,7 @@ describe("Queued messages", () => {
   });
 
   test("Reordering changes the order the queue is sent in", async () => {
-    const { ideMessenger, store } = await setup();
+    const { ideMessenger, store, release } = await setup();
 
     await sendInputWithMockedResponse(ideMessenger, "first", SLOW_REPLY);
     await waitFor(() =>
@@ -312,13 +317,11 @@ describe("Queued messages", () => {
     expect(order()).toEqual(["beta", "gamma", "alpha"]);
 
     // Sent merged, in the new order
-    ideMessenger.chatStreamDelay = 0;
-    await waitFor(
-      () =>
-        expect(userMessages(store)).toEqual(["first", "beta\ngamma\nalpha"]),
-      { timeout: 5000 },
+    release();
+    await waitFor(() =>
+      expect(userMessages(store)).toEqual(["first", "beta\ngamma\nalpha"]),
     );
-  }, 15000);
+  });
 
   test("A single queued message has no reorder controls", async () => {
     const { ideMessenger, store } = await setup();

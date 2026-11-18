@@ -22,10 +22,12 @@ export const FACT_NAMES = [
   "toolStrictArgs",
   "schemaOutput",
   "grammar",
+  "samplingParams",
 ];
 const ENUMS = {
   schemaOutput: ["json-schema", "json-object", "per-model", "none"],
   grammar: ["gbnf", "grammar", "none"],
+  samplingParams: ["accepted", "refused"],
 };
 const LEVELS = ["declared", "measured", "derived"];
 const DATE = /^\d{4}-\d{2}-\d{2}$/;

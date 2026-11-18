@@ -156,7 +156,7 @@ export function BlockSettingsTopToolbar() {
               aria-expanded={shortcutsOpen}
               aria-controls="block-settings-shortcuts"
               onClick={() => setShortcutsOpen((open) => !open)}
-              className="hover:bg-list-item-hover flex h-5 w-5 flex-none cursor-pointer items-center justify-center rounded-full border-none bg-transparent p-0 text-description-muted md:hidden"
+              className="hover:bg-list-item-hover flex h-6 w-6 flex-none cursor-pointer items-center justify-center rounded-full border-none bg-transparent p-0 text-description-muted md:hidden"
             >
               <EllipsisHorizontalIcon className="h-3 w-3" aria-hidden="true" />
             </button>
@@ -172,7 +172,7 @@ export function BlockSettingsTopToolbar() {
                     aria-label={label}
                     onClick={() => go()}
                     px={2}
-                    className="border-none bg-transparent"
+                    className="min-h-6 min-w-6 justify-center border-none bg-transparent"
                   >
                     <Icon
                       className="h-3 w-3 text-description-muted hover:brightness-125"
