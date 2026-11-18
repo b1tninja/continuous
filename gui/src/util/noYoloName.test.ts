@@ -18,8 +18,10 @@ const ROOTS = [
 ];
 
 const ALLOWED = new Set([
-  // the alias, and the 2.4.4 approval mode that is read as a permissive level
+  // the alias, and the 2.4.4 approval mode that is read as a permissive level.
+  // The reader lives in levelText so the GUI can import it on its own.
   "core/tools/permissions/policy.ts",
+  "core/tools/permissions/levelText.ts",
   "core/util/loopMode.ts",
   "core/tools/permissions/settingsFile.ts",
   "core/util/sandboxPolicy.ts",
