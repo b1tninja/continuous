@@ -43,6 +43,7 @@ export const PROJECT_CONFIG_SCOPES = [
   "data",
   "rc",
   "worktree",
+  "environment",
 ] as const;
 
 export type ProjectConfigScope = (typeof PROJECT_CONFIG_SCOPES)[number];
@@ -268,6 +269,29 @@ export function isScopeTrusted(
   return entry?.scopes?.[scope]?.fingerprint === fingerprint;
 }
 
+/**
+ * Whether the person has trusted any part of this folder's configuration
+ * (a record for any scope in their global folder), or this run trusts
+ * project configuration (--trust-project-config). The tainted-session rule
+ * reads it to label a read from a folder nobody vouched for
+ * (`untrusted-workspace`). A global folder inside the project counts as no
+ * record, as everywhere else here.
+ */
+export function folderHasTrustRecord(
+  projectDir: string,
+  globalDir?: string,
+): boolean {
+  if (isProjectConfigTrustedForRun()) return true;
+  try {
+    const file = trustPath(projectDir, globalDir);
+    if (!file) return false;
+    const scopes = readTrust(file).projects[projectKeyFor(projectDir)]?.scopes;
+    return !!scopes && Object.keys(scopes).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function trustProjectScopes(
   projectDir: string,
   fingerprints: Partial<Record<ProjectConfigScope, string>>,
@@ -360,6 +384,7 @@ const SCOPE_NOUN: Record<ProjectConfigScope, string> = {
   data: "data destination file",
   rc: "config override",
   worktree: "worktree setup file",
+  environment: "environment install file",
 };
 
 export function untrustedScopeMessage(
@@ -403,6 +428,7 @@ const LAYOUT: Record<ProjectConfigScope, ScopeLayout> = {
   data: { dirs: ["data"], extensions: [".yaml", ".yml"] },
   rc: { rootRc: true },
   worktree: { files: ["worktrees.json"] },
+  environment: { files: ["environment.json"] },
 };
 
 function hasExtension(name: string, extensions: string[]): boolean {
@@ -888,6 +914,16 @@ function summarizeWorktree(file: string, content: string): string[] {
   return lines.length > 0 ? lines : [`${base}: no setup commands`];
 }
 
+function summarizeEnvironment(file: string, content: string): string[] {
+  const base = path.basename(uriToFsPath(file) ?? file);
+  const raw = parseLoose(content);
+  if (!raw || typeof raw !== "object") return [`${base} (could not be read)`];
+  const install = (raw as Record<string, unknown>).install;
+  return typeof install === "string" && install.trim()
+    ? [clip(`${base}: install: ${install}`)]
+    : [`${base}: no install command`];
+}
+
 /** What a file would do, without secret values. */
 export function summarizeScopeFile(
   scope: ProjectConfigScope,
@@ -909,6 +945,8 @@ export function summarizeScopeFile(
         return summarizeRc(file.path, file.content);
       case "worktree":
         return summarizeWorktree(file.path, file.content);
+      case "environment":
+        return summarizeEnvironment(file.path, file.content);
       default:
         return [];
     }

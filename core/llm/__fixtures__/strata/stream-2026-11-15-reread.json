@@ -1,0 +1,38 @@
+{
+  "_comment": "The final chunk of a Strata stream for the request in plans/research/throughput-latency-display.md section 5 (401,472 of 417,856 prompt tokens read in 86.4 s, 729 tokens written at 74.5 tok/s, 420 of 530 drafts accepted), shaped by request_timings (serve/server.py:6849-6870 at baf1636): cache_n, prompt_n = prompt - cache_n, and the draft fields when the engine reported drafts. Synthesized from those counts; no request was sent.",
+  "chunks": [
+    {
+      "id": "chatcmpl-3",
+      "object": "chat.completion.chunk",
+      "model": "qwen3.8-flash-next-nvfp4-uncensored",
+      "choices": [
+        { "index": 0, "delta": { "content": "Ok." }, "finish_reason": null }
+      ]
+    },
+    {
+      "id": "chatcmpl-3",
+      "object": "chat.completion.chunk",
+      "model": "qwen3.8-flash-next-nvfp4-uncensored",
+      "choices": [{ "index": 0, "delta": {}, "finish_reason": "stop" }],
+      "usage": {
+        "prompt_tokens": 417856,
+        "completion_tokens": 729,
+        "total_tokens": 418585,
+        "prompt_tokens_details": { "cached_tokens": 16384 }
+      },
+      "timings": {
+        "cache_n": 16384,
+        "prompt_n": 401472,
+        "prompt_ms": 86356.9,
+        "prompt_per_token_ms": 0.215,
+        "prompt_per_second": 4649.0,
+        "predicted_n": 729,
+        "predicted_ms": 9785.2,
+        "predicted_per_token_ms": 13.423,
+        "predicted_per_second": 74.5,
+        "draft_n": 530,
+        "draft_n_accepted": 420
+      }
+    }
+  ]
+}

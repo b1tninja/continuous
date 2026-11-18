@@ -9,13 +9,15 @@ import {
   cleanupSmokeContext,
   writeAnthropicConfig,
   runHeadless,
+  smokeEnv,
   type SmokeTestContext,
+  smokeTitle,
 } from "./smoke-api-helpers.js";
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const ANTHROPIC_API_KEY = smokeEnv("ANTHROPIC_API_KEY");
 
 describe.skipIf(!ANTHROPIC_API_KEY)(
-  "Smoke: Headless → all tools round-trip",
+  smokeTitle("Smoke: Headless → all tools round-trip", ["ANTHROPIC_API_KEY"]),
   () => {
     let ctx: SmokeTestContext;
 

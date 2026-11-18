@@ -15,6 +15,7 @@ import type { ProjectConfigScope } from "core/config/projectTrust.js";
 import * as YAML from "yaml";
 
 import { env } from "./env.js";
+import { isSafeMode } from "./safeMode.js";
 import { logger } from "./util/logger.js";
 
 function readYaml(file: string): unknown {
@@ -45,6 +46,8 @@ function workspaceFilesTrusted(
   cwd: string,
   scope: ProjectConfigScope,
 ): { path: string; content: string }[] {
+  // --safe: the project's files are not read, trusted or not
+  if (isSafeMode()) return [];
   const files = readScopeFilesFromDisk(cwd, scope);
   if (files.length === 0) return [];
   const decision = decideFromFiles(cwd, scope, files);

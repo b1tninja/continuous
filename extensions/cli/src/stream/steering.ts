@@ -39,7 +39,10 @@ export async function injectSteeringMessage(
     chatHistorySvc.addHistoryItem(item);
     chatHistory = chatHistorySvc.getHistory();
   } else {
-    chatHistory = [...chatHistory, item];
+    // In place, as handleToolCalls appends: a subagent's executor holds this
+    // array and reads it after the run (executor.ts), so a copy would leave
+    // the message, and everything after it, out of the executor's history
+    chatHistory.push(item);
   }
   logger.debug("Steering message added at tool boundary");
   return { chatHistory, injected: true };

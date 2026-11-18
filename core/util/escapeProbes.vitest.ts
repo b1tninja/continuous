@@ -185,7 +185,7 @@ function fakeExecutor(
     },
     invocation: () => ({ shell: "docker", args: [] }),
     describe: () => "a fake",
-    spawn: (command, options) => {
+    spawn: async (command, options) => {
       spawned.push({ command, cwd: options?.cwd, env: options?.env });
       const child = new EventEmitter() as ChildProcess;
       const stdout = new PassThrough();

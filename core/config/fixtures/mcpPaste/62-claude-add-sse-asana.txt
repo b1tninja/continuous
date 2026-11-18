@@ -1,0 +1,1 @@
+claude mcp add --transport sse asana https://mcp.asana.com/sse

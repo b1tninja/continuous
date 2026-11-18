@@ -1,17 +1,16 @@
 name: CLI PR Checks
 
-# PRs run one OS and one Node version (fast); the full OS x Node matrix runs nightly.
+# Called by the Merge Gate workflow (merge-gate.yml) for non-draft PRs that change the CLI, core or
+# packages; also runs nightly on main and on dispatch. PRs run one OS and one Node version (fast);
+# the full OS x Node matrix runs nightly and on dispatch.
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths-ignore:
-      - "docs/**"
-      - "docs-site/**"
-      - "plans/**"
-      - "**/*.md"
-      - "**/*.mdx"
-      - "LICENSE"
+  workflow_call:
+    inputs:
+      # JSON array of the changed files, from the merge gate's `changes` job, for affected-only unit
+      # tests on pull requests (scripts/ci/affected-tests.mjs); empty means run everything.
+      changed_files:
+        type: string
+        default: ""
   schedule:
     - cron: "41 5 * * *"
   workflow_dispatch:
@@ -21,8 +20,10 @@ permissions:
 
 # A newer push to the same branch/PR supersedes the run in flight; without this
 # the fork's runner pool fills with stale runs and nothing starts.
+# The group name is a literal: in a called workflow github.workflow is the caller's name, which would
+# put this and PR Checks into one group and cancel each other.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: cli-pr-checks-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 # onnxruntime-node's postinstall fetches its CUDA libraries from GitHub releases on Linux. Packaging drops them and nothing here uses a GPU, so don't let that download fail the job.
@@ -32,6 +33,7 @@ env:
 jobs:
   track-rerun:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: (github.run_attempt > 1) && github.event.pull_request.draft != true
     steps:
       - uses: actions/checkout@v7
@@ -39,8 +41,8 @@ jobs:
         uses: ./.github/actions/track-rerun
 
   lint:
-    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -76,13 +78,13 @@ jobs:
           npm run lint
 
   test:
-    if: github.event.pull_request.draft != true
     strategy:
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest","windows-latest","macos-latest"]') }}
-        node-version: ${{ fromJSON(github.event_name == 'pull_request' && '[22]' || '[22,24]') }}
+        os: ${{ fromJSON(contains(fromJSON('["pull_request","merge_group"]'), github.event_name) && '["ubuntu-latest"]' || '["ubuntu-latest","windows-latest","macos-latest"]') }}
+        node-version: ${{ fromJSON(contains(fromJSON('["pull_request","merge_group"]'), github.event_name) && '[22]' || '[22,24]') }}
       fail-fast: false
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
 
     steps:
       - name: Checkout code
@@ -92,14 +94,6 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
-
-      - name: Cache CLI node_modules
-        uses: actions/cache@v6
-        with:
-          path: extensions/cli/node_modules
-          key: ${{ runner.os }}-node${{ matrix.node-version }}-cli-modules-${{ hashFiles('extensions/cli/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node${{ matrix.node-version }}-cli-modules-
 
       - name: Setup packages
         uses: ./.github/actions/setup-packages
@@ -114,10 +108,39 @@ jobs:
           cd core
           npm run build
 
+      # The setup-packages action switched node to the version in .nvmrc, whatever the matrix
+      # says, so the key names the version that is on the path now. Exact hit only: a partial
+      # restore of node_modules must not stand in for `npm ci`. Saved from main only.
+      - name: Node version
+        id: nodev
+        run: echo "version=$(node -v)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore CLI node_modules
+        id: cli-modules
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: extensions/cli/node_modules
+          key: ${{ runner.os }}-node${{ steps.nodev.outputs.version }}-cli-modules-${{ hashFiles('extensions/cli/package-lock.json') }}
+
       - name: Install dependencies
         run: |
           cd extensions/cli
-          npm ci --include=optional
+          if [ "${{ steps.cli-modules.outputs.cache-hit }}" != "true" ]; then
+            npm ci --include=optional
+          fi
+
+      - name: Save CLI node_modules
+        if: steps.cli-modules.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: extensions/cli/node_modules
+          key: ${{ steps.cli-modules.outputs.cache-primary-key }}
+
+      - uses: ./.github/actions/cache-report
+        if: always()
+        with:
+          entries: |
+            cli-node-modules|${{ steps.cli-modules.outcome }}|${{ steps.cli-modules.outputs.cache-hit }}|${{ steps.cli-modules.outputs.cache-matched-key }}
 
       - name: Build
         run: |
@@ -129,10 +152,16 @@ jobs:
           cd extensions/cli
           npm run test:smoke
 
+      # Pull requests: the unit tests related to the changed CLI modules plus a smoke set, or everything
+      # when narrowing is not safe; in shadow mode (the default) the selection is only reported. The
+      # smoke and e2e tests around this step always run in full.
       - name: Run tests
-        run: |
-          cd extensions/cli
-          npm test
+        run: node scripts/ci/affected-tests.mjs --suite cli
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHANGED_FILES: ${{ inputs.changed_files }}
+          # Unset: shadow mode (select, report, run everything). `on`: run the selection.
+          AFFECTED_TESTS: ${{ vars.CI_AFFECTED_TESTS }}
 
       # e2e tests are failing on Windows specifically - likely due to stdout flush issues
       - name: Run e2e tests
@@ -143,8 +172,9 @@ jobs:
 
   smoke-api:
     # Only runs when secrets are available (not on fork PRs)
-    if: (github.event.pull_request.head.repo.full_name == github.repository) && github.event.pull_request.draft != true
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -181,6 +211,8 @@ jobs:
 
       - name: Run smoke API tests
         env:
+          # The tests skip without this, whatever keys are set
+          RUN_SMOKE_API: "1"
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CONTINUE_API_KEY: ${{ secrets.CONTINUE_API_KEY }}
         run: |
@@ -191,8 +223,11 @@ jobs:
   # This action at least lets us manage the list of required tests via source control
   # so that creators of new jobs can add them to this list
   require-all-checks-to-pass-cli:
-    if: (always()) && github.event.pull_request.draft != true
+    # Nightly and dispatch runs only; under the Merge Gate the called workflow's result is evaluated
+    # by the gate (docs/ci-merge-gate.md), and this job would be one more runner slot.
+    if: always() && github.event_name != 'pull_request' && github.event_name != 'merge_group'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs:
       - lint
       - test

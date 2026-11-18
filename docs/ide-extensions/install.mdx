@@ -1,9 +1,9 @@
 ---
 title: "Install"
-description: "Install Continuous in VS Code from a GitHub release."
+description: "Install Continuous in VS Code from the Marketplace or a GitHub release."
 ---
 
-Continuous is installed from a `.vsix` file attached to each [GitHub release](https://github.com/b1tninja/continuous/releases); it is not on the VS Code Marketplace or Open VSX. It needs VS Code 1.105 or newer.
+Continuous is on the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=b1tninja.continuous) as `b1tninja.continuous`: search for **Continuous** in the Extensions view and check the publisher is `b1tninja`, or run `code --install-extension b1tninja.continuous`. It is not on Open VSX. Each [GitHub release](https://github.com/b1tninja/continuous/releases) also has a `.vsix` file, for installing by hand or where the Marketplace is not reachable; the steps below cover that. It needs VS Code 1.105 or newer.
 The full instructions, with checksum commands, unreleased builds and troubleshooting, are in the
 [install guide](https://github.com/b1tninja/continuous/blob/main/docs/continuous-install.md).
 
@@ -18,13 +18,13 @@ Open the [latest release](https://github.com/b1tninja/continuous/releases/latest
 | macOS (Intel)         | `continuous-darwin-x64-<version>.vsix`   |
 | Linux x64 / Arm64     | `continuous-linux-x64-<version>.vsix`, `continuous-linux-arm64-<version>.vsix` |
 
-With the GitHub CLI: `gh release download --repo b1tninja/continuous --pattern "continuous-win32-x64-*.vsix" --pattern SHA256SUMS.txt` (change `win32-x64` to your platform).
+With the GitHub CLI: `gh release download --repo b1tninja/continuous --pattern "continuous-win32-x64-*[0-9].vsix" --pattern SHA256SUMS.txt` (change `win32-x64` to your platform).
 </Step>
 
 <Step title="Install it in VS Code">
-Run `code --install-extension continuous-<platform>-<version>.vsix --force`, for example `continuous-win32-x64-2.4.4.vsix`, or use the Extensions view: `...` menu → **Install from VSIX…**. Then reload the window.
+Run `code --install-extension continuous-<platform>-<version>.vsix --force`, for example `continuous-win32-x64-2.16.2.vsix`, or use the Extensions view: `...` menu → **Install from VSIX…**. Then reload the window.
 
-Continuous installs alongside the original Continue extension and reads your existing `~/.continuous` configuration.
+Continuous installs alongside the original Continue extension. On first start it copies an existing `~/.continue` configuration to `~/.continuous`.
 </Step>
 
 <Step title="Move to the right sidebar (optional)">
@@ -32,7 +32,7 @@ The Continuous icon appears in the Activity Bar on the left. To keep Chat from c
 </Step>
 </Steps>
 
-VS Code does not update a `.vsix` install automatically. To update, install the next release's `.vsix` the same way.
+VS Code keeps a Marketplace install up to date. It does not update a `.vsix` install automatically: to update one, install the next release's `.vsix` the same way.
 
 <Info>
   If you have any problems, see the [troubleshooting guide](../troubleshooting.mdx).

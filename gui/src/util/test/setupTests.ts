@@ -1,7 +1,11 @@
 import "@testing-library/jest-dom/vitest";
+import { clearDraftsExcept } from "../drafts";
 
 afterEach(() => {
   vi.clearAllMocks();
+  // Each test's store starts in the same session id (INITIAL_SESSION_STATE),
+  // so an unsent draft one test left would come back in the next (NI5)
+  clearDraftsExcept([]);
 });
 
 afterAll(() => {

@@ -107,8 +107,8 @@ describe("Lump session toolbar", () => {
         (e) => e.tabIndex === 0,
       );
     const all = bar.querySelectorAll("[data-roving]");
-    // Mode, preset, fold toggle and five areas: 8 controls, 1 Tab stop (was 8)
-    expect(all).toHaveLength(8);
+    // Mode, preset, fold toggle, five areas and the safety shield: 9 controls, 1 Tab stop
+    expect(all).toHaveLength(9);
     expect(stops()).toHaveLength(1);
     expect(stops()[0].getAttribute("data-testid")).toBe("mode-select-button");
     stops()[0].focus();
@@ -119,7 +119,7 @@ describe("Lump session toolbar", () => {
     expect(stops()).toEqual([document.activeElement]);
     await user.keyboard("{End}");
     expect(document.activeElement).toBe(
-      within(bar).getByTestId("policy-select-questions"),
+      within(bar).getByTestId("safety-shield-toggle"),
     );
     await user.keyboard("{ArrowRight}");
     expect(document.activeElement).toBe(
@@ -127,7 +127,7 @@ describe("Lump session toolbar", () => {
     );
     await user.keyboard("{ArrowLeft}");
     expect(document.activeElement).toBe(
-      within(bar).getByTestId("policy-select-questions"),
+      within(bar).getByTestId("safety-shield-toggle"),
     );
     await user.keyboard("{Home}");
     expect(document.activeElement).toBe(

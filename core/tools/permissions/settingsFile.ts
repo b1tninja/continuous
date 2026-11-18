@@ -1,18 +1,23 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as YAML from "yaml";
+import { writeFileAtomicSync } from "../../util/atomicWrite.js";
 import {
   BUILTIN_RULES,
   DEFAULT_POLICY_LEVELS,
   normalizePolicy,
   parsePolicyLevel,
   POLICY_AREAS,
+  POLICY_PRESETS,
   type BuiltinRuleId,
   type PolicyArea,
   type PolicyLevels,
+  type PolicyPresetName,
   type PolicySettings,
   type QuestionDelivery,
 } from "./policy.js";
+import { validateRuleText } from "./ruleAnalysis.js";
+import { storedWebLevel } from "./webPolicy.js";
 
 /**
  * The one settings file the IDE and the CLI both read: permissions.yaml in the
@@ -24,7 +29,7 @@ import {
  * it) is read as that area's default with a notice, and is never written.
  */
 export interface PolicyFileSettings extends PolicySettings {
-  /** Deny rules that bind at every level, IDGAF included. */
+  /** Deny rules that bind at every level below IDGAF (recorded at IDGAF). */
   floor?: string[];
   /** MCP servers whose read-only hints the person trusts, by display name. */
   mcpServers?: Record<string, "trusted">;
@@ -33,9 +38,37 @@ export interface PolicyFileSettings extends PolicySettings {
    * "server/tool", "server/*" or "server" (plans/research/tr-owner-decisions.md, 1).
    */
   planMcpTools?: string[];
+  /**
+   * MCP tools that unattended runs (headless `cn -p` and `cn serve`, Loop
+   * workers, background agents) may use: "server/tool", "server/*" or
+   * "server" (`background.mcpTools`; TR1, TR25). None by default.
+   */
+  backgroundMcpTools?: string[];
   /** Offer the terminal in Plan mode (the CLI; it still asks). Default false. */
   planAllowTerminal?: boolean;
+  /** The person's custom set of levels and the preset it started from (`levels.custom`). */
+  custom?: StoredCustomSet;
 }
+
+/**
+ * A custom set of the five levels, kept so it can be recalled after a preset
+ * is chosen, and the preset it was made from, so the chip can say "Custom
+ * (from Careful)". Provenance only: nothing reads it to decide a call.
+ *
+ * Stored at `levels.custom`, not at a new top-level key: every CLI and IDE
+ * that reads permissions.yaml accepts `levels` and reads only the five area
+ * names inside it, so an older build ignores this entry instead of treating
+ * the whole file as broken (an unknown top-level key does that; see the CLI's
+ * permissionsYamlProblem). Never holds IDGAF, which is for one session only.
+ */
+export interface StoredCustomSet {
+  /** The preset the set was made from; absent when it was made from another custom set */
+  from?: Exclude<PolicyPresetName, "idgaf">;
+  levels: PolicyLevels;
+}
+
+/** Where the custom set lives in the file. */
+export const CUSTOM_SET_PATH = ["levels", "custom"] as const;
 
 export interface PolicyFileRead {
   settings: PolicyFileSettings;
@@ -52,6 +85,8 @@ export const POLICY_FILE_KEYS = [
   "floor",
   "mcpServers",
   "sandbox",
+  "background",
+  "safetyChecks",
 ] as const;
 
 const BUILTIN_IDS = new Set<string>(BUILTIN_RULES.map((r) => r.id));
@@ -91,6 +126,15 @@ export function parsePolicyFile(text: string | undefined): PolicyFileRead {
       );
     }
   }
+  // Web (WB45): absent follows Tool use; IDGAF or an unknown value does too
+  if (levelsIn.web !== undefined) {
+    const web = storedWebLevel(levelsIn.web);
+    if (web.level) levelsIn.web = web.level;
+    else {
+      delete levelsIn.web;
+      if (web.notice) notices.push(web.notice);
+    }
+  }
 
   const { policy, problems } = normalizePolicy({
     levels: levelsIn,
@@ -104,6 +148,14 @@ export function parsePolicyFile(text: string | undefined): PolicyFileRead {
   notices.push(...problems.map((p) => `permissions.yaml: ${p}`));
 
   const settings: PolicyFileSettings = { ...policy };
+  const safetyChecks = asBool(raw.safetyChecks);
+  if (raw.safetyChecks !== undefined) {
+    if (safetyChecks === undefined) {
+      notices.push("safetyChecks: use on or off.");
+    } else {
+      settings.safetyChecks = safetyChecks;
+    }
+  }
   if (raw.builtin && typeof raw.builtin === "object") {
     const builtin: Partial<Record<BuiltinRuleId, boolean>> = {};
     for (const [id, value] of Object.entries(raw.builtin)) {
@@ -133,9 +185,56 @@ export function parsePolicyFile(text: string | undefined): PolicyFileRead {
       (t: unknown): t is string => typeof t === "string" && t.length > 0,
     );
   }
+  if (Array.isArray(raw.background?.mcpTools)) {
+    settings.backgroundMcpTools = raw.background.mcpTools.filter(
+      (t: unknown): t is string => typeof t === "string" && t.length > 0,
+    );
+  }
   const allowTerminal = asBool(raw.plan?.allowTerminal);
   if (allowTerminal !== undefined) settings.planAllowTerminal = allowTerminal;
+  const rawCustom = raw.levels?.custom;
+  if (rawCustom !== undefined) {
+    const custom = readCustomSet(rawCustom);
+    if (custom) settings.custom = custom;
+    else {
+      notices.push(
+        "levels.custom: not a complete set of five levels, so it is not offered.",
+      );
+    }
+  }
   return { settings, notices };
+}
+
+/** A stored custom set, or undefined when it is not one (missing area, IDGAF, unknown preset). */
+export function readCustomSet(value: unknown): StoredCustomSet | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const { from, levels } = value as { from?: unknown; levels?: unknown };
+  if (!levels || typeof levels !== "object" || Array.isArray(levels)) {
+    return undefined;
+  }
+  const out: Partial<PolicyLevels> = {};
+  for (const area of POLICY_AREAS) {
+    const level = parsePolicyLevel((levels as Record<string, unknown>)[area]);
+    if (!level || level === "idgaf") return undefined;
+    out[area] = level;
+  }
+  if (from !== undefined && !isStorablePreset(from)) return undefined;
+  return {
+    ...(from === undefined ? {} : { from }),
+    levels: out as PolicyLevels,
+  };
+}
+
+function isStorablePreset(
+  value: unknown,
+): value is Exclude<PolicyPresetName, "idgaf"> {
+  return (
+    typeof value === "string" &&
+    value !== "idgaf" &&
+    Object.prototype.hasOwnProperty.call(POLICY_PRESETS, value)
+  );
 }
 
 /** What `save` is given: the parts of the settings a person can change. */
@@ -148,6 +247,96 @@ export interface PolicyFileUpdate {
     agentDecides?: string[];
   };
   builtin?: Partial<Record<BuiltinRuleId, boolean>>;
+  /** The safety-check shield. Absent follows the mode. */
+  safetyChecks?: boolean;
+  /** The whole `floor:` list as it should be; each entry a valid rule */
+  floor?: string[];
+  /** The servers whose read-only hints are trusted; every other entry is removed */
+  trustedMcpServers?: string[];
+  /** The whole `plan.mcpTools` list: "server/tool", "server/*" or "server" */
+  planMcpTools?: string[];
+  /** `plan.allowTerminal` */
+  planAllowTerminal?: boolean;
+  /** `levels.custom`: the set to keep for recall; null removes it, absent keeps what the file has */
+  custom?: StoredCustomSet | null;
+}
+
+/** Why an update cannot be written, or undefined. Nothing is written when it cannot. */
+export function policyUpdateProblem(
+  update: PolicyFileUpdate,
+): string | undefined {
+  for (const rule of update.floor ?? []) {
+    const why = validateRuleText(rule, "deny");
+    if (why) return `floor: ${JSON.stringify(rule)}: ${why}`;
+  }
+  for (const name of update.trustedMcpServers ?? []) {
+    if (typeof name !== "string" || !name.trim() || hasControl(name)) {
+      return `mcpServers: ${JSON.stringify(name)} is not a server name.`;
+    }
+  }
+  for (const entry of update.planMcpTools ?? []) {
+    if (!isPlanMcpTool(entry)) {
+      return `plan.mcpTools: ${JSON.stringify(entry)}: write server/tool, server/* or server.`;
+    }
+  }
+  if (update.custom && !readCustomSet(update.custom)) {
+    return "levels.custom: a custom set needs all five levels, none of them IDGAF, and a preset name in from.";
+  }
+  return undefined;
+}
+
+const hasControl = (text: string) =>
+  [...text].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127);
+
+/** "server", "server/*" or "server/tool": one slash at most, no empty part, no control characters. */
+function isPlanMcpTool(entry: unknown): boolean {
+  if (typeof entry !== "string" || entry !== entry.trim() || !entry) {
+    return false;
+  }
+  if (hasControl(entry)) return false;
+  const parts = entry.split("/");
+  return parts.length <= 2 && parts.every((p) => p.length > 0);
+}
+
+/**
+ * Make the list at `at` hold exactly `list`, editing the existing sequence in
+ * place: kept entries keep their comments and place, removed ones go, new
+ * ones are added at the end. An empty list removes the key.
+ */
+function setStringList(
+  doc: YAML.Document,
+  at: (string | number)[],
+  list: readonly string[],
+): void {
+  const wanted = list.map((v) => v.trim()).filter(Boolean);
+  if (wanted.length === 0) {
+    if (doc.hasIn(at)) doc.deleteIn(at);
+    return;
+  }
+  const node = doc.getIn(at, true);
+  if (!YAML.isSeq(node)) {
+    doc.setIn(at, wanted);
+    return;
+  }
+  const valueOf = (item: unknown) =>
+    String(YAML.isScalar(item) ? item.value : item).trim();
+  const kept = node.items.filter((item) => wanted.includes(valueOf(item)));
+  // An empty `[]` written in flow style reads better one entry per line
+  if (kept.length === 0) node.flow = false;
+  node.items = kept;
+  const present = new Set(node.items.map(valueOf));
+  for (const value of wanted) {
+    if (!present.has(value)) {
+      node.items.push(doc.createNode(value));
+      present.add(value);
+    }
+  }
+}
+
+/** Remove an empty mapping left behind at `key`. */
+function dropEmptyMap(doc: YAML.Document, key: string): void {
+  const node = doc.get(key, true);
+  if (YAML.isMap(node) && node.items.length === 0) doc.delete(key);
 }
 
 /**
@@ -167,6 +356,16 @@ export function applyPolicyUpdate(
       if (parsePolicyLevel(level) === "idgaf") continue;
       doc.setIn(["levels", area], level);
     }
+    // Web: written when given; given as undefined it follows Tool use again;
+    // left out, the file keeps what it has. IDGAF is never written.
+    if (Object.hasOwn(update.levels, "web")) {
+      const web = update.levels.web;
+      if (web === undefined) {
+        if (doc.hasIn(["levels", "web"])) doc.deleteIn(["levels", "web"]);
+      } else if (web !== "idgaf") {
+        doc.setIn(["levels", "web"], web);
+      }
+    }
   }
   if (update.maxNewPlanItems !== undefined) {
     doc.setIn(["plan", "maxNewItems"], update.maxNewPlanItems);
@@ -180,6 +379,9 @@ export function applyPolicyUpdate(
   if (update.questions?.agentDecides) {
     doc.setIn(["questions", "agentDecides"], update.questions.agentDecides);
   }
+  if (update.safetyChecks !== undefined) {
+    doc.set("safetyChecks", update.safetyChecks ? "on" : "off");
+  }
   if (update.builtin) {
     for (const [id, on] of Object.entries(update.builtin)) {
       if (!BUILTIN_IDS.has(id)) continue;
@@ -189,6 +391,52 @@ export function applyPolicyUpdate(
     }
     const builtin = doc.get("builtin") as YAML.YAMLMap | undefined;
     if (builtin && builtin.items.length === 0) doc.delete("builtin");
+  }
+  if (update.floor) setStringList(doc, ["floor"], update.floor);
+  if (update.planMcpTools) {
+    setStringList(doc, ["plan", "mcpTools"], update.planMcpTools);
+    dropEmptyMap(doc, "plan");
+  }
+  if (update.planAllowTerminal !== undefined) {
+    if (update.planAllowTerminal) doc.setIn(["plan", "allowTerminal"], true);
+    else if (doc.hasIn(["plan", "allowTerminal"])) {
+      doc.deleteIn(["plan", "allowTerminal"]);
+      dropEmptyMap(doc, "plan");
+    }
+  }
+  if (update.custom === null) {
+    if (doc.hasIn([...CUSTOM_SET_PATH])) doc.deleteIn([...CUSTOM_SET_PATH]);
+    dropEmptyMap(doc, "levels");
+  } else if (update.custom) {
+    const custom = readCustomSet(update.custom);
+    if (custom) {
+      doc.setIn(
+        [...CUSTOM_SET_PATH],
+        doc.createNode({
+          ...(custom.from ? { from: custom.from } : {}),
+          levels: { ...custom.levels },
+        }),
+      );
+    }
+  }
+  if (update.trustedMcpServers) {
+    const wanted = new Set(update.trustedMcpServers.map((n) => n.trim()));
+    const servers = doc.get("mcpServers", true);
+    if (YAML.isMap(servers)) {
+      servers.items = servers.items.filter((pair) => {
+        const name = String(
+          YAML.isScalar(pair.key) ? pair.key.value : pair.key,
+        );
+        const value = YAML.isScalar(pair.value) ? pair.value.value : pair.value;
+        return value !== "trusted" || wanted.has(name);
+      });
+    }
+    for (const name of wanted) {
+      if (doc.getIn(["mcpServers", name]) !== "trusted") {
+        doc.setIn(["mcpServers", name], "trusted");
+      }
+    }
+    dropEmptyMap(doc, "mcpServers");
   }
   return String(doc);
 }
@@ -206,6 +454,8 @@ export function readPolicyFile(file: string): PolicyFileRead {
 }
 
 export function writePolicyFile(file: string, update: PolicyFileUpdate): void {
+  const problem = policyUpdateProblem(update);
+  if (problem) throw new Error(`Not saved: ${problem}`);
   let existing: string | undefined;
   try {
     existing = fs.readFileSync(file, "utf-8");
@@ -213,5 +463,7 @@ export function writePolicyFile(file: string, update: PolicyFileUpdate): void {
     if (e?.code !== "ENOENT") throw e;
   }
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, applyPolicyUpdate(existing, update), "utf-8");
+  // Temp file and rename: a kill during the write cannot leave half a
+  // permissions.yaml, which would read as "no rules".
+  writeFileAtomicSync(file, applyPolicyUpdate(existing, update));
 }

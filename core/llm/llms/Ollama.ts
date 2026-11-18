@@ -15,6 +15,7 @@ import { renderChatMessage } from "../../util/messageContent.js";
 import { getRemoteModelInfo } from "../../util/ollamaHelper.js";
 import { extractBase64FromDataUrl } from "../../util/url.js";
 import { BaseLLM } from "../index.js";
+import { ollamaUsage } from "../serverTimings.js";
 
 type OllamaChatMessage = {
   role: ChatMessageRole;
@@ -104,12 +105,32 @@ type OllamaBaseResponse = {
       total_duration: number; // Time spent generating the response in nanoseconds
       load_duration: number; // Time spent loading the model in nanoseconds
       prompt_eval_count: number; // Number of tokens in the prompt
+      prompt_eval_cached_count?: number; // Of those, taken from the cache (newer servers)
       prompt_eval_duration: number; // Time spent evaluating the prompt in nanoseconds
       eval_count: number; // Number of tokens in the response
       eval_duration: number; // Time spent generating the response in nanoseconds
       context: number[]; // An encoding of the conversation used in this response; can be sent in the next request to keep conversational memory
     }
 );
+
+/**
+ * The last line of a native chat reply (`done: true`) carries the counts and
+ * the server's durations: put them on the reply as its usage, on the last
+ * assistant message (or a message of its own).
+ */
+function withDoneUsage(
+  res: OllamaChatResponse,
+  messages: ChatMessage[],
+): ChatMessage[] {
+  if ("error" in res || !("done" in res) || !res.done) return messages;
+  const usage = ollamaUsage(res);
+  if (!usage) return messages;
+  const last = messages.at(-1);
+  if (last?.role === "assistant") {
+    return [...messages.slice(0, -1), { ...last, usage }];
+  }
+  return [...messages, { role: "assistant", content: "", usage }];
+}
 
 type OllamaErrorResponse = {
   error: string;
@@ -493,15 +514,23 @@ class Ollama extends BaseLLM implements ModelInstaller {
     return result;
   }
 
+  /** The messages of a chat request. */
+  protected _convertMessages(messages: ChatMessage[]): OllamaChatMessage[] {
+    // Ollama has no "thinking" role; a reasoning turn is not sent back.
+    return this._reorderMessagesForToolCompat(
+      messages
+        .filter((message) => message.role !== "thinking")
+        .map(this._convertToOllamaMessage),
+    );
+  }
+
   protected async *_streamChat(
     messages: ChatMessage[],
     signal: AbortSignal,
     options: CompletionOptions,
   ): AsyncGenerator<ChatMessage> {
     await this.ensureModelInfo();
-    const ollamaMessages = this._reorderMessagesForToolCompat(
-      messages.map(this._convertToOllamaMessage),
-    );
+    const ollamaMessages = this._convertMessages(messages);
     const chatOptions: OllamaChatOptions = {
       model: this._getModel(),
       messages: ollamaMessages,
@@ -621,7 +650,7 @@ class Ollama extends BaseLLM implements ModelInstaller {
         return; // Aborted by user
       }
       const json = (await response.json()) as OllamaChatResponse;
-      for (const msg of convertChatMessage(json)) {
+      for (const msg of withDoneUsage(json, convertChatMessage(json))) {
         yield msg;
       }
     } else {
@@ -642,7 +671,7 @@ class Ollama extends BaseLLM implements ModelInstaller {
           if (j.done) sawDone = true;
         }
         try {
-          return convertChatMessage(j);
+          return withDoneUsage(j, convertChatMessage(j));
         } catch (e) {
           throw new Error(`Error parsing Ollama response: ${e} ${chunk}`);
         }

@@ -1,5 +1,7 @@
 import {
+  ArchiveBoxIcon,
   ArrowDownOnSquareIcon,
+  ArrowUturnLeftIcon,
   PencilSquareIcon,
   TrashIcon,
 } from "@heroicons/react/24/outline";
@@ -10,11 +12,13 @@ import { useNavigate } from "react-router-dom";
 import { Input } from "..";
 import { IdeMessengerContext } from "../../context/IdeMessenger";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
+import { archiveSessions, restoreSessions } from "../../redux/slices/uiSlice";
 import { exitEdit } from "../../redux/thunks/edit";
+import { confirmSessionSwitch } from "../../redux/thunks/interruptConfirm";
 import {
-  deleteSession,
   getSession,
   loadSession,
+  trashSession,
   updateSession,
 } from "../../redux/thunks/session";
 import { isShareSessionSupported } from "../../util";
@@ -26,15 +30,23 @@ const shareSessionSupported = isShareSessionSupported();
 export function HistoryTableRow({
   sessionMetadata,
   index,
+  archived = false,
+  onDelete,
+  match,
 }: {
   sessionMetadata: BaseSessionMetadata;
   index: number;
+  /** In the Archived group: Restore instead of Archive */
+  archived?: boolean;
+  /** Delete: the page moves it to the trash and offers Undo */
+  onDelete?: (session: BaseSessionMetadata) => void;
+  /** Text around a message that matched the search */
+  match?: string;
 }) {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const ideMessenger = useContext(IdeMessengerContext);
 
-  const [hovered, setHovered] = useState(false);
   const [editing, setEditing] = useState(false);
   const [sessionTitleEditValue, setSessionTitleEditValue] = useState(
     sessionMetadata.title,
@@ -77,23 +89,46 @@ export function HistoryTableRow({
     }
   };
 
+  const openSession = async () => {
+    // Running work is stopped only when the person says so (NI1)
+    if (
+      sessionMetadata.sessionId !== currentSessionId &&
+      !(await dispatch(confirmSessionSwitch("openSession")).unwrap())
+    ) {
+      return;
+    }
+    await dispatch(exitEdit({}));
+    if (sessionMetadata.sessionId !== currentSessionId) {
+      await dispatch(
+        loadSession({
+          sessionId: sessionMetadata.sessionId,
+          saveCurrentSession: true,
+        }),
+      );
+    }
+    void navigate("/");
+  };
+
+  // The row and its buttons are reachable by keyboard: Tab to the row opens
+  // it with Enter, Tab again reaches its actions, which show on hover and
+  // while anything in the row has focus
   return (
     <tr
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       data-testid={`history-row-${index}`}
-      className="relative mb-2 box-border flex w-full cursor-pointer overflow-hidden rounded-lg p-3 hover:bg-input"
-      onClick={async () => {
-        await dispatch(exitEdit({}));
-        if (sessionMetadata.sessionId !== currentSessionId) {
-          await dispatch(
-            loadSession({
-              sessionId: sessionMetadata.sessionId,
-              saveCurrentSession: true,
-            }),
-          );
+      tabIndex={editing ? -1 : 0}
+      aria-label={sessionMetadata.title}
+      className="group relative mb-2 box-border flex w-full cursor-pointer overflow-hidden rounded-lg p-3 hover:bg-input focus-visible:bg-input focus-visible:outline focus-visible:outline-1 focus-visible:outline-border"
+      onClick={openSession}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          void openSession();
+        } else if (e.key === "Delete" && !editing) {
+          e.preventDefault();
+          if (onDelete) onDelete(sessionMetadata);
+          else void dispatch(trashSession({ id: sessionMetadata.sessionId }));
         }
-        navigate("/");
       }}
     >
       <td className="flex-1 cursor-pointer space-y-1">
@@ -108,6 +143,7 @@ export function HistoryTableRow({
               value={sessionTitleEditValue}
               onChange={(e) => setSessionTitleEditValue(e.target.value)}
               onKeyUp={(e) => handleKeyUp(e)}
+              onClick={(e) => e.stopPropagation()}
               onBlur={() => setEditing(false)}
             />
           </div>
@@ -131,6 +167,15 @@ export function HistoryTableRow({
           </div>
         )}
 
+        {match && (
+          <div
+            className="line-clamp-2 text-xs break-all text-description"
+            data-testid={`history-row-match-${index}`}
+          >
+            {match}
+          </div>
+        )}
+
         <div className="flex text-description-muted">
           <span className="line-clamp-1 text-xs break-all">
             {getUriPathBasename(sessionMetadata.workspaceDirectory || "")}
@@ -149,12 +194,16 @@ export function HistoryTableRow({
         </div>
       </td>
 
-      {hovered && !editing && (
-        <td className="absolute top-12 right-2 ml-auto flex -translate-y-1/2 transform items-center gap-x-1 rounded-full bg-input px-2 py-1 shadow-md">
+      {!editing && (
+        <td
+          className="absolute top-12 right-2 ml-auto flex -translate-y-1/2 transform items-center gap-x-1 rounded-full bg-input px-2 py-1 opacity-0 shadow-md group-focus-within:opacity-100 group-hover:opacity-100 focus-within:opacity-100"
+          data-testid={`history-row-actions-${index}`}
+        >
           {
             <>
               <HeaderButtonWithToolTip
                 text="Edit"
+                testId={`history-row-edit-${index}`}
                 onClick={async (e) => {
                   e.stopPropagation();
                   setEditing(true);
@@ -173,11 +222,47 @@ export function HistoryTableRow({
                   <ArrowDownOnSquareIcon width="1em" height="1em" />
                 </HeaderButtonWithToolTip>
               )}
+              {archived ? (
+                <HeaderButtonWithToolTip
+                  text="Restore"
+                  testId={`history-row-restore-${index}`}
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    dispatch(
+                      restoreSessions({
+                        sessionIds: [sessionMetadata.sessionId],
+                      }),
+                    );
+                  }}
+                >
+                  <ArrowUturnLeftIcon width="1em" height="1em" />
+                </HeaderButtonWithToolTip>
+              ) : (
+                <HeaderButtonWithToolTip
+                  text="Archive"
+                  testId={`history-row-archive-${index}`}
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    dispatch(
+                      archiveSessions({
+                        sessionIds: [sessionMetadata.sessionId],
+                      }),
+                    );
+                  }}
+                >
+                  <ArchiveBoxIcon width="1em" height="1em" />
+                </HeaderButtonWithToolTip>
+              )}
               <HeaderButtonWithToolTip
                 text="Delete"
+                testId={`history-row-delete-${index}`}
                 onClick={async (e) => {
                   e.stopPropagation();
-                  await dispatch(deleteSession(sessionMetadata.sessionId));
+                  if (onDelete) onDelete(sessionMetadata);
+                  else
+                    await dispatch(
+                      trashSession({ id: sessionMetadata.sessionId }),
+                    );
                 }}
               >
                 <TrashIcon width="1em" height="1em" />

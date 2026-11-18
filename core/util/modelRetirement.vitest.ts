@@ -1,11 +1,13 @@
-import { allModelProviders } from "@continuedev/llm-info";
+import { allModelProviders, getAllRecommendedFor } from "@continuedev/llm-info";
 import fs from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   findRetirementRow,
+  liveFromFetched,
   RETIREMENT_ROWS,
   retirementNotice,
+  rowStateOn,
 } from "./modelRetirement.js";
 
 const NOW = "2026-11-11";
@@ -23,36 +25,76 @@ describe("the checked-in table", () => {
     }
   });
 
-  it("agrees with itself: a retired state has a past date, a past firm date is retired", () => {
+  it("agrees with itself: a row marked retired had its date by the time it was read", () => {
     for (const r of RETIREMENT_ROWS) {
-      if (r.state === "retired") {
-        expect(r.retiresAt, r.id).toBeTruthy();
-        expect(r.retiresAt! <= today, r.id).toBe(true);
-      }
-      if (r.retiresAt && !r.notSoonerThan && r.retiresAt <= today) {
-        expect(r.state, `${r.id} passed ${r.retiresAt}: mark it retired`).toBe(
-          "retired",
-        );
-      }
+      if (r.state !== "retired") continue;
+      expect(r.retiresAt, r.id).toBeTruthy();
+      expect(r.retiresAt! <= r.fetchedOn, r.id).toBe(true);
     }
   });
 
-  it("fails when a firm retirement date has passed and the catalog still lists the model as current", () => {
-    const stale: string[] = [];
-    for (const p of allModelProviders) {
-      if (p.id !== "anthropic") continue;
-      for (const m of p.models) {
-        const row = findRetirementRow("anthropic", m.model);
-        if (!row?.retiresAt || row.notSoonerThan) continue;
-        if (row.retiresAt <= today && m.lifecycle !== "retired") {
-          stale.push(`${m.model} (retired ${row.retiresAt})`);
-        }
-        if (row.state === "deprecated" && !m.lifecycle) {
-          stale.push(`${m.model} (deprecated ${row.deprecatedAt})`);
-        }
+  describe("on either side of a firm date (fake clock)", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    const clockToday = () => new Date().toISOString().slice(0, 10);
+    const sonnet45 = () => findRetirementRow("anthropic", "claude-sonnet-4-5")!;
+
+    it("reads the row's own state before the date", () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-11-29T12:00:00Z"));
+      expect(rowStateOn(sonnet45(), clockToday())).toBe("deprecated");
+      expect(
+        note("anthropic", "claude-sonnet-4-5", clockToday()),
+      ).toMatchObject({ severity: "retiring", daysLeft: 1 });
+    });
+
+    it("treats the model as retired from the date on, without editing the table", () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      for (const day of ["2026-11-30T00:00:00Z", "2026-12-01T12:00:00Z"]) {
+        vi.setSystemTime(new Date(day));
+        expect(sonnet45().state).toBe("deprecated");
+        expect(rowStateOn(sonnet45(), clockToday()), day).toBe("retired");
+        expect(
+          note("anthropic", "claude-sonnet-4-5", clockToday())?.severity,
+          day,
+        ).toBe("retired");
       }
-    }
-    expect(stale, "mark these with lifecycle in packages/llm-info").toEqual([]);
+    });
+
+    it("never retires a model on a 'not sooner than' date", () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2027-01-01T00:00:00Z"));
+      const opus45 = findRetirementRow("anthropic", "claude-opus-4-5")!;
+      expect(rowStateOn(opus45, clockToday())).toBe("active");
+    });
+
+    it("needs no catalog edit on the day: every model the table deprecates or retires is marked in llm-info", () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      for (const day of [
+        "2026-11-29T12:00:00Z",
+        "2026-12-01T12:00:00Z",
+        `${today}T12:00:00Z`,
+      ]) {
+        vi.setSystemTime(new Date(day));
+        const stale: string[] = [];
+        for (const p of allModelProviders) {
+          if (p.id !== "anthropic") continue;
+          for (const m of p.models) {
+            const row = findRetirementRow("anthropic", m.model);
+            if (!row) continue;
+            if (rowStateOn(row, clockToday()) !== "active" && !m.lifecycle) {
+              stale.push(`${m.model} (${rowStateOn(row, clockToday())})`);
+            }
+          }
+        }
+        expect(
+          stale,
+          `${day}: mark these with lifecycle in packages/llm-info`,
+        ).toEqual([]);
+      }
+    });
   });
 
   it("does not recommend a retiring or retired model in the model catalog page", () => {
@@ -142,5 +184,113 @@ describe("retirementNotice", () => {
     const a = note("anthropic", "claude-sonnet-4-5");
     const b = note("anthropic", "claude-sonnet-4-5", "2026-12-01");
     expect(a?.key).not.toBe(b?.key);
+  });
+});
+
+describe("retirementNotice for OpenAI", () => {
+  it("speaks only from OpenAI's own shutdown_date", () => {
+    expect(
+      retirementNotice({
+        provider: "openai",
+        model: "gpt-4.1",
+        now: "2026-11-13",
+      }),
+    ).toBeUndefined();
+    expect(
+      retirementNotice({
+        provider: "openai",
+        model: "gpt-4.1",
+        now: "2026-11-13",
+        live: { lifecycle: "deprecated", retiresAt: "2027-02-14" },
+      }),
+    ).toMatchObject({
+      from: "live",
+      severity: "retiring",
+      retiresAt: "2027-02-14",
+      message: expect.stringContaining("retires on 2027-02-14"),
+    });
+  });
+
+  it("other providers still get nothing", () => {
+    expect(
+      retirementNotice({
+        provider: "mistral",
+        model: "m",
+        now: "2026-11-13",
+        live: { lifecycle: "deprecated", retiresAt: "2027-02-14" },
+      }),
+    ).toBeUndefined();
+  });
+});
+
+describe("liveFromFetched (a model list the person fetched)", () => {
+  it("keeps the deprecated flag and the date from an Anthropic list", () => {
+    expect(
+      liveFromFetched("anthropic", [
+        {
+          name: "Claude Sonnet 4.5",
+          modelId: "claude-sonnet-4-5-20250929",
+          deprecated: true,
+          retiresAt: "2026-11-30T00:00:00Z",
+        },
+        {
+          name: "Claude Sonnet 5.5",
+          modelId: "claude-sonnet-5-5",
+          deprecated: false,
+        },
+        // An older API version: no lifecycle field, nothing to record
+        { name: "Claude Haiku 5.5", modelId: "claude-haiku-5-5" },
+      ]),
+    ).toEqual([
+      {
+        model: "claude-sonnet-4-5-20250929",
+        live: { lifecycle: "deprecated", retiresAt: "2026-11-30T00:00:00Z" },
+      },
+      { model: "claude-sonnet-5-5", live: { lifecycle: "active" } },
+    ]);
+  });
+
+  it("records nothing for providers whose notices do not read live facts", () => {
+    expect(
+      liveFromFetched("bedrock", [
+        { name: "x", modelId: "anthropic.claude-sonnet-4-5", deprecated: true },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("a fetched past date reads as retired, a future one as retiring", () => {
+    const [past] = liveFromFetched("anthropic", [
+      {
+        name: "a",
+        modelId: "claude-a",
+        deprecated: true,
+        retiresAt: "2026-11-01",
+      },
+    ]);
+    expect(
+      note("anthropic", past.model, "2026-11-14", past.live)?.severity,
+    ).toBe("retired");
+    const [future] = liveFromFetched("anthropic", [
+      {
+        name: "b",
+        modelId: "claude-b",
+        deprecated: true,
+        retiresAt: "2027-01-01",
+      },
+    ]);
+    expect(
+      note("anthropic", future.model, "2026-11-14", future.live),
+    ).toMatchObject({ severity: "retiring", from: "live", daysLeft: 48 });
+  });
+});
+
+describe("llm-info recommendations", () => {
+  it("never recommend a model marked deprecated or retired", () => {
+    const ids = getAllRecommendedFor("chat")
+      .filter((m) => m.provider === "anthropic")
+      .map((m) => m.model);
+    expect(ids).not.toContain("claude-sonnet-4-5-20250929");
+    expect(ids).not.toContain("claude-opus-4-1-20250805");
+    expect(ids).toContain("claude-sonnet-5-5");
   });
 });

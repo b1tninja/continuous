@@ -5,6 +5,7 @@ import * as cheerio from "cheerio";
 import type { RequestOptions } from "../../..";
 import { fetchWithGuardedRedirects } from "../../../util/guardedFetch";
 import { networkFetchWith } from "../../../util/networkFetch";
+import { webRequestHeaders } from "../../../web/webHeaders";
 
 import { PageData } from "./DocsCrawler";
 
@@ -98,11 +99,15 @@ export default class CheerioCrawler {
 
     try {
       // Through the shared client (proxy, system CA), one redirect at a time:
-      // a page cannot steer the crawl to a private or metadata address.
+      // a page cannot steer the crawl to a private or metadata address. The
+      // crawler's own User-Agent (`Continuous-Crawler`), not node-fetch's.
       response = await fetchWithGuardedRedirects(
         location,
         networkFetchWith(this.requestOptions),
-        { stayOnStartHost: true },
+        {
+          stayOnStartHost: true,
+          headersFor: (u) => webRequestHeaders("crawler", u),
+        },
       );
     } catch (error: unknown) {
       if (

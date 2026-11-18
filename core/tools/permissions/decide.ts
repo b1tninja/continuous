@@ -54,6 +54,7 @@ export type DecisionSource =
   | "floor"
   | "safety-floor"
   | "tainted-session"
+  | "secret-egress"
   | "permissive"
   | "idgaf"
   | "manual"

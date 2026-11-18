@@ -37,6 +37,7 @@ The top-level properties in the `config.yaml` configuration file are:
 - [`docs`](#docs)
 - [`mcpServers`](#mcpservers)
 - [`data`](#data)
+- [`modelCatalog`](#modelcatalog)
 
 ---
 
@@ -101,6 +102,8 @@ The `models` section defines the language models used in your configuration. Mod
   - `autoCompactTokens`: Compact once input reaches this many tokens.
   - `subagent`: Budget when the model runs as a sub-agent: `contextLength`, `autoCompactRatio`, `autoCompactTokens`.
   - `requestBodyHints`: Extra request body fields for `oneShot` requests (the compaction summary) and `conversation` requests (all other chat requests).
+  - `plannedCompaction`: IDE only. Once the conversation passes 70% of the context window (75% on a cloud provider), the point where a compaction would cut is fixed, and after 10 seconds without typing or a reply streaming the summary of everything before it is made in the background, so **Compact now** applies it at once and keeps the newest turns word for word. Typing or sending stops it, and it is tried again at the next pause. On by default for a server on this machine or network, off for cloud providers; `false` turns it off.
+  - `prewarm`: IDE only, with `plannedCompaction`. Experimental: `"off"` (the default) until it has been checked on your server; turn it on with `"local"` after the live check in [Planned compaction and the pre-warm](/customize/model-providers/more/local-servers#planned-compaction-and-the-pre-warm). Once the background summary is ready and you are still idle, the conversation as it will be after compacting is sent once to a Strata or llama.cpp server with a one-token reply, so your next message applies the summary with nothing to read again. On Strata the request pins the checkpoint at the end of the summary (`strata_prefix`) and is skipped when `/v1/status` reports less free memory than it could take. Typing or sending stops it. Without a pre-warm, a summary prepared for a local server waits for **Compact now** (or the hold at 85%). `"always"` is reserved for cloud providers, which are not pre-warmed yet.
 
 - `embedOptions`: If the model includes role `embed`, these settings apply for embeddings:
 
@@ -327,7 +330,7 @@ modeModels:
 - If you pick a model by hand in the model selector, that choice is used for the current mode until you reload the window. The reasoning toggle in the chat input overrides `reasoningEffort`.
 - A name that doesn't match one of your models is ignored, with a warning in the config errors. If nothing in an entry matches, the entry is ignored.
 - You can also set all of this from **Settings > Models > Which model does what**: tick the models each mode offers, star the default, star one model for Loop, Re-plan and Subagent, pick a reasoning effort and press Save. The Prompt and Reminder rows set `prompt` (Default, Full, Short or one of your `prompts:` blocks) and `tail` (Default, On, Off or a text of your own) for Chat, Plan, Agent, Loop and Re-plan, and a prompt or reminder can be set with no model starred. Saving edits `config.yaml` in place and keeps your comments. It needs a `config.yaml` (not a `config.json`), and is not shown in the JetBrains plugin yet. The reviewer is picked under **Additional model roles**.
-- **In the CLI** (`cn`, `cn serve`), `modeModels` picks the model, the prompt and the tail the same way: switching to Plan mode takes the `plan` model, leaving it the `agent` model, and a Loop takes `loop` and `replan` per turn, each with its `prompt` and `tail`; `reviewer` names the model `--auto-review` asks. The CLI does not apply `reasoningEffort`: set the effort in the model's own options, or pick a [catalog variant](/customize/model-catalog#variants) such as `Claude Opus#high`. A subagent's requests in the CLI are their own use: the act turn text with the definition's prompt, and no `prompt` or `tail` of the parent's mode or of a running Loop item. Subagents in the CLI are defined as models with the `subagent` role, each with its own provider and model, so `modeModels.subagent` does not pick a model there.
+- **In the CLI** (`cn`, `cn serve`), `modeModels` picks the model, the prompt and the tail the same way: switching to Plan mode takes the `plan` model, leaving it the `agent` model, and a Loop takes `loop` and `replan` per turn, each with its `prompt` and `tail`; `reviewer` names the model `--auto-review` asks. The CLI sends `reasoningEffort` with each request of the use: Anthropic and Bedrock turn it into a thinking budget or the model family's reasoning switch, Gemini and Vertex AI into a thinking config, and OpenAI-compatible providers send it as `reasoning_effort`. It does not apply `off` (the model keeps its own setting), the reviewer's effort, or an effort for a provider whose request has no reasoning field (AskSage, Cohere, watsonx); for those, set the effort in the model's own options or pick a [catalog variant](/customize/model-catalog#variants) such as `Claude Opus#high`. When it loads a config, the CLI shows one notice that lists what it skips: each entry whose name matches no model or is not a chat model, and each effort it does not send. A subagent's requests in the CLI are their own use: the act turn text with the definition's prompt, and no `prompt` or `tail` of the parent's mode or of a running Loop item. Subagents in the CLI are defined as models with the `subagent` role, each with its own provider and model, so `modeModels.subagent` does not pick a model there.
 
 ---
 
@@ -434,12 +437,12 @@ The snake*case tool name also works as a rule name, for example `read_file(**/.e
 
 **Where the rules apply.** The same checks run wherever a tool call can start, not only in the chat.
 
-- **Headless runs** (`continuous -p`) allow Bash and any tool with no entry of its own, since nobody is there to ask. A deny rule, an always-on rule and a protected path still hold, and a call that would have asked is refused.
-- **Loop workers** in the terminal agent (parallel to-dos) load the same settings, flags and policy levels as the session that started them, and never switch to Auto mode. A worker cannot ask, so a call that would ask is refused.
+- **Headless runs** (`continuous -p` and `continuous serve`) run at your own levels with the same default lists as the terminal UI: `Bash` and any tool with no entry of its own ask. Nobody is there to answer, so a call that would ask is refused, with a tool result and a line on stderr that name the flags that allow it (`--auto`, `--policy`, `--allow`). At IDGAF (`--policy idgaf` or `--auto`) everything runs. A deny rule, a locked rule and a protected path still hold below IDGAF. Until 2.18.0 headless runs allowed `Bash` and every unlisted tool; `CONTINUOUS_HEADLESS_LEGACY_ALLOW=1` restores that for one release.
+- **Loop workers** in the terminal agent (parallel to-dos) load the same settings, flags and policy levels as the session that started them, and never switch to Auto mode. They take the same default lists as the terminal UI. A worker cannot ask, so a call that would ask is held as an approval question for the loop and refused for now.
 - **MCP app tool calls** (a tool an MCP app's panel calls itself) go through the same check as a call the model made, and wait for you when it asks. A turn an app starts is labeled with the app's name in the chat and in the text sent to the model.
-- **Agents window** tool calls go through deny rules, always-on rules and protected paths; a call that asks is confirmed with you or not run.
+- **Agents window** tool calls go through deny rules, locked rules and protected paths; a call that asks is confirmed with you or not run.
 - **Fetching a URL** that is private or local, including a name that resolves to such an address, always asks. Hands-off and an allow rule do not skip it; IDGAF does.
-- **A command too long to read in full** (rules check up to 800 readings of it) counts as a match for deny, ask, effect and protected-path checks, including an always-on rule at IDGAF.
+- **A command too long to read in full** (rules check up to 800 readings of it) counts as a match for deny, ask, effect and protected-path checks, including a locked rule at IDGAF.
 - **`/cmd`** runs the command it generates only when the terminal tool's policy allows it without asking; otherwise the command is shown and not run.
 
 **Patterns.** In file and directory rules, `*` matches within one folder and `**` matches across folders (`**/.env` matches `.env` and `a/b/.env`). Paths are compared with forward slashes, so one rule works on Windows and macOS. A file rule is matched against both the path the model wrote and the full path it resolves to. In command rules, `*` matches anything, including `/`.
@@ -457,7 +460,7 @@ The snake*case tool name also works as a rule name, for example `read_file(**/.e
 **Protected paths always ask.** Some paths are guarded even if you write no rules, and no allow rule or tool setting can switch that off (a deny rule still refuses them outright):
 
 - **Credentials** are protected for every tool and for commands: `.env`, `.env.*` and `*.env` (but not `.env.example`, `.sample`, `.template`), `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.kube`, `~/.azure`, `~/.docker`, `~/.config/gh`, `~/.config/gcloud`, `~/.terraform.d`, `~/.git-credentials`, `~/.pgpass`, `~/.my.cnf`, `.netrc`, `.npmrc`, `.pypirc`, private-key files such as `id_rsa`, files ending in `.pem`, `.key`, `.pfx`, `.p12`, `.tfvars` or `.tfstate`, `terraform.tfstate`, `/etc/shadow` and `/proc/self/environ`.
-- **Files that change what runs later** are protected for edits, new files and commands: anything under `.git/`, `.continuous/`, `.vscode/`, `.idea/`, `.husky/`, `.devcontainer/`, `.cargo/`, `.claude/`, `.cursor/`, `.github/workflows/` or `.github/actions/`; `.continuousrc.*`, `.mcp.json`, `.envrc`, `.gitlab-ci.yml`; and shell startup files such as `~/.bashrc`, `~/.zshrc`, `~/.gitconfig`, fish config and LaunchAgents. Just reading or listing these is fine. Instruction files such as `AGENTS.md` and `CLAUDE.md` are not on this list because they are edited all the time; add `writeFile(AGENTS.md)` to `ask` if you want them guarded.
+- **Files that change what runs later** are protected for edits, new files and commands: anything under `.git/`, `.continuous/`, `.vscode/`, `.idea/`, `.husky/`, `.devcontainer/`, `.cargo/`, `.claude/`, `.cursor/`, `.github/workflows/` or `.github/actions/`; `.continuousrc.*`, `.mcp.json`, `.envrc`, `.gitlab-ci.yml`; and shell startup files such as `~/.bashrc`, `~/.zshrc`, `~/.gitconfig`, fish config, LaunchAgents and the PowerShell profiles (`Documents/WindowsPowerShell/*profile.ps1` and `Documents/PowerShell/*profile.ps1`, under your home folder or a OneDrive-redirected Documents, and `$PROFILE`). Just reading or listing these is fine. A write to a PowerShell profile is refused at Automatic, where nobody is there to approve code that runs in every later PowerShell session; the other levels ask, and IDGAF runs it. Instruction files such as `AGENTS.md` and `CLAUDE.md` are not on this list because they are edited all the time; add `writeFile(AGENTS.md)` to `ask` if you want them guarded.
 - **Commands that print credentials** ask even when they name no file: `env` and `printenv` with no argument, `dir env:`, and a variable whose name is a credential word, such as `echo $AWS_SECRET_ACCESS_KEY`, `echo %GITHUB_TOKEN%` or `printenv NPM_TOKEN`. `echo $KEYBOARD_LAYOUT` is fine. Network paths such as `\\host\share` also ask, because looking one up contacts that computer and on Windows can send your login to it.
 
 The home directory is recognised however it is written (`~`, `$HOME`, `%USERPROFILE%`, or the full path). The approval prompt says which path caused the question. A command is checked by looking for these paths among its words, including after `sudo` and inside `bash -c '...'`, so `echo .env` also asks. It cannot see a path built from a variable, a wildcard, or a bare file name after `cd`.
@@ -470,7 +473,7 @@ The home directory is recognised however it is written (`~`, `$HOME`, `%USERPROF
 
 **Shared configs.** If a shared assistant and your own config both set `toolPermissions`, the lists are combined, with one limit: only your own `config.yaml` (and your own `permissions.yaml`, and what you choose in the settings) can add `allow` rules. An `allow` rule that comes from a hub assistant, a shared config or a project folder is ignored, and a one-line notice in the config errors names it (the terminal CLI logs it). `deny` and `ask` rules from any source are kept, because they can only make a call stricter. To use a rule from a shared assistant, copy it into your own `config.yaml`. This is the same rule that applies to the `terminal` settings.
 
-**The permission files are locked.** A call that would write or delete a file the product loads as configuration, code, rules or hooks asks every time, and is refused at Automatic and IDGAF. That covers everything in the global folder (`~/.continuous`, `~/.continue`, or the folder `CONTINUOUS_GLOBAL_DIR` or `CONTINUE_GLOBAL_DIR` names: `config.yaml`, `config.ts`, `permissions.yaml`, `.env`, the trust and pin files, `agents/`, `prompts/`, `checks/`, `rules/`), a project's `.continue/` or `.continuous/` folder (except `plans/`), `.claude/settings.json`, `.claude/settings.local.json`, `.claude/agents/` and `.claude/skills/`, and `.continuerc.*`. It reads Windows spellings of the same file (`\?\` and `\.\` prefixes, 8.3 short names, file URIs) and every string in an MCP call's arguments. The list comes from one registry in the code, so a new loader cannot read a path that is not locked. A command that builds its path at run time (a variable, a wildcard, a backtick, or a bare name after a `cd` into your home folder) is not seen by the lock, so at IDGAF it asks; only the sandbox covers that for certain.
+**The permission files are locked.** A call that would write or delete a file the product loads as configuration, code, rules or hooks asks every time, and is refused at Automatic. At IDGAF it runs, and the decision records that the lock would have refused it. That covers everything in the global folder (`~/.continuous`, `~/.continue`, or the folder `CONTINUOUS_GLOBAL_DIR` or `CONTINUE_GLOBAL_DIR` names: `config.yaml`, `config.ts`, `permissions.yaml`, `.env`, the trust and pin files, `agents/`, `prompts/`, `checks/`, `rules/`), a project's `.continue/` or `.continuous/` folder (except `plans/`), `.claude/settings.json`, `.claude/settings.local.json`, `.claude/agents/` and `.claude/skills/`, and `.continuerc.*`. It reads Windows spellings of the same file (`\?\` and `\.\` prefixes, 8.3 short names, file URIs) and every string in an MCP call's arguments. The list comes from one registry in the code, so a new loader cannot read a path that is not locked. A command that builds its path at run time (a variable, a wildcard, a backtick, or a bare name after a `cd` into your home folder) is not seen by the lock; at IDGAF it runs, with the decision recording it; only the sandbox covers that for certain.
 
 **When a call is refused,** the chat shows which rule did it, and the model is told not to retry or work around it.
 
@@ -492,9 +495,9 @@ If a narrow rule cannot be made, the button says why and does nothing: commands 
 | **Cautious**   | What your Always rules and tool settings cover runs; the rest asks.                                                                                                                                                                                              |
 | **Automatic**  | As Cautious, and a [reviewer model](./customize/model-roles/reviewer.mdx) decides what is left. Experimental.                                                                                                                                                    |
 | **Permissive** | Anything no rule stops runs, and file edits are accepted. Never rules, Ask rules, protected paths and the built-in rule check still apply.                                                                                                                       |
-| **IDGAF**      | Everything runs without asking. Never rules, Ask rules, protected paths and the built-in rule check are ignored (always-on rules still bind). A warning stays above the input for as long as an area is at IDGAF. |
+| **IDGAF**      | Everything runs without asking. Never rules, Ask rules, locked rules, protected paths and the built-in rule check are recorded, not applied. The session says so in one line, once, and a warning stays above the input for as long as an area is at IDGAF. |
 
-Except for IDGAF, a level sits on top of the rules, never above them. The order is: always-on rules, then Never rules, then tools you switched off and commands the built-in rule check refuses, then protected paths, then Ask rules, then Always rules, and only then the level. A tool you switched off stays off even at IDGAF.
+Except for IDGAF, a level sits on top of the rules, never above them. The order is: locked rules, then Never rules, then tools you switched off and commands the built-in rule check refuses, then protected paths, then Ask rules, then Always rules, and only then the level. A tool you switched off stays off even at IDGAF.
 
 ---
 
@@ -682,6 +685,30 @@ data:
     events:
       - autocomplete
       - chatInteraction
+```
+
+---
+
+### `modelCatalog`
+
+Model information updates: when OpenRouter's public model list (names, context sizes, per-token prices, tool support) is downloaded from `openrouter.ai`. Read from the user-level `config.yaml` (`~/.continuous/config.yaml`) by every IDE and the terminal agent. See [model information and prices](/customize/model-providers/top-level/openrouter#model-information-and-prices).
+
+- `automatic` (default when the line is absent): in the background, when the copy on this computer is older than `modelCatalogRefreshHours`.
+- `manual`: only when you choose Pull now or Refresh now, or run `continuous models refresh`. `ask` is accepted as the same; `never` is `manual` without the question in provider setup.
+- `off`: never; the bundled model data is used.
+
+The same setting covers the selected chat model's own provider when that is Anthropic or OpenAI: with `automatic`, Continuous asks that provider's `GET /v1/models/{id}` (at the API base you configured, with your key) a few seconds after the model is selected and once per interval, for the context window, maximum output and deprecation dates ([Anthropic](/customize/model-providers/top-level/anthropic#model-information-from-anthropic), [OpenAI](/customize/model-providers/top-level/openai#model-information-from-openai)). With `manual` only Test connection asks; with `off` nothing is asked and a kept answer is not used.
+
+`modelCatalogRefreshHours` (number, default `24`, 1 to 720) sets the interval for `automatic`. The environment variables `CONTINUOUS_MODEL_INFO_UPDATES` and `CONTINUOUS_MODEL_INFO_REFRESH_HOURS` override both. Ollama's model list is not covered: it is fetched only from Ollama's own setup.
+
+The same setting covers the metadata of the **selected Bedrock model**, and only when a Bedrock model is configured: the AWS Price List for its region (public, from `pricing.us-east-1.amazonaws.com`) and the account's Service Quotas (with your own AWS credentials, optional permission). `automatic` looks them up on selection and in the background, `manual` only on Bedrock Test connection, `off` never. See [optional quota check](/customize/model-providers/top-level/bedrock#optional-quota-check) and [prices from the AWS Price List](/customize/model-providers/top-level/bedrock#prices-from-the-aws-price-list).
+
+```yaml title="config.yaml"
+name: My Config
+version: 1.0.0
+schema: v1
+modelCatalog: manual
+modelCatalogRefreshHours: 48
 ```
 
 ---

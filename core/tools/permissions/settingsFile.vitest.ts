@@ -10,6 +10,24 @@ import {
   writePolicyFile,
 } from "./settingsFile";
 
+describe("safetyChecks", () => {
+  it("reads and writes on and off, and ignores anything else", () => {
+    expect(parsePolicyFile("safetyChecks: on").settings.safetyChecks).toBe(
+      true,
+    );
+    expect(parsePolicyFile("safetyChecks: off").settings.safetyChecks).toBe(
+      false,
+    );
+    expect(parsePolicyFile("safetyChecks: maybe").notices[0]).toMatch(
+      /safetyChecks/,
+    );
+    const on = applyPolicyUpdate(undefined, { safetyChecks: true });
+    expect(on).toMatch(/safetyChecks: on/);
+    const off = applyPolicyUpdate(on, { safetyChecks: false });
+    expect(off).toMatch(/safetyChecks: off/);
+  });
+});
+
 describe("parsePolicyFile", () => {
   it("a missing or empty file is the defaults", () => {
     for (const text of [undefined, "", "  \n"]) {
@@ -151,6 +169,38 @@ describe("the file on disk", () => {
       levels: { ...DEFAULT_POLICY_LEVELS, edits: "permissive" },
     });
     expect(readPolicyFile(file).settings.levels.edits).toBe("permissive");
+  });
+
+  it("does not write over a file that is not valid YAML", () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "policy-file-"));
+    const file = path.join(dir, "permissions.yaml");
+    const broken = "floor:\n  - Bash(rm -rf*)\nallow: [Read\n";
+    fs.writeFileSync(file, broken);
+    expect(() =>
+      writePolicyFile(file, {
+        levels: { ...DEFAULT_POLICY_LEVELS, edits: "permissive" },
+      }),
+    ).toThrow();
+    expect(fs.readFileSync(file, "utf-8")).toBe(broken);
+    expect(fs.readdirSync(dir)).toEqual(["permissions.yaml"]);
+  });
+
+  it("keeps comments and the keys it does not set", () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "policy-file-"));
+    const file = path.join(dir, "permissions.yaml");
+    fs.writeFileSync(
+      file,
+      "# mine\nfloor:\n  - Bash(rm -rf*) # never\nallow:\n  - Read\n",
+    );
+    writePolicyFile(file, {
+      levels: { ...DEFAULT_POLICY_LEVELS, edits: "permissive" },
+    });
+    const after = fs.readFileSync(file, "utf-8");
+    expect(after).toContain("# mine");
+    expect(after).toContain("- Bash(rm -rf*) # never");
+    expect(after).toContain("- Read");
+    expect(readPolicyFile(file).settings.levels.edits).toBe("permissive");
+    expect(fs.readdirSync(dir)).toEqual(["permissions.yaml"]);
   });
 });
 

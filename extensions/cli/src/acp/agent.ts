@@ -1,13 +1,26 @@
 import path from "path";
 
+import type { ChatHistoryItem } from "core/index.js";
 import { maskArgsForDisplay } from "core/tools/permissions/displayMask.js";
 
 import type { StreamCallbacks } from "../stream/streamChatResponse.types.js";
+import { maskForSupervisor } from "../util/maskForSupervisor.js";
 
 import { JsonRpcPeer, RPC_CODES, RpcError } from "./rpc.js";
+import {
+  replayHistory,
+  sessionListPage,
+  type StoredSession,
+} from "./sessions.js";
 
-/** The ACP protocol version this agent speaks. */
+/**
+ * The ACP protocol version this agent speaks. A client that asks for a later
+ * one (the v2 draft) is answered with this, and decides whether to go on.
+ */
 export const ACP_PROTOCOL_VERSION = 1;
+
+/** ACP's "Resource not found" error code, for an unknown session id. */
+export const ACP_RESOURCE_NOT_FOUND = -32002;
 
 /**
  * What the protocol layer needs from the CLI. The real one (`backend.ts`)
@@ -17,6 +30,19 @@ export const ACP_PROTOCOL_VERSION = 1;
 export interface AcpBackend {
   /** Start the one conversation of this process, rooted at `cwd`. */
   newSession(cwd: string): Promise<string>;
+  /** Every saved session (`session/list`), in any order. */
+  listSessions(): Promise<StoredSession[]>;
+  /** Whether a session saved in `workspaceDirectory` belongs to `cwd`. */
+  inWorkspace(workspaceDirectory: string, cwd: string): boolean;
+  /**
+   * Make the saved session `sessionId` the one conversation of this process,
+   * rooted at `cwd`, and answer its history; `undefined` when no session of
+   * that id is saved.
+   */
+  openSession(
+    sessionId: string,
+    cwd: string,
+  ): Promise<ChatHistoryItem[] | undefined>;
   /**
    * Run one turn to its end. The callbacks are the CLI's `StreamCallbacks`,
    * the same ones `cn serve` fills; `onToolPermissionRequest` is set, which
@@ -51,8 +77,27 @@ type ToolKind =
   | "other";
 
 interface OpenCall {
+  /** The id the editor knows the call by */
   id: string;
   name: string;
+  /** The model's id for the call: what pairs a result with its call */
+  key?: string;
+}
+
+/**
+ * The open call a result, an error or a permission request belongs to. With
+ * the model's call id, only the call started under that id: calls of one turn
+ * run at the same time, so two calls of one tool finish in any order, and a
+ * match by name would hand the first to finish the other's `toolCallId`.
+ * The name is the fallback only for a caller that passes no id.
+ */
+export function findOpenCall(
+  open: readonly OpenCall[],
+  name: string | undefined,
+  key: string | undefined,
+): number {
+  if (key !== undefined) return open.findIndex((c) => c.key === key);
+  return open.findIndex((c) => c.name === name);
 }
 
 const MAX_RESULT_CHARS = 50_000;
@@ -80,6 +125,15 @@ function argPath(args: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * A tool's result or error as the editor may show it: the same two masking
+ * passes `GET /state` of `serve` uses, then the length cap.
+ */
+export function resultTextForClient(text: unknown): string {
+  const s = typeof text === "string" ? text : String(text ?? "");
+  return maskForSupervisor(s).slice(0, MAX_RESULT_CHARS);
+}
+
 function titleFor(name: string, rawArgs: unknown): string {
   // The editor shows this title in its approval prompt
   const args = maskArgsForDisplay(rawArgs);
@@ -96,8 +150,9 @@ function titleFor(name: string, rawArgs: unknown): string {
 
 /**
  * The Agent side of ACP over one JSON-RPC peer: initialize, session/new,
- * session/prompt, session/cancel, and session/update notifications for the
- * model's text and its tool calls. A tool call the policy engine would ask
+ * session/list, session/load, session/resume, session/prompt,
+ * session/cancel, and session/update notifications for the model's text and
+ * its tool calls. A tool call the policy engine would ask
  * about becomes `session/request_permission`.
  *
  * Fail closed: the answer to a permission request is an allow only when the
@@ -127,6 +182,9 @@ export class AcpAgent {
       );
     });
     peer.onRequest("session/new", (p) => this.newSession(p));
+    peer.onRequest("session/list", (p) => this.listSessions(p));
+    peer.onRequest("session/load", (p) => this.openSession(p, true));
+    peer.onRequest("session/resume", (p) => this.openSession(p, false));
     peer.onRequest("session/prompt", (p) => this.prompt(p));
     peer.onNotification("session/cancel", (p) => this.cancel(p));
   }
@@ -154,13 +212,16 @@ export class AcpAgent {
           ? params.protocolVersion
           : ACP_PROTOCOL_VERSION,
       agentCapabilities: {
-        loadSession: false,
+        // session/load replays the saved conversation; session/list and
+        // session/resume are the v1 session capabilities beside it
+        loadSession: true,
         promptCapabilities: {
           image: false,
           audio: false,
           embeddedContext: false,
         },
         mcpCapabilities: { http: false, sse: false },
+        sessionCapabilities: { list: {}, resume: {} },
       },
       agentInfo: this.info,
       authMethods: [],
@@ -176,7 +237,8 @@ export class AcpAgent {
     }
   }
 
-  private async newSession(params: any) {
+  /** The checks session/new, session/load and session/resume share. */
+  private requireSessionCwd(params: any): string {
     this.requireInitialized();
     if (!params || typeof params.cwd !== "string") {
       throw new RpcError(RPC_CODES.invalidParams, "cwd is required");
@@ -193,10 +255,76 @@ export class AcpAgent {
         "This process holds one session; start another process for another conversation.",
       );
     }
+    return params.cwd;
+  }
+
+  private async newSession(params: any) {
+    const cwd = this.requireSessionCwd(params);
     // params.mcpServers is not used: the CLI loads the MCP servers of its own
     // configuration, and mcpCapabilities says no http or sse from the client.
-    this.sessionId = await this.backend.newSession(params.cwd);
+    this.sessionId = await this.backend.newSession(cwd);
     return { sessionId: this.sessionId };
+  }
+
+  /**
+   * session/list: the saved sessions of `cwd` (the folder, a folder inside or
+   * around it, or its repository: what `continuous ls` and `--resume` call
+   * this workspace), newest first, a page at a time.
+   */
+  private async listSessions(params: any) {
+    this.requireInitialized();
+    const cwd = params?.cwd ?? undefined;
+    const cursor = params?.cursor ?? undefined;
+    if (
+      cwd !== undefined &&
+      (typeof cwd !== "string" || !path.isAbsolute(cwd))
+    ) {
+      throw new RpcError(
+        RPC_CODES.invalidParams,
+        "cwd must be an absolute path",
+      );
+    }
+    if (cursor !== undefined && typeof cursor !== "string") {
+      throw new RpcError(RPC_CODES.invalidParams, "Invalid cursor");
+    }
+    const page = sessionListPage(await this.backend.listSessions(), {
+      cwd,
+      cursor,
+      inWorkspace: (dir, folder) => this.backend.inWorkspace(dir, folder),
+    });
+    if (!page) throw new RpcError(RPC_CODES.invalidParams, "Invalid cursor");
+    return page;
+  }
+
+  /**
+   * session/load (`replay`) and session/resume: continue a saved session in
+   * this process. Load sends the whole conversation as session/update
+   * notifications before it answers, as the spec requires; resume sends none.
+   */
+  private async openSession(params: any, replay: boolean) {
+    const cwd = this.requireSessionCwd(params);
+    if (typeof params.sessionId !== "string" || params.sessionId === "") {
+      throw new RpcError(RPC_CODES.invalidParams, "sessionId is required");
+    }
+    const sessionId: string = params.sessionId;
+    const history = await this.backend.openSession(sessionId, cwd);
+    if (!history) {
+      throw new RpcError(ACP_RESOURCE_NOT_FOUND, "Unknown sessionId", {
+        sessionId,
+      });
+    }
+    this.sessionId = sessionId;
+    if (replay) {
+      const updates = replayHistory(history, {
+        nextCallId: () => `call_${++this.toolSeq}`,
+        title: titleFor,
+        kind: toolKindFor,
+        location: argPath,
+        resultText: resultTextForClient,
+      });
+      for (const update of updates) this.update(sessionId, update);
+    }
+    return {};
   }
 
   private promptText(blocks: unknown): string {
@@ -278,8 +406,8 @@ export class AcpAgent {
 
   private callbacks(sessionId: string, signal: AbortSignal): StreamCallbacks {
     const open: OpenCall[] = [];
-    const startCall = (name: string, args: unknown): OpenCall => {
-      const call = { id: `call_${++this.toolSeq}`, name };
+    const startCall = (name: string, args: unknown, key?: string): OpenCall => {
+      const call = { id: `call_${++this.toolSeq}`, name, key };
       open.push(call);
       const loc = argPath(args);
       this.update(sessionId, {
@@ -294,11 +422,12 @@ export class AcpAgent {
       return call;
     };
     const finish = (
-      name: string,
+      name: string | undefined,
       status: "completed" | "failed",
       text: string,
+      key?: string,
     ) => {
-      const index = open.findIndex((c) => c.name === name);
+      const index = findOpenCall(open, name, key);
       if (index < 0) return;
       const [call] = open.splice(index, 1);
       this.update(sessionId, {
@@ -308,7 +437,9 @@ export class AcpAgent {
         content: [
           {
             type: "content",
-            content: { type: "text", text: text.slice(0, MAX_RESULT_CHARS) },
+            // Masked before it is cut, so a secret the cut would split is
+            // not sent as a recognisable half. The model got the real text.
+            content: { type: "text", text: resultTextForClient(text) },
           },
         ],
       });
@@ -322,17 +453,24 @@ export class AcpAgent {
           content: { type: "text", text: content },
         });
       },
-      onToolStart: (name, args) => {
-        startCall(name, args);
+      onToolStart: (name, args, callId) => {
+        startCall(name, args, callId);
       },
-      onToolResult: (result, name, status) => {
-        finish(name, status === "done" ? "completed" : "failed", result);
+      onToolResult: (result, name, status, callId) => {
+        finish(
+          name,
+          status === "done" ? "completed" : "failed",
+          result,
+          callId,
+        );
       },
-      onToolError: (error, name) => {
-        if (name) finish(name, "failed", error);
+      onToolError: (error, name, callId) => {
+        if (name || callId !== undefined) finish(name, "failed", error, callId);
       },
-      onToolPermissionRequest: (name, args, requestId) => {
-        const call = open.find((c) => c.name === name) ?? startCall(name, args);
+      onToolPermissionRequest: (name, args, requestId, _preview, callId) => {
+        const call =
+          open[findOpenCall(open, name, callId)] ??
+          startCall(name, args, callId);
         this.pendingPermissions.add(requestId);
         void this.askClient({ sessionId, call, name, args, requestId, signal });
       },

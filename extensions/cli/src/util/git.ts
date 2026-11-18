@@ -5,6 +5,13 @@ const execAsync = promisify(exec);
 const LARGE_STDIO_BUFFER_BYTES = 10 * 1024 * 1024; // bump buffer for large git output
 
 /**
+ * Longest wait for the small synchronous git queries below. They block the
+ * event loop (and the terminal UI) while they run; a git that hangs, on a
+ * network drive or behind a credential prompt, now reads as "unknown".
+ */
+export const GIT_QUERY_TIMEOUT_MS = 5000;
+
+/**
  * Get the git remote URL for the current repository
  * @param remote The remote name (defaults to 'origin')
  * @returns The remote URL or null if not found
@@ -15,6 +22,7 @@ export function getGitRemoteUrl(remote: string = "origin"): string | null {
       encoding: "utf-8",
       cwd: process.cwd(),
       stdio: "pipe",
+      timeout: GIT_QUERY_TIMEOUT_MS,
     });
     return result.trim();
   } catch {
@@ -32,6 +40,7 @@ export function getGitBranch(): string | null {
       encoding: "utf-8",
       cwd: process.cwd(),
       stdio: "pipe",
+      timeout: GIT_QUERY_TIMEOUT_MS,
     });
     return result.trim() || null;
   } catch {
@@ -47,6 +56,7 @@ export function isGitRepo(): boolean {
     execSync("git rev-parse --is-inside-work-tree", {
       stdio: "ignore",
       cwd: process.cwd(),
+      timeout: GIT_QUERY_TIMEOUT_MS,
     });
     return true;
   } catch {

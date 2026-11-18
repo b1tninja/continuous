@@ -3,6 +3,10 @@ import {
   ContextProviderDescription,
   ContextProviderExtras,
 } from "../../index.js";
+import { decodeBytes } from "../../util/boundedBody.js";
+import { guardedWebRequest } from "../../util/guardedFetch.js";
+import { modelToolFetch } from "../../util/modelToolFetch.js";
+import { readUserFetchLimits } from "../../util/userFetchLimits.js";
 import { BaseContextProvider } from "../index.js";
 
 class GoogleContextProvider extends BaseContextProvider {
@@ -28,7 +32,7 @@ class GoogleContextProvider extends BaseContextProvider {
     query: string,
     extras: ContextProviderExtras,
   ): Promise<ContextItem[]> {
-    const url = "https://google.serper.dev/search";
+    const url = new URL("https://google.serper.dev/search");
 
     const payload = JSON.stringify({ q: query });
     const headers = {
@@ -36,18 +40,31 @@ class GoogleContextProvider extends BaseContextProvider {
       "Content-Type": "application/json",
     };
 
-    const response = await extras.fetch(url, {
-      method: "POST",
-      headers: headers,
-      body: payload,
+    // The shared guard, the person's byte cap and deadline, and no global
+    // request headers: the key header is the only credential sent, and it is
+    // dropped if a redirect leaves the origin
+    const limits = readUserFetchLimits();
+    const response = await guardedWebRequest(url, {
+      purpose: "search",
+      origin: "config",
+      fetchFn: modelToolFetch(extras.config ?? {}),
+      init: { method: "POST", headers, body: payload },
+      maxBytes: limits.maxBytes,
+      deadlineMs: limits.deadlineMs,
+      guard: { originHeaders: ["x-api-key"] },
     });
 
     if (!response.ok) {
       throw new Error(
-        `Failed to fetch Google search results: ${response.statusText}`,
+        `Failed to fetch Google search results (HTTP ${response.status})`,
       );
     }
-    const results = await response.text();
+    if (response.truncated) {
+      throw new Error(
+        `Failed to fetch Google search results: the response is larger than ${limits.maxBytes} bytes`,
+      );
+    }
+    const results = decodeBytes(response.data, response.contentType, false);
     try {
       const parsed = JSON.parse(results);
       let content = `Google Search: ${query}\n\n`;
@@ -69,7 +86,8 @@ class GoogleContextProvider extends BaseContextProvider {
         },
       ];
     } catch (e) {
-      throw new Error(`Failed to parse Google search results: ${results}`);
+      // Not the body: it is the service's text, not ours to show
+      throw new Error("Failed to parse Google search results");
     }
   }
 }

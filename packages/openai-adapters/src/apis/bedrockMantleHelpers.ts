@@ -77,6 +77,72 @@ export function maxTokensParamFromError(
   return undefined;
 }
 
+/**
+ * Request fields a Mantle model refuses and that can be left out without
+ * changing what the request asks for. Measured on Daybreak Blue
+ * (openai.gpt-daybreak-blue-5.6-sol, 2026-11-14): "Unsupported parameter:
+ * 'stop' is not supported with this model." The token-limit parameters are
+ * handled by `maxTokensParamFromError` (renamed, not dropped).
+ */
+export const DROPPABLE_MANTLE_PARAMS = [
+  "stop",
+  "logprobs",
+  "top_logprobs",
+  "logit_bias",
+  "presence_penalty",
+  "frequency_penalty",
+  "seed",
+] as const;
+export type DroppableMantleParam = (typeof DROPPABLE_MANTLE_PARAMS)[number];
+
+/** The droppable field an "Unsupported parameter" error names, or undefined. */
+export function droppableParamFromError(
+  message: string,
+): DroppableMantleParam | undefined {
+  const named = /unsupported parameter:?\s*'?([a-z_]+)'?/i.exec(message)?.[1];
+  return DROPPABLE_MANTLE_PARAMS.find((p) => p === named?.toLowerCase());
+}
+
+/**
+ * Daybreak Blue reasons by default and refuses function tools with reasoning
+ * on in Chat Completions: "Function tools with reasoning_effort are not
+ * supported for gpt-daybreak-blue-5.6-sol in /v1/chat/completions. To use
+ * function tools, use /v1/responses or set reasoning_effort to 'none'." It
+ * says so even when the request sent no reasoning_effort (measured
+ * 2026-11-14), so the fix is to send `reasoning_effort: "none"` with tools.
+ */
+export function toolsNeedReasoningOffFromError(message: string): boolean {
+  return /function tools with reasoning_effort are not supported/i.test(
+    message,
+  );
+}
+
+/**
+ * What an IAM refusal says about why, for a hint that names the next step.
+ * `explicit-deny` names the policy; `no-allow` names the action. AWS words
+ * the two differently (measured on Mantle, 2026-11-14):
+ *   "... with an explicit deny in an identity-based policy: arn:...:policy/NAME"
+ *   "... because no identity-based policy allows the bedrock-mantle:X action"
+ */
+export type IamRefusal =
+  | { kind: "explicit-deny"; policy?: string }
+  | { kind: "no-allow"; action?: string };
+
+export function iamRefusalFromError(message: string): IamRefusal | undefined {
+  const deny = /with an explicit deny in an? [\w-]+ policy(?::\s*(\S+))?/i.exec(
+    message,
+  );
+  if (deny) {
+    const arn = deny[1]?.replace(/["'.,]+$/, "");
+    return { kind: "explicit-deny", policy: arn?.split("/").pop() };
+  }
+  const noAllow = /no [\w-]+ policy allows the (\S+) action/i.exec(message);
+  if (noAllow) {
+    return { kind: "no-allow", action: noAllow[1] };
+  }
+  return undefined;
+}
+
 export interface MantleModelOption {
   id: string;
   name: string;
@@ -162,6 +228,13 @@ export function getMantleErrorHint(
     return isMantleRegion(ctx.region)
       ? `Could not reach bedrock-mantle in ${ctx.region}. Check your network/proxy.`
       : `bedrock-mantle isn't available in ${ctx.region ?? "this region"}. Mantle regions: ${MANTLE_REGIONS.join(", ")}.`;
+  }
+  const iam = iamRefusalFromError(message);
+  if (iam?.kind === "explicit-deny") {
+    return `An IAM policy${iam.policy ? ` (${iam.policy})` : ""} explicitly denies this request. A deny wins over any allow, so the key can't be used for this model or region; ask whoever manages the policy, or pick a model it allows.`;
+  }
+  if (iam?.kind === "no-allow") {
+    return `No IAM policy allows ${iam.action ?? "this action"} here. Policies are often limited to one region and to named models: check the region${ctx.region ? ` (now ${ctx.region})` : ""} and the model ID.`;
   }
   if (
     /\b(401|403)\b|unauthorized|forbidden|invalid.*(api )?key|access ?denied/i.test(

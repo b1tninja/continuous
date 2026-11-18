@@ -1,14 +1,22 @@
 import { Editor } from "@tiptap/react";
 import { InputModifiers } from "core";
 import { rifWithContentsToContextItem } from "core/commands/util";
-import { MutableRefObject } from "react";
+import { MutableRefObject, useContext } from "react";
+import { announce } from "../../a11y/announcer";
+import { IdeMessengerContext } from "../../../context/IdeMessenger";
 import { useWebviewListener } from "../../../hooks/useWebviewListener";
 import { useAppSelector } from "../../../redux/hooks";
 import { clearCodeToEdit } from "../../../redux/slices/editState";
 import { setNewestToolbarPreviewForInput } from "../../../redux/slices/sessionSlice";
 import { AppDispatch } from "../../../redux/store";
+import { confirmSessionSwitch } from "../../../redux/thunks/interruptConfirm";
 import { loadSession, saveCurrentSession } from "../../../redux/thunks/session";
 import { CodeBlock, PromptBlock } from "./extensions";
+import {
+  describeAddToChat,
+  describeAddToChatRefusals,
+  planAddToChat,
+} from "./utils/addToChat";
 import { insertCurrentFileContextMention } from "./utils/insertCurrentFileContextMention";
 
 /**
@@ -36,6 +44,7 @@ export function useMainEditorWebviewListeners({
     (state) => state.config.config.experimental?.useCurrentFileAsContext,
   );
   const isInEdit = useAppSelector((state) => state.session.isInEdit);
+  const ideMessenger = useContext(IdeMessengerContext);
 
   useWebviewListener(
     "isContinueInputFocused",
@@ -74,8 +83,10 @@ export function useMainEditorWebviewListeners({
       }
 
       setTimeout(() => {
-        editor?.commands.blur();
-        editor?.commands.focus("end");
+        // The editor may be gone by then (a session switch, an unmount)
+        if (!editor || editor.isDestroyed) return;
+        editor.commands.blur();
+        editor.commands.focus("end");
       }, 20);
     },
     [historyLength, editor, dispatch],
@@ -85,7 +96,8 @@ export function useMainEditorWebviewListeners({
     "focusContinueInputWithoutClear",
     async () => {
       setTimeout(() => {
-        editor?.commands.focus("end");
+        if (!editor || editor.isDestroyed) return;
+        editor.commands.focus("end");
       }, 20);
     },
     [editor],
@@ -94,6 +106,10 @@ export function useMainEditorWebviewListeners({
   useWebviewListener(
     "focusContinueInputWithNewSession",
     async () => {
+      // Ctrl+L: running work is stopped only when the person says so (NI1)
+      if (!(await dispatch(confirmSessionSwitch("newSession")).unwrap())) {
+        return;
+      }
       await dispatch(
         saveCurrentSession({
           openNewSession: true,
@@ -102,7 +118,8 @@ export function useMainEditorWebviewListeners({
       );
 
       setTimeout(() => {
-        editor?.commands.focus("end");
+        if (!editor || editor.isDestroyed) return;
+        editor.commands.focus("end");
       }, 20);
     },
     [editor, dispatch],
@@ -159,6 +176,7 @@ export function useMainEditorWebviewListeners({
       }
 
       setTimeout(() => {
+        if (editor.isDestroyed) return;
         editor.commands.blur();
         editor.commands.focus("end");
       }, 20);
@@ -178,6 +196,9 @@ export function useMainEditorWebviewListeners({
     "focusContinueSessionId",
     async (data) => {
       if (!data.sessionId) return;
+      if (!(await dispatch(confirmSessionSwitch("openSession")).unwrap())) {
+        return;
+      }
 
       await dispatch(
         loadSession({
@@ -202,25 +223,28 @@ export function useMainEditorWebviewListeners({
   useWebviewListener(
     "addToChat",
     async (data) => {
-      if (!editor) return;
-      let chain = editor.chain();
+      if (!editor || editor.isDestroyed) return;
+      const plan = planAddToChat(data, editor.getJSON(), {
+        file: activeContextProviders.some((p) => p.title === "file"),
+        folder: activeContextProviders.some((p) => p.title === "folder"),
+      });
 
-      for (let mention of data.data) {
-        chain
-          .insertContent({
-            type: "mention",
-            attrs: {
-              id: mention.fullPath,
-              query: mention.fullPath,
-              itemType: mention.type,
-              label: mention.name,
-            },
-          })
-          .insertContent(" ");
+      // At the cursor when the input already has focus, otherwise at the end;
+      // either way the input is focused afterwards.
+      const chain = editor
+        .chain()
+        .focus(editorFocusedRef.current ? undefined : "end");
+      if (plan.content.length) {
+        chain.insertContent(plan.content);
       }
-
       chain.run();
+
+      announce(describeAddToChat(plan));
+      const refusals = describeAddToChatRefusals(plan);
+      if (refusals) {
+        ideMessenger.post("showToast", ["warning", refusals]);
+      }
     },
-    [editor],
+    [editor, activeContextProviders, editorFocusedRef, ideMessenger],
   );
 }

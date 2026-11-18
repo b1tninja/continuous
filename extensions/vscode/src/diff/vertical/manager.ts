@@ -11,6 +11,10 @@ import * as URI from "uri-js";
 import * as vscode from "vscode";
 
 import { documentChanged } from "../../apply/applyTarget";
+import {
+  EditNotAppliedError,
+  EditNotAppliedReason,
+} from "../../apply/editNotApplied";
 import { isFastApplyModel } from "../../apply/utils";
 import { editOutcomeTracker } from "../../extension/EditOutcomeTracker";
 import EditDecorationManager from "../../quickEdit/EditDecorationManager";
@@ -247,7 +251,7 @@ export class VerticalDiffManager {
     // active now puts the diff in the wrong file after a tab switch.
     let target = editor ?? vscode.window.activeTextEditor;
     if (!target) {
-      return;
+      throw new EditNotAppliedError(EditNotAppliedReason.NoEditor);
     }
     const fileUri = target.document.uri.toString();
     const startLine = 0;
@@ -263,9 +267,7 @@ export class VerticalDiffManager {
       setTimeout(resolve, 200);
     });
 
-    if (this.refuseStale(target, documentVersion)) {
-      return;
-    }
+    this.throwIfStale(target, documentVersion);
     if (!editor) {
       target = vscode.window.activeTextEditor ?? target;
     }
@@ -293,7 +295,7 @@ export class VerticalDiffManager {
 
     if (!diffHandler) {
       console.warn("Issue occurred while creating new vertical diff handler");
-      return;
+      throw new EditNotAppliedError(EditNotAppliedReason.NoDiffView);
     }
 
     if (target.selection) {
@@ -352,11 +354,9 @@ export class VerticalDiffManager {
 
     const target = editor ?? vscode.window.activeTextEditor;
     if (!target) {
-      return;
+      throw new EditNotAppliedError(EditNotAppliedReason.NoEditor);
     }
-    if (this.refuseStale(target, documentVersion)) {
-      return;
-    }
+    this.throwIfStale(target, documentVersion);
 
     const fileUri = target.document.uri.toString();
     const filepath = reportedFilepath ?? fileUri;
@@ -386,12 +386,14 @@ export class VerticalDiffManager {
 
     if (!diffHandler) {
       console.warn("Issue occurred while creating vertical diff handler");
-      return;
+      throw new EditNotAppliedError(EditNotAppliedReason.NoDiffView);
     }
 
+    // Undefined when the document changed between reading it and writing
+    // the diff (someone typed in it): report it, so the tool call ends.
     const applied = await diffHandler.reapplyWithMyersDiff(myersDiffs);
     if (!applied) {
-      return;
+      throw new EditNotAppliedError(EditNotAppliedReason.FileChanged);
     }
 
     const scrollToLine = getFirstChangedLine(applied, 0) ?? 0;
@@ -499,9 +501,7 @@ export class VerticalDiffManager {
       setTimeout(resolve, 150);
     });
 
-    if (this.refuseStale(editor, documentVersion)) {
-      return undefined;
-    }
+    this.throwIfStale(editor, documentVersion);
     if (!givenEditor) {
       editor = vscode.window.activeTextEditor ?? editor;
     }
@@ -531,7 +531,7 @@ export class VerticalDiffManager {
 
     if (!diffHandler) {
       console.warn("Issue occurred while creating new vertical diff handler");
-      return undefined;
+      throw new EditNotAppliedError(EditNotAppliedReason.NoDiffView);
     }
 
     let selectedRange = diffHandler.range;
@@ -699,13 +699,17 @@ export class VerticalDiffManager {
     });
   }
 
-  /** True when the document was edited after the apply captured it. */
-  private refuseStale(
+  /**
+   * Throws when the document was edited after the apply captured it. The
+   * person sees why; the error ends the edit's tool call (see
+   * apply/editNotApplied.ts).
+   */
+  private throwIfStale(
     editor: vscode.TextEditor,
     version: number | undefined,
-  ): boolean {
+  ): void {
     if (version === undefined) {
-      return false;
+      return;
     }
     if (
       !documentChanged(
@@ -716,11 +720,11 @@ export class VerticalDiffManager {
         },
       )
     ) {
-      return false;
+      return;
     }
     void vscode.window.showErrorMessage(
       "The file changed before the edit could be applied.",
     );
-    return true;
+    throw new EditNotAppliedError(EditNotAppliedReason.FileChanged);
   }
 }

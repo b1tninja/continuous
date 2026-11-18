@@ -176,7 +176,9 @@ export function selectTools<T>(
     tools: [
       ...input.coreTools,
       ...kept,
-      input.metaTool(stillDeferred),
+      // Every deferred name, activated or not: the description is a function
+      // of the tool set alone, so an activation only appends the tool
+      input.metaTool(deferred),
       ...activated,
     ],
     engaged: true,

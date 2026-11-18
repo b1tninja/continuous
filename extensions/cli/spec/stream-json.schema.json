@@ -1,0 +1,321 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/b1tninja/continuous/blob/main/extensions/cli/spec/stream-json.schema.json",
+  "title": "continuous -p --format stream-json, schemaVersion 1",
+  "description": "One line of the event stream. A reader must ignore fields and event types it does not know: adding an optional field or an event type does not raise schemaVersion.",
+  "oneOf": [
+    { "$ref": "#/$defs/init" },
+    { "$ref": "#/$defs/model" },
+    { "$ref": "#/$defs/reasoning" },
+    { "$ref": "#/$defs/message" },
+    { "$ref": "#/$defs/tool_use" },
+    { "$ref": "#/$defs/tool_decision" },
+    { "$ref": "#/$defs/tool_result" },
+    { "$ref": "#/$defs/usage" },
+    { "$ref": "#/$defs/run_limit" },
+    { "$ref": "#/$defs/error" },
+    { "$ref": "#/$defs/result" }
+  ],
+  "$defs": {
+    "init": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "seq",
+        "time",
+        "schemaVersion",
+        "sessionId",
+        "cliVersion",
+        "model",
+        "provider",
+        "cwd",
+        "mode"
+      ],
+      "properties": {
+        "type": { "const": "init" },
+        "seq": { "type": "integer", "minimum": 1 },
+        "time": { "type": "string" },
+        "schemaVersion": { "const": 1 },
+        "sessionId": { "type": "string" },
+        "cliVersion": { "type": "string" },
+        "model": { "type": "string" },
+        "provider": { "type": "string" },
+        "cwd": { "type": "string" },
+        "mode": { "type": "string" },
+        "reasoningEffort": { "type": "string" },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maxBudgetUsd": { "type": "number" },
+            "maxTurns": { "type": "integer" },
+            "maxDurationMinutes": { "type": "number" }
+          }
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "seq",
+        "time",
+        "model",
+        "provider",
+        "name",
+        "reason"
+      ],
+      "properties": {
+        "type": { "const": "model" },
+        "seq": { "type": "integer", "minimum": 1 },
+        "time": { "type": "string" },
+        "model": { "type": "string" },
+        "provider": { "type": "string" },
+        "name": { "type": "string" },
+        "reasoningEffort": { "type": "string" },
+        "reason": {
+          "enum": ["use", "item", "manual", "restore", "subagent"]
+        },
+        "use": { "type": "string" },
+        "agent": { "type": "string" },
+        "fallbackReason": { "type": "string" }
+      }
+    },
+    "reasoning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "seq", "time", "role", "content"],
+      "properties": {
+        "type": { "const": "reasoning" },
+        "seq": { "type": "integer", "minimum": 1 },
+        "time": { "type": "string" },
+        "role": { "const": "assistant" },
+        "content": { "type": "string" },
+        "durationMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "seq", "time", "role", "content"],
+      "properties": {
+        "type": { "const": "message" },
+        "seq": { "type": "integer", "minimum": 1 },
+        "time": { "type": "string" },
+        "role": { "const": "assistant" },
+        "content": { "type": "string" }
+      }
+    },
+    "tool_use": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "seq", "time", "callId", "tool", "args"],
+      "properties": {
+        "type": { "const": "tool_use" },
+        "seq": { "type": "integer", "minimum": 1 },
+        "time": { "type": "string" },
+        "callId": { "type": "string" },
+        "tool": { "type": "string" },
+        "args": { "type": "object" }
+      }
+    },
+    "tool_decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "seq", "time", "callId", "tool", "decision", "by"],
+      "properties": {
+        "type": { "const": "tool_decision" },
+        "seq": { "type": "integer", "minimum": 1 },
+        "time": { "type": "string" },
+        "callId": { "type": "string" },
+        "tool": { "type": "string" },
+        "decision": { "enum": ["allowed", "asked", "refused"] },
+        "by": { "enum": ["rules", "reviewer", "system", "person"] },
+        "source": { "type": "string" },
+        "rule": { "type": "string" },
+        "reason": { "type": "string" },
+        "answer": { "enum": ["approved", "denied"] },
+        "held": { "const": true }
+      }
+    },
+    "tool_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "seq",
+        "time",
+        "callId",
+        "tool",
+        "status",
+        "output",
+        "outputLength",
+        "truncated"
+      ],
+      "properties": {
+        "type": { "const": "tool_result" },
+        "seq": { "type": "integer", "minimum": 1 },
+        "time": { "type": "string" },
+        "callId": { "type": "string" },
+        "tool": { "type": "string" },
+        "status": { "enum": ["done", "errored", "canceled"] },
+        "output": { "type": "string" },
+        "outputLength": { "type": "integer", "minimum": 0 },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "seq",
+        "time",
+        "request",
+        "inputTokens",
+        "outputTokens",
+        "cacheReadTokens",
+        "cacheWriteTokens",
+        "costUsd",
+        "totalCostUsd",
+        "costEstimated"
+      ],
+      "properties": {
+        "type": { "const": "usage" },
+        "seq": { "type": "integer", "minimum": 1 },
+        "time": { "type": "string" },
+        "request": { "type": "integer", "minimum": 1 },
+        "inputTokens": { "type": "integer", "minimum": 0 },
+        "outputTokens": { "type": "integer", "minimum": 0 },
+        "cacheReadTokens": { "type": "integer", "minimum": 0 },
+        "cacheWriteTokens": { "type": "integer", "minimum": 0 },
+        "costUsd": { "type": "number", "minimum": 0 },
+        "totalCostUsd": { "type": "number", "minimum": 0 },
+        "costEstimated": { "type": "boolean" },
+        "priceSource": {
+          "description": "Where a price came from and as of when. kind: user (a price the person entered), provider (a list the provider publishes, downloaded), curated (a table in Continuous checked against the provider pricing page), community (the models.dev catalogue, a third-party estimate and the last resort).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "label"],
+          "properties": {
+            "kind": { "enum": ["user", "provider", "curated", "community"] },
+            "label": { "type": "string" },
+            "url": { "type": "string" },
+            "asOf": { "type": "string" }
+          }
+        },
+        "servedTier": { "type": "string" }
+      }
+    },
+    "run_limit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "seq",
+        "time",
+        "reason",
+        "phase",
+        "message",
+        "exitCode"
+      ],
+      "properties": {
+        "type": { "const": "run_limit" },
+        "seq": { "type": "integer", "minimum": 1 },
+        "time": { "type": "string" },
+        "reason": { "enum": ["budget", "turns", "duration"] },
+        "phase": { "enum": ["before-call", "after-call"] },
+        "message": { "type": "string" },
+        "exitCode": { "type": "integer" },
+        "spentUsd": { "type": "number", "minimum": 0 }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "seq", "time", "kind", "message"],
+      "properties": {
+        "type": { "const": "error" },
+        "seq": { "type": "integer", "minimum": 1 },
+        "time": { "type": "string" },
+        "kind": {
+          "enum": ["config", "refused", "provider", "output_schema", "internal"]
+        },
+        "message": { "type": "string" },
+        "code": { "type": "string" }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "seq",
+        "time",
+        "schemaVersion",
+        "status",
+        "exitCode",
+        "result",
+        "durationMs",
+        "numRequests",
+        "numToolCalls",
+        "numRefusals",
+        "usage",
+        "totalCostUsd",
+        "costEstimated"
+      ],
+      "properties": {
+        "type": { "const": "result" },
+        "seq": { "type": "integer", "minimum": 1 },
+        "time": { "type": "string" },
+        "schemaVersion": { "const": 1 },
+        "status": {
+          "enum": ["success", "error", "refused", "stopped", "interrupted"]
+        },
+        "exitCode": { "type": "integer" },
+        "result": { "type": "string" },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "numRequests": { "type": "integer", "minimum": 0 },
+        "numToolCalls": { "type": "integer", "minimum": 0 },
+        "numRefusals": { "type": "integer", "minimum": 0 },
+        "numIdgafObjections": { "type": "integer", "minimum": 0 },
+        "usage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "inputTokens",
+            "outputTokens",
+            "cacheReadTokens",
+            "cacheWriteTokens"
+          ],
+          "properties": {
+            "inputTokens": { "type": "integer", "minimum": 0 },
+            "outputTokens": { "type": "integer", "minimum": 0 },
+            "cacheReadTokens": { "type": "integer", "minimum": 0 },
+            "cacheWriteTokens": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "totalCostUsd": { "type": "number", "minimum": 0 },
+        "costEstimated": { "type": "boolean" },
+        "priceSources": {
+          "type": "array",
+          "items": {
+            "description": "Where a price came from and as of when. kind: user (a price the person entered), provider (a list the provider publishes, downloaded), curated (a table in Continuous checked against the provider pricing page), community (the models.dev catalogue, a third-party estimate and the last resort).",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "label"],
+            "properties": {
+              "kind": { "enum": ["user", "provider", "curated", "community"] },
+              "label": { "type": "string" },
+              "url": { "type": "string" },
+              "asOf": { "type": "string" }
+            }
+          }
+        },
+        "servedTiers": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

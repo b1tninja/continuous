@@ -102,12 +102,19 @@ const require = __createRequire(import.meta.url);`,
   // Write metafile for analysis
   writeFileSync("dist/meta.json", JSON.stringify(result.metafile, null, 2));
 
-  // Create wrapper script with shebang that explicitly runs the CLI
-  // Note: We must call runCli(); a plain dynamic import will not execute the CLI.
-  writeFileSync(
-    "dist/cn.js",
-    "#!/usr/bin/env node\nimport { runCli } from './index.js';\nawait runCli();\n",
-  );
+  // Create the wrapper script (src/cn.ts, shebang included). It answers
+  // --version by itself, turns on Node's compile cache, then imports
+  // ./index.js and calls runCli(); a plain import would not execute the CLI.
+  // "./index.js" stays external so the wrapper loads the bundle beside it.
+  await esbuild.build({
+    entryPoints: ["src/cn.ts"],
+    bundle: true,
+    platform: "node",
+    target: "node18",
+    format: "esm",
+    outfile: "dist/cn.js",
+    external: ["./index.js"],
+  });
   // Copy worker files needed by JSDOM
   const workerSource = resolve(
     __dirname,

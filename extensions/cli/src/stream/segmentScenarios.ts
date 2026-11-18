@@ -24,7 +24,13 @@ import { writeFileTool } from "../tools/writeFile.js";
  * the manifest tests.
  */
 
-export const SCENARIO_DIR = path.join(os.tmpdir(), "cli-segment-scenario");
+// The resolved temp folder: on macOS os.tmpdir() is under /var, a link to
+// /private/var, and after chdir the working directory is the /private spelling,
+// which normalize() would not replace. On Windows it expands an 8.3 name.
+export const SCENARIO_DIR = path.join(
+  fs.realpathSync.native(os.tmpdir()),
+  "cli-segment-scenario",
+);
 export const MODEL_ID = "claude-sonnet-4-6";
 
 export interface CliScenarioSpec {

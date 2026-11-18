@@ -17,6 +17,21 @@ describe("mergeUnrolledAssistants", () => {
     ).toEqual({ chat: false });
   });
 
+  it("passes the modelCatalog setting through, the incoming value winning", () => {
+    const base = { name: "a", version: "1.0.0", modelCatalog: "ask" as const };
+    expect(
+      mergeUnrolledAssistants(base, {
+        name: "b",
+        version: "1.0.0",
+        modelCatalog: "never",
+      }).modelCatalog,
+    ).toBe("never");
+    expect(
+      mergeUnrolledAssistants(base, { name: "b", version: "1.0.0" })
+        .modelCatalog,
+    ).toBe("ask");
+  });
+
   const createBaseConfig = (): AssistantUnrolled => ({
     name: "Base Assistant",
     version: "1.0.0",

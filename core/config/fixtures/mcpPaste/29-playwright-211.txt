@@ -1,0 +1,3 @@
+```bash
+droid mcp add playwright "npx @playwright/mcp@latest"
+```

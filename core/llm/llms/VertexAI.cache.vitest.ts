@@ -1,7 +1,20 @@
 import { ChatCompletionCreateParams } from "openai/resources/index";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import VertexAI from "./VertexAI";
+
+// The constructor looks for Google default credentials, which reads
+// ~/.config/gcloud and probes the GCE metadata server; these tests only build
+// request bodies, so the auth client is a stub.
+vi.mock("google-auth-library", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("google-auth-library")>();
+  class GoogleAuth {
+    async getClient() {
+      return { getAccessToken: async () => ({ token: "test-token" }) };
+    }
+  }
+  return { ...actual, GoogleAuth };
+});
 
 // Claude on Vertex takes cache_control with ttl "1h":
 // https://docs.cloud.google.com/vertex-ai/generative-ai/docs/partner-models/claude/prompt-caching

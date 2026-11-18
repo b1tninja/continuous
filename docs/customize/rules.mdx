@@ -17,8 +17,8 @@ Your agent detects rules and applies the specified rules while in [Agent](../ide
 
 ## Where to Manage Rules
 
-<Card title="Local Rules (.continue/rules)" icon="folder">
-- Create files in `.continue/rules` folder
+<Card title="Local Rules (.continuous/rules)" icon="folder">
+- Create files in `.continuous/rules` folder (the older `.continue/rules` is still read)
 - Edit directly in your file system
 - Version controlled alongside your code
 - Best for project-specific rules (e.g., "remember to generate migrations after modifying the db")
@@ -26,3 +26,13 @@ Your agent detects rules and applies the specified rules while in [Agent](../ide
 </Card>
 
 Learn more in the [rules deep dive](./deep-dives/rules.mdx), and view [`rules`](../reference.mdx#rules) in the YAML Reference for more details.
+
+## How instruction files are read
+
+`AGENTS.md` (or `AGENT.md`, `CLAUDE.md`) at the workspace root and the rule files are read the same way in the IDE and in the terminal agent:
+
+- **Hidden characters are removed.** Zero-width characters, text-direction controls (bidi), tag characters and other characters that show as nothing are taken out before the text reaches the model, and a notice names the file and the lines that held them. The removed text is never shown. Characters that change what you see stay: a zero-width joiner or non-joiner between two letters or emoji, one emoji variation selector after a character, and the tags of a flag such as England's.
+- **A secret gives a warning.** A value that looks like a provider key, a token or a private key gives a notice naming the file and the line. The file is still loaded as written, so move the value out of it.
+- **Each file is capped at 32 KiB.** A longer file is cut after the last whole line that fits, and a line naming the file and the lines loaded is added where it was cut. Split a long file into rule files.
+
+In the IDE these notices show above the chat input; the terminal agent prints them once as warnings. In a workspace VS Code has not trusted (Restricted Mode), `AGENTS.md` is not read; see [Workspace Trust](./workspace-trust.mdx#trust-a-folder-in-vs-code).

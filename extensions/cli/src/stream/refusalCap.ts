@@ -10,6 +10,12 @@ import { REFUSAL_CAP } from "core/util/turnEnd.js";
  */
 let refusalsInARow = 0;
 let refusalsThisTurn = 0;
+/** Set once a turn of this process ended at the cap; a headless run then exits "refused". */
+let capReachedInProcess = false;
+
+export function refusalCapReached(): boolean {
+  return capReachedInProcess;
+}
 
 export function resetRefusalCount(): void {
   refusalsInARow = 0;
@@ -28,8 +34,9 @@ export function recordRefusals(refused: number, anyRefused: boolean): boolean {
   }
   refusalsInARow += 1;
   refusalsThisTurn += Math.max(refused, 1);
-  return (
+  const reached =
     refusalsInARow >= REFUSAL_CAP.consecutive ||
-    refusalsThisTurn >= REFUSAL_CAP.total
-  );
+    refusalsThisTurn >= REFUSAL_CAP.total;
+  capReachedInProcess ||= reached;
+  return reached;
 }

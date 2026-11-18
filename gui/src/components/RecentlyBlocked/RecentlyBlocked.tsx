@@ -2,6 +2,8 @@ import { maskCommandForDisplay } from "core/tools/permissions/displayMask";
 import { ShieldExclamationIcon } from "@heroicons/react/24/outline";
 import { useEffect, useId, useRef, useState } from "react";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
+import { changePolicyExtras } from "../../redux/thunks/policySettings";
+import { builtinForBlockedCall } from "../SafetyShield/safetyChecks";
 import {
   allowBlockedOnce,
   canAllowOnce,
@@ -24,6 +26,7 @@ import { decisionLabel } from "../../pages/gui/ToolCallDiv/DecisionChip";
 export function RecentlyBlocked() {
   const dispatch = useAppDispatch();
   const items = useAppSelector((s) => s.blockedCalls.items);
+  const builtin = useAppSelector((s) => s.ui.policyExtras.builtin);
   const [open, setOpen] = useState(false);
   const listId = useId();
   const root = useRef<HTMLDivElement>(null);
@@ -133,12 +136,36 @@ export function RecentlyBlocked() {
                   {maskCommandForDisplay(item.reason)}
                 </div>
               )}
-              {!canAllowOnce(item) && (
-                <div className="text-description-muted">
-                  Set by your rules or settings. Change them in config.yaml or
-                  Settings &gt; Tools to allow this.
-                </div>
-              )}
+              {!canAllowOnce(item) &&
+                (builtinForBlockedCall(item) ? (
+                  builtin?.[builtinForBlockedCall(item)!] === false ? (
+                    <div className="text-description-muted">
+                      This check is off. Ask the agent to try again.
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      data-testid={`disable-rule-${item.id}`}
+                      className="shrink-0 cursor-pointer self-start rounded-sm border-none bg-lightgray/20 px-1 text-2xs text-foreground"
+                      onClick={() => {
+                        const id = builtinForBlockedCall(item);
+                        if (!id) return;
+                        void dispatch(
+                          changePolicyExtras({
+                            builtin: { ...builtin, [id]: false },
+                          }),
+                        );
+                      }}
+                    >
+                      Disable this rule
+                    </button>
+                  )
+                ) : (
+                  <div className="text-description-muted">
+                    Set by your rules or settings. Change them in config.yaml or
+                    Settings &gt; Tools to allow this.
+                  </div>
+                ))}
             </div>
           ))}
           <button

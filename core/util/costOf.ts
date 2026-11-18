@@ -1,6 +1,11 @@
 import type { Usage } from "..";
 import { promptTokensExcludeCache } from "../llm/utils/cacheStats";
-import { calculateRequestCost } from "../llm/utils/calculateRequestCost";
+import {
+  calculateRequestCost,
+  type PriceSource,
+} from "../llm/utils/calculateRequestCost";
+
+export type { PriceSource };
 
 /**
  * What a slice of work used, by kind (plans/cost-counter.md). `input` is the
@@ -46,7 +51,20 @@ export interface CostResult {
   breakdown: string[];
   /** What the figure takes for granted (tier, region, aggregation) */
   assumptions: string[];
+  /** Set when the prices came from a downloaded list: its source and date */
+  estimate?: { source: string; fetchedAt: string };
+  /**
+   * Where the prices came from and as of when, for a "price source and
+   * date" line next to the figure. Set whenever `amount` is a number.
+   */
+  priceSource?: PriceSource;
 }
+
+/** The source of a price the person entered. */
+export const USER_PRICE_SOURCE: PriceSource = {
+  kind: "user",
+  label: "Your price",
+};
 
 const PER_M = 1_000_000;
 
@@ -77,6 +95,7 @@ function userPriced(usage: CostUsage, price: UserPrice): CostResult {
     assumptions: [
       "Priced at the per-million-token rates you entered, not at a list price",
     ],
+    priceSource: USER_PRICE_SOURCE,
   };
 }
 
@@ -142,7 +161,11 @@ export function costOf(
   }
   const lines = priced.breakdown.split("\n");
   const assumptions = [
-    "List price, standard tier (batch, flex and fast tiers are not detected)",
+    priced.priceSource?.kind === "community"
+      ? "Estimate from the community catalogue (models.dev), the last price source: no price you entered, provider list or curated table has this model"
+      : priced.estimate
+        ? "Estimate from the per-token prices OpenRouter published in the downloaded list (standard tier; web search requests are not counted)"
+        : "List price, standard tier (batch, flex and fast tiers are not detected)",
     ...lines.filter((l) => l.startsWith("Prices:")),
   ];
   if (requests > 1) {
@@ -160,6 +183,8 @@ export function costOf(
   );
   return {
     amount: priced.cost * requests,
+    ...(priced.estimate ? { estimate: priced.estimate } : {}),
+    ...(priced.priceSource ? { priceSource: priced.priceSource } : {}),
     breakdown:
       requests > 1 ? [`Per average request (x${requests}):`, ...body] : body,
     assumptions,
