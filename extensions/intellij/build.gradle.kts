@@ -87,7 +87,7 @@ dependencies {
     testIntegrationImplementation(platform("com.fasterxml.jackson:jackson-bom:2.21.7"))
     testIntegrationImplementation(platform("io.opentelemetry:opentelemetry-bom:1.68.0"))
     testIntegrationImplementation(platform("io.opentelemetry:opentelemetry-bom-alpha:1.68.0-alpha"))
-    testIntegrationImplementation(platform("io.ktor:ktor-bom:2.3.13"))
+    testIntegrationImplementation(platform("io.ktor:ktor-bom:3.6.1"))
     constraints {
         testIntegrationImplementation("org.bouncycastle:bcprov-jdk18on:1.87")
         testIntegrationImplementation("org.bouncycastle:bcpkix-jdk18on:1.86")
