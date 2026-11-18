@@ -9,7 +9,9 @@ import {
   TextMessagePart,
 } from "core";
 import { ctxItemToRifWithContents } from "core/commands/util";
+import { getMarkdownLanguageTagForFile } from "core/util";
 import { getUriDescription } from "core/util/uri";
+import { isSnapshotItem } from "../drop/osSnapshot";
 import { CodeBlock, Mention, PromptBlock } from "../extensions";
 import { GetContextRequest } from "./types";
 
@@ -52,6 +54,19 @@ function resolveParagraph(p: JSONContent): [string, GetContextRequest[]] {
   return [text, contextRequests];
 }
 
+/**
+ * How a snapshot reads in the message: a fence (longer than any run of
+ * backticks in the content) labelled with the file name and the fact that it
+ * is a copy.
+ */
+export function snapshotMessageText(item: ContextItemWithId): string {
+  const runs = item.content.match(/`{3,}/g) ?? [];
+  const longest = runs.reduce((n, r) => Math.max(n, r.length), 2);
+  const fence = "`".repeat(longest + 1);
+  const lang = getMarkdownLanguageTagForFile(item.name);
+  return `\n${fence}${lang} ${item.name} (snapshot of a file dropped from outside the editor; not kept in sync)\n${item.content}\n${fence}\n`;
+}
+
 export function processEditorContent(editorState: JSONContent) {
   const contextRequests: GetContextRequest[] = [];
   const selectedCode: RangeInFile[] = [];
@@ -86,6 +101,18 @@ export function processEditorContent(editorState: JSONContent) {
         }
 
         const contextItem = p.attrs.item as ContextItemWithId;
+        if (isSnapshotItem(contextItem)) {
+          // A file dropped from outside the editor: no path, no range, and
+          // nothing for edit mode to apply to. Sent as its content.
+          const snapshotText = snapshotMessageText(contextItem);
+          if (parts[parts.length - 1]?.type === "text") {
+            (parts[parts.length - 1] as TextMessagePart).text +=
+              "\n" + snapshotText;
+          } else {
+            parts.push({ type: "text", text: snapshotText });
+          }
+          break;
+        }
         const rif = ctxItemToRifWithContents(contextItem, true);
         selectedCode.push(rif);
 

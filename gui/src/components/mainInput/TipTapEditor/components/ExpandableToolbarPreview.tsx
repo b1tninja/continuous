@@ -72,6 +72,8 @@ interface ExpandableToolbarPreviewProps {
   title: string;
   /** Optional icon to display next to the title */
   icon?: React.ReactNode;
+  /** Optional badge after the title, such as "snapshot" */
+  badge?: React.ReactNode;
   /** ID of the input this preview is associated with (for toolbar hiding logic) */
   inputId?: string;
   /** ID of the item being displayed (for toolbar hiding logic) */
@@ -180,6 +182,7 @@ export function ExpandableToolbarPreview(props: ExpandableToolbarPreviewProps) {
         >
           {props.icon}
           {props.title}
+          {props.badge}
         </div>
         <div className="flex items-center gap-1">
           <HeaderButtonWithToolTip text={hidden ? "Show" : "Hide"}>

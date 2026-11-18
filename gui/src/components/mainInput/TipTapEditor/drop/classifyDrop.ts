@@ -10,11 +10,20 @@
  * first URI only, a Chromium limit), `application/vnd.code.uri-list` (every
  * URI, folders first) and `text/plain` (path labels). Chromium lowercases
  * custom type names, so `types` holds `resourceurls` and `codeeditors`. A drag
- * from the operating system's file manager carries `Files` and no path.
+ * from the operating system's file manager carries `Files` and no path; its
+ * `items` can say which of them is a folder (`webkitGetAsEntry()`).
  */
+import type { EntryLike } from "./osSnapshot";
 
 export type DropKind =
-  "file" | "folder" | "image" | "text" | "url" | "unsupported";
+  | "file"
+  | "folder"
+  | "image"
+  | "text"
+  | "url"
+  | "os-file"
+  | "os-folder"
+  | "unsupported";
 
 export type DropSource = "explorer" | "editor" | "os" | "text";
 
@@ -27,10 +36,17 @@ export interface FileLike {
   type: string;
 }
 
+/** A `DataTransferItem`: only file items and their entry are read. */
+export interface DataTransferItemLike {
+  kind: string;
+  webkitGetAsEntry?: () => EntryLike | null;
+}
+
 export interface DataTransferLike {
   types: readonly string[];
   getData(format: string): string;
   files?: ArrayLike<FileLike> | null;
+  items?: ArrayLike<DataTransferItemLike> | null;
 }
 
 export interface DropItem<F extends FileLike = FileLike> {
@@ -46,8 +62,10 @@ export interface DropItem<F extends FileLike = FileLike> {
   mime?: string;
   /** The dropped text, for text items (not yet sanitised). */
   text?: string;
-  /** The dropped file, for image items and refused OS files. */
+  /** The dropped file, for OS files and images. */
   file?: F;
+  /** The folder entry, for a folder dropped from the operating system. */
+  entry?: EntryLike;
   reason?: UnsupportedReason;
 }
 
@@ -164,6 +182,30 @@ function resourceItem(
   };
 }
 
+function droppedFileItem<F extends FileLike>(
+  file: F,
+  entry: EntryLike | undefined,
+): DropItem<F> {
+  const mime = (file.type || "").toLowerCase();
+  const base = {
+    source: "os" as const,
+    name: file.name,
+    size: file.size,
+    mime,
+    file,
+  };
+  if (entry?.isDirectory) {
+    return { ...base, kind: "os-folder", kindCertain: true, entry };
+  }
+  if (IMAGE_MIME_TYPES.includes(mime)) {
+    return { ...base, kind: "image", kindCertain: true };
+  }
+  // A file from the operating system has bytes and a name but no location
+  // (Electron removed File.path, and a webview has no Node to ask), so it can
+  // only be added as a snapshot of its content. SVG is text and goes here.
+  return { ...base, kind: "os-file", kindCertain: !!entry?.isFile };
+}
+
 export function fileItem<F extends FileLike>(file: F): DropItem<F> {
   const mime = (file.type || "").toLowerCase();
   const base = {
@@ -179,9 +221,33 @@ export function fileItem<F extends FileLike>(file: F): DropItem<F> {
   if (mime === "image/svg+xml" || /\.svg$/i.test(file.name)) {
     return { ...base, kind: "unsupported", reason: "svg-image" };
   }
-  // A file from the operating system has bytes and a name but no location
-  // (Electron removed File.path, and a webview has no Node to ask).
+  // A pasted file or one chosen from the image menu has bytes and a name but
+  // no location. It is not a file-manager drop, so it is not snapshotted.
   return { ...base, kind: "unsupported", reason: "no-location" };
+}
+
+/**
+ * The entry for each file item, in the order of `files`. Must run during the
+ * drop event: Chromium empties `items` afterwards. Undefined where the host
+ * has no `webkitGetAsEntry`.
+ */
+function fileEntries(
+  dt: DataTransferLike,
+  count: number,
+): (EntryLike | undefined)[] {
+  const items = dt.items ? Array.from(dt.items) : [];
+  const entries: (EntryLike | undefined)[] = [];
+  for (const item of items) {
+    if (item.kind !== "file") continue;
+    let entry: EntryLike | undefined;
+    try {
+      entry = item.webkitGetAsEntry?.() ?? undefined;
+    } catch {
+      entry = undefined;
+    }
+    entries.push(entry);
+  }
+  return entries.length === count ? entries : new Array(count).fill(undefined);
 }
 
 /**
@@ -263,7 +329,8 @@ export function classifyDrop<F extends FileLike = FileLike>(
 
   const files = dt.files ? Array.from(dt.files) : [];
   if (files.length > 0) {
-    return files.map((f) => fileItem(f));
+    const entries = fileEntries(dt, files.length);
+    return files.map((f, i) => droppedFileItem(f, entries[i]));
   }
 
   if (hasType(types, TEXT) || (!types.length && safeGet(dt, TEXT))) {

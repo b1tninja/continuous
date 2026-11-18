@@ -3,9 +3,11 @@ import { ContextProviderDescription, ModelDescription } from "core";
 import { modelSupportsImages } from "core/llm/autodetect";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { IIdeMessenger } from "../../../../context/IdeMessenger";
+import { useAppDispatch } from "../../../../redux/hooks";
+import { setNewestToolbarPreviewForInput } from "../../../../redux/slices/sessionSlice";
 import { isJetBrains } from "../../../../util";
 import { announce } from "../../../a11y/announcer";
-import { Mention } from "../extensions";
+import { CodeBlock, Mention, PromptBlock } from "../extensions";
 import { handleImageFile } from "../utils/imageUtils";
 import {
   classifyDrop,
@@ -13,6 +15,7 @@ import {
   fileItem,
   isHandledDrag,
 } from "./classifyDrop";
+import { snapshotContextItem } from "./osSnapshot";
 import {
   checkImages,
   describeDropOutcome,
@@ -22,8 +25,9 @@ import {
   Refusal,
   RefusalReason,
   resolveResources,
-  sanitizeDroppedText,
 } from "./resolveDrop";
+import { sanitizeDroppedText } from "./sanitizeDroppedText";
+import { snapshotBudgetOf, snapshotDrop } from "./snapshotDrop";
 
 /** Shown on the drop target in VS Code, where the page only gets the drop with Shift held. */
 export const VSCODE_SHIFT_HINT = "In VS Code, hold Shift while dragging.";
@@ -71,6 +75,24 @@ export interface UseChatInputDropArgs {
   ideMessenger: IIdeMessenger;
   availableContextProviders: ContextProviderDescription[];
   model: ModelDescription | null | undefined;
+  /** The input's id, so the newest snapshot chip opens expanded. */
+  inputId?: string;
+}
+
+/** Position after the code and prompt blocks at the top of the input. */
+function afterLeadingBlocks(editor: Editor): number {
+  let pos = 0;
+  let stopped = false;
+  editor.state.doc.forEach((node) => {
+    if (stopped) return;
+    const name = node.type.name;
+    if (name === CodeBlock.name || name === PromptBlock.name) {
+      pos += node.nodeSize;
+    } else {
+      stopped = true;
+    }
+  });
+  return pos;
 }
 
 /**
@@ -85,7 +107,9 @@ export function useChatInputDrop({
   ideMessenger,
   availableContextProviders,
   model,
+  inputId,
 }: UseChatInputDropArgs) {
+  const dispatch = useAppDispatch();
   const [dragActive, setDragActive] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const lingerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -229,6 +253,37 @@ export function useChatInputDrop({
         editor.chain().focus().insertContent(content).run();
       }
 
+      // Files and folders from the operating system: read now, as snapshots.
+      const snaps = await snapshotDrop(
+        items,
+        snapshotBudgetOf(editor.getJSON()),
+      );
+      refusals.push(...snaps.refusals);
+      outcome.hiddenRemoved += snaps.hiddenRemoved;
+      if (snaps.fromFiles) outcome.snapshots = snaps.fromFiles;
+      if (snaps.folders.length) outcome.snapshotFolders = snaps.folders;
+      if (snaps.snapshots.length && !editor.isDestroyed) {
+        const contextItems = snaps.snapshots.map(snapshotContextItem);
+        editor
+          .chain()
+          .insertContentAt(
+            afterLeadingBlocks(editor),
+            contextItems.map((item) => ({
+              type: CodeBlock.name,
+              attrs: { item, inputId },
+            })),
+          )
+          .run();
+        if (inputId) {
+          dispatch(
+            setNewestToolbarPreviewForInput({
+              inputId,
+              contextItemId: contextItems[contextItems.length - 1].id.itemId,
+            }),
+          );
+        }
+      }
+
       // Decoded together, then inserted at the cursor in one step and in the
       // order given (inserting one by one would put each over the last, which
       // is the selection after an insert). One the browser cannot decode is
@@ -256,7 +311,15 @@ export function useChatInputDrop({
 
       finish(outcome, false);
     },
-    [editor, ideMessenger, availableContextProviders, model, finish],
+    [
+      editor,
+      ideMessenger,
+      availableContextProviders,
+      model,
+      finish,
+      inputId,
+      dispatch,
+    ],
   );
 
   const onDropCapture = useCallback(

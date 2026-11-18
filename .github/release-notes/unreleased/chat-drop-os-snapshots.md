@@ -1,0 +1,3 @@
+## New
+
+- **Snapshots of files and folders dropped from outside the editor.** A text file dropped from outside VS Code (Windows File Explorer, Finder, another window) arrives without its location, so it becomes a snapshot chip: its content, read once on drop and marked "snapshot", not kept in sync. Snapshots refuse secret-named files unread, files over 200 KB unread, binary files (UTF-8, or UTF-16 with a byte order mark, are read), and any file in which the secret scanner finds a credential; a message holds at most 20 snapshots and 1 MB of them. A folder from outside VS Code becomes snapshots of its text files, two levels deep, skipping `node_modules`, `.git`, `dist` and secret folders, with a note of what was left out.

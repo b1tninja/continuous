@@ -88,12 +88,12 @@ None needs a decision. Three have a cost worth knowing: the per-use reasoning-ef
 
 ## 8. Proposed ROADMAP rows (ids TBD)
 
-| Id      | Row                                                                                                                                | State |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| Id      | Row                                                                                                                                                               | State                    |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
 | OD1 TBD | The upstream web-search proxy and `stubs/headers.ts` are gone (#627). `search_web` and `@web` stay hidden until the person sets `web.search`. Do not add a proxy. | done in the code on main |
-| OD2 TBD | Record the distribution channel decision: GitHub Releases primary, Marketplace and Open VSX mirrors; close the "open" row          | open  |
-| OD3 TBD | Token by default on loopback `cn serve` with `--no-token` as the opt-out (S1-L1, X11)                                              | open  |
-| OD4 TBD | Sandbox `readPolicy` denies policy folders and credential stores by default, with a small read-allow list (S9-X3)                  | open  |
-| OD5 TBD | Lock project `prompts/` against agent writes (S3-F4)                                                                               | open  |
-| OD6 TBD | Batch TR10 and TR13 prompt-byte changes into one release so the cache goes cold once                                               | open  |
-| OD7 TBD | Approve the B53 `--repeat 3` spend; measure Haiku 5.5 through the direct Anthropic API instead of waiting for Bedrock quota        | open  |
+| OD2 TBD | Record the distribution channel decision: GitHub Releases primary, Marketplace and Open VSX mirrors; close the "open" row                                         | open                     |
+| OD3 TBD | Token by default on loopback `cn serve` with `--no-token` as the opt-out (S1-L1, X11)                                                                             | open                     |
+| OD4 TBD | Sandbox `readPolicy` denies policy folders and credential stores by default, with a small read-allow list (S9-X3)                                                 | open                     |
+| OD5 TBD | Lock project `prompts/` against agent writes (S3-F4)                                                                                                              | open                     |
+| OD6 TBD | Batch TR10 and TR13 prompt-byte changes into one release so the cache goes cold once                                                                              | open                     |
+| OD7 TBD | Approve the B53 `--repeat 3` spend; measure Haiku 5.5 through the direct Anthropic API instead of waiting for Bedrock quota                                       | open                     |

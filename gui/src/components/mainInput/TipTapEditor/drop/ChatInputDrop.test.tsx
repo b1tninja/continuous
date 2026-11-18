@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { JSONContent } from "@tiptap/core";
 import { ContextProviderDescription, ModelDescription } from "core";
+import { canarySecrets } from "core/util/secretScan/canary";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MockIdeMessenger } from "../../../../context/MockIdeMessenger";
 import { Chat } from "../../../../pages/gui/Chat";
@@ -13,10 +14,14 @@ import {
   editorTabDrag,
   explorerDrag,
   fakeDataTransfer,
+  fakeDirEntry,
   fakeFile,
+  osEntryDrag,
   osFileDrag,
   textDrag,
+  textFile,
 } from "./dropFixtures";
+import { SNAPSHOT_DESCRIPTION, SNAPSHOT_PROVIDER } from "./osSnapshot";
 import { JETBRAINS_NOT_SUPPORTED, VSCODE_SHIFT_HINT } from "./useChatInputDrop";
 
 // jsdom cannot decode images, so the image step is replaced: a file named
@@ -114,6 +119,16 @@ async function setup(model: ModelDescription = textModel) {
   const editor = await getMainEditor();
   const target = await screen.findByTestId("editor-input-main");
   return { ...rendered, editor, target, requests };
+}
+
+function snapshotItems(doc: JSONContent): Record<string, any>[] {
+  return (doc.content ?? [])
+    .filter(
+      (n) =>
+        n.type === "code-block" &&
+        n.attrs?.item?.id?.providerTitle === SNAPSHOT_PROVIDER,
+    )
+    .map((n) => n.attrs!.item);
 }
 
 function mentions(doc: JSONContent): Record<string, unknown>[] {
@@ -298,14 +313,88 @@ describe("dropping on the chat input", () => {
     );
   });
 
-  it("refuses an OS file that is not an image, naming why", async () => {
-    const { target } = await setup();
-    await drop(target, osFileDrag(fakeFile("notes.txt", "text/plain")));
+  it("adds a text file from the operating system as a snapshot chip with a badge", async () => {
+    const { target, editor } = await setup();
+    await drop(
+      target,
+      osFileDrag(textFile("notes.txt", "first line​\nsecond line\n")),
+    );
+    await waitFor(() =>
+      expect(snapshotItems(editor.getJSON())).toHaveLength(1),
+    );
+    expect(snapshotItems(editor.getJSON())[0]).toEqual(
+      expect.objectContaining({
+        name: "notes.txt",
+        description: SNAPSHOT_DESCRIPTION,
+        content: "first line\nsecond line\n",
+      }),
+    );
+    expect(snapshotItems(editor.getJSON())[0].uri).toBeUndefined();
+    const text =
+      "Added 1 file from outside the editor as a snapshot (not kept in sync). Removed 1 hidden character.";
+    expect(getAnnouncement("polite")).toEqual({ text, seq: 1 });
+    expect(screen.getByTestId("chat-drop-notice")).toHaveTextContent(text);
+    const badge = await screen.findByTestId("snapshot-badge");
+    expect(badge).toHaveTextContent("snapshot, not kept in sync with the file");
+    expect(badge).toHaveAttribute(
+      "title",
+      expect.stringContaining("not kept in sync"),
+    );
+  });
+
+  it("refuses a dropped file that holds a secret, and the secret goes nowhere", async () => {
+    const { target, editor, requests } = await setup();
+    const { githubToken } = canarySecrets();
+    await drop(
+      target,
+      osFileDrag(textFile("notes.txt", `push with ${githubToken}\n`)),
+    );
+    await waitFor(() => expect(getAnnouncement("polite").seq).toBe(1));
+    expect(screen.getByTestId("chat-drop-notice")).toHaveTextContent(
+      "notes.txt contains what looks like a secret",
+    );
+    expect(snapshotItems(editor.getJSON())).toEqual([]);
+    expect(JSON.stringify(editor.getJSON())).not.toContain(githubToken);
+    expect(JSON.stringify(requests)).not.toContain(githubToken);
+    expect(getAnnouncement("polite").text).not.toContain(githubToken);
+  });
+
+  it("refuses a binary OS file, naming why", async () => {
+    const { target, editor } = await setup();
+    await drop(
+      target,
+      osFileDrag(textFile("tool.exe", new Uint8Array([0x4d, 0x5a, 0, 0]))),
+    );
     await waitFor(() =>
       expect(screen.getByTestId("chat-drop-notice")).toHaveTextContent(
-        "notes.txt came from outside the editor, so it has no location",
+        "tool.exe looks like a binary file",
       ),
     );
+    expect(snapshotItems(editor.getJSON())).toEqual([]);
+  });
+
+  it("adds a folder from the operating system as a bundle of snapshots with a summary", async () => {
+    const { target, editor } = await setup();
+    const folder = fakeDirEntry("notes", {
+      "a.md": "alpha",
+      "b.md": "beta",
+      ".env": "KEY=1",
+      node_modules: { "x.js": "x" },
+    });
+    await drop(target, osEntryDrag([[fakeFile("notes", "", 0), folder]]));
+    await waitFor(() =>
+      expect(snapshotItems(editor.getJSON())).toHaveLength(2),
+    );
+    expect(snapshotItems(editor.getJSON()).map((i) => i.name)).toEqual([
+      "notes/a.md",
+      "notes/b.md",
+    ]);
+    expect(getAnnouncement("polite").text).toBe(
+      "Added 2 files from folder notes as snapshots (not kept in sync). " +
+        "From notes, left out 1 file that may hold secrets (by name or content), " +
+        "1 folder not opened (node_modules, .git, dist or a secrets folder).",
+    );
+    expect(screen.getAllByTestId("snapshot-badge")).toHaveLength(2);
   });
 
   it("inserts dropped text without hidden characters", async () => {
