@@ -17,6 +17,7 @@ import {
   type BuiltinRuleId,
 } from "../tools/permissions/policy";
 import { canonicalRuleName } from "../tools/permissions/names";
+import { PROJECT_STATE_DIRS } from "./productPaths";
 import { isDestinationPattern, parseRule } from "../tools/permissions/rules";
 import { isNetSet } from "../tools/permissions/destinations";
 import {
@@ -28,11 +29,14 @@ import {
   BROAD_DENY_READ,
   CANONICAL_CASE,
   ENV_GLOBS,
+  HOME_READ_ALLOWED,
+  LINUX_HOME_SECRETS,
   MACOS_HOME_SECRETS,
   MACOS_PRIVATE_ALIASED,
   NARROWED_CONFIG_DIRS,
   OWN_HOME_DIRS,
   PRECREATE_SAFE,
+  PROJECT_POLICY_DIRS,
   SYSTEM_DIRS,
   SYSTEM_SECRET_PATHS,
   SYSTEM_TEMP_ROOTS,
@@ -317,28 +321,36 @@ function addSecrets(acc: Acc, ctx: Ctx): void {
     ...SECRET_BASENAMES,
     ...[...SECRET_EXTENSIONS].map((e) => `*${e}`),
   ];
-  const homeDirs = [...HOME_SECRET_DIRS, ...HOME_SECRET_FILES].map(
-    (d) => `${ctx.home}/${d}`,
-  );
+  const homeSecrets = [...HOME_SECRET_DIRS, ...HOME_SECRET_FILES];
   const mac = ctx.input.platform === "macos";
   const others = [...HOME_SECRET_DIRS].flatMap((d) =>
     (mac ? ["/Users/*"] : ["/home/*", "/root"]).map((h) => `${h}/${d}`),
   );
-  const macOnly = mac ? MACOS_HOME_SECRETS.map((d) => `${ctx.home}/${d}`) : [];
+  // The OS credential stores in the home directory (S9-X3)
+  const stores = (mac ? MACOS_HOME_SECRETS : LINUX_HOME_SECRETS).map(
+    (d) => `${ctx.home}/${d}`,
+  );
   if (builtinOn(ctx, "protect-secrets")) {
     for (const effect of ["denyRead", "denyWrite"] as const) {
+      // S9-X3's allow list is readable; it stays write-protected
+      const home = homeSecrets
+        .filter((d) => effect === "denyWrite" || !HOME_READ_ALLOWED.includes(d))
+        .map((d) => `${ctx.home}/${d}`);
       put(
         acc,
         effect,
         [
-          ...homeDirs,
-          ...macOnly,
+          ...home,
+          ...stores,
           ...others,
           ...(mac ? [] : SYSTEM_SECRET_PATHS),
           ...ctx.roots.flatMap((r) => names.flatMap((n) => locations(r, n))),
         ],
         "protected-secret",
-        "HOME_SECRET_DIRS, HOME_SECRET_FILES, SECRET_BASENAMES, SECRET_EXTENSIONS, env files, system secrets",
+        "HOME_SECRET_DIRS, HOME_SECRET_FILES, SECRET_BASENAMES, SECRET_EXTENSIONS, env files, system secrets, OS credential stores",
+        effect === "denyRead"
+          ? `readable by decision (S9-X3): ${HOME_READ_ALLOWED.map((f) => `~/${f}`).join(", ")}`
+          : undefined,
       );
     }
   } else {
@@ -351,6 +363,32 @@ function addSecrets(acc: Acc, ctx: Ctx): void {
   for (const effect of ["denyRead", "denyWrite"] as const) {
     put(acc, effect, own, "own-config", "our home configuration directories");
   }
+  // And a project's: its rules, permissions and hooks (S9-X3)
+  const project = ctx.roots.flatMap((r) =>
+    PROJECT_POLICY_DIRS.map((d) => `${r}/${d}`),
+  );
+  for (const effect of ["denyRead", "denyWrite"] as const) {
+    put(
+      acc,
+      effect,
+      project,
+      "own-config",
+      "the project's policy folders (PROJECT_POLICY_DIRS)",
+    );
+  }
+  // Plans are the person's working notes, not policy: readable again
+  // (writes stay as protect-config and the locked paths leave them)
+  put(
+    acc,
+    "allowRead",
+    ctx.roots.flatMap((r) =>
+      PROJECT_POLICY_DIRS.flatMap((d) =>
+        PROJECT_STATE_DIRS.map((s) => `${r}/${d}/${s}`),
+      ),
+    ),
+    "own-config",
+    "the project's plans folders (PROJECT_STATE_DIRS)",
+  );
   if (ctx.locked.length > 0) {
     put(acc, "denyWrite", ctx.locked, "locked-path", "lockedPaths");
   }
@@ -452,6 +490,13 @@ function addReadPolicy(acc: Acc, ctx: Ctx): void {
       "read-policy",
       "workspace-only: workspace, tempDir, extra dirs",
     );
+    // S9-X3's allow list, unless a deny rule of the person's names the file
+    const allowed = HOME_READ_ALLOWED.map((f) => `${ctx.home}/${f}`).filter(
+      (p) => !acc.fs.denyRead.has(p),
+    );
+    if (allowed.length > 0) {
+      put(acc, "allowRead", allowed, "read-policy", "S9-X3 allow list");
+    }
   } else if (platform === "wsl2") {
     put(acc, "denyRead", ["/mnt"], "platform", "wsl2: Windows drives");
   }

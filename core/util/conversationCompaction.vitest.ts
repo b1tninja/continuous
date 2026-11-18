@@ -39,6 +39,8 @@ describe("compactConversation", () => {
 
     const saved = historyManager.save.mock.calls[0][0] as Session;
     expect(saved.history[1].conversationSummary).toBe("a summary");
+    // Reasoning in turns kept after the summary was minted before it (C104)
+    expect(saved.history[1].conversationSummaryHistoryLength).toBe(2);
     // The conversation is now short, so the old size and time would mislead
     // the cold-cache notice when the session is next opened.
     expect(saved.promptCache).toBeUndefined();
@@ -58,6 +60,35 @@ describe("compactConversation", () => {
       currentModel,
     });
     expect(session.promptCache?.lastInputTokens).toBe(366_000);
+  });
+
+  it("does not summarise old turns removed with Choose what to keep", async () => {
+    const session = sessionWithCache();
+    session.history = [
+      {
+        message: { role: "user", content: "old question" },
+        contextItems: [],
+        removedByUser: { turn: true },
+      },
+      {
+        message: { role: "assistant", content: "old answer" },
+        contextItems: [],
+        removedByUser: { turn: true },
+      },
+      ...session.history,
+    ];
+    const historyManager = { load: () => session, save: vi.fn() } as any;
+    const chat = vi.fn(async () => ({ role: "assistant", content: "x" }));
+    await compactConversation({
+      sessionId: "s1",
+      index: 3,
+      historyManager,
+      currentModel: { chat } as any,
+    });
+    const sent = JSON.stringify((chat.mock.calls[0] as any[])[0]);
+    expect(sent).not.toContain("old question");
+    expect(sent).not.toContain("old answer");
+    expect(sent).toContain("hello");
   });
 });
 

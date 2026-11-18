@@ -35,7 +35,8 @@ const initialState: MainEditorContextType = {
   onEnterRef: { current: () => {} },
 };
 
-const MainEditorContext = createContext<MainEditorContextType>(initialState);
+export const MainEditorContext =
+  createContext<MainEditorContextType>(initialState);
 
 /**
  * Provider component that maintains a reference to the main editor

@@ -21,6 +21,10 @@ inputs:
   github-token:
     description: "Unused; kept so existing callers keep working (ripgrep now comes from npm)"
     required: false
+  cache:
+    description: "Use caches (built packages, node_modules, npm downloads, the sqlite3 prebuilt). Release builds pass 'false' so that nothing restored from a cache reaches a shipped artefact."
+    required: false
+    default: "true"
 outputs:
   target:
     description: "The target string used for the build"
@@ -36,6 +40,7 @@ runs:
   using: "composite"
   steps:
     - uses: actions/setup-node@v7
+      id: node
       with:
         node-version-file: ".nvmrc"
 
@@ -44,48 +49,60 @@ runs:
       shell: bash
       run: echo "target=${{ inputs.platform }}-${{ inputs.arch }}" >> $GITHUB_OUTPUT
 
-    - name: Cache npm
-      uses: actions/cache@v6
+    # The built packages (and their cache) come from the setup-packages action.
+    - name: Build packages
+      uses: ./.github/actions/setup-packages
       with:
-        path: ~/.npm
-        key: ${{ runner.os }}-npm-cache-build-${{ hashFiles('**/package-lock.json') }}
+        cache: ${{ inputs.cache }}
 
-    - name: Cache extension node_modules
-      uses: actions/cache@v6
+    # Cache policy (docs/ci-caching.md). node_modules is restored, never saved, here: this action
+    # mutates core/node_modules (vectordb, prepackage) and the extension's (esbuild), so the clean
+    # copies come from the setup-component action, which saves right after `npm ci`. It is Linux
+    # only: restoring hundreds of thousands of small files costs more than `npm ci` on the Windows
+    # and macOS runners. The npm download cache is saved from main only.
+    - name: Restore extension node_modules
+      id: ext-nm
+      if: inputs.cache == 'true' && runner.os == 'Linux'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: extensions/vscode/node_modules
-        key: ${{ runner.os }}-node-${{ hashFiles('extensions/vscode/package-lock.json') }}
+        key: ${{ runner.os }}-vscode-node-modules-node${{ steps.node.outputs.node-version }}-${{ hashFiles('extensions/vscode/package-lock.json') }}
 
-    - name: Cache core node_modules
-      uses: actions/cache@v6
-      with:
-        path: core/node_modules
-        key: ${{ runner.os }}-node-${{ hashFiles('core/package-lock.json') }}
-
-    - name: Cache gui node_modules
-      uses: actions/cache@v6
+    - name: Restore gui node_modules
+      id: gui-nm
+      if: inputs.cache == 'true' && runner.os == 'Linux'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: gui/node_modules
-        key: ${{ runner.os }}-node-${{ hashFiles('gui/package-lock.json') }}
+        key: ${{ runner.os }}-gui-node-modules-node${{ steps.node.outputs.node-version }}-${{ hashFiles('gui/package-lock.json') }}
 
-    - name: Cache packages node_modules
-      uses: actions/cache@v6
+    - name: Restore core node_modules
+      id: core-nm
+      if: inputs.cache == 'true' && runner.os == 'Linux'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: |
-          packages/*/node_modules
-        key: ${{ runner.os }}-packages-node-modules-${{ hashFiles('packages/*/package-lock.json') }}
+        path: core/node_modules
+        key: ${{ runner.os }}-core-node-modules-node${{ steps.node.outputs.node-version }}-${{ hashFiles('core/package-lock.json') }}
 
-    - name: Build packages
-      shell: bash
-      run: node ./scripts/build-packages.js
+    - name: Restore npm download cache
+      id: npm-cache
+      if: inputs.cache == 'true' && runner.os != 'Windows' && (runner.os != 'Linux' || steps.ext-nm.outputs.cache-hit != 'true' || steps.gui-nm.outputs.cache-hit != 'true' || steps.core-nm.outputs.cache-hit != 'true')
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-npm-cache-build-${{ hashFiles('extensions/vscode/package-lock.json', 'gui/package-lock.json', 'core/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-npm-cache-build-
 
     - name: Install extension dependencies
+      if: steps.ext-nm.outputs.cache-hit != 'true'
       shell: bash
       run: |
         cd extensions/vscode
         npm ci
 
     - name: Install gui dependencies
+      if: steps.gui-nm.outputs.cache-hit != 'true'
       shell: bash
       run: |
         cd gui
@@ -95,8 +112,17 @@ runs:
       shell: bash
       run: |
         cd core
-        npm ci
+        if [ "${{ steps.core-nm.outputs.cache-hit }}" != "true" ]; then
+          npm ci
+        fi
         npm i vectordb
+
+    - name: Save npm download cache
+      if: inputs.cache == 'true' && steps.npm-cache.outcome == 'success' && steps.npm-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.npm
+        key: ${{ steps.npm-cache.outputs.cache-primary-key }}
 
     - name: Build GUI
       shell: bash
@@ -111,8 +137,10 @@ runs:
     # after npm ci, which would otherwise wipe it; download-copy-sqlite.js skips its download
     # when the marker in the build matches. Keyed per target, since the build is one target's.
     # Bump the key when SQLITE_VERSION changes.
-    - uses: actions/cache@v6
+    - name: Restore sqlite3 prebuilt
       id: sqlite-prebuilt-cache
+      if: inputs.cache == 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: core/node_modules/sqlite3/build
         key: ${{ runner.os }}-sqlite3-prebuilt-v5.1.7-${{ steps.set-target.outputs.target }}
@@ -125,6 +153,13 @@ runs:
         cd extensions/vscode
         export CONTINUE_VSCODE_TARGET="${{ steps.set-target.outputs.target }}"
         npm run prepackage -- --target ${{ steps.set-target.outputs.target }}
+
+    - name: Save sqlite3 prebuilt
+      if: inputs.cache == 'true' && steps.sqlite-prebuilt-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: core/node_modules/sqlite3/build
+        key: ${{ steps.sqlite-prebuilt-cache.outputs.cache-primary-key }}
 
     - name: Re-install esbuild
       shell: bash
@@ -181,3 +216,13 @@ runs:
         fi
         # LICENSE, NOTICE and the generated third-party notices must be in every VSIX
         for f in *.vsix; do node ../../scripts/ci/check-artefact-licences.mjs --vsix "$f"; done
+
+    - uses: ./.github/actions/cache-report
+      if: always()
+      with:
+        entries: |
+          vscode-node-modules|${{ steps.ext-nm.outcome }}|${{ steps.ext-nm.outputs.cache-hit }}|${{ steps.ext-nm.outputs.cache-matched-key }}
+          gui-node-modules|${{ steps.gui-nm.outcome }}|${{ steps.gui-nm.outputs.cache-hit }}|${{ steps.gui-nm.outputs.cache-matched-key }}
+          core-node-modules|${{ steps.core-nm.outcome }}|${{ steps.core-nm.outputs.cache-hit }}|${{ steps.core-nm.outputs.cache-matched-key }}
+          npm-build|${{ steps.npm-cache.outcome }}|${{ steps.npm-cache.outputs.cache-hit }}|${{ steps.npm-cache.outputs.cache-matched-key }}
+          sqlite3-prebuilt|${{ steps.sqlite-prebuilt-cache.outcome }}|${{ steps.sqlite-prebuilt-cache.outputs.cache-hit }}|${{ steps.sqlite-prebuilt-cache.outputs.cache-matched-key }}

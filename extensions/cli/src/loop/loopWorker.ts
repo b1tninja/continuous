@@ -58,6 +58,12 @@ export interface LoopWorkerPolicy {
   ask?: string[];
   exclude?: string[];
   levels?: PolicyLevels;
+  /**
+   * Whether the parent runs headless (`-p`, `serve`). A worker is always
+   * started headless, since nobody types into it; this says which default
+   * lists it takes. Absent from an older parent: the headless ones, as before.
+   */
+  parentHeadless?: boolean;
 }
 
 /** Overrides for the worker's tool service. Auto is never the mode. */
@@ -66,12 +72,17 @@ export function loopWorkerPermissionOverrides(policy?: LoopWorkerPolicy): {
   ask?: string[];
   exclude?: string[];
   mode: "normal" | "plan";
+  interactiveDefaults?: boolean;
 } {
   return {
     allow: policy?.allow,
     ask: policy?.ask,
     exclude: policy?.exclude,
     mode: policy?.mode === "plan" ? "plan" : "normal",
+    // A worker of a terminal-UI parent takes the parent's default lists, so
+    // Bash and unlisted tools ask there too; inside the loop an ask is held
+    // as a question for the parent's person and refused for now, never run.
+    ...(policy?.parentHeadless === false ? { interactiveDefaults: true } : {}),
   };
 }
 
@@ -173,7 +184,9 @@ export async function runLoopItemHere(
       input.options.policy,
     ),
   });
-  if (input.model) await applyModelNamed(input.model);
+  if (input.model) {
+    await applyModelNamed(input.model, { reason: "use", use: "loop" });
+  }
   const modelState = await getService<ModelServiceState>(SERVICE_NAMES.MODEL);
   if (!modelState.model || !modelState.llmApi) {
     throw new Error("The worker could not initialize its model.");

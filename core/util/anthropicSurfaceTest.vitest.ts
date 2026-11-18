@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -26,12 +26,12 @@ const body = {
 };
 
 function fake(
-  respond: (version: string) => { status: number; body: unknown },
+  respond: (version: string, url: string) => { status: number; body: unknown },
   seen: { url: string; headers: Record<string, string>; method: string }[] = [],
 ): AnthropicFetch {
   return async (url, init) => {
     seen.push({ url, headers: init.headers, method: init.method });
-    const r = respond(init.headers["anthropic-version"]);
+    const r = respond(init.headers["anthropic-version"], url);
     return {
       ok: r.status < 400,
       status: r.status,
@@ -48,9 +48,19 @@ describe("testAnthropicConnection", () => {
       apiKey: KEY,
       models: ["claude-sonnet-4-5-20250929"],
       now: "2026-11-11",
-      fetchFn: fake(() => ({ status: 200, body }), seen),
+      fetchFn: fake(
+        (_v, url) => ({
+          status: 200,
+          body: url.includes("/models/") ? body.data[0] : body,
+        }),
+        seen,
+      ),
     });
-    expect(seen).toHaveLength(1);
+    // The listing, then the configured id itself
+    expect(seen).toHaveLength(2);
+    expect(seen[1].url).toBe(
+      "https://api.anthropic.com/v1/models/claude-sonnet-4-5-20250929",
+    );
     expect(seen[0].method).toBe("GET");
     expect(seen[0].url).toBe("https://api.anthropic.com/v1/models?limit=1000");
     expect(seen[0].headers["x-api-key"]).toBe(KEY);
@@ -86,22 +96,101 @@ describe("testAnthropicConnection", () => {
       models: ["claude-sonnet-4-5-20250929"],
       now: "2026-11-11",
       fetchFn: fake(
-        (v) =>
+        (v, url) =>
           v === ANTHROPIC_LIST_VERSION
             ? { status: 400, body: { error: { message: "bad version" } } }
             : {
                 status: 200,
-                body: { data: [{ id: "claude-sonnet-4-5-20250929" }] },
+                body: url.includes("/models/")
+                  ? { id: "claude-sonnet-4-5-20250929" }
+                  : { data: [{ id: "claude-sonnet-4-5-20250929" }] },
               },
         seen,
       ),
     });
+    // The listing (newer version refused, then the older one), then the id
     expect(seen.map((s) => s.headers["anthropic-version"])).toEqual([
       ANTHROPIC_LIST_VERSION,
       ANTHROPIC_FALLBACK_VERSION,
+      ANTHROPIC_LIST_VERSION,
+      ANTHROPIC_FALLBACK_VERSION,
     ]);
+    expect(res.ok && res.modelChecks[0]?.status).toBe("found");
     // No lifecycle fields came back: the checked-in table answers.
     expect(res.ok && res.notices[0]?.from).toBe("table");
+  });
+
+  it("checks the configured id: found, with what Anthropic reports", async () => {
+    const res = await testAnthropicConnection({
+      apiKey: KEY,
+      models: ["claude-opus-5-5"],
+      fetchFn: fake((_v, url) =>
+        url.includes("/models/")
+          ? {
+              status: 200,
+              body: {
+                id: "claude-opus-5-5",
+                max_input_tokens: 1_000_000,
+                max_tokens: 128_000,
+                capabilities: { image_input: { supported: true } },
+              },
+            }
+          : { status: 200, body },
+      ),
+    });
+    expect(res.ok && res.modelChecks).toEqual([
+      expect.objectContaining({
+        status: "found",
+        model: "claude-opus-5-5",
+        facts: expect.objectContaining({
+          contextLength: 1_000_000,
+          maxOutputTokens: 128_000,
+          supportsImages: true,
+        }),
+      }),
+    ]);
+  });
+
+  it("an unknown id names close matches; the connection still succeeds", async () => {
+    const res = await testAnthropicConnection({
+      apiKey: KEY,
+      models: ["claude-sonnet-55"],
+      fetchFn: fake((_v, url) =>
+        url.includes("/models/")
+          ? { status: 404, body: { error: { type: "not_found_error" } } }
+          : { status: 200, body },
+      ),
+    });
+    expect(res.ok).toBe(true);
+    expect(res.ok && res.modelChecks[0]).toMatchObject({
+      status: "not-found",
+      suggestions: ["claude-sonnet-5-5"],
+      message: expect.stringContaining("Did you mean claude-sonnet-5-5?"),
+    });
+  });
+
+  it("a rate limit on the id check is reported as not checked", async () => {
+    const res = await testAnthropicConnection({
+      apiKey: KEY,
+      models: ["claude-opus-5-5"],
+      fetchFn: fake((_v, url) =>
+        url.includes("/models/")
+          ? { status: 429, body: { error: "rate" } }
+          : { status: 200, body },
+      ),
+    });
+    expect(res.ok && res.modelChecks[0]).toMatchObject({
+      status: "unverified",
+      reason: "rate-limited",
+    });
+  });
+
+  it("says when the listing itself is rate limited", async () => {
+    const res = await testAnthropicConnection({
+      apiKey: KEY,
+      fetchFn: fake(() => ({ status: 429, body: {} })),
+    });
+    expect(!res.ok && res.error).toContain("rate limiting");
   });
 
   it("says the key was rejected without echoing it", async () => {
@@ -141,9 +230,18 @@ describe("Test connection for provider anthropic", () => {
       model: "claude-sonnet-4-5-20250929",
       now: "2026-11-11",
       noticeFile,
-      fetchFn: fake(() => ({ status: 200, body })) as any,
+      providerInfoDir: dir,
+      fetchFn: fake((_v, url) => ({
+        status: 200,
+        body: url.includes("/models/") ? body.data[0] : body,
+      })) as any,
     });
     expect(res.ok && res.retirement?.[0].retiresAt).toBe("2026-11-30");
+    expect(res.ok && res.modelCheck?.status).toBe("found");
+    // What Anthropic reported for the model is kept, keyed by a hash
+    const kept = readdirSync(dir).filter((f) => f.startsWith("provider-"));
+    expect(kept).toHaveLength(1);
+    expect(readFileSync(join(dir, kept[0]), "utf8")).not.toContain(KEY);
     expect(JSON.stringify(res)).not.toContain(KEY);
     const state = readNoticeState(noticeFile);
     expect(state.live["claude-sonnet-4-5-20250929"]).toMatchObject({
@@ -162,9 +260,17 @@ describe("Test connection for provider anthropic", () => {
       provider: "anthropic",
       apiKey: KEY,
       record: false,
+      model: "claude-sonnet-4-5-20250929",
       noticeFile,
-      fetchFn: fake(() => ({ status: 200, body })) as any,
+      providerInfoDir: dir,
+      fetchFn: fake((_v, url) => ({
+        status: 200,
+        body: url.includes("/models/") ? body.data[0] : body,
+      })) as any,
     });
     expect(readNoticeState(noticeFile).live).toEqual({});
+    expect(readdirSync(dir).filter((f) => f.startsWith("provider-"))).toEqual(
+      [],
+    );
   });
 });

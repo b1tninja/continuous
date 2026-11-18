@@ -1,0 +1,2 @@
+<!-- Nothing to register: the optional JCEF dependency only puts the JCEF plugin's classes on this plugin's class path where it exists (2026.2 and later). -->
+<idea-plugin/>

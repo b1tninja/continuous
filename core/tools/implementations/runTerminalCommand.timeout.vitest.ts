@@ -53,7 +53,11 @@ describe("runTerminalCommand timeout functionality", () => {
       return true;
     });
 
-    mockSpawn.mockReturnValue(mockChildProc);
+    // Reports that it started, as a real process does: the executor waits for it
+    mockSpawn.mockImplementation(() => {
+      queueMicrotask(() => mockChildProc.emit("spawn"));
+      return mockChildProc;
+    });
 
     mockGetIdeInfo = vi.fn().mockResolvedValue({ remoteName: "local" });
     mockGetWorkspaceDirs = vi

@@ -41,6 +41,10 @@ import {
   FimCreateParamsStreaming,
   RerankCreateParams,
 } from "./base.js";
+import {
+  reasoningSwitch,
+  requestedReasoningEffort,
+} from "./reasoningSwitch.js";
 
 type UsageInfo = Pick<
   CompletionUsage,
@@ -70,6 +74,62 @@ interface GeminiToolDelta
   };
 }
 
+/**
+ * Gemini 2.5 and later think before they answer but return none of it unless
+ * asked with `thinkingConfig.includeThoughts`; then thought summaries come
+ * back as parts marked `thought: true`. Thinking tokens are billed whether or
+ * not the summaries are returned. Image, speech, live and embedding models
+ * take no thinking config.
+ */
+export function returnsThoughts(model: string): boolean {
+  if (/image|tts|live|audio|embedding/i.test(model)) return false;
+  return /gemini-(?:2\.5|[3-9])|gemini-(?:flash|pro)(?:-lite)?-latest/i.test(
+    model,
+  );
+}
+
+/** Gemini's `thinkingConfig` fields other than `includeThoughts`. */
+export interface GeminiThinkingControl {
+  thinkingLevel?: "MINIMAL" | "LOW" | "MEDIUM" | "HIGH";
+  thinkingBudget?: number;
+}
+
+/**
+ * The reasoning switch (reasoningSwitch.ts) as Gemini's thinking control.
+ * Gemini 3 and later take `thinkingLevel`: the Flash models every level, and
+ * off as MINIMAL (they cannot turn thinking off); the Pro models LOW and HIGH
+ * only, so off and low are LOW and medium is HIGH. Gemini 2.5 takes
+ * `thinkingBudget` in tokens (the GUI's 1024, 4096 and 16384 for low, medium
+ * and high); off is 0 on Flash and Flash-Lite, and Pro, which cannot turn it
+ * off, is left at its default. Unset, nothing is sent and the model uses its
+ * own default, as before. Thinking tokens are billed as output.
+ */
+export function geminiThinkingControl(
+  model: string,
+  effort: string | undefined,
+): GeminiThinkingControl {
+  if (!effort || !returnsThoughts(model)) return {};
+  const { reasoning, level, budgetTokens } = reasoningSwitch(effort);
+  const isPro = /pro/i.test(model);
+  if (/gemini-[3-9]/i.test(model)) {
+    if (isPro) {
+      return {
+        thinkingLevel: reasoning && level !== "low" ? "HIGH" : "LOW",
+      };
+    }
+    if (!reasoning) return { thinkingLevel: "MINIMAL" };
+    return {
+      thinkingLevel:
+        level === "low" ? "LOW" : level === "medium" ? "MEDIUM" : "HIGH",
+    };
+  }
+  if (/gemini-2\.5/i.test(model)) {
+    if (!reasoning) return isPro ? {} : { thinkingBudget: 0 };
+    return { thinkingBudget: budgetTokens };
+  }
+  return {};
+}
+
 export class GeminiApi implements BaseLlmApi {
   apiBase: string = "https://generativelanguage.googleapis.com/v1beta/";
   private genAI: GoogleGenAI;
@@ -92,7 +152,7 @@ export class GeminiApi implements BaseLlmApi {
     part:
       | OpenAI.Chat.Completions.ChatCompletionContentPart
       | OpenAI.Chat.Completions.ChatCompletionContentPartRefusal,
-  ): GeminiChatContentPart {
+  ): GeminiChatContentPart | undefined {
     switch (part.type) {
       case "refusal":
         return {
@@ -105,16 +165,37 @@ export class GeminiApi implements BaseLlmApi {
       case "input_audio":
         throw new Error("Unsupported part type: input_audio");
       case "image_url":
-      default:
+      default: {
+        // inlineData takes base64 bytes. An http(s) URL has none, and would
+        // go out as `data: undefined`.
+        const url = (part as ChatCompletionContentPartImage).image_url?.url;
+        const data = url?.startsWith("data:") ? url.split(",")[1] : undefined;
+        if (!data) {
+          console.warn(
+            "Gemini: skipping an image that is not a data URL. The image was left out of the request.",
+          );
+          return undefined;
+        }
         return {
           inlineData: {
             mimeType: "image/jpeg",
-            data: (part as ChatCompletionContentPartImage).image_url?.url.split(
-              ",",
-            )[1],
+            data,
           },
         };
+      }
     }
+  }
+
+  /** Content parts as Gemini parts, without the ones that can't be sent. */
+  private _oaiPartsToGeminiParts(
+    parts: Array<
+      | OpenAI.Chat.Completions.ChatCompletionContentPart
+      | OpenAI.Chat.Completions.ChatCompletionContentPartRefusal
+    >,
+  ): GeminiChatContentPart[] {
+    return parts
+      .map((part) => this._oaiPartToGeminiPart(part))
+      .filter((part): part is GeminiChatContentPart => part !== undefined);
   }
 
   private _messageText(
@@ -192,16 +273,24 @@ export class GeminiApi implements BaseLlmApi {
           if (typeof msg.content === "string" && msg.content) {
             textParts.push({ text: msg.content });
           } else if (Array.isArray(msg.content)) {
-            textParts.push(
-              ...msg.content.map((part) => this._oaiPartToGeminiPart(part)),
-            );
+            textParts.push(...this._oaiPartsToGeminiParts(msg.content));
           }
+
+          // A call with no name would go out as `name: undefined`
+          const namedCalls = (msg.tool_calls as GeminiToolCall[]).filter(
+            (toolCall) =>
+              !(
+                toolCall.type === "function" &&
+                "function" in toolCall &&
+                !toolCall.function?.name
+              ),
+          );
 
           return {
             role: "model" as const,
             parts: [
               ...textParts,
-              ...(msg.tool_calls as GeminiToolCall[]).map((toolCall, index) => {
+              ...namedCalls.map((toolCall, index) => {
                 if (toolCall.type === "function" && "function" in toolCall) {
                   let thoughtSignature: string | undefined;
                   if (index === 0) {
@@ -252,6 +341,9 @@ export class GeminiApi implements BaseLlmApi {
                     part as OpenAI.Chat.Completions.ChatCompletionContentPart,
                   ),
                 )
+                .filter(
+                  (part): part is GeminiChatContentPart => part !== undefined,
+                )
             : [];
           return {
             role: "user" as const,
@@ -280,10 +372,12 @@ export class GeminiApi implements BaseLlmApi {
           parts:
             typeof msg.content === "string"
               ? [{ text: msg.content }]
-              : msg.content.map(this._oaiPartToGeminiPart),
+              : this._oaiPartsToGeminiParts(msg.content),
         };
       })
-      .filter((c) => c !== null) as GeminiChatContent[];
+      // Gemini rejects a Content with no parts (`[]` content, or a turn
+      // whose only image or call could not be sent)
+      .filter((c) => c !== null && c.parts.length > 0) as GeminiChatContent[];
 
     const mergedContents = mergeConsecutiveGeminiMessages(contents);
 
@@ -427,6 +521,23 @@ export class GeminiApi implements BaseLlmApi {
               });
             }
 
+            // A thought summary (`includeThoughts`) is reasoning, not the
+            // answer: it goes out as `reasoning_content`, which the chat shows
+            // as thinking and a completion leaves out.
+            if ((part as any).thought === true) {
+              if (part.text) {
+                yield chatChunkFromDelta({
+                  model,
+                  delta: {
+                    role: "assistant",
+                    reasoning_content: part.text,
+                  } as ChatCompletionChunk.Choice["delta"],
+                  finish_reason: null,
+                });
+              }
+              continue;
+            }
+
             yield chatChunk({
               content: part.text,
               model,
@@ -481,7 +592,12 @@ export class GeminiApi implements BaseLlmApi {
     model: string,
     convertedBody: ReturnType<typeof this._convertBody>,
     signal?: AbortSignal,
+    effort?: string,
   ) {
+    // Off (thinkingBudget 0) returns no thoughts to ask for
+    const control = geminiThinkingControl(model, effort);
+    const includeThoughts =
+      returnsThoughts(model) && control.thinkingBudget !== 0;
     // Use native fetch temporarily for stream operation to get proper ReadableStream
     // The withNativeFetch wrapper restores native fetch, makes the call, then reverts
     return withNativeFetch(() =>
@@ -492,6 +608,14 @@ export class GeminiApi implements BaseLlmApi {
           systemInstruction: convertedBody.systemInstruction,
           tools: convertedBody.tools,
           ...convertedBody.generationConfig,
+          // The model thinks either way; includeThoughts returns summaries
+          // of it, and the control sets how much (geminiThinkingControl)
+          ...((includeThoughts || Object.keys(control).length > 0) && {
+            thinkingConfig: {
+              ...(includeThoughts && { includeThoughts: true }),
+              ...(control as Record<string, unknown>),
+            },
+          }),
           // Without this the stop button only stopped reading; the request
           // kept generating (and billing) on Google's side.
           ...(signal && { abortSignal: signal }),
@@ -514,6 +638,10 @@ export class GeminiApi implements BaseLlmApi {
       body.model,
       convertedBody,
       signal,
+      requestedReasoningEffort(
+        body,
+        this.config.requestOptions?.extraBodyProperties,
+      ),
     );
     yield* this.processStreamResponse(response, body.model, signal);
   }
@@ -529,6 +657,10 @@ export class GeminiApi implements BaseLlmApi {
       body.model,
       convertedBody,
       signal,
+      requestedReasoningEffort(
+        body,
+        this.config.requestOptions?.extraBodyProperties,
+      ),
     );
     yield* this.processStreamResponse(response, body.model, signal);
   }

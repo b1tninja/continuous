@@ -167,6 +167,36 @@ describe("streamChatResponse - steering at the tool boundary", () => {
     expect(historiesSeen[1].at(-1)).toBe(steer);
   });
 
+  it("leaves the steered message in the caller's array when ChatHistoryService is off (a subagent's executor)", async () => {
+    const { services } = await import("../services/index.js");
+    const isReady = vi.mocked(services.chatHistory.isReady);
+    isReady.mockImplementation(() => false);
+    try {
+      const steer: ChatHistoryItem = {
+        message: { role: "user", content: "use b.ts instead" },
+        contextItems: [],
+      };
+      const onToolBoundary = vi
+        .fn()
+        .mockResolvedValueOnce(steer)
+        .mockResolvedValue(undefined);
+      const { api } = llmReturning(toolCallChunks, [
+        chunk({ content: "ok, b.ts" }),
+      ]);
+
+      await streamChatResponse(chatHistory, model, api, abortController, {
+        onToolBoundary,
+      });
+
+      // The executor reads its own array after the run (SubagentStop, the
+      // record): the steered message is in it, after the first user message
+      expect(chatHistory).toContain(steer);
+      expect(chatHistory.indexOf(steer)).toBeGreaterThan(0);
+    } finally {
+      isReady.mockImplementation(() => true);
+    }
+  });
+
   it("does not ask when the reply had no tool calls (the turn ends instead)", async () => {
     const onToolBoundary = vi.fn();
     const { api } = llmReturning([chunk({ content: "just text" })]);

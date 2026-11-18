@@ -26,9 +26,11 @@ import { IdeMessengerContext } from "../../../context/IdeMessenger";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks";
 import { setMode } from "../../../redux/slices/sessionSlice";
 import { buildPlan } from "../../../redux/thunks/buildPlan";
-import { acceptLoopPlan, startLoopFromPlan } from "../../../redux/thunks/loop";
+import { startLoopFromPlan } from "../../../redux/thunks/loop";
 import { selectLoopPolicy } from "../../../redux/selectors/selectAutoApproval";
 import { recordPlanAnswer } from "../../../util/planDecisions";
+import { PlanTree } from "../../../components/loop/PlanTree";
+import { treeSummary } from "../../../components/loop/planTreeModel";
 import { PlanBudgetStep } from "./PlanBudgetStep";
 
 /** The mark of a to-do in a re-plan: what the loop already did with it. */
@@ -120,6 +122,14 @@ export function PlanCard({ toolCallState, historyIndex }: PlanCardProps) {
   const diff =
     awaitingLoop && loop && taskPlan ? replanDiff(loop, taskPlan) : undefined;
   const loopActive = !!loopStatus && loopStatus !== "stopped";
+  // Loop mode: the to-dos are the plan tree, not the plain list. A loop that
+  // has ended keeps its tree while this card is still its plan.
+  const treeMode =
+    !!loop &&
+    !!taskPlan &&
+    isLatestPlanCard &&
+    (loopActive ||
+      loop.items.some((i) => taskPlan.items.some((t) => t.id === i.id)));
 
   const showActions =
     (!answered && !isStreaming && !loopActive) || awaitingLoop;
@@ -166,50 +176,26 @@ export function PlanCard({ toolCallState, historyIndex }: PlanCardProps) {
           {relativePath ?? "Open plan"}
         </button>
       </div>
-      {awaitingLoop && (
-        <div data-testid="plan-card-replan" className="mt-1 text-xs">
-          {loop?.replanReason && (
-            <div data-testid="plan-card-replan-reason">
-              <span className="text-description">Why you are asked: </span>
-              {loop.replanReason}
-            </div>
-          )}
-          {diff && (
-            <div data-testid="plan-card-diff" className="mt-1">
-              <div className="text-description">
-                {diff.kept.length} kept, {diff.added.length} added,{" "}
-                {diff.dropped.length} dropped
-              </div>
-              <ul className="m-0 mt-0.5 list-none p-0">
-                {diff.dropped.map((item, i) => (
-                  <li
-                    key={`d${i}`}
-                    className="py-0.5 break-words text-description-muted line-through"
-                  >
-                    <span className="font-mono">−</span> {item.text}
-                    {item.status && item.status !== "pending" && (
-                      <span> ({item.status})</span>
-                    )}
-                  </li>
-                ))}
-                {diff.added.map((text, i) => (
-                  <li key={`a${i}`} className="py-0.5 break-words">
-                    <span className="font-mono text-description-muted">+</span>{" "}
-                    {text}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+      {treeMode && loop && (
+        <div
+          data-testid="plan-card-diff"
+          className="mt-0.5 text-xs text-description"
+        >
+          {treeSummary(loop, diff)}
+        </div>
+      )}
+      {treeMode && loop && taskPlan && (
+        <div className="mt-1">
+          <PlanTree loop={loop} plan={taskPlan} diff={diff} />
         </div>
       )}
       {args.ok && args.body && (
         <details
-          open={!awaitingLoop}
+          open={!awaitingLoop && !treeMode}
           data-testid="plan-card-body"
           className="mt-1 text-sm"
         >
-          {awaitingLoop && (
+          {(awaitingLoop || treeMode) && (
             <summary className="cursor-pointer text-xs text-description">
               Full plan text
             </summary>
@@ -314,7 +300,7 @@ export function PlanCard({ toolCallState, historyIndex }: PlanCardProps) {
           </ol>
         </div>
       )}
-      {args.ok && (
+      {args.ok && !treeMode && (
         <ul
           data-testid="plan-card-todos"
           className="m-0 mt-1 list-none p-0 text-xs text-description"
@@ -349,21 +335,6 @@ export function PlanCard({ toolCallState, historyIndex }: PlanCardProps) {
         >
           The loop is building this plan, one to-do at a time. Questions go to
           its inbox.
-        </div>
-      )}
-      {showActions && awaitingLoop && (
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Button
-            data-testid="plan-card-loop-continue"
-            title="Accept this plan and start the loop's next round"
-            onClick={() => void dispatch(acceptLoopPlan())}
-          >
-            Continue the loop
-          </Button>
-          <span className="text-2xs text-description-muted">
-            The loop's re-plan. Edit the file first if you like; the loop reads
-            it again.
-          </span>
         </div>
       )}
       {showActions && !awaitingLoop && args.ok && budgetOpen && (

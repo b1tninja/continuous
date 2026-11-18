@@ -1,7 +1,8 @@
 import type { MessageParam } from "@anthropic-ai/sdk/resources/messages.mjs";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cacheControlFor,
+  cacheTtlForcedTo5m,
   markCacheBreakpoints,
   markLastToolForCache,
   resolveCacheParts,
@@ -23,6 +24,32 @@ describe("resolvePromptCacheTtl", () => {
     [undefined, "30m", undefined],
   ])("request %s, config %s -> %s", (requested, configured, expected) => {
     expect(resolvePromptCacheTtl(requested, configured)).toBe(expected);
+  });
+});
+
+describe("CONTINUOUS_FORCE_CACHE_5M", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("is off unless the variable is exactly 1", () => {
+    expect(cacheTtlForcedTo5m({})).toBe(false);
+    expect(cacheTtlForcedTo5m({ CONTINUOUS_FORCE_CACHE_5M: "0" })).toBe(false);
+    expect(cacheTtlForcedTo5m({ CONTINUOUS_FORCE_CACHE_5M: "true" })).toBe(
+      false,
+    );
+    expect(cacheTtlForcedTo5m({ CONTINUOUS_FORCE_CACHE_5M: "1" })).toBe(true);
+  });
+
+  it.each([
+    [undefined, undefined],
+    ["1h", undefined],
+    [undefined, "1h"],
+    ["1h", "1h"],
+    [undefined, "auto"],
+  ])("wins over request %s and config %s", (requested, configured) => {
+    vi.stubEnv("CONTINUOUS_FORCE_CACHE_5M", "1");
+    expect(resolvePromptCacheTtl(requested, configured)).toBe("5m");
   });
 });
 

@@ -2,7 +2,14 @@ import { evaluateTerminalCommandSecurity } from "@continuedev/terminal-security"
 import { describe, expect, it } from "vitest";
 import { hasUnsafeShellConstruct } from "./command";
 import { envAssignmentHit, envAssignments } from "./envAssignments";
-import { evaluateToolPolicyWithRules } from "./evaluate";
+import { evaluateToolPolicyWithRules as evaluateAndRun } from "./evaluate";
+import { wouldDecide } from "./idgafView.testutil";
+
+// At IDGAF every call runs; these tests read what the guard would have
+// decided (wouldDecide), which IDGAF records instead of acting on.
+const evaluateToolPolicyWithRules = (
+  input: Parameters<typeof evaluateAndRun>[0],
+) => wouldDecide(evaluateAndRun(input));
 
 /**
  * ROADMAP P13: PowerShell's braced variable `${env:NAME}` / `${name}` is a

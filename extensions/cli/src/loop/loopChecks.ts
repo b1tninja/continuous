@@ -110,36 +110,37 @@ export function killCheckProcess(
  * use `/bin/sh` (or `cmd.exe` on Windows). An executor that is not available
  * does not fall back to the host shell.
  */
-export function runCheckCommand(
+export async function runCheckCommand(
   command: string,
   cwd = process.cwd(),
   timeoutMs = LOOP_CHECK_TIMEOUT_MS,
 ): Promise<CheckRun> {
-  return new Promise((resolve) => {
-    const executor = getCommandExecutor();
-    if (executor.unavailable) {
-      resolve({ exitCode: null, output: executor.unavailable });
-      return;
-    }
-    let child: ChildProcess;
-    try {
-      // PowerShell reports 1 for any failing native command: the tail
-      // restores the code the check chose
-      child = executor.spawn(withRealExitCode(command, executor.shell.kind), {
+  const executor = getCommandExecutor();
+  if (executor.unavailable) {
+    return { exitCode: null, output: executor.unavailable };
+  }
+  let child: ChildProcess;
+  try {
+    // PowerShell reports 1 for any failing native command: the tail
+    // restores the code the check chose
+    child = await executor.spawn(
+      withRealExitCode(command, executor.shell.kind),
+      {
         cwd,
         windowsHide: true,
         // A new process group on POSIX, so a timeout can signal the command
         // and the processes it started. Windows uses taskkill /T instead.
         detached: process.platform !== "win32",
-      });
-    } catch (error) {
-      resolve({
-        exitCode: null,
-        output: error instanceof Error ? error.message : String(error),
-      });
-      return;
-    }
+      },
+    );
+  } catch (error) {
+    return {
+      exitCode: null,
+      output: error instanceof Error ? error.message : String(error),
+    };
+  }
 
+  return new Promise((resolve) => {
     let stdout = "";
     let stderr = "";
     let bytes = 0;

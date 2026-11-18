@@ -11,6 +11,7 @@ import com.github.continuedev.continueintellijextension.protocol.*
 import com.github.continuedev.continueintellijextension.services.ContinueExtensionSettings
 import com.github.continuedev.continueintellijextension.services.ContinuePluginService
 import com.github.continuedev.continueintellijextension.services.GsonService
+import com.github.continuedev.continueintellijextension.services.SessionIdgafService
 import com.github.continuedev.continueintellijextension.utils.getMachineUniqueID
 import com.github.continuedev.continueintellijextension.utils.uuid
 import com.intellij.openapi.application.ApplicationManager
@@ -124,6 +125,11 @@ class IdeProtocolClient(
                             // Core reads the value back and reports that it was not kept.
                         }
                         respond(null)
+                    }
+
+                    // IDGAF lasts for the project window (services/SessionIdgafService.kt)
+                    "policy/sessionIdgaf" -> {
+                        respond(project.service<SessionIdgafService>().handle(dataElement))
                     }
 
                     "getControlPlaneSessionInfo" -> {

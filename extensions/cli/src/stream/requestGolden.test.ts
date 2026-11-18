@@ -15,6 +15,7 @@ vi.mock("../services/ServiceContainer.js", () => ({
   serviceContainer: {
     get: vi.fn(async () => ({ config: { rules: [] } })),
     getSync: vi.fn(() => ({ value: undefined })),
+    set: vi.fn(),
     on: vi.fn(),
     off: vi.fn(),
   },

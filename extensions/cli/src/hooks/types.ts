@@ -119,6 +119,9 @@ export interface HookMatcherGroup {
 /** Top-level hooks configuration object (the `hooks` key in settings.json) */
 export type HooksConfig = Partial<Record<HookEventName, HookMatcherGroup[]>>;
 
+/** The key inside `hooks` that switches `~/.claude` hooks on. Not an event. */
+export const READ_CLAUDE_SETTINGS_KEY = "readClaudeSettings";
+
 /** Full settings file shape (only the hooks portion) */
 export interface HookSettingsFile {
   hooks?: HooksConfig;
@@ -132,6 +135,13 @@ export interface HookSettingsFile {
    * own files only: a project file cannot set it.
    */
   managedHooksOnly?: boolean;
+  /**
+   * `hooks.readClaudeSettings` in the user's Continuous settings file: `true`
+   * runs the hooks in `~/.claude/settings.json` too. It is written inside
+   * `hooks` but is not an event, so the loader lifts it out to here. Off by
+   * default (D-023): another tool's file does not run code here unasked.
+   */
+  readClaudeSettings?: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +160,8 @@ export interface PreToolUseInput extends HookInputBase {
   hook_event_name: "PreToolUse";
   tool_name: string;
   tool_input: unknown;
+  /** The MCP server this tool belongs to; absent for built-in tools. `tool_name` stays the server's own tool name. */
+  server?: string;
   tool_use_id: string;
 }
 
@@ -157,6 +169,8 @@ export interface PostToolUseInput extends HookInputBase {
   hook_event_name: "PostToolUse";
   tool_name: string;
   tool_input: unknown;
+  /** The MCP server this tool belongs to; absent for built-in tools. `tool_name` stays the server's own tool name. */
+  server?: string;
   tool_response: unknown;
   tool_use_id: string;
 }
@@ -165,6 +179,8 @@ export interface PostToolUseFailureInput extends HookInputBase {
   hook_event_name: "PostToolUseFailure";
   tool_name: string;
   tool_input: unknown;
+  /** The MCP server this tool belongs to; absent for built-in tools. `tool_name` stays the server's own tool name. */
+  server?: string;
   tool_use_id: string;
   error: string;
   is_interrupt?: boolean;
@@ -174,6 +190,8 @@ export interface PermissionRequestInput extends HookInputBase {
   hook_event_name: "PermissionRequest";
   tool_name: string;
   tool_input: unknown;
+  /** The MCP server this tool belongs to; absent for built-in tools. `tool_name` stays the server's own tool name. */
+  server?: string;
   permission_suggestions?: unknown[];
 }
 

@@ -43,6 +43,11 @@ const TEST_AGENT_INTERACTION_EVENT: DevDataLogEvent = {
 
 const SCHEMA = "0.2.0";
 
+/** Built at run time so no secret-shaped literal sits in the source. */
+const CANARY_KEY = ["sk", "ant", "api03", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4"].join(
+  "-",
+);
+
 describe("DataLogger", () => {
   let dataLogger: DataLogger;
   const tempDir = path.join(process.cwd(), "temp-test-data");
@@ -189,12 +194,55 @@ describe("DataLogger", () => {
       );
       expect(fs.existsSync(filepath)).toBe(true);
 
-      // Read file contents and verify
-      const fileContent = fs.readFileSync(filepath, "utf8");
-      expect(fileContent).toContain('"eventName":"chatInteraction"');
-      expect(fileContent).toContain('"prompt":"Hello, world!"');
-      expect(fileContent).toContain('"completion":"Hello, world!"');
-      expect(fileContent).toContain('"tools":["test-tool1"]');
+      // STOR4: sizes and a hash, not the texts
+      const last = JSON.parse(
+        fs
+          .readFileSync(filepath, "utf8")
+          .trim()
+          .split(String.fromCharCode(10))
+          .pop()!,
+      );
+      expect(last.eventName).toBe("chatInteraction");
+      expect(last.prompt).toBeUndefined();
+      expect(last.completion).toBeUndefined();
+      expect(last.promptBytes).toBe(13);
+      expect(last.completionBytes).toBe(13);
+      expect(last.promptSha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(last.tools).toEqual(["test-tool1"]);
+      expect(last.sessionId).toBe("1234");
+    });
+
+    it("keeps the full prompt only in the debug prompt log, when it is on", async () => {
+      const dir = path.join(
+        process.env.CONTINUE_GLOBAL_DIR!,
+        "logs",
+        "prompts",
+      );
+      fs.rmSync(dir, { recursive: true, force: true });
+      dataLogger.ideSettingsPromise = Promise.resolve({
+        userToken: "",
+        debugPromptLog: true,
+      } as IdeSettings);
+      await dataLogger.logLocalData({
+        ...TEST_AGENT_INTERACTION_EVENT,
+        data: {
+          ...TEST_AGENT_INTERACTION_EVENT.data,
+          prompt: `debug prompt ${CANARY_KEY}`,
+        },
+      });
+      const files = fs.readdirSync(dir);
+      expect(files).toHaveLength(1);
+      const entry = JSON.parse(
+        fs.readFileSync(path.join(dir, files[0]), "utf8").trim(),
+      );
+      expect(entry.prompt).toContain("debug prompt");
+      expect(entry.prompt).not.toContain(CANARY_KEY);
+      expect(entry.sessionId).toBe("1234");
+      const devData = fs.readFileSync(
+        getDevDataFilePath("chatInteraction", SCHEMA),
+        "utf8",
+      );
+      expect(devData).not.toContain("debug prompt");
     });
   });
 

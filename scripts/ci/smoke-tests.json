@@ -1,0 +1,13 @@
+{
+  "$comment": "Tests that always run with an affected-only selection (scripts/ci/affected-tests.mjs, docs/ci-merge-gate.md section 9). Paths are relative to the suite's directory. A proposal: the owner chooses the final set (plans/research/ci-pipeline-redesign.md 3.1, item 3).",
+  "core-vitest": [
+    "config/yaml/loadYaml.vitest.ts",
+    "config/ConfigHandler.vitest.ts"
+  ],
+  "gui": [
+    "src/pages/gui/StreamError.test.tsx",
+    "src/components/StyledMarkdownPreview/utils/commandExtractor.test.ts",
+    "src/redux/thunks/longSession.test.ts"
+  ],
+  "cli": ["src/args.test.ts", "src/config.test.ts"]
+}

@@ -1,0 +1,61 @@
+---
+title: "Accessibility"
+description: "Keyboard paths, what a screen reader hears, high contrast and reduced motion in the chat"
+---
+
+This page describes how to drive the chat from the keyboard, what a screen reader is told, and how the chat responds to high contrast and reduced motion. It covers the VS Code extension and the JetBrains plugin; differences are marked.
+
+## Keyboard
+
+### Chat input
+
+- **Focus the input:** `Ctrl+L` (`Cmd+L` on macOS) in VS Code.
+- **Leave the input:** `Escape` returns focus to the editor in VS Code. In JetBrains it closes the sidebar.
+- **Stop a reply:** `Escape` in an empty input while the reply streams asks **Stop the response?**; `Enter` stops and `Escape` keeps going. The question is an `alertdialog` that takes focus and gives it back when it closes. The **Stop** button declares `aria-keyshortcuts="Escape"`; reached with the keyboard it asks too. See [Stop, Resume and recovering a turn](/ide-extensions/agent/stop-and-resume).
+- **New chat:** `Ctrl+L` (`Cmd+L`) from the focused input starts a new chat. While the agent works it asks first, the same way.
+- **Earlier messages:** at the start of the input, `Up` recalls an earlier message; `Down` at the end moves forward again.
+- **Mention list (`@`):** `Up` and `Down` move through the list, `Enter` or `Tab` chooses the highlighted item, and `Escape` closes the list without leaving the input.
+
+### The conversation
+
+The conversation is a landmark named **Conversation**. Each message in it is an article named **You** or **Assistant**, so a screen reader can jump by landmark or by article and tell who spoke without reading the text. Tool calls appear inside the assistant's article and keep their own names.
+
+When you scroll up while the assistant is replying, the chat stops following the new text. A **Jump to latest** button appears under the conversation, directly after it in the tab order. Press `Enter` or `Space` on it to scroll to the end; focus then moves to the chat input. When you are back at the bottom, following resumes by itself.
+
+### Approving a command
+
+When the agent asks to run a command, an **Approval needed** group appears above the input.
+
+- Focus moves to the first **Accept** button unless you are typing: a field that holds text, or a character key pressed in the last two seconds, keeps focus where it is.
+- `Ctrl+Enter` (`Cmd+Enter` on macOS) accepts the first pending command from anywhere in the chat.
+- Reject a command, or stop a running terminal command, with its **Reject** or **Stop** button. `Backspace` combinations delete text and never reject or stop anything; `Escape` in an empty input asks before it stops.
+- With several commands pending, **Accept all** accepts every one. Accepting or rejecting one moves focus to the next pending command's **Accept** button.
+- When the last pending command is accepted or rejected, focus goes to the chat input. If you had already moved focus somewhere else, it stays there.
+
+The buttons declare their shortcuts with `aria-keyshortcuts`, and each button is described by the command it applies to.
+
+## What a screen reader hears
+
+The chat has two visually hidden live regions that stay in the page. Everything the chat says unprompted goes through them, and nothing in the conversation itself is a live region, so text is not read as it streams.
+
+| When | What is said | Region |
+| --- | --- | --- |
+| A reply starts | "Assistant is responding" | Polite |
+| A reply ends | "Assistant replied:" and the first 200 characters of the reply | Polite |
+| A tool call starts, finishes, fails or is canceled | The tool's name and "running", "finished", "failed" or "canceled" | Polite |
+| A tool call needs approval | "Approval needed:", the tool's name and the command or path, and "and N more" when several are waiting | Assertive |
+| You scrolled up and new content arrived | "New messages below", once for each time auto-scroll pauses | Polite |
+
+A session you open from history is not announced; only changes after it loads are. Commands and arguments are masked the same way they are on screen before they are read aloud, so a secret is not spoken.
+
+## High contrast
+
+In a VS Code high contrast theme, or when the system forces colors, status chips get a visible border and keep their words, so a state is never carried by color alone. Keyboard focus gets an outline in the theme's focus color (the system highlight color when colors are forced).
+
+## Reduced motion
+
+The chat stops its animations and transitions when VS Code's **Reduce Motion** setting is on or the operating system asks for reduced motion. The glyphs and words that go with a spinner or a pulse stay. **Jump to latest** scrolls instantly instead of smoothly in that case.
+
+## Known gaps
+
+- The JetBrains plugin renders the same page in an embedded browser. It has not been checked with the screen readers of its platform, and the keyboard shortcuts above that use `Escape` or `Alt` differ there as noted.

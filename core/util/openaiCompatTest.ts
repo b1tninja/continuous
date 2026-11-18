@@ -25,6 +25,13 @@ import {
   recordProbe,
 } from "./measuredFacts.js";
 import { testAnthropicConnection } from "./anthropicSurfaceTest.js";
+import {
+  lookupProviderModel,
+  type ModelCheck,
+  toModelCheck,
+} from "./providerModelLookup.js";
+import { readModelCatalogSettings } from "../llm/modelCatalogStore.js";
+import { writeCachedModelFacts } from "../llm/providerModelInfoStore.js";
 import type { RetirementNotice } from "./modelRetirement.js";
 import { recordLive } from "./retirementNoticeState.js";
 import { getOllamaShowHint } from "./ollamaShowHint.js";
@@ -39,6 +46,12 @@ export interface OpenAICompatTestInput {
   apiKey?: string;
   /** Model to probe for tool calls; without one only the listing runs. */
   model?: string;
+  /**
+   * The model id the person configured, checked against the server with
+   * `GET {base}/models/{id}` (Anthropic and OpenAI also report its facts).
+   * For Anthropic it defaults to `model`; elsewhere `model` is only probed.
+   */
+  checkModel?: string;
   timeoutMs?: number;
   fetchFn?: TestFetch;
   /**
@@ -51,6 +64,8 @@ export interface OpenAICompatTestInput {
   now?: string;
   /** For tests: the retirement-notice state file (Anthropic only). */
   noticeFile?: string;
+  /** For tests: where the provider model facts are kept (model-catalog/). */
+  providerInfoDir?: string;
 }
 
 export type TestFetch = (
@@ -91,6 +106,8 @@ export type OpenAICompatTestResult =
       template?: string;
       /** Anthropic only: deprecation or retirement notices for the tested model. */
       retirement?: RetirementNotice[];
+      /** Whether the configured model id exists for this key, and what the provider reports for it. */
+      modelCheck?: ModelCheck;
     }
   | { ok: false; error: string };
 
@@ -113,6 +130,9 @@ function describeFailure(
 ): string {
   if (status === 401 || status === 403) {
     return `The server rejected the API key (HTTP ${status}).`;
+  }
+  if (status === 429) {
+    return "The server is rate limiting this key (HTTP 429). Try again in a minute.";
   }
   if (status === 404) {
     return "The server answered 404 for /models. Check the API base (it usually ends in /v1).";
@@ -206,10 +226,11 @@ async function testAnthropic(
   input: OpenAICompatTestInput,
 ): Promise<OpenAICompatTestResult> {
   const today = input.now ?? new Date().toISOString().slice(0, 10);
+  const checked = input.checkModel ?? input.model;
   const res = await testAnthropicConnection({
     apiKey: input.apiKey,
     apiBase: input.apiBase,
-    models: input.model ? [input.model] : [],
+    models: checked ? [checked] : [],
     timeoutMs: input.timeoutMs,
     fetchFn: input.fetchFn,
     now: today,
@@ -222,11 +243,81 @@ async function testAnthropic(
       }
     }
   }
+  const modelCheck = res.modelChecks[0];
+  keepFacts(input, "anthropic", modelCheck);
   return {
     ok: true,
     models: res.models,
     ...(res.notices.length ? { retirement: res.notices } : {}),
+    ...(modelCheck ? { modelCheck } : {}),
   };
+}
+
+/**
+ * Keep what the provider reported for the configured model, for the window
+ * and output cap (core/llm/providerModelInfoStore.ts). Test connection is the
+ * person's own action, so it is kept under `automatic` and `manual`; with
+ * model information updates off nothing is kept. Never throws.
+ */
+function keepFacts(
+  input: OpenAICompatTestInput,
+  provider: "anthropic" | "openai",
+  check: ModelCheck | undefined,
+): void {
+  if (check?.status !== "found" || input.record === false) return;
+  try {
+    if (readModelCatalogSettings().policy === "off") return;
+    writeCachedModelFacts(
+      {
+        provider,
+        apiBase: input.apiBase,
+        apiKey: input.apiKey,
+        model: check.model,
+      },
+      check.facts,
+      { dir: input.providerInfoDir },
+    );
+  } catch {
+    // advisory
+  }
+}
+
+/**
+ * The configured id against an OpenAI-compatible server: listed, or
+ * answered by `GET {base}/models/{id}`. OpenAI's own API is always asked,
+ * for `shutdown_date`. A server without that route is "not checked", never
+ * a failed connection.
+ */
+async function checkOpenAICompatModel(
+  input: OpenAICompatTestInput,
+  base: string,
+  models: string[],
+  model: string,
+): Promise<ModelCheck> {
+  const isOpenAI = input.provider === "openai";
+  if (models.includes(model) && !isOpenAI) {
+    return toModelCheck("openai", model, {
+      kind: "found",
+      facts: { id: model },
+    });
+  }
+  const result = await lookupProviderModel({
+    provider: "openai",
+    apiBase: base,
+    apiKey: input.apiKey,
+    model,
+    listed: models,
+    ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
+    ...(input.fetchFn ? { fetchFn: input.fetchFn } : {}),
+  });
+  // Listed, but the per-model route failed: the list already answered
+  if (result.kind === "failed" && models.includes(model)) {
+    return toModelCheck("openai", model, {
+      kind: "found",
+      facts: { id: model },
+    });
+  }
+  return toModelCheck("openai", model, result, { isOpenAI });
 }
 
 /** Test one endpoint; never throws. */
@@ -246,7 +337,14 @@ export async function testOpenAICompatConnection(
     };
   }
   const models = modelIds(listed.data);
-  if (!input.model) return { ok: true, models };
+  const checked = input.checkModel;
+  const modelCheck = checked
+    ? await checkOpenAICompatModel(input, base, models, checked)
+    : undefined;
+  if (input.provider === "openai") keepFacts(input, "openai", modelCheck);
+  if (!input.model) {
+    return { ok: true, models, ...(modelCheck ? { modelCheck } : {}) };
+  }
 
   const show = await getOllamaShowHint({
     provider: input.provider,
@@ -322,6 +420,7 @@ export async function testOpenAICompatConnection(
   return {
     ok: true,
     models,
+    ...(modelCheck ? { modelCheck } : {}),
     ...(note ? { template: note } : {}),
     probe: {
       ok: true,

@@ -10,6 +10,7 @@ import { setLocalStorage } from "@gui/util/localStorage";
 import { shouldForwardProp } from "@gui/styles/shouldForwardProp";
 import App from "@gui/App";
 import { BedrockConnectionTester } from "@gui/forms/BedrockConnectionTester";
+import { ProviderSetupFlow } from "@gui/components/ProviderSetup/ProviderSetupFlow";
 import "@gui/index.css";
 import React from "react";
 import ReactDOM from "react-dom/client";
@@ -65,7 +66,14 @@ async function main() {
         <StyleSheetManager shouldForwardProp={shouldForwardProp}>
           <IdeMessengerProvider messenger={messenger}>
             <Provider store={store}>
-              {fixtureName.startsWith("bedrock") ? (
+              {fixtureName.startsWith("catalogue") ? (
+                <div className="bg-background text-foreground p-2">
+                  <ProviderSetupFlow
+                    initialProvider="openrouter"
+                    onDone={() => {}}
+                  />
+                </div>
+              ) : fixtureName.startsWith("bedrock") ? (
                 <div className="bg-background text-foreground p-2">
                   <BedrockConnectionTester
                     connection={{ region: "eu-west-1" }}

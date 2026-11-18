@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchModels, windowFromInputAndOutput } from "./fetchModels";
+import { ANTHROPIC_LIST_VERSION } from "../util/anthropicApiVersion";
+import {
+  anthropicModelToFetched,
+  fetchModels,
+  windowFromInputAndOutput,
+} from "./fetchModels";
 
 // Provider list requests go through the shared fetch; stand in for it with the
 // global stub these tests already use.
@@ -65,6 +70,115 @@ describe("fetchModels: separate input/output limits", () => {
     expect(String(url)).not.toContain("api.anthropic.com");
   });
 
+  it("Anthropic: follows has_more and last_id until the list ends", async () => {
+    const pages = [
+      {
+        data: [{ id: "claude-a", display_name: "A" }],
+        has_more: true,
+        last_id: "claude-a",
+      },
+      {
+        data: [{ id: "claude-b", display_name: "B" }],
+        has_more: false,
+        last_id: "claude-b",
+      },
+    ];
+    const fn = vi.fn(
+      async () => new Response(JSON.stringify(pages.shift()), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fn);
+    const models = await fetchModels("anthropic", "key");
+    expect(models.map((m) => m.modelId)).toEqual(["claude-a", "claude-b"]);
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(String((fn.mock.calls[0] as any)[0])).toBe(
+      "https://api.anthropic.com/v1/models?limit=100",
+    );
+    expect(String((fn.mock.calls[1] as any)[0])).toBe(
+      "https://api.anthropic.com/v1/models?limit=100&after_id=claude-a",
+    );
+  });
+
+  it("Anthropic: stops at the page cap when has_more never clears", async () => {
+    let n = 0;
+    const fn = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: [{ id: `claude-${n}` }],
+            has_more: true,
+            last_id: `claude-${n++}`,
+          }),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal("fetch", fn);
+    const models = await fetchModels("anthropic", "key");
+    expect(fn).toHaveBeenCalledTimes(10);
+    expect(models).toHaveLength(10);
+  });
+
+  it("Anthropic: a repeated cursor ends the loop", async () => {
+    const fn = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: [{ id: "x" }],
+            has_more: true,
+            last_id: "x",
+          }),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal("fetch", fn);
+    await fetchModels("anthropic", "key");
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it("Anthropic: lists with the newer anthropic-version (K23)", async () => {
+    respond({ data: [{ id: "claude-sonnet-4-6" }] });
+    await fetchModels("anthropic", "key");
+    const [, init] = (fetch as any).mock.calls[0];
+    expect(init.headers["anthropic-version"]).toBe("2026-10-21");
+    expect(init.headers["anthropic-version"]).toBe(ANTHROPIC_LIST_VERSION);
+  });
+
+  it("Anthropic: falls back to 2023-06-01 on a 400 and keeps it for later pages", async () => {
+    const seen: string[] = [];
+    const pages = [
+      { data: [{ id: "claude-a" }], has_more: true, last_id: "claude-a" },
+      { data: [{ id: "claude-b" }], has_more: false, last_id: "claude-b" },
+    ];
+    const fn = vi.fn(async (_url: unknown, init: any) => {
+      const version = init.headers["anthropic-version"];
+      seen.push(version);
+      if (version === "2026-10-21") {
+        return new Response(
+          JSON.stringify({ error: { type: "invalid_request_error" } }),
+          { status: 400 },
+        );
+      }
+      return new Response(JSON.stringify(pages.shift()), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fn);
+    const models = await fetchModels("anthropic", "key");
+    expect(models.map((m) => m.modelId)).toEqual(["claude-a", "claude-b"]);
+    expect(seen).toEqual(["2026-10-21", "2023-06-01", "2023-06-01"]);
+  });
+
+  it("Anthropic: a 400 on both versions is still an error", async () => {
+    const fn = vi.fn(async () => new Response("{}", { status: 400 }));
+    vi.stubGlobal("fetch", fn);
+    await expect(fetchModels("anthropic", "key")).rejects.toThrow("400");
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it("Anthropic: a 401 is not retried with the older version", async () => {
+    const fn = vi.fn(async () => new Response("{}", { status: 401 }));
+    vi.stubGlobal("fetch", fn);
+    await expect(fetchModels("anthropic", "key")).rejects.toThrow("401");
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
   it("Gemini: input budget equals inputTokenLimit", async () => {
     respond({
       models: [
@@ -86,5 +200,55 @@ describe("fetchModels: separate input/output limits", () => {
     await fetchModels("gemini", "key", "https://llm.example/v1beta");
     const [url] = (fetch as any).mock.calls[0];
     expect(String(url)).toContain("https://llm.example/v1beta/models");
+  });
+});
+
+describe("anthropicModelToFetched", () => {
+  it("reads image input, lifecycle and the retirement date", () => {
+    const m = anthropicModelToFetched({
+      id: "claude-sonnet-4-5-20250929",
+      display_name: "Claude Sonnet 4.5",
+      max_input_tokens: 200_000,
+      max_tokens: 64_000,
+      capabilities: { image_input: { supported: true } },
+      lifecycle: "deprecated",
+      retires_at: "2026-11-30T00:00:00Z",
+    });
+    expect(m).toMatchObject({
+      modelId: "claude-sonnet-4-5-20250929",
+      contextLength: 264_000,
+      maxTokens: 64_000,
+      supportsImages: true,
+      deprecated: true,
+      retiresAt: "2026-11-30T00:00:00Z",
+    });
+    // Effort levels would become OpenAI-style reasoning_effort variants
+    expect(m.reasoningEfforts).toBeUndefined();
+  });
+
+  it("says a model takes no images only when the API says so", () => {
+    expect(
+      anthropicModelToFetched({
+        id: "a",
+        capabilities: { image_input: { supported: false } },
+      }).supportsImages,
+    ).toBe(false);
+    const bare = anthropicModelToFetched({ id: "b" });
+    expect("supportsImages" in bare).toBe(false);
+    expect(bare.deprecated).toBeUndefined();
+    expect("retiresAt" in bare).toBe(false);
+  });
+
+  it("ignores a retirement date that does not parse and an active model's null", () => {
+    expect(
+      anthropicModelToFetched({ id: "c", retires_at: "soon" }).retiresAt,
+    ).toBeUndefined();
+    const active = anthropicModelToFetched({
+      id: "d",
+      lifecycle: "active",
+      retires_at: null,
+    });
+    expect(active.deprecated).toBe(false);
+    expect(active.retiresAt).toBeUndefined();
   });
 });

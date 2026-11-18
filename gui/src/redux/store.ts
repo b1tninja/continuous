@@ -40,7 +40,10 @@ const saveSubsetFilters = [
   createFilter("session", [
     "id",
     "lastSessionId",
+    "lastSessionIdByWorkspace",
     "title",
+    // Lets start-up tell whether the stored session is this workspace's
+    "sessionWorkspaceDirectory",
 
     // Persist edit mode in case closes in middle
     "mode",
@@ -63,6 +66,9 @@ const saveSubsetFilters = [
     "reasoningSettings",
     "promptCacheSettings",
     "dismissedCacheTips",
+    "applyToolChangesAtOnce",
+    "archivedAgents",
+    "archivedSessions",
   ]),
   createFilter("indexing", []),
   createFilter("tabs", ["tabs"]),

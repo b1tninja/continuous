@@ -120,8 +120,8 @@ describe("Auto mode in evaluateToolPolicies", () => {
     expect(note.payload.note).toBe("Auto: Not sure. [uncertain]");
   });
 
-  it("never asks the reviewer about an ask rule or a protected path", async () => {
-    for (const source of ["ask-rule", "protected-path"]) {
+  it("never asks the reviewer about an ask rule, a protected path or the secret-read plus network pair", async () => {
+    for (const source of ["ask-rule", "protected-path", "secret-egress"]) {
       const { result, review } = await run(
         "run_terminal_command",
         { policy: ASK, source, reason: "x" },

@@ -93,21 +93,34 @@ class WatsonX extends BaseLLM {
 
   static providerName = "watsonx";
 
-  protected _convertMessage(message: ChatMessage) {
-    let message_ = message as any;
-    if (message_.role === "tool") {
-      message_.tool_call_id = (message as ToolResultChatMessage).toolCallId;
-      delete message_.toolCallId;
-    } else if (message.role === "assistant" && !!message.toolCalls) {
-      message_.tool_calls = message.toolCalls.map((t) => ({
-        ...t,
-        type: "function",
-      }));
-      delete message_.toolCalls;
-      delete message_.content;
-    } else if (message_.role === "user") {
+  /**
+   * One message in WatsonX's chat format. Builds a new object and never
+   * changes `message`: a retry on a dropped connection, or a fallback route,
+   * converts the same messages again.
+   */
+  protected _convertMessage(message: ChatMessage): any {
+    if (message.role === "thinking") {
+      // WatsonX has no reasoning turn; the reasoning is not sent back.
+      return null;
+    }
+    if (message.role === "tool") {
+      const { toolCallId, ...rest } = message as ToolResultChatMessage;
+      return { ...rest, tool_call_id: toolCallId };
+    } else if (message.role === "assistant" && !!message.toolCalls?.length) {
+      const { toolCalls, content: _content, ...rest } = message;
+      return {
+        ...rest,
+        tool_calls: toolCalls.map((t) => ({
+          ...t,
+          type: "function",
+        })),
+      };
+    } else if (message.role === "user") {
       if (typeof message.content === "string") {
-        message_.content = [{ type: "text", text: message_.content }];
+        return {
+          ...message,
+          content: [{ type: "text", text: message.content }],
+        };
       } else {
         return {
           role: "user",
@@ -130,7 +143,12 @@ class WatsonX extends BaseLLM {
         };
       }
     }
-    return message_;
+    if (message.role === "assistant" && message.toolCalls) {
+      // `toolCalls: []` would go out as `tool_calls: []`
+      const { toolCalls: _empty, ...rest } = message;
+      return rest;
+    }
+    return message;
   }
 
   protected _convertArgs(options: any, messages: ChatMessage[]) {

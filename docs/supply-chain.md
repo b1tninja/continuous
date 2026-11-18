@@ -26,7 +26,7 @@ Out of scope for now: pinning the existing actions that use tags (`actions/check
 
 `.github/workflows/supply-chain.yml` runs `actions/dependency-review-action` on pull requests with `fail-on-severity: high`. The repository's dependency graph is available (the SBOM endpoint answered with 6,445 packages on 2026-11-10), which the action needs. The job has only `contents: read` and no secrets, and posts no comment.
 
-It is **not a required check**. The merge gate (`docs/ci-merge-gate.md`) waits only for the two aggregate jobs named in its `REQUIRED_CHECKS`, so a separate workflow cannot block or stall a merge. Do not add it to that list or to an aggregate `needs`. A high-severity advisory on a dependency a pull request adds should be read before merge; the failure is a signal for the reviewer.
+It is **not a required check**. The merge gate (`docs/ci-merge-gate.md`) evaluates only the PR Checks and CLI PR Checks workflows it calls, so a separate workflow cannot block or stall a merge. Do not add it to the gate's `needs`. A high-severity advisory on a dependency a pull request adds should be read before merge; the failure is a signal for the reviewer.
 
 The same workflow runs `check-pins.mjs` and `check-notice.mjs` and their tests as a second job, also not required.
 

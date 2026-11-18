@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { HIDDEN_CHARACTERS } from "../../../util/hiddenCharacters";
 
 /**
  * Reviewer guidance: the plain sentences a person writes in their own
@@ -35,10 +36,7 @@ export interface GuidanceAssembly {
 
 export const EMPTY_GUIDANCE: EffectiveGuidance = { block: [], allow: [] };
 
-// Zero-width, bidi, soft hyphen, word joiner and invisible operators, BOM,
-// Mongolian vowel separator, interlinear annotation, and the Unicode tag block.
-const HIDDEN =
-  /[\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180B-\u180F\u200B-\u200F\u202A-\u202E\u2060-\u206F\u3164\uFE00-\uFE0F\uFEFF\uFFA0\uFFF9-\uFFFB\u{E0000}-\u{E007F}]/gu;
+// The hidden characters are the shared set (core/util/hiddenCharacters.ts)
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u001F\u007F-\u009F]/g;
 
@@ -46,7 +44,7 @@ const CONTROL = /[\u0000-\u001F\u007F-\u009F]/g;
 export function normaliseGuidanceText(text: string): string {
   return text
     .normalize("NFKC")
-    .replace(HIDDEN, "")
+    .replace(HIDDEN_CHARACTERS, "")
     .replace(/[\r\n\t\u2028\u2029]+/g, " ")
     .replace(CONTROL, "")
     .replace(/\s+/g, " ")
