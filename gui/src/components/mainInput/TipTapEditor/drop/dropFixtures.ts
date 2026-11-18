@@ -1,4 +1,5 @@
 import { DataTransferLike, FileLike } from "./classifyDrop";
+import { EntryLike, ReadableFile } from "./osSnapshot";
 
 /**
  * Fixture drags shaped like what VS Code and Chromium put on a drag
@@ -86,4 +87,96 @@ export function textDrag(text: string): DataTransferLike & {
 
 export function fakeFile(name: string, type: string, size = 1000): FileLike {
   return { name, type, size };
+}
+
+/** A dropped file with bytes, as `File.arrayBuffer()` returns them. */
+export function textFile(
+  name: string,
+  content: string | Uint8Array,
+  type = "text/plain",
+): ReadableFile & { reads: number } {
+  const bytes =
+    typeof content === "string" ? new TextEncoder().encode(content) : content;
+  const file = {
+    name,
+    type,
+    size: bytes.length,
+    reads: 0,
+    async arrayBuffer() {
+      file.reads++;
+      return bytes.slice().buffer as ArrayBuffer;
+    },
+  };
+  return file;
+}
+
+/** A file entry, as `webkitGetAsEntry()` returns one. */
+export function fakeFileEntry(name: string, file?: ReadableFile): EntryLike {
+  return {
+    name,
+    isFile: true,
+    isDirectory: false,
+    file(success, error) {
+      if (file) success(file);
+      else error?.(new Error("NotFoundError"));
+    },
+  };
+}
+
+/**
+ * A folder entry. `children` is either a list of entries, or a map from name
+ * to file content (a string) or to a nested map (a folder). `readEntries`
+ * hands out at most 100 entries per call, as Chromium does.
+ */
+export function fakeDirEntry(
+  name: string,
+  children: EntryLike[] | FolderSpec,
+): EntryLike {
+  const entries = Array.isArray(children)
+    ? children
+    : Object.entries(children).map(([n, v]) =>
+        typeof v === "string" || v instanceof Uint8Array
+          ? fakeFileEntry(n, textFile(n, v))
+          : fakeDirEntry(n, v),
+      );
+  return {
+    name,
+    isFile: false,
+    isDirectory: true,
+    createReader() {
+      let at = 0;
+      return {
+        readEntries(success) {
+          const batch = entries.slice(at, at + 100);
+          at += batch.length;
+          setTimeout(() => success(batch), 0);
+        },
+      };
+    },
+  };
+}
+
+export interface FolderSpec {
+  [name: string]: string | Uint8Array | FolderSpec;
+}
+
+/**
+ * An OS drag whose `items` carry entries, paired with `files` in order. An
+ * undefined entry stands for a host without `webkitGetAsEntry`.
+ */
+export function osEntryDrag(
+  pairs: [FileLike, EntryLike | undefined][],
+): DataTransferLike & { files: FileLike[] } {
+  const dt = fakeDataTransfer(
+    {},
+    pairs.map(([f]) => f),
+  );
+  return {
+    ...dt,
+    items: pairs.map(([, entry]) =>
+      entry
+        ? { kind: "file", webkitGetAsEntry: () => entry }
+        : { kind: "file" },
+    ),
+  };
 }

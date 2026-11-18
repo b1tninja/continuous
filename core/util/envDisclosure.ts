@@ -1,3 +1,4 @@
+import { stripInvisible } from "./fetchedText.js";
 import { redact, scanText } from "./secretScan/index.js";
 
 /**
@@ -187,48 +188,19 @@ export function maskUrlCredentials(value: string): string {
 }
 
 /**
- * Hidden characters removed from every environment value: soft hyphen, Arabic
- * letter mark, Mongolian vowel separator, zero-width space, direction marks,
- * line and paragraph separators, bidirectional controls and isolates, word
- * joiner and invisible operators, BOM, and the Unicode tag block (U+E0000 to
- * U+E007F) that can spell a hidden instruction in plain ASCII. ZWJ (U+200D)
- * and ZWNJ (U+200C) are kept: they are part of words in Persian and Indic
- * file names and of emoji. This is the one character set for environment
- * text; the fetch sanitiser's wider set is not used here.
- */
-const HIDDEN =
-  /[\u00AD\u061C\u180E\u200B\u200E\u200F\u2028\u2029\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\u{E0000}-\u{E007F}]/gu;
-// C0 and C1 controls and DEL; tab, line feed and carriage return are not hidden
-// eslint-disable-next-line no-control-regex
-const CONTROLS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g;
-
-function codePoints(text: string): number {
-  let n = 0;
-  for (const _ of text) n++;
-  return n;
-}
-
-/** `text` without hidden and control characters, and how many code points went. */
-export function stripHidden(text: string): { text: string; removed: number } {
-  const stripped = text.replace(HIDDEN, "").replace(CONTROLS, "");
-  return { text: stripped, removed: codePoints(text) - codePoints(stripped) };
-}
-
-/**
  * Escape the characters that could open or close a tag in the text around a
- * value, or end an attribute if a tag ever gains one (`&`, `<`, `>`, `"`).
- * `keepQuotes` leaves `"` alone, for text that already carries quoting its
- * reader needs, such as git's own porcelain lines.
+ * value (`&`, `<`, `>`). Quotes are left as they are: environment values sit
+ * in element bodies, never in attributes, and an escaped quote in a file name
+ * would make the model write a wrong command.
  */
-export function escapeMarkup(text: string, keepQuotes = false): string {
-  const out = text
+export function escapeMarkup(text: string): string {
+  return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
-  return keepQuotes ? out : out.replace(/"/g, "&quot;");
 }
 
-export interface SanitizeOptions {
+export interface SanitiseOptions {
   /** Most characters kept, counted after escaping. */
   maxChars: number;
   /** Most lines kept. */
@@ -237,16 +209,20 @@ export interface SanitizeOptions {
   singleLine?: boolean;
   /** Run the shared secret scanner over the value. */
   secrets?: boolean;
-  /** Leave `"` unescaped: only for text that carries git's own quoting. */
-  keepQuotes?: boolean;
 }
 
-export interface SanitizedValue {
+export interface SanitisedValue {
   text: string;
   /** Hidden or control characters removed (code points). */
   removed: number;
   /** True when a cap cut the value. */
   truncated: boolean;
+}
+
+function codePoints(text: string): number {
+  let n = 0;
+  for (const _ of text) n++;
+  return n;
 }
 
 /** Cut at `max` characters without leaving half an `&...;` entity. */
@@ -259,20 +235,20 @@ function cutChars(text: string, max: number): string {
 
 /**
  * One environment value made safe to show a model as data: hidden and control
- * characters removed (`stripHidden`), secrets redacted when asked, markup
- * escaped, then capped by lines and characters with a visible notice. Never a
- * silent cut. This is the only sanitiser for environment text: the workspace
- * formatters and the renderer both call it.
+ * characters removed (`stripInvisible`, the fetch sanitiser in core), secrets
+ * redacted when asked, markup escaped, then capped by lines and characters
+ * with a visible notice. Never a silent cut.
  */
-export function sanitizeEnvValue(
+export function sanitiseEnvValue(
   value: string,
-  options: SanitizeOptions,
-): SanitizedValue {
+  options: SanitiseOptions,
+): SanitisedValue {
   let text = value;
   if (options.singleLine) text = text.replace(/[\r\n\t]+/g, " ");
-  const { text: stripped, removed } = stripHidden(text);
+  const stripped = stripInvisible(text);
+  const removed = codePoints(text) - codePoints(stripped);
   text = options.secrets ? scanSecrets(stripped) : stripped;
-  text = escapeMarkup(text, options.keepQuotes);
+  text = escapeMarkup(text);
   let truncated = false;
   if (options.maxLines !== undefined && !options.singleLine) {
     const lines = text.split(/\r?\n/);
@@ -301,10 +277,10 @@ export const REPOSITORY_DATA_NOTICE =
  */
 export function fenceRepositoryData(
   lines: readonly string[],
-  options: SanitizeOptions,
-): SanitizedValue {
+  options: SanitiseOptions,
+): SanitisedValue {
   const joined = lines.join("\n");
-  const value = sanitizeEnvValue(joined, options);
+  const value = sanitiseEnvValue(joined, options);
   const parts = [REPOSITORY_DATA_NOTICE, value.text];
   if (value.removed > 0) {
     parts.push(

@@ -1179,6 +1179,30 @@ Object.assign(FIXTURES, {
     });
     await sleep(400);
   },
+  /** Files dropped from the operating system: a snapshot chip, and a binary refused */
+  "drop-snapshot": async ({ store }: FixtureContext) => {
+    store.dispatch(newSession());
+    await sleep(800);
+    const target = document.querySelector(
+      "[data-testid=editor-input-main]",
+    ) as HTMLElement | null;
+    if (!target) return;
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(
+      new File(["# Release checklist\n\n- tag\n- notes\n"], "checklist.md", {
+        type: "text/markdown",
+      }),
+    );
+    dataTransfer.items.add(
+      new File([new Uint8Array([0x4d, 0x5a, 0, 0, 1, 2])], "setup.exe", {
+        type: "application/octet-stream",
+      }),
+    );
+    target.dispatchEvent(
+      new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }),
+    );
+    await sleep(600);
+  },
 });
 
 export const FIXTURE_NAMES = Object.keys(FIXTURES);

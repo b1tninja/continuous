@@ -50,21 +50,39 @@ Drop files, folders, images or text on the chat input. In VS Code, hold Shift wh
 | An image                                     | An image in the message, if the selected model reads images. At most 10 images per message, 5 MB each              |
 | Text                                         | Text at the cursor, with hidden characters (bidi controls, zero-width spaces, tag characters) removed              |
 | A link                                       | The link as text. Nothing is fetched                                                                               |
+| A text file from outside VS Code             | A snapshot chip with the file's content, read when you drop it. See [Files from outside VS Code](#files-from-outside-vs-code) |
+| A folder from outside VS Code                | A snapshot chip for each text file in it, within the limits below                                                  |
 
 Some drops are refused, and the input says which file and why:
 
 - Files that look like they hold secrets: `.env` files, keys and certificates (`*.pem`, `*.key`, `id_rsa`), and folders such as `.ssh` and `.aws`. This is the same list the '@Files' picker leaves out. Nothing reads a refused file.
 - Files outside the workspace folders.
-- Files dragged from the operating system's file manager, other than images. The chat gets the file's name but not its location, so it cannot add it by reference; add it with '@Files' instead.
-- Images when the selected model does not read them, and SVG files as images (add an SVG from the workspace to send it as text).
+- Files from outside VS Code that are binary, too large or hold a secret (see below).
+- Images when the selected model does not read them.
 
 Dragging is a shortcut, not the only way: the `+` button at the left of the input has "Add context (@)" and an image picker.
 
-Since VS Code 1.140, drops from the Explorer and from editor tabs do not reach extension webviews even with Shift held ([microsoft/vscode#339036](https://github.com/microsoft/vscode/issues/339036)); files dragged from the operating system still arrive. Until VS Code fixes it, use '@Files' for workspace files, or the Drop Files for Chat view. In JetBrains IDEs the chat runs in an off-screen browser, which is reported not to receive drops; use '@Files' and the `+` button there.
+Since VS Code 1.140, drops from the Explorer and from editor tabs do not reach extension webviews even with Shift held ([microsoft/vscode#339036](https://github.com/microsoft/vscode/issues/339036)); files dragged from the operating system still arrive, and become snapshots. Until VS Code fixes it, use '@Files' for workspace files, or the Drop Files for Chat view. In JetBrains IDEs the chat runs in an off-screen browser, which is reported not to receive drops; use '@Files' and the `+` button there.
+
+### Files from outside VS Code
+
+A file dragged from Windows File Explorer, macOS Finder or another file manager reaches the chat with its name and content but not its location, so it cannot be an `@` file chip. A text file becomes a **snapshot** instead: its content is read once, when you drop it, and sent with your message. The chip is labelled with the file name and a "snapshot" badge. It is not kept in sync: if the file changes afterwards, drop it again. An SVG is text, so it becomes a snapshot rather than an image.
+
+Before anything is attached:
+
+- The name is checked against the same secret patterns as workspace files (`.env*`, `*.pem`, `*.key`, `id_rsa` and the rest). A match is refused without reading the file.
+- A file larger than 200 KB is refused without reading it.
+- The content must be text: UTF-8 (with or without a byte order mark), or UTF-16 with a byte order mark. A file with a NUL byte, or with invalid UTF-8 in more than 1% of its characters, is refused as binary; one stray invalid sequence is allowed.
+- Hidden characters are removed, as for dropped text.
+- The content is scanned for secrets with the same rules Continuous uses elsewhere (API keys, access tokens, private keys, passwords in connection strings and assignments). A file with a match is refused, the note names the kind of secret, and none of the file is attached.
+
+A message can hold at most 20 snapshots and 1 MB of snapshot text in total, counting earlier drops.
+
+A folder from outside VS Code is opened up to two levels down: its own files and the files in its subfolders. `node_modules`, `.git`, `dist` and folders that match the secret patterns are not opened, and the walk stops after 200 entries. Each text file in it becomes a snapshot chip labelled with its path inside the folder, within the same limits, and the note says how many files were added and what was left out and why. If the editor cannot list a dropped folder, the drop is refused; add a workspace folder with "Select Files as Context" in the Explorer's context menu, or with '@Folder'.
 
 ## How to Drop Files and Folders into Chat (VS Code)
 
-From VS Code 1.140, files dragged from the Explorer or an editor tab no longer reach the chat input ([microsoft/vscode#339036](https://github.com/microsoft/vscode/issues/339036)). Continuous adds a small **Drop Files for Chat** view under the chat for this. Drop files or folders on it from the Explorer, an editor tab or your file manager, and each one is added to the chat input as an `@` mention: a file is read when you send the message, and a folder narrows the codebase search to that folder. You can select several items and drop them together.
+From VS Code 1.140, files dragged from the Explorer or an editor tab no longer reach the chat input ([microsoft/vscode#339036](https://github.com/microsoft/vscode/issues/339036)). Continuous adds a small **Drop Files for Chat** view under the chat for this. Drop files or folders on it from the Explorer, an editor tab or your file manager, and each one is added to the chat input as an `@` mention: a file is read when you send the message, and a folder narrows the codebase search to that folder. You can select several items and drop them together. The view has the item's path. A file dropped on the chat input has no path, so that drop is a snapshot; see [Files from outside VS Code](#files-from-outside-vs-code).
 
 Some items are not added, and a message says which and why:
 

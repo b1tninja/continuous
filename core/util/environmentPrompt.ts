@@ -42,11 +42,11 @@ import {
 import {
   maskHome,
   maskUrlCredentials,
-  sanitizeEnvValue,
-  stripHidden,
+  sanitiseEnvValue,
   USER_PLACEHOLDER,
   type MaskContext,
 } from "./envDisclosure";
+import { stripInvisible } from "./fetchedText";
 import {
   describeExecutionShellParts,
   remoteKindOf,
@@ -164,6 +164,16 @@ const MIN_NEVER_LENGTH = 4;
 const USER_MARK = "";
 const WITHHELD_MARK = "";
 const LT = "";
+
+/** Hidden characters go before masking, so one cannot hide an account name. */
+function stripForMask(raw: string): { text: string; removed: number } {
+  const text = stripInvisible(raw);
+  let before = 0;
+  let after = 0;
+  for (const _ of raw) before++;
+  for (const _ of text) after++;
+  return { text, removed: before - after };
+}
 const PATH_CAP = 260;
 
 const PLATFORM_NAMES: Record<string, string> = {
@@ -271,7 +281,7 @@ class Renderer {
       count?: boolean;
     } = {},
   ): string {
-    const stripped = stripHidden(raw);
+    const stripped = stripForMask(raw);
     // Only workspace values count toward the block's removal line
     if (opts.count !== false) this.removed += stripped.removed;
     // The placeholders this step inserts (`<user>`, `<withheld>`) must reach
@@ -288,7 +298,7 @@ class Renderer {
       .join(WITHHELD_MARK)
       .split(LT)
       .join("<");
-    return sanitizeEnvValue(marked, {
+    return sanitiseEnvValue(marked, {
       maxChars: cap,
       singleLine: true,
       secrets: opts.secrets,

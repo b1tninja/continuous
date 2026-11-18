@@ -16,7 +16,7 @@
  * wired into a prompt yet.
  */
 import type { EnvFieldId } from "./environmentContract";
-import { sanitizeEnvValue } from "./envDisclosure";
+import { sanitiseEnvValue } from "./envDisclosure";
 import type { ShellKind } from "./shell";
 
 export type Confidence = "known" | "likely" | "unknown";
@@ -239,7 +239,7 @@ const NOT_CHECKED =
 
 /** A short value from a setting or a file name, safe inside the sentence. */
 function defaultWord(value: string, cap: number): string {
-  return sanitizeEnvValue(value.trim(), { maxChars: cap, singleLine: true })
+  return sanitiseEnvValue(value.trim(), { maxChars: cap, singleLine: true })
     .text;
 }
 

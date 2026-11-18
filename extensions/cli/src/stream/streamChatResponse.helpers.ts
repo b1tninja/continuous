@@ -104,6 +104,26 @@ export interface ToolResultWithStatus extends ChatCompletionToolMessageParam {
   status: ToolStatus;
 }
 
+/**
+ * The tool result for a policy denial. A shell-hint parse failure already
+ * says the command was not run and how to fix it. Wrapping that as a
+ * security-policy refusal tells the model not to retry, which is the
+ * opposite of the hint.
+ */
+export function policyDenialContent(
+  denialMessage: string | undefined,
+  source?: string,
+): string {
+  if (
+    source === "shell-hint" ||
+    (denialMessage?.includes("The command was not run") ?? false)
+  ) {
+    return denialMessage ?? "";
+  }
+  if (!denialMessage) return `Command blocked by security policy`;
+  return `Command blocked by security policy: ${denialMessage} Do not retry it or reach the same result another way. Do what else the request needs, then say what you could not do and why.`;
+}
+
 // Helper function to handle permission denied
 export function handlePermissionDenied(
   toolCall: PreprocessedToolCall,
@@ -148,12 +168,14 @@ let permissionPrompts: Promise<unknown> = Promise.resolve();
 export function requestUserPermission(
   toolCall: PreprocessedToolCall,
   callbacks?: StreamCallbacks,
+  /** Shown with the command, so a shell-hint ask is a warning the person reads. */
+  note?: string,
 ): Promise<boolean> {
   if (!callbacks?.onToolPermissionRequest) {
     return Promise.resolve(false);
   }
   const prompt = permissionPrompts.then(() =>
-    askWithHooks(toolCall, callbacks),
+    askWithHooks(toolCall, callbacks, note),
   );
   permissionPrompts = prompt.catch(() => undefined);
   return prompt;
@@ -168,6 +190,7 @@ export function requestUserPermission(
 async function askWithHooks(
   toolCall: PreprocessedToolCall,
   callbacks: StreamCallbacks,
+  note?: string,
 ): Promise<boolean> {
   const hooked = await firePermissionRequest(
     toolCall.name,
@@ -180,17 +203,21 @@ async function askWithHooks(
     "permission_prompt",
     "Permission needed",
   );
-  return promptForPermission(toolCall, callbacks);
+  return promptForPermission(toolCall, callbacks, note);
 }
 
 async function promptForPermission(
   toolCall: PreprocessedToolCall,
   callbacks: StreamCallbacks,
+  note?: string,
 ): Promise<boolean> {
+  const preview = toolCall.preprocessResult?.preview;
   const toolCallRequest: ToolCallRequest = {
     name: toolCall.name,
     arguments: toolCall.preprocessResult?.args ?? toolCall.arguments,
-    preview: toolCall.preprocessResult?.preview,
+    preview: note
+      ? [...(preview ?? []), { type: "text", content: note, color: "yellow" }]
+      : preview,
   };
 
   // Set up listener for permissionRequested event
@@ -456,6 +483,17 @@ export async function checkToolPermissionApproval(
   return result;
 }
 
+/** PreToolUse hooks tighten or relax ask/allow. An exclude always stands. */
+function permissionAfterHook<T extends string>(
+  permission: T,
+  hookDecision: "allow" | "ask" | undefined,
+): T {
+  if (permission === "exclude" || hookDecision === undefined) return permission;
+  if (hookDecision === "ask" && permission === "allow") return "ask" as T;
+  if (hookDecision === "allow" && permission === "ask") return "allow" as T;
+  return permission;
+}
+
 async function decideToolApproval(
   permissions: ToolPermissions,
   toolCall: PreprocessedToolCall,
@@ -472,6 +510,8 @@ async function decideToolApproval(
   denialReason?: "user" | "policy" | "loop";
   /** Why a rule, protected path or the reviewer refused it, to tell the model. */
   denialMessage?: string;
+  /** Set when the refusal is a shell-hint parse failure. */
+  denialSource?: string;
 }> {
   const { callbacks, isHeadless, hookDecision } = options;
   // The role table first: a call the mode's role may not make never reaches a
@@ -518,12 +558,7 @@ async function decideToolApproval(
 
   // PreToolUse hooks adjust the CLI policy first; the CLI's own exclude
   // always stands.
-  if (permission !== "exclude") {
-    if (hookDecision === "ask" && permission === "allow") permission = "ask";
-    else if (hookDecision === "allow" && permission === "ask") {
-      permission = "allow";
-    }
-  }
+  permission = permissionAfterHook(permission, hookDecision);
 
   // Then the rules in config.yaml (deny, protected paths, ask, allow) and the
   // reviewer may tighten the result, and an allow rule may loosen an "ask",
@@ -547,6 +582,9 @@ async function decideToolApproval(
           approved: false,
           denialReason: "policy",
           denialMessage: verdict.reason,
+          ...(verdict.source === "shell-hint"
+            ? { denialSource: verdict.source }
+            : {}),
         };
       }
       // "ask" (or an allow rule over a hook's ask): Loop mode holds it as a
@@ -565,7 +603,14 @@ async function decideToolApproval(
         };
       }
       trace.askedPerson = true;
-      const userApproved = await requestUserPermission(toolCall, callbacks);
+      const userApproved = await requestUserPermission(
+        toolCall,
+        callbacks,
+        verdict.source === "shell-hint" ||
+          verdict.reason?.includes("This looks like")
+          ? verdict.reason
+          : undefined,
+      );
       return userApproved
         ? { approved: true }
         : { approved: false, denialReason: "user" };
@@ -1174,9 +1219,10 @@ export async function executeStreamedToolCalls(
           denialReason === "loop"
             ? (permissionResult.denialMessage ?? "Held for the person.")
             : denialReason === "policy"
-              ? permissionResult.denialMessage
-                ? `Command blocked by security policy: ${permissionResult.denialMessage} Do not retry it or reach the same result another way. Do what else the request needs, then say what you could not do and why.`
-                : `Command blocked by security policy`
+              ? policyDenialContent(
+                  permissionResult.denialMessage,
+                  permissionResult.denialSource,
+                )
               : `Permission denied by user`;
 
         const deniedEntry: ToolResultWithStatus = {

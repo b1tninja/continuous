@@ -125,6 +125,8 @@ const FINAL_SOURCES: DecisionSource[] = [
   "tainted-session",
   // B92: a secret read then a network call is the person's to approve
   "secret-egress",
+  // A command written for another shell: the person sees the warning
+  "shell-hint",
 ];
 
 /**

@@ -1,6 +1,6 @@
 import { execSync } from "child_process";
 
-import { sanitizeEnvValue } from "core/util/envDisclosure.js";
+import { sanitiseEnvValue } from "core/util/envDisclosure.js";
 import type { ChatCompletionMessageParam } from "openai/resources.mjs";
 
 /**
@@ -71,12 +71,11 @@ export function capGitStatus(
  * newline is dropped, so the status column's leading space stays.
  */
 export function gitStatusForPrompt(status: string): string {
-  // keepQuotes: these are git's own porcelain lines, which quote a name with
-  // a space in it, so the bytes of an ordinary tree stay as they were.
-  // trimEnd keeps the status column's leading space that capGitStatus preserved.
-  const { text, removed } = sanitizeEnvValue(status.trimEnd(), {
+  // Quotes stay as git wrote them: the shared sanitiser does not escape them,
+  // so a name with a space keeps its porcelain quotes. trimEnd keeps the
+  // status column's leading space that capGitStatus preserved.
+  const { text, removed } = sanitiseEnvValue(status.trimEnd(), {
     maxChars: Number.POSITIVE_INFINITY,
-    keepQuotes: true,
   });
   if (removed === 0) return text;
   const what = removed === 1 ? "character was" : "characters were";
