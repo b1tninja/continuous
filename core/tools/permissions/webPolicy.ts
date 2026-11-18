@@ -212,7 +212,7 @@ export function webHeadlessLine(
       return `${name} (unattended: every fetch refused)`;
     case "cautious":
       return options.transition
-        ? `${name} (unattended: public hosts still run in this release; from 2.36 only allowed domains)`
+        ? `${name} (unattended: public hosts still run in this release; from 2.38 only allowed domains)`
         : `${name} (unattended: only allowed domains)`;
     case "automatic":
       return `${name} (unattended: the reviewer decides; unsure is refused)`;

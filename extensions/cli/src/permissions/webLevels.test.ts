@@ -174,7 +174,7 @@ describe("the headless start-up line", () => {
       fetchTransition: true,
     });
     expect(line).toContain(
-      "Web Cautious (unattended: public hosts still run in this release; from 2.36 only allowed domains)",
+      "Web Cautious (unattended: public hosts still run in this release; from 2.38 only allowed domains)",
     );
   });
 
@@ -305,7 +305,7 @@ describe("webFetchDefault: a Fetch only the default list allowed", () => {
 `,
     ]);
     expect(HEADLESS_FETCH_TRANSITION_NOTE).toBe(
-      "Headless fetches follow your Web level from 2.36: keep this with --allow Fetch, --policy web=permissive, or allow the domains in permissions.yaml.",
+      "Headless fetches follow your Web level from 2.38: keep this with --allow Fetch, --policy web=permissive, or allow the domains in permissions.yaml.",
     );
   });
 

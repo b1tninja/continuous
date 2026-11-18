@@ -152,8 +152,8 @@ describe("headless cn: the one-release transition (flag false)", () => {
       );
       expect(r, url).toEqual({ approved: true });
     }
-    expect(lines.filter((l) => l.includes("from 2.36"))).toEqual([
-      "continuous: Headless fetches follow your Web level from 2.36: keep this with --allow Fetch, --policy web=permissive, or allow the domains in permissions.yaml.\n",
+    expect(lines.filter((l) => l.includes("from 2.38"))).toEqual([
+      "continuous: Headless fetches follow your Web level from 2.38: keep this with --allow Fetch, --policy web=permissive, or allow the domains in permissions.yaml.\n",
     ]);
   });
 

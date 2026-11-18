@@ -76,14 +76,14 @@ export function noteHeadlessRefusal(
  * keep that default (public hosts run, as before) for this release and say
  * once per run that this changes.
  *
- * TODO(2.36): flip to true, so headless Fetch follows the Web level too
+ * TODO(2.38): flip to true, so headless Fetch follows the Web level too
  * (Cautious then runs only allowed domains), and drop the transition line.
  */
 export const HEADLESS_FETCH_FOLLOWS_WEB_LEVEL = false;
 
 /** The one stderr line of the transition, given on the run's first such fetch. */
 export const HEADLESS_FETCH_TRANSITION_NOTE =
-  "Headless fetches follow your Web level from 2.36: keep this with --allow Fetch, --policy web=permissive, or allow the domains in permissions.yaml.";
+  "Headless fetches follow your Web level from 2.38: keep this with --allow Fetch, --policy web=permissive, or allow the domains in permissions.yaml.";
 
 /** The Web levels at which a default `Fetch: allow` gives way to the Web level. */
 const FETCH_FOLLOWS_AT: ReadonlySet<WebLevel> = new Set([
@@ -97,7 +97,7 @@ const FETCH_FOLLOWS_AT: ReadonlySet<WebLevel> = new Set([
  * What happens to a Fetch that only the product's default list allowed:
  * - "follow": the default is dropped and the Web level decides (it asks at
  *   Cautious for a host nobody allowed, refused when headless);
- * - "transition": headless before 2.36, the default stands and the
+ * - "transition": headless before 2.38, the default stands and the
  *   transition line is given once;
  * - "keep": the level is looser than Cautious, so the default stands.
  */
