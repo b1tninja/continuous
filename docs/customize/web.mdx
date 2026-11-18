@@ -125,7 +125,7 @@ Set the level with `levels.web` in `permissions.yaml`, or in `cn` with `--policy
 
 When the terminal agent asks about a fetch, it offers **Allow `<host>` for this session**, **Always allow `<host>`** (which adds `host:<host>` to the `allow:` list of your `permissions.yaml`), **No, skip this call** (Esc) and **No, and tell Continue what to do differently**, which asks before it stops the response. `cn`'s own default list allows `Fetch`; at Web Cautious or stricter that default no longer decides, and the Web level does. To keep every host running, pass `--allow Fetch` or set `--policy web=permissive`.
 
-Headless runs (`-p`, `serve`) cannot ask. In this release a headless fetch to a public host still runs as before, and the run prints one line on standard error at its first such fetch: `Headless fetches follow your Web level from 2.38: keep this with --allow Fetch, --policy web=permissive, or allow the domains in permissions.yaml.` From 2.38 a headless run at Cautious runs only the hosts you allowed. The run's first line on standard error names the Web level.
+Headless runs (`-p`, `serve`) cannot ask. A headless fetch follows the Web level: at Cautious only hosts you allowed run, and an unlisted public host is refused. To keep every host running, pass `--allow Fetch` or `--policy web=permissive`. The run's first line on standard error names the Web level.
 
 Two switches turn web access off:
 
