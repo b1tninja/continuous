@@ -86,6 +86,7 @@ export const POLICY_FILE_KEYS = [
   "mcpServers",
   "sandbox",
   "background",
+  "safetyChecks",
 ] as const;
 
 const BUILTIN_IDS = new Set<string>(BUILTIN_RULES.map((r) => r.id));
@@ -147,6 +148,14 @@ export function parsePolicyFile(text: string | undefined): PolicyFileRead {
   notices.push(...problems.map((p) => `permissions.yaml: ${p}`));
 
   const settings: PolicyFileSettings = { ...policy };
+  const safetyChecks = asBool(raw.safetyChecks);
+  if (raw.safetyChecks !== undefined) {
+    if (safetyChecks === undefined) {
+      notices.push("safetyChecks: use on or off.");
+    } else {
+      settings.safetyChecks = safetyChecks;
+    }
+  }
   if (raw.builtin && typeof raw.builtin === "object") {
     const builtin: Partial<Record<BuiltinRuleId, boolean>> = {};
     for (const [id, value] of Object.entries(raw.builtin)) {
@@ -238,6 +247,8 @@ export interface PolicyFileUpdate {
     agentDecides?: string[];
   };
   builtin?: Partial<Record<BuiltinRuleId, boolean>>;
+  /** The safety-check shield. Absent follows the mode. */
+  safetyChecks?: boolean;
   /** The whole `floor:` list as it should be; each entry a valid rule */
   floor?: string[];
   /** The servers whose read-only hints are trusted; every other entry is removed */
@@ -367,6 +378,9 @@ export function applyPolicyUpdate(
   }
   if (update.questions?.agentDecides) {
     doc.setIn(["questions", "agentDecides"], update.questions.agentDecides);
+  }
+  if (update.safetyChecks !== undefined) {
+    doc.set("safetyChecks", update.safetyChecks ? "on" : "off");
   }
   if (update.builtin) {
     for (const [id, on] of Object.entries(update.builtin)) {

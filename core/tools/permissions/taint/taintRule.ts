@@ -1,4 +1,5 @@
 import type { ToolPolicyResult, EvaluateInput } from "../evaluate";
+import { safetyChecksApply } from "../policy";
 import { sinkOfCall, type Sink, type SinkClass } from "./taintSinks";
 import type { SecretRead, TaintFact } from "./taintState";
 
@@ -103,14 +104,15 @@ export function applyTaintedSessionRule(
  * permissions.yaml; one the open folder brought never counts as trusted). It
  * does not depend on `taintedSessionRule`.
  *
- * - Below IDGAF it asks the person, at every level: an allow (Permissive, an
- *   allow rule, a tool set to run on its own) becomes an ask, and an ask that
- *   Automatic's reviewer could have answered becomes the person's.
- * - At IDGAF it is refused, with or without Questions at IDGAF. IDGAF never
- *   asks, so the choice there is run or refuse, and a secret leaving the
- *   machine is the one call IDGAF refuses rather than runs.
+ * - Below IDGAF, while safety checks are on, it asks the person at every
+ *   level: an allow becomes an ask, and an ask that Automatic's reviewer
+ *   could have answered becomes the person's.
+ * - At IDGAF it runs, unless the person turned safety checks on. IDGAF never
+ *   asks, so that choice is run or refuse.
+ * - Safety checks off, at any level, leaves the call as the rest of the
+ *   policy decided it. So does switching off `protect-secrets`.
  *
- * A call already refused stays refused. plans/decisions-2026-11-15.md, B92.
+ * A call already refused stays refused.
  */
 export const SECRET_EGRESS_SOURCE = "secret-egress" as const;
 
@@ -132,13 +134,14 @@ export function secretEgressReason(
 ): string {
   const pair = `A secret was read in this session (${read.source}), and this call can ${sendsTo(sink)} (${sink.class})`;
   return atIdgaf
-    ? `Refused at IDGAF: ${pair}. IDGAF runs every other call, but a secret leaving the machine is refused there, with or without Questions at IDGAF, and is never asked. To send it, set this area below IDGAF and approve the call, or run it yourself.`
-    : `${pair}, so it asks at every level. At IDGAF it is refused.`;
+    ? `Refused at IDGAF: ${pair}. Safety checks are on, so a secret leaving the machine is refused there and is never asked. Turn safety checks off to let IDGAF run it, or run it yourself.`
+    : `${pair}, so it asks at every level while safety checks are on. At IDGAF it runs unless you turn safety checks on.`;
 }
 
 /**
- * The B92 step, after every other one (idgafRunsEverything included, so
- * IDGAF cannot run the pair). `atIdgaf` is read only when the pair applies.
+ * The B92 step, after every other one. It applies only while safety checks
+ * are on for this call. At IDGAF that is off unless the person turned the
+ * shield on. `atIdgaf` is read only when the pair applies.
  */
 export function applySecretEgressRule(
   input: EvaluateInput & TaintedSessionInput,
@@ -149,6 +152,10 @@ export function applySecretEgressRule(
   if (!read) return result;
   // A tool the person switched off stays off, as it would anyway
   if (input.basePolicy === "disabled") return result;
+  const idgaf = atIdgaf();
+  // The shield, or protect-secrets, is the person's choice
+  if (!safetyChecksApply(input.approval, idgaf)) return result;
+  if (input.approval?.builtin?.["protect-secrets"] === false) return result;
   const sink = taintSinkFor(input, SECRET_ONLY);
   if (!sink || !EGRESS_SINKS.has(sink.class)) return result;
   // A server the person trusts in their own permissions.yaml is theirs to
@@ -164,7 +171,6 @@ export function applySecretEgressRule(
   if (result.policy === "disabled") {
     return { ...result, taintSink: result.taintSink ?? sink };
   }
-  const idgaf = atIdgaf();
   const reason = secretEgressReason(sink, read, idgaf);
   if (idgaf) {
     // What IDGAF ran past no longer describes the call: it is refused

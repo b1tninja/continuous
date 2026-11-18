@@ -5,9 +5,9 @@ import { ToolPolicy } from "@continuedev/terminal-security";
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { MessageModes, RuleWithSource, Tool } from "core";
 import { BUILT_IN_GROUP_NAME } from "core/tools/builtIn";
+import { parsePolicyLevel } from "core/tools/permissions/levelText";
 import {
   DEFAULT_POLICY_LEVELS,
-  parsePolicyLevel,
   type BuiltinRuleId,
   type PolicyArea,
   type PolicyLevel,
@@ -94,6 +94,11 @@ export interface PolicyExtras {
   questions?: { youDecide?: QuestionType[]; agentDecides?: QuestionType[] };
   /** Built-in rules by id; absent means on */
   builtin?: Partial<Record<BuiltinRuleId, boolean>>;
+  /**
+   * The safety-check shield. Absent follows the mode (off at IDGAF).
+   * True or false is the person's choice at every level.
+   */
+  safetyChecks?: boolean;
   /** Deny rules that bind at every level; read from the file, never written here */
   floor?: string[];
   /** MCP tools Plan mode may use ("server/tool", "server/*"); read from the file, never written here */

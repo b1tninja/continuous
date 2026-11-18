@@ -61,7 +61,7 @@ export function handleUntaint(args: readonly string[] = []): {
   const held = taintLabels(CLI_TAINT_SESSION);
   // B92 holds until the session ends; /untaint says so rather than hiding it
   const secretNote = secretReadOf(CLI_TAINT_SESSION)
-    ? ` A secret was read in this session, so a network call still asks (and is refused at IDGAF) until the session ends; /untaint does not change that.`
+    ? ` A secret was read in this session, so a network call still asks while safety checks are on (and is refused at IDGAF only if you turned them on) until the session ends; /untaint does not change that.`
     : "";
   if (held.length === 0) {
     return {

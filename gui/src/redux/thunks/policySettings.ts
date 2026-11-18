@@ -51,6 +51,9 @@ export const loadPolicySettings = createAsyncThunk<void, void, ThunkApiType>(
           questionDelivery: settings.questions?.delivery,
           planAllowTerminal: settings.planAllowTerminal,
           customSet: settings.custom,
+          ...(typeof settings.safetyChecks === "boolean"
+            ? { safetyChecks: settings.safetyChecks }
+            : {}),
         }),
       );
       for (const notice of notices) console.warn(notice);
@@ -113,6 +116,9 @@ export const savePolicySettings = createAsyncThunk<void, void, ThunkApiType>(
           : {}),
       },
       builtin: policyExtras.builtin,
+      ...(typeof policyExtras.safetyChecks === "boolean"
+        ? { safetyChecks: policyExtras.safetyChecks }
+        : {}),
     };
     const res = await extra.ideMessenger.request("policy/save", update);
     if (res.status !== "success") {

@@ -49,6 +49,8 @@ export interface EvaluatedPolicy {
   /** A command the parser vouched as only reading (core) */
   readOnly?: string;
   rule?: string;
+  /** The protection that decided, when source is protected-path. */
+  protection?: string;
   toolCallState: ToolCallState;
 }
 
@@ -542,6 +544,7 @@ export async function evaluateToolPolicies(
     reason,
     rule,
     category,
+    protection,
     toolCallState,
   } of disabledResults) {
     dispatch(errorToolCall({ toolCallId: toolCallState.toolCallId }));
@@ -566,6 +569,7 @@ export async function evaluateToolPolicies(
         source: blockedSource,
         ...(reason ? { reason } : {}),
         ...(category ? { category } : {}),
+        ...(protection ? { protection } : {}),
         parsedArgs: toolCallState.parsedArgs ?? {},
         at: Date.now(),
       }),

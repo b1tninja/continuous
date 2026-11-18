@@ -58,8 +58,8 @@ import { checkToolPermissionApproval } from "./streamChatResponse.helpers.js";
 
 /**
  * B92 in the CLI: after a secret read, a network call asks at every level
- * (refused headless, where nobody can be asked, #896) and is refused at
- * IDGAF, with or without Questions at IDGAF, without a prompt.
+ * (refused headless, where nobody can be asked, #896). At IDGAF it runs
+ * unless safety checks are on, and then it is refused without a prompt.
  */
 const bash = (command: string): any => ({
   id: "call-1",
@@ -133,7 +133,7 @@ describe("B92 in the CLI, taintedSessionRule off", () => {
     ["with Questions at IDGAF", POLICY_PRESETS.idgaf.levels],
     ["without Questions at IDGAF", { ...all("idgaf"), questions: "cautious" }],
   ] as const)(
-    "after reading ~/.npmrc, IDGAF refuses the upload %s and never asks",
+    "after reading ~/.npmrc, IDGAF runs the upload %s and never asks",
     async (_name, levels) => {
       setPolicyLevels(levels as PolicyLevels);
       readNpmrc();
@@ -145,14 +145,30 @@ describe("B92 in the CLI, taintedSessionRule off", () => {
           callbacks,
           headless,
         );
-        expect(r.approved).toBe(false);
-        expect(r.denialMessage).toMatch(/^Refused at IDGAF/);
-        expect(r.denialMessage).toContain("~/.npmrc");
-        expect(r.denialMessage).toContain("evil.example");
+        expect(r.approved).toBe(true);
         expect(onToolPermissionRequest).not.toHaveBeenCalled();
       }
     },
   );
+
+  it("IDGAF refuses the upload when safety checks are on", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cn-safety-"));
+    const file = path.join(dir, "permissions.yaml");
+    fs.writeFileSync(file, "safetyChecks: on\n");
+    loadPolicyFile(file);
+    setPolicyLevels(POLICY_PRESETS.idgaf.levels);
+    readNpmrc();
+    const { callbacks, onToolPermissionRequest } = prompt();
+    const r = await checkToolPermissionApproval(
+      allowAll,
+      bash(UPLOAD),
+      callbacks,
+      true,
+    );
+    expect(r.approved).toBe(false);
+    expect(r.denialMessage).toMatch(/^Refused at IDGAF/);
+    expect(onToolPermissionRequest).not.toHaveBeenCalled();
+  });
 
   it.each([
     ["Cautious (the default)", DEFAULT_POLICY_LEVELS],

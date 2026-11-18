@@ -10,6 +10,24 @@ import {
   writePolicyFile,
 } from "./settingsFile";
 
+describe("safetyChecks", () => {
+  it("reads and writes on and off, and ignores anything else", () => {
+    expect(parsePolicyFile("safetyChecks: on").settings.safetyChecks).toBe(
+      true,
+    );
+    expect(parsePolicyFile("safetyChecks: off").settings.safetyChecks).toBe(
+      false,
+    );
+    expect(parsePolicyFile("safetyChecks: maybe").notices[0]).toMatch(
+      /safetyChecks/,
+    );
+    const on = applyPolicyUpdate(undefined, { safetyChecks: true });
+    expect(on).toMatch(/safetyChecks: on/);
+    const off = applyPolicyUpdate(on, { safetyChecks: false });
+    expect(off).toMatch(/safetyChecks: off/);
+  });
+});
+
 describe("parsePolicyFile", () => {
   it("a missing or empty file is the defaults", () => {
     for (const text of [undefined, "", "  \n"]) {
