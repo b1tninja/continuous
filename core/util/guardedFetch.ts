@@ -156,6 +156,12 @@ export interface GuardedFetchOptions {
   onHop?: (url: URL, status: number) => void;
   /** Called with the start host's classification, before the first request. */
   onStart?: (start: { nonPublic: boolean; addresses: string[] }) => void;
+  /**
+   * When set, a redirect whose host this refuses is not followed. Used when a
+   * trusted-host GET must not be handed to a host the person did not list
+   * (ROADMAP B56).
+   */
+  allowRedirectHost?: (host: string) => boolean;
 }
 
 type Init = Record<string, unknown> & {
@@ -377,6 +383,14 @@ export async function fetchWithGuardedRedirects(
       hops: hop + 1,
       cookieHops,
     });
+    if (
+      options.allowRedirectHost &&
+      !options.allowRedirectHost(next.hostname)
+    ) {
+      throw new FetchRefusedError(
+        `Refused to follow a redirect from ${start.host} to ${next.host}, which is not in your trusted domains`,
+      );
+    }
     visited.add(next.href);
 
     checked = await classify(next.hostname);
