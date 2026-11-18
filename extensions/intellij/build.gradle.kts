@@ -89,7 +89,7 @@ dependencies {
     testIntegrationImplementation(platform("io.opentelemetry:opentelemetry-bom-alpha:1.68.0-alpha"))
     testIntegrationImplementation(platform("io.ktor:ktor-bom:2.3.13"))
     constraints {
-        testIntegrationImplementation("org.bouncycastle:bcprov-jdk18on:1.86")
+        testIntegrationImplementation("org.bouncycastle:bcprov-jdk18on:1.87")
         testIntegrationImplementation("org.bouncycastle:bcpkix-jdk18on:1.86")
         testIntegrationImplementation("org.bouncycastle:bcutil-jdk18on:1.87")
         testIntegrationImplementation("com.google.guava:guava:33.8.0-jre")
