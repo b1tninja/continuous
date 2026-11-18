@@ -48,6 +48,7 @@ import {
   setAppliedRulesAtIndex,
   setContextPercentage,
   setInactive,
+  dropTrailingEmptyAssistant,
   setInlineErrorMessage,
   setIsPruned,
   setPromptCacheInputTokens,
@@ -235,6 +236,7 @@ export const streamNormalInput = createAsyncThunk<
           }),
         );
         dispatch(setInactive());
+        dispatch(dropTrailingEmptyAssistant());
         return;
       } else {
         throw new Error(precompiledRes.error);

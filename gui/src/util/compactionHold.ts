@@ -1,5 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { DEFAULT_CONTEXT_LENGTH } from "core/llm/constants";
 import type { CompactionPlan } from "core/util/compactionPlan";
 import { selectSelectedChatModel } from "../redux/slices/configSlice";
 import type { RootState } from "../redux/store";
@@ -50,6 +51,12 @@ export interface CompactionHoldDecision {
    * even if the estimate here says it is under the threshold
    */
   pruned: boolean;
+  /** The window the estimate is a percent of. */
+  contextLength: number;
+  /** `totalTokens` as a percent of that window, rounded. */
+  percent: number;
+  /** 32,768 is standing in: nothing published a window for this model. */
+  contextLengthUnknown: boolean;
 }
 
 /** Rough tokens of a draft: four characters each, as the meter estimates. */
@@ -83,6 +90,7 @@ export function compactionHoldFor(
   // one is cut as well, whatever this estimate says (C117, decision D9)
   const pruned = !!state.session.isPruned;
   if (totalTokens < forceAt && !pruned) return undefined;
+  const contextLength = model.contextLength ?? DEFAULT_CONTEXT_LENGTH;
   return {
     plan,
     rereadTokens: plan.tokens.span + plan.tokens.tail + Math.max(0, newTokens),
@@ -93,6 +101,11 @@ export function compactionHoldFor(
       state.session.history.length - 1,
     ),
     pruned,
+    contextLength,
+    percent:
+      contextLength > 0 ? Math.round((100 * totalTokens) / contextLength) : 0,
+    contextLengthUnknown:
+      model.contextLengthSource === "unknown" || model.contextLength == null,
   };
 }
 

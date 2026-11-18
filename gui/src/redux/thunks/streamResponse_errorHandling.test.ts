@@ -373,6 +373,10 @@ describe("streamResponseThunk", () => {
         payload: undefined,
       },
       {
+        type: "session/dropTrailingEmptyAssistant",
+        payload: undefined,
+      },
+      {
         type: "symbols/updateFromContextItems/fulfilled",
         meta: {
           arg: [],
@@ -570,15 +574,6 @@ describe("streamResponseThunk", () => {
               role: "user",
             },
           },
-          {
-            contextItems: [],
-            isGatheringContext: false,
-            message: {
-              content: "",
-              id: "mock-uuid-123",
-              role: "assistant",
-            },
-          },
         ],
         streamAborter: expect.any(AbortController),
         inlineErrorMessage: {
@@ -587,6 +582,47 @@ describe("streamResponseThunk", () => {
         },
       },
     });
+  });
+
+  it("shows the prompt size and the window when the prompt still does not fit", async () => {
+    const error =
+      "Not enough context. This prompt does not fit the model's context window. The prompt is about 90000 tokens and the window is 32768 tokens. Change the context length in Models → Configure → Context & cost.";
+    const initialState = getRootStateWithClaude();
+    initialState.session.history = [
+      {
+        message: { id: "1", role: "user", content: "Hello" },
+        contextItems: [],
+      },
+    ];
+    const mockStore = createMockStore(initialState);
+    const requestSpy = vi.spyOn(mockStore.mockIdeMessenger, "request");
+    const chatSpy = vi.spyOn(mockStore.mockIdeMessenger, "llmStreamChat");
+    requestSpy.mockImplementation(async (message, data) => {
+      if (message === "llm/compileChat") {
+        return { done: true, status: "error", error };
+      }
+      return await new MockIdeMessenger().request(message, data);
+    });
+
+    unwrapResult(
+      await mockStore.dispatch(
+        streamResponseThunk({
+          editorState: mockEditorState,
+          modifiers: mockModifiers,
+        }) as any,
+      ),
+    );
+
+    const shown = mockStore.getState().session.inlineErrorMessage;
+    expect(shown).toEqual({ kind: "out-of-context", detail: error });
+    const detail = typeof shown === "object" ? shown.detail : "";
+    expect(detail).toContain("90000");
+    expect(detail).toContain("32768");
+    expect(detail).toContain("Context & cost");
+    expect(chatSpy).not.toHaveBeenCalled();
+    expect(mockStore.getState().session.history.at(-1)?.message.role).toBe(
+      "user",
+    );
   });
 
   it("should throw error for other compilation errors", async () => {

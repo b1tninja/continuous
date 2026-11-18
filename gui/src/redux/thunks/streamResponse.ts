@@ -9,6 +9,7 @@ import { ThunkApiType } from "../store";
 import { addUserInputToHistory } from "./addUserInputToHistory";
 import {
   compactAtToolRound,
+  explainCompactionBlocked,
   toolRoundCompactionNeed,
 } from "./compactAtToolRound";
 import { applyPreparedCompactionForTurn } from "./prepareCompaction";
@@ -47,6 +48,9 @@ export const streamResponseThunk = createAsyncThunk<
             rereadTokens: hold.rereadTokens,
             prepared: hold.prepared,
             ...(hold.pruned && { pruned: true }),
+            contextLength: hold.contextLength,
+            percent: hold.percent,
+            ...(hold.contextLengthUnknown && { contextLengthUnknown: true }),
             editorState,
             modifiers,
             ...(index !== undefined && { index }),
@@ -100,6 +104,10 @@ export const streamResponseThunk = createAsyncThunk<
             signal: getState().session.streamAborter.signal,
           });
           if (compacted === "aborted") return;
+          if (compacted === "failed" || compacted === "none") {
+            explainCompactionBlocked(dispatch, compacted, need);
+            return;
+          }
         }
 
         unwrapResult(

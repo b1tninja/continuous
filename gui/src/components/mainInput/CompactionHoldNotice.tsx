@@ -49,6 +49,15 @@ export function CompactionHoldNotice() {
           ? `Your message is waiting. The conversation is already past the point where the oldest turns are dropped to fit, so each cut reads about ${formatTokens(hold.rereadTokens)} tokens again.`
           : `Your message is waiting. It takes the conversation past the point where the oldest turns are dropped to fit, and about ${formatTokens(hold.rereadTokens)} tokens would be read again.`}
         {estimate && ` ${estimate.line}`}
+        {hold.contextLength != null &&
+          ` The context window in use is ${hold.contextLength.toLocaleString()} tokens${
+            hold.percent != null ? ` (about ${hold.percent}% full)` : ""
+          }.`}
+        {hold.contextLengthUnknown &&
+          hold.contextLength != null &&
+          ` No published window is known for this model, so ${hold.contextLength.toLocaleString()} is in use until you set one.`}
+        {hold.contextLength != null &&
+          " Change the context length under Models → Configure → Context & cost."}
       </span>
       <div className="flex flex-wrap gap-2">
         <button
