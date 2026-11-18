@@ -109,6 +109,8 @@ export const PRODUCT_STATE_PATHS = [
   "reset-backups",
   // deleted sessions, restorable for 7 days (sessionTrash.ts)
   "sessions-trash",
+  // CLI /rewind snapshots (extensions/cli/src/checkpoints/sessionCheckpoints.ts)
+  "checkpoints",
 ] as const;
 
 export type LoadedDirName = keyof typeof PRODUCT_LOADED_DIRS;
