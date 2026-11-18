@@ -7,6 +7,7 @@ import type {
   ChatHistoryItem,
 } from "../../../../../core/index.js";
 import { ToolPermissionSelector } from "../components/ToolPermissionSelector.js";
+import { CONFIRM_ARM_MS } from "../hooks/useInterruptConfirm.js";
 
 describe("TUIChat - Tool Permission Tests", () => {
   beforeEach(() => {
@@ -101,15 +102,16 @@ describe("TUIChat - Tool Permission Tests", () => {
 
     await vi.advanceTimersByTimeAsync(50);
 
+    // Esc denies this call only; the turn goes on
     expect(handleResponse).toHaveBeenCalledWith(
       "test-request-456",
       false,
       false,
-      true,
+      false,
     );
   });
 
-  it("handles 'n' key for rejection", async () => {
+  it("handles 'n' key for rejection, after the stop question", async () => {
     const handleResponse = vi.fn();
 
     const { stdin } = render(
@@ -125,9 +127,11 @@ describe("TUIChat - Tool Permission Tests", () => {
 
     await vi.advanceTimersByTimeAsync(50);
 
-    // Test 'n' key for rejection
+    // Test 'n' key for rejection: it ends the turn, so Enter confirms
     stdin.write("n");
 
+    await vi.advanceTimersByTimeAsync(CONFIRM_ARM_MS);
+    stdin.write("\r");
     await vi.advanceTimersByTimeAsync(50);
 
     expect(handleResponse).toHaveBeenCalledWith(
@@ -229,8 +233,8 @@ describe("TUIChat - Tool Permission Tests", () => {
     expect(frame).not.toContain("Cancel");
   });
 
-  it("triggers stop stream when escape key is pressed", async () => {
-    // This test ensures the actual ToolPermissionSelector component correctly handles the escape key
+  it("escape denies the call without stopping the response", async () => {
+    // No single key ends the turn: Esc is "No, skip this call"
     const handleResponse = vi.fn();
 
     const { stdin } = render(
@@ -248,25 +252,23 @@ describe("TUIChat - Tool Permission Tests", () => {
 
     await vi.advanceTimersByTimeAsync(50);
 
-    // Press escape key to trigger the "No, and tell Continue what to do differently" option
     stdin.write("\x1b"); // ESC key
 
     await vi.advanceTimersByTimeAsync(50);
 
-    // Verify the escape key triggers the stopStream behavior
     expect(handleResponse).toHaveBeenCalledWith(
       "test-request-escape",
       false, // approved = false (rejection)
       false, // createPolicy = false
-      true, // stopStream = true (this is the new behavior)
+      false, // stopStream = false: the turn goes on
     );
   });
 
-  it("triggers stop stream when 'n' key is pressed", async () => {
-    // This test ensures the 'n' key also triggers the new stop stream behavior
+  it("'n' asks before it stops the response; Enter stops, Esc goes back", async () => {
+    // "No, and tell Continue what to do differently" ends the turn, so it asks
     const handleResponse = vi.fn();
 
-    const { stdin } = render(
+    const { stdin, lastFrame } = render(
       <ToolPermissionSelector
         toolName="Write"
         toolArgs={{
@@ -280,12 +282,26 @@ describe("TUIChat - Tool Permission Tests", () => {
 
     await vi.advanceTimersByTimeAsync(50);
 
-    // Press 'n' key to trigger the "No, and tell Continue what to do differently" option
     stdin.write("n");
-
     await vi.advanceTimersByTimeAsync(50);
+    expect(handleResponse).not.toHaveBeenCalled();
+    expect(lastFrame()).toContain("Stop the response?");
 
-    // Verify the 'n' key triggers the stopStream behavior
+    // Esc goes back to the question about the call
+    stdin.write("\x1b");
+    await vi.advanceTimersByTimeAsync(50);
+    expect(handleResponse).not.toHaveBeenCalled();
+    expect(lastFrame()).toContain("Would you like to continue?");
+
+    // n again: an Enter at once (a repeat) does nothing, a later one stops
+    stdin.write("n");
+    await vi.advanceTimersByTimeAsync(10);
+    stdin.write("\r");
+    await vi.advanceTimersByTimeAsync(10);
+    expect(handleResponse).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(CONFIRM_ARM_MS);
+    stdin.write("\r");
+    await vi.advanceTimersByTimeAsync(50);
     expect(handleResponse).toHaveBeenCalledWith(
       "test-request-n-key",
       false, // approved = false (rejection)

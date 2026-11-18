@@ -70,7 +70,7 @@ function renderJsonReport(
 
 function renderTextReport(
   results: ReviewResult[],
-  options: RenderOptions,
+  _options: RenderOptions,
 ): string {
   const isTTY = process.stdout.isTTY;
   const lines: string[] = [];
@@ -117,15 +117,6 @@ function renderTextReport(
     const summary = `**${failedResults.length} of ${results.length} reviews failed.**`;
     lines.push(isTTY ? chalk.red(summary) : summary);
     lines.push("");
-  }
-
-  // Migration nudge
-  if (options.checksFromHub) {
-    lines.push(
-      isTTY
-        ? chalk.dim("These reviews also run on your PRs via Continue CI.")
-        : "These reviews also run on your PRs via Continue CI.",
-    );
   }
 
   return lines.join("\n");

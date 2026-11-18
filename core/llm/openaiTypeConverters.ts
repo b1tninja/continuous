@@ -107,6 +107,19 @@ function appendReasoningFieldsIfSupported(
   }
 }
 
+/**
+ * An assistant's array content as text parts, or `" "` when there are none:
+ * an image-only assistant turn would otherwise go out as `content: []`.
+ */
+function assistantTextParts(
+  content: MessagePart[],
+): TextMessagePart[] | string {
+  const parts = content
+    .filter((part) => part.type === "text")
+    .map((part) => part as TextMessagePart);
+  return parts.length > 0 ? parts : " ";
+}
+
 export function toChatMessage(
   message: ChatMessage,
   options: CompletionOptions,
@@ -149,18 +162,21 @@ export function toChatMessage(
       content:
         typeof message.content === "string"
           ? message.content || " " // LM Studio (and other providers) don't accept empty content
-          : message.content
-              .filter((part) => part.type === "text")
-              .map((part) => part as TextMessagePart),
+          : assistantTextParts(message.content),
     };
 
-    // Add tool calls if present
-    if (message.toolCalls) {
-      msg.tool_calls = message.toolCalls.map((toolCall) => ({
+    // Add tool calls if present. A call with no id or name can't be answered
+    // and would go out with the field missing; normalizeTurns gives every
+    // call it keeps both, so this drops only what it never saw.
+    const toolCalls = (message.toolCalls ?? []).filter(
+      (toolCall) => toolCall.id && toolCall.function?.name,
+    );
+    if (toolCalls.length > 0) {
+      msg.tool_calls = toolCalls.map((toolCall) => ({
         id: toolCall.id!,
         type: toolCall.type!,
         function: {
-          name: toolCall.function?.name!,
+          name: toolCall.function!.name!,
           arguments: toolCall.function?.arguments || "{}",
         },
       }));
@@ -179,7 +195,7 @@ export function toChatMessage(
     if (typeof message.content === "string") {
       return {
         role: "user",
-        content: message.content ?? " ", // LM Studio (and other providers) don't accept empty content
+        content: message.content || " ", // LM Studio (and other providers) don't accept empty content
       };
     }
 
@@ -637,9 +653,12 @@ function handleReasoningSummaryDone(
   if (e.text) details.push({ type: "summary_text", text: e.text });
   if ((e as any).item_id)
     details.push({ type: "reasoning_id", id: (e as any).item_id });
+  // The deltas already carried this text, so it is not content again (the
+  // chat appends content and showed the summary twice). The details are kept
+  // as they were: they are what is sent back.
   const thinking: ThinkingChatMessage = {
     role: "thinking",
-    content: e.text,
+    content: "",
     reasoning_details: details,
   };
   return thinking;
@@ -668,9 +687,10 @@ function handleReasoningTextDone(
   if (e.text) details.push({ type: "reasoning_text", text: e.text });
   if ((e as any).item_id)
     details.push({ type: "reasoning_id", id: (e as any).item_id });
+  // As for the summary: the deltas already carried the text
   const thinking: ThinkingChatMessage = {
     role: "thinking",
-    content: e.text,
+    content: "",
     reasoning_details: details,
   };
   return thinking;

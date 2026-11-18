@@ -176,6 +176,51 @@ describe("ProviderSetupFlow", () => {
     expect(saves[0].key).toBeUndefined();
   });
 
+  it("opens at the model checklist for Manage models, and Back reaches the credentials", async () => {
+    const { messenger, saves } = messengerWith({
+      ...EMPTY_SETUP,
+      connections: [
+        {
+          provider: "anthropic",
+          connection: {},
+          models: [{ name: "Keep me", model: "claude-keep" }],
+          key: { state: "secret", secretName: "ANTHROPIC_API_KEY" },
+        },
+      ],
+    });
+    const { user } = await renderWithProviders(
+      <ProviderSetupFlow
+        initialProvider="anthropic"
+        initialConnection={{}}
+        initialStep="models"
+        onDone={vi.fn()}
+      />,
+      { mockIdeMessenger: messenger },
+    );
+    expect(screen.getByText("Step 2 of 3")).toBeTruthy();
+    expect(screen.queryByLabelText("API key")).toBeNull();
+    const keep = (await screen.findByLabelText("Keep me")) as HTMLInputElement;
+    expect(keep.checked).toBe(true);
+
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByText("Step 1 of 3")).toBeTruthy();
+    expect(screen.getByLabelText("API key")).toBeTruthy();
+    expect(saves).toEqual([]);
+  });
+
+  it("starts at the credentials for a new connection even when asked for the models step", async () => {
+    const { messenger } = messengerWith();
+    await renderWithProviders(
+      <ProviderSetupFlow
+        initialProvider="anthropic"
+        initialStep="models"
+        onDone={vi.fn()}
+      />,
+      { mockIdeMessenger: messenger },
+    );
+    expect(screen.getByText("Step 1 of 3")).toBeTruthy();
+  });
+
   it("shows an error from core and does not close", async () => {
     const { messenger } = messengerWith();
     messenger.responseHandlers["config/saveProviderModels"] = async () => ({

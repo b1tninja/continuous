@@ -9,6 +9,7 @@ import * as YAML from "yaml";
 import type { JSONModelDescription } from "..";
 import {
   applyProviderModels,
+  applyRemoveConnection,
   defaultSecretName,
   describeProviderConnections,
   removeFromModeModels,
@@ -579,5 +580,149 @@ describe("editing a connection in a real config.yaml", () => {
       }),
     ).toThrow(ProviderSetupError);
     expect(read()).toBe(fixture);
+  });
+});
+
+describe("applyRemoveConnection", () => {
+  const key = "${{ secrets.CONTINUOUS_ANTHROPIC_API_KEY }}";
+
+  it("removes only the entries of one inline connection, and their modeModels names", () => {
+    const config = base(
+      [
+        {
+          name: "Opus",
+          provider: "anthropic",
+          model: "claude-opus",
+          apiKey: key,
+        },
+        {
+          name: "Work Opus",
+          provider: "anthropic",
+          model: "claude-opus",
+          apiBase: "https://proxy.example/v1",
+        },
+        { name: "Llama", provider: "ollama", model: "llama3" },
+        { uses: "someone/block" },
+      ],
+      {
+        modeModels: {
+          chat: { model: "Opus", models: ["Opus", "Llama"] },
+          plan: { model: "Opus", models: ["Opus"] },
+        },
+      },
+    );
+    const { config: next, removed } = applyRemoveConnection(config, {
+      provider: "anthropic",
+      connection: {},
+    });
+    expect(removed).toEqual(["Opus"]);
+    expect((next.models as any[]).map((m) => m.name ?? m.uses)).toEqual([
+      "Work Opus",
+      "Llama",
+      "someone/block",
+    ]);
+    expect((next as any).modeModels).toEqual({
+      chat: { model: "Llama", models: ["Llama"] },
+    });
+  });
+
+  it("matches a connection by its endpoint, ignoring a trailing slash", () => {
+    const config = base([
+      {
+        name: "Work Opus",
+        provider: "anthropic",
+        model: "claude-opus",
+        apiBase: "https://proxy.example/v1/",
+      },
+      { name: "Opus", provider: "anthropic", model: "claude-opus" },
+    ]);
+    const { removed } = applyRemoveConnection(config, {
+      provider: "anthropic",
+      connection: { apiBase: "https://proxy.example/v1" },
+    });
+    expect(removed).toEqual(["Work Opus"]);
+  });
+
+  it("removes an account's from: and connection: entries, and leaves the catalog alone", () => {
+    const catalog = [
+      { name: "work-opus", connection: "anthropic-work", model: "claude-opus" },
+      { name: "home-opus", connection: "anthropic-home", model: "claude-opus" },
+    ];
+    const config = base([
+      { from: "work-opus" },
+      { from: "work-opus#fast", name: "Opus fast" },
+      { name: "Haiku", connection: "anthropic-work", model: "claude-haiku" },
+      { from: "home-opus" },
+    ]);
+    const { config: next, removed } = applyRemoveConnection(
+      config,
+      { provider: "anthropic", connection: {}, account: "anthropic-work" },
+      catalog,
+    );
+    expect(removed).toEqual(["work-opus", "Opus fast", "Haiku"]);
+    expect(next.models).toEqual([{ from: "home-opus" }]);
+    expect(catalog).toHaveLength(2);
+  });
+
+  it("returns the config unchanged when nothing matches", () => {
+    const config = base([{ name: "Llama", provider: "ollama", model: "x" }]);
+    const result = applyRemoveConnection(config, {
+      provider: "anthropic",
+      connection: {},
+    });
+    expect(result.removed).toEqual([]);
+    expect(result.config).toBe(config);
+  });
+});
+
+describe("removeProviderConnection on a real config.yaml", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "provider-remove-"));
+    process.env.CONTINUE_GLOBAL_DIR = dir;
+    vi.resetModules();
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+    delete process.env.CONTINUE_GLOBAL_DIR;
+  });
+
+  it("keeps comments and other models, and touches no key", async () => {
+    fs.writeFileSync(
+      path.join(dir, "config.yaml"),
+      `# my config
+name: Local
+version: 1.0.0
+schema: v1
+
+models:
+  # primary
+  - name: Opus
+    provider: anthropic
+    model: claude-opus
+    apiKey: \${{ secrets.CONTINUOUS_ANTHROPIC_API_KEY }}
+  - name: Llama # local
+    provider: ollama
+    model: llama3
+`,
+    );
+    fs.writeFileSync(
+      path.join(dir, ".env"),
+      "CONTINUOUS_ANTHROPIC_API_KEY=sk-ant-kept\n",
+    );
+    const { removeProviderConnection } = await import("./providerSetup");
+    const result = removeProviderConnection(
+      { provider: "anthropic", connection: {} },
+      { models: path.join(dir, "models.yaml") },
+    );
+    expect(result).toEqual({ removed: ["Opus"] });
+    const text = fs.readFileSync(path.join(dir, "config.yaml"), "utf8");
+    expect(text).toContain("# my config");
+    expect(text).toContain("Llama # local");
+    expect(YAML.parse(text).models.map((m: any) => m.name)).toEqual(["Llama"]);
+    expect(fs.readFileSync(path.join(dir, ".env"), "utf8")).toContain(
+      "sk-ant-kept",
+    );
   });
 });

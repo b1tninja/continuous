@@ -1,5 +1,5 @@
 /**
- * `continuous audit list|show <session>|inbox|suggest|prune`: read the audit trail the
+ * `continuous audit list|show <session>|changes|inbox|suggest|prune`: read the audit trail the
  * permission path writes (plans/reviewer-audit.md, P12d). The files are
  * `<global dir>/audit/<yyyy-mm>/<session>.jsonl`; this only reads them, and
  * `prune` deletes whole files past the retention.
@@ -18,6 +18,7 @@ import {
   callRows,
   DECISION_FILTERS,
   listCalls,
+  listChanges,
   matchesFilter,
   pruneAudit,
   readAuditSession,
@@ -185,6 +186,39 @@ function showAction(
 }
 
 /** The calls waiting for an answer, and which agent is waiting on each. */
+/** Level, preset, floor, built-in, trust and rule changes, oldest first. */
+function changesAction(dir: string, options: AuditCommandOptions): number {
+  const filter = filterOf(options);
+  if (typeof filter === "string") {
+    err(filter);
+    return 2;
+  }
+  let rows = listChanges(dir, { since: filter.since, until: filter.until });
+  const limit = Number(options.limit);
+  if (Number.isFinite(limit) && limit > 0) rows = rows.slice(-limit);
+  if (options.json) {
+    out(JSON.stringify(rows));
+    return 0;
+  }
+  if (rows.length === 0) {
+    out("No setting changes recorded.");
+    return 0;
+  }
+  for (const r of rows) {
+    out(
+      [
+        r.ts.slice(0, 19).replace("T", " "),
+        clip(r.source, 12).padEnd(12),
+        clip(r.kind, 13).padEnd(13),
+        r.loosens ? "loosens" : "       ",
+        clip(r.summary.replace(/\s+/g, " "), 100),
+      ].join("  "),
+    );
+  }
+  return 0;
+}
+
+/** The calls waiting for an answer, and which agent is waiting on each. */
 function inboxAction(dir: string, options: AuditCommandOptions): number {
   const filter = filterOf(options);
   if (typeof filter === "string") {
@@ -236,6 +270,8 @@ export function auditCommand(
       return listAction(dir, options);
     case "show":
       return showAction(dir, arg, options);
+    case "changes":
+      return changesAction(dir, options);
     case "inbox":
       return inboxAction(dir, options);
     case "prune":
@@ -246,7 +282,7 @@ export function auditCommand(
       return auditShadowAction(dir, options, out, err);
     default:
       err(
-        `Unknown audit action '${action}'. Use list, show, inbox, suggest, shadow or prune.`,
+        `Unknown audit action '${action}'. Use list, show, changes, inbox, suggest, shadow or prune.`,
       );
       return 2;
   }

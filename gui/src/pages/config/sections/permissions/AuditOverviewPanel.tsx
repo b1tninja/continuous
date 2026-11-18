@@ -165,6 +165,16 @@ export function AuditOverviewPanel({
           {overview.partial ? " It is being read now." : ""}
         </p>
       )}
+      {overview?.state === "ready" && !!overview.idgafObjections && (
+        <p
+          className="my-1 text-2xs text-description-muted"
+          data-testid="audit-idgaf-objections"
+        >
+          IDGAF ran {plural(overview.idgafObjections, "call")} in the last 30
+          days that a rule or guard would have refused or asked about. Each is
+          in the audit trail with what would have stopped it.
+        </p>
+      )}
       {overview?.state === "ready" && overview.mostAsked.length === 0 && (
         <p
           className="my-1 text-2xs text-description-muted"

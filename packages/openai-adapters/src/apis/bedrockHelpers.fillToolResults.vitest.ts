@@ -71,4 +71,91 @@ describe("fillMissingToolResults", () => {
     const before = structuredClone(messages);
     expect(fillMissingToolResults(messages, CANCELLED)).toEqual(before);
   });
+
+  // The shape of a session Bedrock refused on resume (messages.330): a turn
+  // cut off mid-call left a call with no id (sent as text) and its result,
+  // also text, ahead of the real call's result.
+  it("moves a result ahead of text that came before it", () => {
+    const filled = fillMissingToolResults(
+      [
+        { role: "user", content: [{ text: "ask" }] },
+        {
+          role: "assistant",
+          content: [{ text: "Tool call (no id)" }, use("b")],
+        },
+        {
+          role: "user",
+          content: [{ text: "Tool call output (no id)" }, result("b", "out b")],
+        },
+      ],
+      CANCELLED,
+    );
+    expect(filled[2].content).toEqual([
+      result("b", "out b"),
+      { text: "Tool call output (no id)" },
+    ]);
+  });
+
+  it("orders backfilled results, then existing results, then the rest", () => {
+    const filled = fillMissingToolResults(
+      [
+        { role: "assistant", content: [use("a"), use("b")] },
+        {
+          role: "user",
+          content: [
+            { text: "user note" },
+            result("b", "out b"),
+            { cachePoint: {} },
+          ],
+        },
+      ],
+      CANCELLED,
+    );
+    expect(filled[1].content).toEqual([
+      result("a", CANCELLED),
+      result("b", "out b"),
+      { text: "user note" },
+      { cachePoint: {} },
+    ]);
+  });
+
+  it("keeps the order of parallel results that are already first", () => {
+    const content = [result("b", "out b"), result("a", "out a"), { text: "t" }];
+    const messages = [
+      { role: "assistant", content: [use("a"), use("b")] },
+      { role: "user", content },
+    ];
+    const filled = fillMissingToolResults(messages, CANCELLED);
+    // Unchanged: the same array, not a copy
+    expect(filled[1].content).toBe(content);
+  });
+
+  it("leaves a result for a different call where it is", () => {
+    const filled = fillMissingToolResults(
+      [
+        { role: "assistant", content: [use("a")] },
+        {
+          role: "user",
+          content: [{ text: "t" }, result("z", "stray"), result("a", "out a")],
+        },
+      ],
+      CANCELLED,
+    );
+    expect(filled[1].content).toEqual([
+      result("a", "out a"),
+      { text: "t" },
+      result("z", "stray"),
+    ]);
+  });
+
+  it("does nothing to an assistant turn without calls", () => {
+    const content = [{ text: "t" }, result("a", "x")];
+    const messages = [
+      { role: "assistant", content: [{ text: "hi" }] },
+      { role: "user", content },
+    ];
+    expect(fillMissingToolResults(messages, CANCELLED)[1].content).toBe(
+      content,
+    );
+  });
 });

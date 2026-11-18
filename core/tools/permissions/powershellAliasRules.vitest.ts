@@ -4,10 +4,17 @@ import type { ShellKind } from "../../util/shell";
 import { commandCandidates } from "./candidates";
 import { effectsOfCommand } from "./commandSpecs";
 import { hiddenCommandName } from "./commandName";
-import { evaluateToolPolicyWithRules } from "./evaluate";
+import { evaluateToolPolicyWithRules as evaluateAndRun } from "./evaluate";
+import { wouldDecide } from "./idgafView.testutil";
 import { DEFAULT_POLICY_LEVELS } from "./policy";
 import { classifyReadOnly } from "./readOnlyCommand";
 import { matchTerminalCommand, parseToolPermissions } from "./rules";
+
+// At IDGAF every call runs; these tests read what the guard would have
+// decided (wouldDecide), which IDGAF records instead of acting on.
+const evaluateToolPolicyWithRules = (
+  input: Parameters<typeof evaluateAndRun>[0],
+) => wouldDecide(evaluateAndRun(input));
 
 const ASK = "allowedWithPermission" as const;
 const OFF = "disabled" as const;

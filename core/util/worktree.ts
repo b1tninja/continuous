@@ -78,12 +78,25 @@ export const defaultShellRunner: ShellRunner = (command, cwd, env) =>
     );
   });
 
+/**
+ * On Windows a worktree's deep paths (a nested `node_modules`, a long slug
+ * under the global folder) can pass MAX_PATH, and git then fails half way
+ * through a checkout. `core.longpaths` is passed for this one command only:
+ * nothing is written to the person's repository configuration.
+ */
+export function gitArgsFor(
+  args: string[],
+  platform: NodeJS.Platform = process.platform,
+): string[] {
+  return platform === "win32" ? ["-c", "core.longpaths=true", ...args] : args;
+}
+
 /** The git runner for a Node host (the IDE's core): `git` on the PATH. */
 export const execFileGit: GitRunner = (args, cwd) =>
   new Promise((resolve, reject) => {
     execFile(
       "git",
-      args,
+      gitArgsFor(args),
       { cwd, maxBuffer: MAX_BUFFER },
       (error, stdout, stderr) => {
         if (error) {

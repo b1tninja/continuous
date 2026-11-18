@@ -5,8 +5,21 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    setupFiles: ["./vitest.global-dir-setup.ts", "./vitest.setup.ts"],
-    exclude: ["**/node_modules/**", "**/dist/**", "**/*.e2e.*", "**/e2e/**"],
+    // Removes provider credentials unless RUN_LIVE_PROVIDER_TESTS=1 (src/test-helpers/liveProviderGuard.ts).
+    globalSetup: ["./vitest.live-provider-guard.global.ts"],
+    setupFiles: [
+      "./vitest.live-provider-guard.ts",
+      "./vitest.global-dir-setup.ts",
+      "./vitest.setup.ts",
+    ],
+    // src/smoke-api calls a paid API: only vitest.smoke-api.config.ts runs it.
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/*.e2e.*",
+      "**/e2e/**",
+      "src/smoke-api/**",
+    ],
     coverage: {
       reporter: ["text", "json", "html"],
       exclude: [

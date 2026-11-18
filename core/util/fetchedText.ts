@@ -3,6 +3,8 @@
  * (plans/research/web-search-and-fetch.md, gaps G2, G7, G8). Pure.
  */
 
+import { stripHiddenCharacters } from "./hiddenCharacters";
+
 /** Name of the note item that says a fetched page was cut (by bytes or by characters). */
 export const TRUNCATION_ITEM_NAME = "Truncation warning";
 
@@ -77,16 +79,12 @@ export function stripHtmlComments(text: string): string {
   return text.replace(/<!--[\s\S]*?(?:-->|$)/g, "");
 }
 
-// Soft hyphen, zero-width and direction marks, bidi controls and isolates,
-// word joiner and invisible operators, BOM, Arabic letter mark, Mongolian
-// vowel separator, and the Unicode tag block (U+E0000 to U+E007F) that can
-// spell a hidden instruction in plain ASCII.
-const INVISIBLE = /[­؜᠎​-‏‪-‮⁠-⁤⁦-⁩﻿\u{E0000}-\u{E007F}]/gu;
+// The hidden characters are the shared set (hiddenCharacters.ts)
 // C0 controls other than tab, line feed and carriage return, and DEL
 const CONTROLS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
 
 export function stripInvisible(text: string): string {
-  return text.replace(INVISIBLE, "").replace(CONTROLS, "");
+  return stripHiddenCharacters(text).replace(CONTROLS, "");
 }
 
 function closeOf(text: string, open: number, a: string, b: string): number {

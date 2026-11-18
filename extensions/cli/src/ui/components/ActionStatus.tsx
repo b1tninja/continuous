@@ -1,3 +1,5 @@
+import type { PromptProgress } from "core/index.js";
+import { formatPromptProgress } from "core/llm/promptProgressText.js";
 import { Box, Text } from "ink";
 import React from "react";
 
@@ -6,6 +8,21 @@ import { Timer } from "../Timer.js";
 
 /** The spinner text while a reply is held for tool call recovery. */
 const READING_REPLY_MESSAGE = "Checking the reply for a tool request...";
+
+/**
+ * The spinner text while a reply is awaited: the recovery hold, else how far
+ * a local server has read the prompt ("Reading the prompt: 140k of 300k
+ * tokens, 120k from the cache, about 40 s left", the IDE's line), else
+ * nothing.
+ */
+function spinnerMessage(
+  isReadingReply: boolean,
+  promptProgress: PromptProgress | undefined,
+): string {
+  if (isReadingReply) return READING_REPLY_MESSAGE;
+  if (promptProgress) return formatPromptProgress(promptProgress);
+  return "";
+}
 
 interface ActionStatusProps {
   visible: boolean;
@@ -41,4 +58,4 @@ const ActionStatus: React.FC<ActionStatusProps> = ({
   );
 };
 
-export { ActionStatus, READING_REPLY_MESSAGE };
+export { ActionStatus, READING_REPLY_MESSAGE, spinnerMessage };

@@ -32,7 +32,7 @@ describe("First-run chat notice", () => {
   it("shows one line in the new vocabulary with a link and a 24 px dismiss", async () => {
     await setup(false);
     const note = screen.getByTestId("first-run-notice");
-    expect(note.textContent).toContain("Always on");
+    expect(note.textContent).toContain("locked rules apply first");
     expect(note.textContent).toContain("preset");
     expect(
       screen.getByTestId("first-run-notice-link").getAttribute("href"),

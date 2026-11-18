@@ -1,3 +1,4 @@
+import { notifyPerson } from "../notify/attention.js";
 import { services } from "../services/index.js";
 import { quizService } from "../services/QuizService.js";
 import { answerIfIdgaf } from "../util/idgafQuestions.js";
@@ -85,6 +86,7 @@ export const askQuestionTool: Tool = {
       );
     }
 
+    notifyPerson({ kind: "question" });
     const answer = await quizService.askQuestion({
       question,
       options,

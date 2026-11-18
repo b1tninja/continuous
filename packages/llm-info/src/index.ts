@@ -59,8 +59,11 @@ export function findLlmInfo(
   );
 }
 
+/** Models to suggest for a use case; a deprecated or retired model never is. */
 export function getAllRecommendedFor(useCase: UseCase): LlmInfoWithProvider[] {
-  return allLlms.filter((llm) => llm.recommendedFor?.includes(useCase));
+  return allLlms.filter(
+    (llm) => !llm.lifecycle && llm.recommendedFor?.includes(useCase),
+  );
 }
 
 export * from "./promptCache.js";

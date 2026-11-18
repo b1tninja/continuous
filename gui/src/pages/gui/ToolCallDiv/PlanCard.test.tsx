@@ -4,10 +4,15 @@ import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MockIdeMessenger } from "../../../context/MockIdeMessenger";
 import { EMPTY_CONFIG, updateConfig } from "../../../redux/slices/configSlice";
-import { newSession } from "../../../redux/slices/sessionSlice";
+import {
+  newSession,
+  setLoop,
+  setTaskPlan,
+} from "../../../redux/slices/sessionSlice";
 import { setPolicyLevel } from "../../../redux/slices/uiSlice";
 import { setupStore } from "../../../redux/store";
 import { renderWithProviders } from "../../../util/test/render";
+import { createLoop } from "core/util/loopMode";
 import { PlanCard } from "./PlanCard";
 
 const PLAN_URI = "file:///Users/user/workspace1/.continuous/plans/add-retry.md";
@@ -110,6 +115,53 @@ describe("PlanCard", () => {
     );
     fireEvent.click(screen.getByTestId("plan-card-open"));
     expect(openFile).toHaveBeenCalledWith(PLAN_URI);
+  });
+
+  describe("in Loop mode", () => {
+    const TASK_PLAN = {
+      items: [
+        { id: "1", text: "Add a helper", status: "pending" as const },
+        { id: "2", text: "Use it", status: "pending" as const },
+      ],
+      updatedAt: new Date().toISOString(),
+    };
+
+    it("is a collapsed tile with the round line and the tree, not the plain list", async () => {
+      const { store } = await setup();
+      await act(async () => {
+        const loop = createLoop(TASK_PLAN, {
+          now: new Date(),
+          sessionTokens: 0,
+        });
+        store.dispatch(setTaskPlan(TASK_PLAN));
+        store.dispatch(
+          setLoop({
+            ...loop,
+            items: loop.items.map((i) =>
+              i.id === "1" ? { ...i, status: "done" as const } : i,
+            ),
+          }),
+        );
+      });
+      expect(screen.queryByTestId("plan-card-todos")).toBeNull();
+      expect(screen.getByTestId("plan-card-diff").textContent).toBe("Round 1");
+      const root = screen.getByTestId("plan-tree-root");
+      expect(root.getAttribute("aria-expanded")).toBe("false");
+      expect(root.textContent).toContain("1/2 done");
+      // the plan file link and the plan text stay on the tile
+      expect(screen.getByTestId("plan-card-open")).toBeTruthy();
+      expect(screen.getByTestId("plan-card-body").hasAttribute("open")).toBe(
+        false,
+      );
+      fireEvent.click(root.querySelector("div")!);
+      expect(root.getAttribute("aria-expanded")).toBe("true");
+    });
+
+    it("keeps the plain list outside a loop", async () => {
+      await setup();
+      expect(screen.queryByTestId("plan-tree")).toBeNull();
+      expect(screen.getByTestId("plan-card-todos")).toBeTruthy();
+    });
   });
 
   describe("decisions", () => {

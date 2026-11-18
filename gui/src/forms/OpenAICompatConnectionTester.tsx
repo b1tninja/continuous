@@ -47,12 +47,13 @@ export function OpenAICompatConnectionTester({
     "on" | "declined" | { snippet: string[] }
   >();
 
-  async function run(withModel?: string) {
+  async function run(withModel?: string, checkModel?: string) {
     const res = await ideMessenger.request("openaiCompat/testConnection", {
       provider,
       apiBase: apiBase || undefined,
       apiKey: apiKey || undefined,
       model: withModel,
+      ...(checkModel ? { checkModel } : {}),
     });
     return res.status === "success"
       ? res.content
@@ -69,15 +70,21 @@ export function OpenAICompatConnectionTester({
     setRecovery(undefined);
     try {
       if (provider === "anthropic") {
-        // One read-only listing; no tool probe on this surface.
+        // Read-only: the listing and the configured id; no tool probe here.
         return setResult(await run(model || undefined));
       }
-      const listed = await run();
+      // The listing, and the configured id checked against the server
+      const listed = await run(undefined, model || undefined);
       if (!listed.ok || listed.models.length === 0) return setResult(listed);
       const pick =
         model && listed.models.includes(model) ? model : listed.models[0];
       setProbedModel(pick);
-      setResult(await run(pick));
+      const probed = await run(pick);
+      setResult(
+        probed.ok && listed.ok && listed.modelCheck
+          ? { ...probed, modelCheck: listed.modelCheck }
+          : probed,
+      );
     } catch (e) {
       setResult({
         ok: false,
@@ -148,6 +155,26 @@ export function OpenAICompatConnectionTester({
             Connected. {result.models.length} model
             {result.models.length === 1 ? "" : "s"} listed.
           </span>
+        </Alert>
+      )}
+
+      {result?.ok && result.modelCheck && (
+        <Alert
+          type={result.modelCheck.status === "not-found" ? "warning" : "info"}
+          size="sm"
+          role="status"
+          data-testid="model-check"
+        >
+          <span className="block text-xs">
+            {result.modelCheck.status === "found"
+              ? result.modelCheck.summary
+              : result.modelCheck.message}
+          </span>
+          {result.modelCheck.status === "unverified" && (
+            <span className="block text-xs opacity-80">
+              Chat requests are not affected.
+            </span>
+          )}
         </Alert>
       )}
 

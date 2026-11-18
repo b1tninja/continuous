@@ -4,6 +4,7 @@ import {
   hasWindowsShortName,
   isConfigPath,
   isSecretPath,
+  POWERSHELL_PROFILE_VARIABLE,
   stripWindowsPathAliases,
 } from "./protectedPaths";
 
@@ -160,6 +161,13 @@ export function protectedPathHit(
   cwd?: string,
 ): ProtectedHit | undefined {
   if (!raw) return undefined;
+  // `$PROFILE` is a PowerShell profile (D-012), whatever it expands to
+  if (
+    kinds.includes("config") &&
+    POWERSHELL_PROFILE_VARIABLE.test(raw.trim())
+  ) {
+    return { kind: "config", path: raw.trim() };
+  }
   const path = normalizeProtectedPath(raw, home, cwd);
   if (!path) return undefined;
   if (kinds.includes("secret") && isSecretPath(path)) {

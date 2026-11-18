@@ -1,3 +1,4 @@
+import type { RetirementNotice } from "core/util/modelRetirement";
 import { selectCacheSetting } from "../../redux/selectors/selectCacheSetting";
 import {
   ArrowPathIcon,
@@ -5,12 +6,20 @@ import {
   Cog6ToothIcon,
   CubeIcon,
   PlusIcon,
+  ServerStackIcon,
 } from "@heroicons/react/24/outline";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/Auth";
+import {
+  retirementDetail,
+  retirementKey,
+  retirementLabel,
+  useRetirementNotices,
+} from "../../hooks/useRetirementNotices";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import { useProviderSetupDialog } from "../ProviderSetup/useProviderSetupDialog";
+import { useModelConfigDialog } from "../ModelConfig/useModelConfigDialog";
 import {
   setDialogMessage,
   setModeModelOverride,
@@ -47,6 +56,8 @@ interface ModelOptionProps {
   idx: number;
   showMissingApiKeyMsg: boolean;
   isSelected?: boolean;
+  /** Deprecated, retired or retiring soon (core/util/modelRetirement.ts). */
+  retirement?: RetirementNotice;
 }
 
 interface Option {
@@ -57,6 +68,8 @@ interface Option {
   isAutoDetected?: boolean;
   /** A `${{ secrets.* }}` credential with no value on this machine. */
   missingSecret?: boolean;
+  provider?: string;
+  model?: string;
 }
 
 function modelSelectTitle(model: any): string {
@@ -84,8 +97,9 @@ function ModelOption({
   idx,
   showMissingApiKeyMsg,
   isSelected,
+  retirement,
 }: ModelOptionProps) {
-  const navigate = useNavigate();
+  const openModelConfig = useModelConfigDialog();
 
   function handleOptionClick(e: any) {
     if (showMissingApiKeyMsg) {
@@ -96,7 +110,8 @@ function ModelOption({
 
   function handleConfigureClick(e: React.MouseEvent) {
     e.stopPropagation();
-    navigate(CONFIG_ROUTES.MODELS);
+    e.preventDefault();
+    openModelConfig({ title: option.value, sourceFile: option.sourceFile });
   }
 
   return (
@@ -128,6 +143,15 @@ function ModelOption({
                 data-testid="model-option-key-not-set"
               >
                 (Key not set)
+              </span>
+            )}
+            {retirement && (
+              <span
+                className="ml-1.5 text-[10px] text-warning italic"
+                data-testid="model-option-retirement"
+                title={retirementDetail(retirement)}
+              >
+                ({retirementLabel(retirement)})
               </span>
             )}
           </span>
@@ -166,6 +190,7 @@ function ModelSelect() {
   }, []);
   const [options, setOptions] = useState<Option[]>([]);
   const [sortedOptions, setSortedOptions] = useState<Option[]>([]);
+  const retirements = useRetirementNotices(options);
   const { selectedProfile } = useAuth();
   const mode = useAppSelector((state) => state.session.mode);
   const tinyFont = useFontSize(-4);
@@ -221,6 +246,8 @@ function ModelSelect() {
           sourceFile: model.sourceFile,
           isAutoDetected: model.isFromAutoDetect,
           missingSecret: modelHasMissingSecret(model),
+          provider: model.provider,
+          model: model.model,
         };
       }),
     );
@@ -325,6 +352,15 @@ function ModelSelect() {
     openSetup();
   }
 
+  function onClickProviders(e: MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+
+    closeDropDown(buttonRef.current);
+
+    void navigate(CONFIG_ROUTES.PROVIDERS);
+  }
+
   function onClickConfigureModels(e: React.MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
@@ -338,7 +374,14 @@ function ModelSelect() {
   const selectedKeyNotSet = modelHasMissingSecret(selectedModel);
 
   return (
-    <Listbox onChange={(val: string) => chooseModel(val)}>
+    <Listbox
+      onChange={(val: string) =>
+        // Enter on the Providers... row opens the page, as a click does
+        val === "providers"
+          ? navigate(CONFIG_ROUTES.PROVIDERS)
+          : chooseModel(val)
+      }
+    >
       <div className="relative flex min-w-0">
         <ListboxButton
           data-testid="model-select-button"
@@ -409,6 +452,9 @@ function ModelSelect() {
                     key={`offered-${option.value}`}
                     showMissingApiKeyMsg={option.apiKey === ""}
                     isSelected={option.value === selectedModel?.title}
+                    retirement={retirements.get(
+                      retirementKey(option.provider, option.model),
+                    )}
                   />
                 ))}
                 {otherSorted.length > 0 && (
@@ -426,6 +472,9 @@ function ModelSelect() {
                         key={`other-${option.value}`}
                         showMissingApiKeyMsg={option.apiKey === ""}
                         isSelected={option.value === selectedModel?.title}
+                        retirement={retirements.get(
+                          retirementKey(option.provider, option.model),
+                        )}
                       />
                     ))}
                   </>
@@ -439,6 +488,9 @@ function ModelSelect() {
                   key={idx}
                   showMissingApiKeyMsg={option.apiKey === ""}
                   isSelected={option.value === selectedModel?.title}
+                  retirement={retirements.get(
+                    retirementKey(option.provider, option.model),
+                  )}
                 />
               ))
             )}
@@ -458,6 +510,18 @@ function ModelSelect() {
                 <span className="flex flex-row items-center text-2xs text-description">
                   <PlusIcon className="mr-1.5 h-3.5 w-3.5" />
                   Manage models...
+                </span>
+              </ListboxOption>
+              <ListboxOption
+                key={options.length + 1}
+                onClick={onClickProviders}
+                value={"providers" as any}
+                fontSizeModifier={-2}
+                className="px-2 py-2"
+              >
+                <span className="flex flex-row items-center text-2xs text-description">
+                  <ServerStackIcon className="mr-1.5 h-3.5 w-3.5" />
+                  Providers...
                 </span>
               </ListboxOption>
 

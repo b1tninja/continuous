@@ -32,6 +32,23 @@ import { AppThunkDispatch, RootState } from "../store";
 import { commitLoop } from "../util/loopCommit";
 import { EvaluatedPolicy } from "./evaluateToolPolicies";
 
+/** Characters of a held call the loop's inbox shows before it says there is more. */
+export const HELD_SUMMARY_LENGTH = 300;
+
+/**
+ * What the inbox shows of a held call. Allow there covers the whole call, so a
+ * text that was cut says so and says by how much: without the marker a long
+ * command reads as if it ended at the cut.
+ */
+export function heldCallSummary(
+  text: string,
+  max: number = HELD_SUMMARY_LENGTH,
+): string {
+  if (text.length <= max) return text;
+  const hidden = (text.length - max).toLocaleString("en-US");
+  return `${text.slice(0, max)}… [${hidden} more characters not shown; Allow covers the whole call]`;
+}
+
 function refuse(
   dispatch: AppThunkDispatch,
   toolCallId: string,
@@ -294,9 +311,11 @@ export function applyLoopHolds(
       };
     }
     // Shown to the person in the inbox: the masked text is what is stored
-    const summary = maskCommandForDisplay(
-      p.displayValue || describeHeldCall(name, toolCallState.parsedArgs),
-    ).slice(0, 300);
+    const summary = heldCallSummary(
+      maskCommandForDisplay(
+        p.displayValue || describeHeldCall(name, toolCallState.parsedArgs),
+      ),
+    );
     const held = holdQuestion(
       loop,
       {

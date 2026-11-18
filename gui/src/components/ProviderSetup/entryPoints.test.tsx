@@ -89,12 +89,15 @@ describe("ProvidersCard", () => {
     });
     expect(await screen.findByTestId("provider-row-anthropic")).toBeTruthy();
     expect(screen.getByTestId("provider-row-openai").textContent).toContain(
-      "http://localhost:1234/v1 - 2 models",
+      "http://localhost:1234/v1",
+    );
+    expect(screen.getByTestId("provider-row-openai").textContent).toContain(
+      "2 models enabled",
     );
 
     await user.click(
       within(screen.getByTestId("provider-row-openai")).getByRole("button", {
-        name: "Edit",
+        name: "Edit connection",
       }),
     );
     expect(store.getState().ui.showDialog).toBe(true);

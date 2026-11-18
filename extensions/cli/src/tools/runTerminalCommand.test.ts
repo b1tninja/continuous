@@ -74,6 +74,54 @@ describe("runTerminalCommandTool", () => {
     );
   });
 
+  describe("pagers", () => {
+    it("gives a command a pager that prints and ends", async () => {
+      const result = await runTerminalCommandTool.run({
+        command: `node -e "console.log('P=' + process.env.PAGER + ' G=' + process.env.GIT_PAGER)"`,
+      });
+      expect(result).toContain("P=cat G=cat");
+    }, 30_000);
+  });
+
+  describe("exit codes", () => {
+    // Windows PowerShell used to report 1 for any failing native program
+    it("names the code the program chose", async () => {
+      await expect(
+        runTerminalCommandTool.run({
+          command: `node -e "console.error('failed'); process.exit(3)"`,
+        }),
+      ).rejects.toMatch(/^Error \(exit code 3\): failed/);
+    }, 30_000);
+  });
+
+  describe("commands that ask a question", () => {
+    // Standard input used to stay open, so these waited for the timeout
+    it.runIf(process.platform === "win32")(
+      "Read-Host fails at once with PowerShell's NonInteractive error",
+      async () => {
+        const started = Date.now();
+        await expect(
+          runTerminalCommandTool.run({ command: "Read-Host 'name'" }),
+        ).rejects.toMatch(/NonInteractive/);
+        expect(Date.now() - started).toBeLessThan(20_000);
+      },
+      30_000,
+    );
+
+    it.skipIf(process.platform === "win32")(
+      "read sees end of file at once",
+      async () => {
+        const started = Date.now();
+        const result = await runTerminalCommandTool.run({
+          command: "read x; echo got=$x",
+        });
+        expect(result).toContain("got=");
+        expect(Date.now() - started).toBeLessThan(20_000);
+      },
+      30_000,
+    );
+  });
+
   describe("basic platform-specific terminal execution", () => {
     it.skipIf(process.platform === "win32" || !fs.existsSync("/bin/bash"))(
       "does not source a shell startup file named after the process started",

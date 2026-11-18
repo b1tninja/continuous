@@ -259,7 +259,7 @@ export class ShadowReviewer {
     usage: NonNullable<ReturnType<typeof usageOf>>,
     reviewer: ShadowReviewerClient,
   ): number | "unknown" {
-    return costOf(
+    const priced = costOf(
       {
         input: usage.input ?? 0,
         output: usage.output ?? 0,
@@ -274,6 +274,9 @@ export class ShadowReviewer {
         userPrice:
           this.deps.userPrices?.[`${reviewer.providerName}/${reviewer.model}`],
       },
-    ).amount;
+    );
+    // A community catalogue price (models.dev) is a third-party estimate: the
+    // shadow budget is not held on it, as a run's dollar cap is not
+    return priced.priceSource?.kind === "community" ? "unknown" : priced.amount;
   }
 }

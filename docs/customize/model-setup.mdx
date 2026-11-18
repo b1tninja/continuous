@@ -2,7 +2,7 @@
 title: "Set Up Providers and Models"
 ---
 
-Open the setup flow from **Settings > Models > Providers** (Add provider, or Edit on an existing row), from the first-run onboarding card, or from the command palette:
+Open the setup flow from **Settings > Providers** (Add provider, or an action on an existing row), from the model picker's **Manage models...**, from the first-run onboarding card, or from the command palette:
 
 - VS Code: `Continuous: Manage Models and Providers`
 
@@ -11,6 +11,21 @@ The flow has three steps, and nothing is written until you confirm the last one.
 1. **Credentials.** Choose the provider, enter the API key and any endpoint fields (API base, or region and profile for Amazon Bedrock), and choose where the key is kept.
 2. **Models.** Tick the models to use. Models already in your `config.yaml` start ticked. The list can be refreshed from the provider with the entered credentials.
 3. **Review.** Lists the models to add and remove, and where the key goes. Removing models needs a separate confirmation, and removed models are also taken out of the `modeModels` lists.
+
+## The Providers page
+
+**Settings > Providers** lists each provider connection in the selected config, one row each: the provider and its icon, the account or endpoint and region, how it signs in (for example "Key CONTINUOUS_ANTHROPIC_API_KEY in secure storage", "Key ... in ~/.continuous/.env", "AWS SSO profile work" or "AWS default credentials"), and how many models are enabled. Key values are never shown. For an AWS profile, the row says how it signs in (SSO, `credential_process`, an assumed role, a web identity token, or access keys in `~/.aws/config` or `~/.aws/credentials`), read from the names of the keys in the profile's section of `~/.aws/config` (or `AWS_CONFIG_FILE`); no value is read, and `~/.aws/credentials` is not opened. A key that is in neither secure storage nor `~/.continuous/.env` is marked, since it has to come from an environment variable. Below the connections are the [provider accounts](/customize/providers) of `~/.continuous/providers.yaml`.
+
+Open it from the Settings sidebar, from **Providers...** on Settings > Models or in the model picker, or with `Continuous: Open Providers` in VS Code.
+
+Each row has:
+
+- **Manage models**: the setup flow at the model checklist for that connection.
+- **Edit connection**: the setup flow at the credentials step, to change the key or the endpoint.
+- **Test connection**: opens the settings of the connection's first model at Connection, where **Test connection** runs, as `Continuous: Test Connection of the Chat Model` does for the chat model.
+- **Remove**: after a confirmation that names the models, takes the connection's models out of the selected config and out of the `modeModels` lists. Stored keys are not deleted, and for a connection that uses an account, the account in `providers.yaml` and its catalog models stay; delete the account under **Provider accounts**.
+
+With no connection yet, the page shows **Add a provider**.
 
 ## Test connection
 
@@ -52,11 +67,11 @@ Your last choice is remembered. Existing configs are not changed.
 4. `<workspace>/.env`
 5. Process environment variables
 
-Because secure storage is read first, a key saved there wins over an older copy in `~/.continue/.env`. When you save a key to secure storage and `~/.continue/.env` has the same name, the flow asks whether to remove that line. It never deletes it without asking, and only does so once the key is in secure storage.
+Because secure storage is read first, a key saved there wins over an older copy in `~/.continuous/.env`. When you save a key to secure storage and `~/.continuous/.env` has the same name, the flow asks whether to remove that line. It never deletes it without asking, and only does so once the key is in secure storage.
 
 ### Move an existing key to secure storage
 
-On the Providers card, a connection whose key is only in `~/.continuous/.env` shows **Move key to secure storage**. After you confirm, Continuous copies the value into secure storage, checks that it reads back, and then removes that line from `~/.continuous/.env`. `config.yaml` is unchanged, since it already refers to the secret by name. The key value stays in the extension host and is not sent to the chat panel. If the key is in both places, the card offers **Remove .env copy** instead.
+On **Settings > Providers**, a connection whose key is only in `~/.continuous/.env` shows **Move key to secure storage**. After you confirm, Continuous copies the value into secure storage, checks that it reads back, and then removes that line from `~/.continuous/.env`. `config.yaml` is unchanged, since it already refers to the secret by name. The key value stays in the extension host and is not sent to the chat panel. If the key is in both places, the row offers **Remove .env copy** instead.
 
 ### A synced config on a new machine
 

@@ -4,21 +4,31 @@
  * editing them asks again.
  */
 
+import * as path from "node:path";
 import * as readline from "node:readline/promises";
 
 import { getProjectHookFiles, loadHooksConfig } from "../hooks/hookConfig.js";
+import { getUserHookFiles } from "../hooks/hookListing.js";
+import { hooksTestCommand } from "../hooks/hooksTest.js";
 import {
   fingerprintProjectHooks,
+  getGlobalDir,
   isProjectTrusted,
   listProjectHandlers,
   revokeProject,
   trustProject,
 } from "../hooks/hookTrust.js";
 import type { ProjectHookFile } from "../hooks/hookTrust.js";
+import { auditTrust } from "../permissions/policyAudit.js";
 
 export interface HooksCommandOptions {
   /** Skip the question; for scripts. */
   yes?: boolean;
+  /** `test`: the event to try and how to build its sample input. */
+  event?: string;
+  tool?: string;
+  server?: string;
+  input?: string;
 }
 
 function out(line = ""): void {
@@ -31,6 +41,42 @@ function describe(cwd: string, files: ProjectHookFile[]): void {
   out();
   for (const line of listProjectHandlers(files, cwd)) out(`  ${line}`);
   out();
+}
+
+/**
+ * The user's own hooks, each file with what it defines and whether it runs:
+ * the Continuous file always does, `~/.claude` only when opted in.
+ */
+function describeUserHooks(cwd: string): void {
+  const files = getUserHookFiles(cwd);
+  if (files.length === 0) return;
+  out("Your own hooks (from your settings):");
+  for (const file of files) {
+    out(`  ${file.path}`);
+    if (file.notRead) {
+      out(
+        `    not read: hooks from Claude Code's settings are opt-in. Set "hooks": { "readClaudeSettings": true } in ${continuousSettingsFile(cwd)} to run them.`,
+      );
+      for (const line of listProjectHandlers([file], cwd)) {
+        out(`    skipped ${line}`);
+      }
+      continue;
+    }
+    if (file.unreadable) {
+      out(
+        "    could not be read as a JSON object: none of its hooks run. Fix the file.",
+      );
+      continue;
+    }
+    for (const line of listProjectHandlers([file], cwd)) out(`    ${line}`);
+  }
+  out();
+}
+
+/** The user's Continuous settings file, where `hooks.readClaudeSettings` goes. */
+function continuousSettingsFile(cwd: string): string {
+  const dir = getGlobalDir(cwd);
+  return dir ? path.join(dir, "settings.json") : "~/.continuous/settings.json";
 }
 
 async function confirm(question: string): Promise<boolean> {
@@ -53,11 +99,13 @@ export async function hooksCommand(
   options: HooksCommandOptions = {},
   cwd: string = process.cwd(),
 ): Promise<number> {
+  if (action === "test") return hooksTestCommand(options, cwd);
   const files = getProjectHookFiles(cwd);
   const fingerprint = fingerprintProjectHooks(cwd, files);
 
   switch (action ?? "list") {
     case "list": {
+      describeUserHooks(cwd);
       if (files.length === 0) {
         out("This project defines no hooks.");
         return 0;
@@ -96,6 +144,10 @@ export async function hooksCommand(
       }
       try {
         trustProject(cwd, fingerprint);
+        auditTrust("hook-trust", "grant", cwd, {
+          source: "cli-command",
+          confirmed: options.yes ? "flag" : "prompt",
+        });
       } catch (error) {
         process.stderr.write(
           `${error instanceof Error ? error.message : String(error)}\n`,
@@ -107,8 +159,11 @@ export async function hooksCommand(
     }
 
     case "revoke": {
+      const removed = revokeProject(cwd);
+      if (removed)
+        auditTrust("hook-trust", "revoke", cwd, { source: "cli-command" });
       out(
-        revokeProject(cwd)
+        removed
           ? "Trust removed. This project's hooks no longer run."
           : "This project was not trusted.",
       );
@@ -117,7 +172,7 @@ export async function hooksCommand(
 
     default:
       process.stderr.write(
-        `Unknown action '${action}'. Use list, trust or revoke.\n`,
+        `Unknown action '${action}'. Use list, trust, revoke or test.\n`,
       );
       return 1;
   }

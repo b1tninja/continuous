@@ -14,7 +14,7 @@ import type { ContinueConfig, FetchFunction } from "..";
  * settings (proxy, CA bundle, certificate, TLS) and nothing else.
  */
 export function modelToolFetch(
-  config: Pick<ContinueConfig, "requestOptions" | "modelsByRole">,
+  config: Partial<Pick<ContinueConfig, "requestOptions" | "modelsByRole">>,
 ): FetchFunction {
   return (url, init) => {
     const models = Object.values(config.modelsByRole ?? {}).flat();

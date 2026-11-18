@@ -316,6 +316,42 @@ foundation models in each region. Bedrock API keys additionally need
 only work with Bedrock and Bedrock Runtime actions, which covers everything Continuous
 does.
 
+### Optional quota check
+
+AWS can apply a tokens-per-minute quota of **0** to a model for an account, even when model access shows as granted; every request to that model is then refused with "not available for this account". If the credentials can read Service Quotas, Continuous names such a model **before** the first request: on **Test connection** (the selected model gets a warning with a link to the Service Quotas console) and when you select a Bedrock model (one notification per model and region):
+
+> us.anthropic.claude-opus-5-5 has a 0 tokens-per-minute quota in us-east-1 for this account; request an increase in Service Quotas
+
+The permission is **optional**. Add it to the IAM identity Continuous uses if you want the check:
+
+```json title="IAM policy"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ContinuousBedrockQuotaCheck",
+      "Effect": "Allow",
+      "Action": "servicequotas:ListServiceQuotas",
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+What happens without it, or when the check cannot run:
+
+- **No permission** (`AccessDeniedException`): Test connection still succeeds and shows one quiet line, "Quota check skipped: this profile lacks servicequotas:ListServiceQuotas". No error and no notification. The answer is remembered for this profile and region for a day, or until the credentials change, so Service Quotas is not asked on every connection. A model with a 0 quota is then reported after its first refused request, with the same advice.
+- **Bedrock API key**: Service Quotas needs AWS credentials, so the check is skipped (one quiet line on Test connection).
+- **Throttling, a network error, a region without Service Quotas, or no answer within 5 seconds**: skipped with one quiet line and tried again later (15 minutes after throttling, an hour after a timeout or network error, a day for a region without the service). Test connection, the model list and chat never wait longer than that for it.
+
+The check reads `ListServiceQuotas` for service code `bedrock` in the configured region, with the same credentials, profile, proxy and certificate settings as the Bedrock requests, and matches the per-minute on-demand, cross-region and global quotas to the model by name. The result (quota names and values, no account id or key) is kept in `model-catalog/` in the global folder for `modelCatalogRefreshHours`. It follows the [model information updates](/reference#modelcatalog) setting: **Automatic** checks on Test connection, on selecting a model and in the background for the selected model; **Only when I ask** checks on Test connection only; **Off** never checks.
+
+### Prices from the AWS Price List
+
+Cost estimates for Bedrock models use the AWS Price List for the selected model's region when it is available, ahead of the prices built into Continuous, and the cost breakdown names it ("AWS Price List, us-east-1 in-region, downloaded 2026-11-13"). It includes the flex and priority tiers and the global cross-region rates where AWS lists them, so a request Bedrock served at the flex tier is priced at the flex rate. Models the Price List does not cover (Claude is priced from Anthropic's list with the regional premium) keep the built-in prices.
+
+The Price List is a public file: one `GET https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonBedrock/current/<region>/index.json` with no AWS credentials and no IAM permission. It is large, so it is read as a stream and only the per-token prices are kept, in `model-catalog/bedrock-prices-<region>.json`. It is requested only when a Bedrock model is configured, and follows the model information updates setting: **Automatic** downloads it when you select a Bedrock model and in the background when the copy is older than `modelCatalogRefreshHours`; **Only when I ask** downloads it on Bedrock Test connection; **Off** never downloads it and ignores a copy kept from before. A failed download leaves the previous copy, or the built-in prices, in use.
+
 ## Corporate proxies and TLS inspection
 
 Bedrock requests use the same `requestOptions` as every other model, so they work behind an HTTP(S) proxy and a TLS-inspecting firewall without extra tooling:
@@ -359,6 +395,8 @@ If the certificate isn't trusted you'll see an error such as "unable to get loca
 | "Please make sure your API Key is valid" | A short-term API key works only in the region it was generated for: make `region` match it, or create a key for this region. A long-term key may have expired |
 | AWS SSO session expired | Run `aws sso login --profile <name>` |
 | "Could not load credentials" | Configure one of the methods above |
+| "not available for this account" | The account's tokens-per-minute quota for the model is probably 0 in this region: check Service Quotas > Amazon Bedrock and request an increase ([quota check](#optional-quota-check)) |
+| "Quota check skipped: this profile lacks servicequotas:ListServiceQuotas" | Informational. Add the [optional permission](#optional-quota-check) to see 0 quotas before the first request |
 | "unable to get local issuer certificate" / "self-signed certificate" | Your network inspects TLS. Set `requestOptions.useSystemCa: true` or `caBundlePath` ([details](#corporate-proxies-and-tls-inspection)) |
 | 407 Proxy Authentication Required | Put credentials in the proxy URL, e.g. `requestOptions.proxy: http://user:pass@proxy:3128` |
 | Anthropic "use case details" prompt | Open the Bedrock Playground, choose an Anthropic model and submit the form |

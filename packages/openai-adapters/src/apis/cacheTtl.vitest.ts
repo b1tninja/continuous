@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   bedrockCachePoint,
   bedrockCacheTtl,
@@ -9,6 +9,7 @@ import {
 import {
   AUTO_ESCALATE_AT_REQUEST,
   AutoCacheTtl,
+  cacheTtlForcedTo5m,
   requestedCacheTtl,
   resolveCacheTtl,
 } from "./cacheTtl.js";
@@ -26,6 +27,36 @@ describe("resolveCacheTtl", () => {
     expect(resolveCacheTtl("auto", "auto")).toBeUndefined();
     expect(resolveCacheTtl(undefined, "2h")).toBeUndefined();
     expect(resolveCacheTtl(undefined, undefined)).toBeUndefined();
+  });
+});
+
+describe("CONTINUOUS_FORCE_CACHE_5M", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("is on only for the value 1", () => {
+    expect(cacheTtlForcedTo5m({})).toBe(false);
+    expect(cacheTtlForcedTo5m({ CONTINUOUS_FORCE_CACHE_5M: "yes" })).toBe(
+      false,
+    );
+    expect(cacheTtlForcedTo5m({ CONTINUOUS_FORCE_CACHE_5M: "1" })).toBe(true);
+  });
+
+  it("wins over the request, the config and auto", () => {
+    vi.stubEnv("CONTINUOUS_FORCE_CACHE_5M", "1");
+    expect(resolveCacheTtl("1h", "1h")).toBe("5m");
+    expect(resolveCacheTtl(undefined, "auto")).toBe("5m");
+    const auto = new AutoCacheTtl();
+    for (let i = 0; i < AUTO_ESCALATE_AT_REQUEST + 1; i++) {
+      expect(requestedCacheTtl("auto", auto, true)).toBe("5m");
+    }
+    expect(requestedCacheTtl("1h", auto, true)).toBe("5m");
+  });
+
+  it("still sends nothing for a request without cache points", () => {
+    vi.stubEnv("CONTINUOUS_FORCE_CACHE_5M", "1");
+    expect(requestedCacheTtl("1h", new AutoCacheTtl(), false)).toBeUndefined();
   });
 });
 

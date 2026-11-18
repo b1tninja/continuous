@@ -1,6 +1,6 @@
 /* eslint-disable max-lines */
 /* eslint-disable max-statements   */
-import type { ChatHistoryItem, Session } from "core/index.js";
+import type { ChatHistoryItem, PromptProgress, Session } from "core/index.js";
 import { useApp } from "ink";
 import { useEffect, useRef, useState } from "react";
 
@@ -17,9 +17,13 @@ import {
 } from "../../loop/loopSession.js";
 import { toolPermissionManager } from "../../permissions/permissionManager.js";
 import { services } from "../../services/index.js";
+import { ModelNoteGate, onModelInUse } from "../../services/modelInUse.js";
 import {
   createSession,
+  forkIntoNewSession,
+  keepCopyBeforeEdit,
   loadSession,
+  loadSessionById,
   onLoopChange,
   updateSessionHistory,
 } from "../../session.js";
@@ -32,6 +36,7 @@ import {
 import { telemetryService } from "../../telemetry/telemetryService.js";
 import { formatError } from "../../util/formatError.js";
 import { logger } from "../../util/logger.js";
+import { setUserNoticeSink, userNotice } from "../../util/userNotice.js";
 
 import {
   handleAutoCompaction,
@@ -51,6 +56,7 @@ import {
   setupRemotePolling,
 } from "./useChat.remote.helpers.js";
 import { handleBashModeProcessing } from "./useChat.shellMode.js";
+import { continueStoppedReply, keepStoppedReply } from "./useChat.stopped.js";
 import {
   createStreamCallbacks,
   executeStreaming,
@@ -100,10 +106,9 @@ export function useChat({
 
     // Fork from an existing session if fork flag is used
     if (fork) {
-      const { loadSessionById, startNewSession } = require("../../session.js");
       const sessionToFork = loadSessionById(fork);
       if (sessionToFork) {
-        return startNewSession(sessionToFork.history);
+        return forkIntoNewSession(sessionToFork);
       }
       // If session not found, create a new empty session
       return createSession([]);
@@ -150,12 +155,18 @@ export function useChat({
         svc.on("stateChanged", listener);
         serviceListenerCleanupRef.current = () =>
           svc.off("stateChanged", listener);
+        // Lines the person has to see (a damaged session file, a session
+        // that is not being saved) go into the chat while the UI is up.
+        setUserNoticeSink((text) => {
+          svc.addSystemMessage(text);
+        });
       })
       .catch((error) => {
         logger.error("Failed to initialize ChatHistoryService", { error });
       });
 
     return () => {
+      setUserNoticeSink(undefined);
       serviceListenerCleanupRef.current?.();
       serviceListenerCleanupRef.current = null;
     };
@@ -164,6 +175,12 @@ export function useChat({
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   // The reply is held while recovery looks for a tool call written as text
   const [isReadingReply, setIsReadingReply] = useState(false);
+  // How far a local server has read a long prompt; undefined when not reading
+  const [promptProgress, setPromptProgress] = useState<
+    PromptProgress | undefined
+  >(undefined);
+  // The reasoning of the reply now streaming, shown live; null when none
+  const [liveReasoning, setLiveReasoning] = useState<string | null>(null);
   const [responseStartTime, setResponseStartTime] = useState<number | null>(
     null,
   );
@@ -180,6 +197,8 @@ export function useChat({
   const modelStreamingRef = useRef(false);
   // The running response was ended by "Steer now": send the queue at once
   const steerNowRef = useRef(false);
+  // The text the request in flight has streamed so far (Stop keeps it)
+  const partialReplyRef = useRef("");
   const [isChatHistoryInitialized, setIsChatHistoryInitialized] = useState(
     // If we're resuming and found a saved session, we're already initialized
     // If we're forking and found a session to fork from, we're already initialized
@@ -309,6 +328,31 @@ export function useChat({
   // on (src/loop/loopDriver.ts). `busy` counts the turns and messages in
   // flight, which a turn's stale closures cannot read from state.
   const busyRef = useRef(0);
+  // The model in use, in the transcript when it changes (M7): a line written
+  // while a turn streams would land inside its reply, so it waits for the
+  // turn to end
+  const modelNoteGateRef = useRef<ModelNoteGate | null>(null);
+  const pendingModelNoteRef = useRef<string | null>(null);
+  const flushModelNote = () => {
+    const note = pendingModelNoteRef.current;
+    if (!note || busyRef.current > 0) return;
+    pendingModelNoteRef.current = null;
+    setChatHistory((prev) => [
+      ...prev,
+      { message: { role: "system", content: note }, contextItems: [] },
+    ]);
+  };
+  useEffect(() => {
+    modelNoteGateRef.current = new ModelNoteGate(
+      services.model?.getState?.()?.inUse,
+    );
+    return onModelInUse((info) => {
+      const note = modelNoteGateRef.current?.next(info);
+      if (!note) return;
+      pendingModelNoteRef.current = note;
+      flushModelNote();
+    });
+  }, []);
   const sendLoopTurnRef = useRef<(prompt: string) => Promise<void>>(
     async () => {},
   );
@@ -372,6 +416,10 @@ export function useChat({
         model: turnModel,
         onShowStatusMessage,
         onRecoveryHold: setIsReadingReply,
+        onPromptProgress: setPromptProgress,
+        onReasoning: (text: string) =>
+          setLiveReasoning((prev) => (prev ?? "") + text),
+        onReasoningDone: () => setLiveReasoning(null),
       });
       // Steering: deliver queued messages at the next tool boundary when the
       // person asked for it (Enter on an empty prompt while the agent works),
@@ -384,6 +432,19 @@ export function useChat({
       );
       streamCallbacks.onModelStreaming = (streaming: boolean) => {
         modelStreamingRef.current = streaming;
+      };
+      // What the request in flight has streamed, for Stop to keep; a reply
+      // that completed is written to the history by the stream itself
+      partialReplyRef.current = "";
+      const onContent = streamCallbacks.onContent;
+      streamCallbacks.onContent = (text: string) => {
+        partialReplyRef.current += text;
+        onContent(text);
+      };
+      const onContentComplete = streamCallbacks.onContentComplete;
+      streamCallbacks.onContentComplete = (text: string) => {
+        partialReplyRef.current = "";
+        return onContentComplete(text);
       };
 
       // Execute streaming chat response
@@ -428,6 +489,8 @@ export function useChat({
       setAbortController(null);
       setIsWaitingForResponse(false);
       setIsReadingReply(false);
+      setPromptProgress(undefined);
+      setLiveReasoning(null);
       setResponseStartTime(null);
       setInputMode(true);
 
@@ -452,6 +515,7 @@ export function useChat({
       } finally {
         busyRef.current--;
       }
+      flushModelNote();
       loopRunnerRef.current?.kick();
     }
   };
@@ -506,6 +570,20 @@ export function useChat({
         lastUserOrToolIndex = i;
         break;
       }
+    }
+
+    // A stopped partial reply is kept: the model is asked to go on from it
+    const continued = continueStoppedReply(chatHistory);
+    if (continued) {
+      setChatHistory(continued);
+      setWasInterrupted(false);
+      messageQueue.resume();
+      if (messageQueue.getQueueLength() > 0) {
+        await drainQueue();
+        return true;
+      }
+      await executeStreamingResponse(continued, compactionIndex);
+      return true;
     }
 
     if (lastUserOrToolIndex >= 0) {
@@ -610,6 +688,7 @@ export function useChat({
     } finally {
       busyRef.current--;
     }
+    flushModelNote();
     // The loop waited for this message's turn
     loopRunnerRef.current?.kick();
   };
@@ -894,17 +973,12 @@ export function useChat({
       messageQueue.pause();
       abortController.abort();
 
-      // Remove the last message if it's from assistant (partial response)
-      setChatHistory((current) => {
-        const lastMessage = current[current.length - 1];
-        if (
-          lastMessage?.message.role === "assistant" &&
-          !lastMessage.toolCallStates?.length
-        ) {
-          return current.slice(0, -1);
-        }
-        return current;
-      });
+      // The partial reply is kept, marked stopped, and saved with the
+      // session (the history service writes it), as the IDE keeps it. An
+      // empty one goes.
+      const partial = partialReplyRef.current;
+      partialReplyRef.current = "";
+      setChatHistory((current) => keepStoppedReply(current, partial));
 
       setWasInterrupted(true);
       setIsWaitingForResponse(false);
@@ -938,6 +1012,23 @@ export function useChat({
       messageIndex,
       currentHistoryLength: chatHistory.length,
     });
+
+    // What the edit replaces is kept as a session of its own (NI7)
+    const replaced = chatHistory
+      .slice(messageIndex)
+      .filter((item) => item.message.role !== "system").length;
+    const kept = replaced > 0 ? keepCopyBeforeEdit(chatHistory) : undefined;
+    if (kept) {
+      userNotice(
+        `Edited: the ${replaced} replaced message${replaced === 1 ? " is" : "s are"} kept in "${kept.title}"; /resume opens it.`,
+        `edit-copy:${kept.sessionId}`,
+      );
+    } else if (replaced > 0) {
+      userNotice(
+        "Edited: the replaced messages could not be saved as a copy.",
+        `edit-copy-failed:${Date.now()}`,
+      );
+    }
 
     // Rewind chat history to exclude the message being edited
     const rewindedHistory = chatHistory.slice(0, messageIndex);
@@ -983,6 +1074,7 @@ export function useChat({
 
     // Handle policy creation if requested
     if (approved && createPolicy && currentRequest) {
+      let saved = false;
       try {
         const { generatePolicyRule, addPolicyToYaml } =
           await import("../../permissions/policyWriter.js");
@@ -993,6 +1085,7 @@ export function useChat({
         );
 
         await addPolicyToYaml(policyRule);
+        saved = true;
         logger.debug(`Policy created: ${policyRule}`);
 
         // Reload permissions to pick up the new policy without requiring restart
@@ -1001,7 +1094,18 @@ export function useChat({
         logger.error("Failed to create policy or reload permissions", {
           error,
         });
-        // Continue with the approval even if policy creation/reload fails
+        // Continue with the approval even if policy creation/reload fails,
+        // and say when the rule was not saved: a log line is not enough for
+        // "always".
+        if (!saved) {
+          const { policySaveFailureNotice } =
+            await import("../../permissions/policyWriter.js");
+          const notice = policySaveFailureNotice(error);
+          setChatHistory((prev) => [
+            ...prev,
+            { message: { role: "system", content: notice }, contextItems: [] },
+          ]);
+        }
       }
     }
 
@@ -1045,6 +1149,8 @@ export function useChat({
     setChatHistory: setChatHistory,
     isWaitingForResponse,
     isReadingReply,
+    promptProgress,
+    liveReasoning,
     responseStartTime,
     isCompacting,
     compactionStartTime,
