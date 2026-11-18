@@ -312,6 +312,28 @@ describe("llmsFromModelConfig requestOptions merging", () => {
     });
   });
 
+  it("honors a context length written next to maxTokens", async () => {
+    const model: ModelConfig = {
+      name: "Claude Sonnet 4.6",
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+      defaultCompletionOptions: {
+        contextLength: 200000,
+        maxTokens: 64000,
+      },
+    };
+
+    const [llm] = await llmsFromModelConfig({
+      model,
+      uniqueId: "test-id",
+      llmLogger: mockLLMLogger,
+      config: mockConfig,
+    });
+
+    expect(llm.contextLength).toBe(200000);
+    expect(llm.completionOptions?.maxTokens).toBe(64000);
+  });
+
   it("should handle complex header merging scenarios", async () => {
     const model: ModelConfig = {
       name: "complex-headers",

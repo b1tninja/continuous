@@ -363,7 +363,10 @@ describe("streamResponseThunk", () => {
       },
       {
         type: "session/setInlineErrorMessage",
-        payload: "out-of-context",
+        payload: {
+          kind: "out-of-context",
+          detail: "Not enough context available for this request",
+        },
       },
       {
         type: "session/setInactive",
@@ -578,7 +581,10 @@ describe("streamResponseThunk", () => {
           },
         ],
         streamAborter: expect.any(AbortController),
-        inlineErrorMessage: "out-of-context", // Error message set
+        inlineErrorMessage: {
+          kind: "out-of-context",
+          detail: "Not enough context available for this request",
+        },
       },
     });
   });

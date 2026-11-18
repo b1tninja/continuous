@@ -24,24 +24,55 @@ export interface LimitInputs {
   defaultMaxTokens: number;
 }
 
+/**
+ * Where the window came from. `unknown` means nothing was set and nothing
+ * is published: the LLM then uses `defaultContextLength` (32,768) and the
+ * UI says so.
+ */
+export type ContextLengthSource =
+  "config" | "provider" | "published" | "unknown";
+
 export interface ResolvedLimits {
   /** Undefined when nobody knows; the LLM's getter then uses the default. */
   contextLength: number | undefined;
+  contextLengthSource: ContextLengthSource;
   maxTokens: number;
 }
 
+function contextOf(i: LimitInputs): {
+  contextLength: number | undefined;
+  contextLengthSource: ContextLengthSource;
+} {
+  if (i.userContextLength !== undefined) {
+    return {
+      contextLength: i.userContextLength,
+      contextLengthSource: "config",
+    };
+  }
+  if (i.provider?.contextLength !== undefined) {
+    return {
+      contextLength: i.provider.contextLength,
+      contextLengthSource: "provider",
+    };
+  }
+  if (i.llmInfo?.contextLength !== undefined) {
+    return {
+      contextLength: i.llmInfo.contextLength,
+      contextLengthSource: "published",
+    };
+  }
+  return { contextLength: undefined, contextLengthSource: "unknown" };
+}
+
 export function resolveModelLimits(i: LimitInputs): ResolvedLimits {
-  const contextLength =
-    i.userContextLength ??
-    i.provider?.contextLength ??
-    i.llmInfo?.contextLength;
+  const resolved = contextOf(i);
   if (i.userMaxTokens !== undefined) {
-    return { contextLength, maxTokens: i.userMaxTokens };
+    return { ...resolved, maxTokens: i.userMaxTokens };
   }
   const providerMax = i.provider?.maxOutputTokens;
   if (i.classMaxTokens !== undefined) {
     return {
-      contextLength,
+      ...resolved,
       maxTokens: providerMax
         ? Math.min(i.classMaxTokens, providerMax)
         : i.classMaxTokens,
@@ -49,9 +80,9 @@ export function resolveModelLimits(i: LimitInputs): ResolvedLimits {
   }
   const cap = providerMax ?? i.llmInfo?.maxCompletionTokens;
   return {
-    contextLength,
+    ...resolved,
     maxTokens: cap
-      ? Math.min(cap, (contextLength ?? i.defaultContextLength) / 4)
+      ? Math.min(cap, (resolved.contextLength ?? i.defaultContextLength) / 4)
       : i.defaultMaxTokens,
   };
 }

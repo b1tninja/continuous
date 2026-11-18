@@ -81,8 +81,13 @@ describe("readModelBlock", () => {
       reason: expect.stringContaining("No model named"),
     });
     expect(readModelBlock(SRC, "Shared")).toMatchObject({
+      editable: true,
+      catalog: true,
+    });
+    const uses = SRC + "\n  - name: Block\n    uses: some-block\n";
+    expect(readModelBlock(uses, "Block")).toMatchObject({
       editable: false,
-      reason: expect.stringContaining("Catalog Model"),
+      reason: expect.stringContaining("some-block"),
     });
     const twice = SRC.replace("name: Plain", "name: Qwen");
     expect(readModelBlock(twice, "Qwen").reason).toMatch(/2 models/);
@@ -403,5 +408,57 @@ describe("validateFieldValue", () => {
     ]);
     expect(entry).not.toHaveProperty("contextLength");
     expect(next.contextLength).toBe(10);
+  });
+});
+
+describe("catalog from: entries", () => {
+  const FROM = `name: Local
+schema: v1
+models:
+  - from: Claude Sonnet 5.5
+  - name: Named
+    from: Claude Opus 5.5
+`;
+
+  it("edits the context length of a from: entry by the catalog name", () => {
+    const info = readModelBlock(FROM, "Claude Sonnet 5.5");
+    expect(info).toMatchObject({ editable: true, catalog: true });
+    const { text, error } = editModelBlockText(FROM, "Claude Sonnet 5.5", [
+      { path: ["contextLength"], value: 1000000 },
+    ]);
+    expect(error).toBeUndefined();
+    expect(parsed(text!).models[0]).toMatchObject({
+      from: "Claude Sonnet 5.5",
+      contextLength: 1000000,
+    });
+  });
+
+  it("refuses every setting except the context length", () => {
+    const { text, error } = editModelBlockText(FROM, "Named", [
+      { path: ["defaultCompletionOptions", "temperature"], value: 0.4 },
+    ]);
+    expect(text).toBeUndefined();
+    expect(error).toMatch(/models\.yaml/);
+  });
+
+  it("moves a length written next to maxTokens onto the key the loader reads", () => {
+    const nested = `name: Local
+schema: v1
+models:
+  - name: Claude Sonnet 4.6
+    provider: anthropic
+    model: claude-sonnet-4-6
+    defaultCompletionOptions:
+      contextLength: 200000
+      maxTokens: 64000
+`;
+    const { text, error } = editModelBlockText(nested, "Claude Sonnet 4.6", [
+      { path: ["contextLength"], value: 200000 },
+    ]);
+    expect(error).toBeUndefined();
+    const model = parsed(text!).models[0];
+    expect(model.contextLength).toBe(200000);
+    expect(model.defaultCompletionOptions.contextLength).toBeUndefined();
+    expect(model.defaultCompletionOptions.maxTokens).toBe(64000);
   });
 });

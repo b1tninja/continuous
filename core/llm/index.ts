@@ -64,7 +64,11 @@ import {
   withThinkingOff,
 } from "./localServers.js";
 import { providerModelFactsFor } from "./providerModelInfoStore.js";
-import { resolveModelLimits, type LimitInputs } from "./providerModelLimits.js";
+import {
+  resolveModelLimits,
+  type ContextLengthSource,
+  type LimitInputs,
+} from "./providerModelLimits.js";
 import { RequestTimer, withTiming } from "./requestTiming.js";
 import { withServerTimings } from "./serverTimings.js";
 import { retryStreamOnDroppedConnection } from "./utils/streamRetry.js";
@@ -234,6 +238,11 @@ export abstract class BaseLLM implements ILLM {
   baseAgentSystemMessage?: string;
   toolDialect?: ToolDialectSetting;
   _contextLength: number | undefined;
+  /**
+   * Where `_contextLength` came from. `unknown` means the getter's 32,768
+   * is a stand-in, not a published window.
+   */
+  contextLengthSource: ContextLengthSource = "unknown";
   maxStopWords?: number | undefined;
   completionOptions: CompletionOptions;
   requestOptions?: RequestOptions;
@@ -346,6 +355,7 @@ export abstract class BaseLLM implements ILLM {
       ...(providerFacts ? { provider: providerFacts } : {}),
     });
     this._contextLength = limits.contextLength;
+    this.contextLengthSource = limits.contextLengthSource;
     this.maxStopWords = options.maxStopWords ?? this.maxStopWords;
     this.completionOptions = {
       ...options.completionOptions,
@@ -435,6 +445,7 @@ export abstract class BaseLLM implements ILLM {
   }): void {
     const limits = resolveModelLimits({ ...this.limitInputs, provider: facts });
     this._contextLength = limits.contextLength;
+    this.contextLengthSource = limits.contextLengthSource;
     this.completionOptions = {
       ...this.completionOptions,
       maxTokens: limits.maxTokens,
@@ -1209,9 +1220,10 @@ export abstract class BaseLLM implements ILLM {
       // Smaller after the provider refused a prompt our estimate said
       // fitted; larger once a local server's usage shows we over-count
       knownContextLength: correctedContextLength(
-        this._contextLength,
+        this.contextLength,
         completionOptions.model,
       ),
+      contextLengthUnknown: this.contextLengthSource === "unknown",
       maxTokens: completionOptions.maxTokens ?? DEFAULT_MAX_TOKENS,
       supportsImages: this.supportsImages(),
       tools: options.tools,
@@ -1519,9 +1531,10 @@ export abstract class BaseLLM implements ILLM {
         modelName: completionOptions.model,
         msgs: _messages,
         knownContextLength: correctedContextLength(
-          this._contextLength,
+          this.contextLength,
           completionOptions.model,
         ),
+        contextLengthUnknown: this.contextLengthSource === "unknown",
         maxTokens: completionOptions.maxTokens ?? DEFAULT_MAX_TOKENS,
         supportsImages: this.supportsImages(),
         tools: optionsWithOverrides.tools,
