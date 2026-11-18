@@ -1,0 +1,3 @@
+## New
+
+- **Drop Files for Chat** (VS Code): a small view under the chat that takes files and folders dropped from the Explorer, editor tabs and your file manager and adds them to the chat input as `@` mentions. From VS Code 1.140, drags no longer reach the chat itself ([microsoft/vscode#339036](https://github.com/microsoft/vscode/issues/339036)), so the view is shown there by default (`continuous.chatDropZone`: `auto`, `always`, `never`). Items outside the workspace and files that look like secrets are refused with the reason. Press Enter on its row, or run **Continuous: Pick Files or Folders for Chat**, to pick items from the keyboard.
