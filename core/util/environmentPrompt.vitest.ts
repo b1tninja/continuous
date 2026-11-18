@@ -1,6 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
@@ -617,9 +616,9 @@ describe("ENV8-f real interpreter only", () => {
   });
 
   it("no permission code imports the renderer or the shell description", () => {
-    const root = fileURLToPath(
-      new URL("../tools/permissions", import.meta.url),
-    );
+    // core/ is the working directory of this suite. import.meta is rejected
+    // by the VS Code typecheck, which compiles this file too.
+    const root = join(process.cwd(), "tools", "permissions");
     const offenders: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {
