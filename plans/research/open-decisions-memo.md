@@ -4,13 +4,17 @@ Status: research, 2026-11-11, from the "Later" and "Open decisions" sections of 
 
 ## 1. Decisions that the privacy audit changes
 
-### Fate of `core/continueServer/` (roadmap: "delete with L7")
+### Web search (the upstream proxy is gone)
 
-The directory holds `stubs/headers.ts`, which is what puts the machine id, OS, version and an upstream key on requests to the upstream proxy (privacy audit F1, F2). **Recommend: delete the headers stub now, not with L7.** L7 is a feature; the stub is a defect. Cost: the `@web` provider, the `search_web` tool and the remote docs crawler lose their only backend. That is the intent. If a web search is wanted later, make it a configured MCP server or a provider key the user supplies (Brave, Tavily, SearXNG), listed in the allowlist.
+The 2026-11-11 reading called `core/continueServer/stubs/headers.ts` a current defect: it put the machine id, OS, version and an upstream key on requests to an upstream web-search proxy, and that proxy was the only backend for `@web`, `search_web` and a remote docs crawl. That file is not in the tree. The proxy was removed on main (the egress fix, #627; `PRIVACY.md`, "Older builds"). On current main, `@web` and `search_web` go through `core/tools/webSearch` (`registry.ts`, bridged by `core/context/providers/webSearchBackend.ts`). They are not offered until the person sets `web.search` in their own config.yaml (`isWebSearchConfigured`). This build's adapters are `searxng` and `custom`. A `url` with no `provider` selects SearXNG. `provider: native` is not built, so those two tools use `web.search.fallback` when one is set and stay hidden otherwise. Nothing in that path contacts a service of ours. The old `CONTINUOUS_WEB_SEARCH_URL` and `CONTINUOUS_WEB_SEARCH_KEY` variables, when set, are mapped onto `web.search.url` and `web.search.apiKey` and a deprecation notice is printed (`core/util/webConfig.ts`). `core/continueServer/stubs/client.ts` remains and only syncs a remote config and an embeddings cache with the person's token. It is not a search path.
+
+The docs crawler no longer has `DefaultCrawler`. `CheerioCrawler`, and the Chromium and GitHub crawlers, fetch the site the person named. The crawler sends `webRequestHeaders` (a `Continuous-Crawler` user agent, no machine id, OS or embedded key).
+
+**Recommend: leave this as it is.** Do not add a proxy. Search stays off until the person configures a provider.
 
 ### `search_web` as a built-in tool
 
-Options: (a) remove it; (b) keep it, off by default, and send nothing until a search provider is configured; (c) keep as is. **Recommend (b).** A tool every model sees but that needs a key the user chose costs one tool-list entry, which matters for caching (Track Z), so also hide it from the list while unconfigured. (c) is not defensible.
+The earlier choice was (a) remove it, (b) keep it off until a provider is configured and hide it from the tool list, or (c) keep the proxy. **(b) is the code on main.** `getConfigDependentToolDefinitions` adds the tool only when `isWebSearchConfigured()` is true, and `WebContextProvider` uses the same layer. (c) is gone.
 
 ### Distribution channel for the `.vsix`
 
@@ -86,7 +90,7 @@ None needs a decision. Three have a cost worth knowing: the per-use reasoning-ef
 
 | Id      | Row                                                                                                                                | State |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----- |
-| OD1 TBD | Delete `core/continueServer/stubs/headers.ts` now and make `search_web` configured-or-hidden; do not wait for L7 (privacy row PV1) | open  |
+| OD1 TBD | The upstream web-search proxy and `stubs/headers.ts` are gone (#627). `search_web` and `@web` stay hidden until the person sets `web.search`. Do not add a proxy. | done in the code on main |
 | OD2 TBD | Record the distribution channel decision: GitHub Releases primary, Marketplace and Open VSX mirrors; close the "open" row          | open  |
 | OD3 TBD | Token by default on loopback `cn serve` with `--no-token` as the opt-out (S1-L1, X11)                                              | open  |
 | OD4 TBD | Sandbox `readPolicy` denies policy folders and credential stores by default, with a small read-allow list (S9-X3)                  | open  |
