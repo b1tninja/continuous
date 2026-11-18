@@ -64,6 +64,7 @@ import {
 import {
   claudeThinkingDisplayDefaultsToOmitted,
   claudeThinkingFields,
+  maxTokensAboveThinkingBudget,
 } from "./bedrockHelpers.js";
 import {
   reasoningSwitch,
@@ -140,9 +141,6 @@ function reasoningChunk(
     delta: reasoning as ChatCompletionChunk.Choice["delta"],
   });
 }
-
-/** Room left for the answer when a thinking budget raises max_tokens. */
-const MIN_ANSWER_TOKENS = 4096;
 
 /**
  * The thinking blocks an assistant message carries back to Claude, from its
@@ -313,15 +311,11 @@ export class AnthropicApi implements BaseLlmApi {
       reasoning,
       budgetTokens,
     );
-    // max_tokens is required
-    let maxTokens = oaiBody.max_tokens ?? this.maxTokensForModel(oaiBody.model);
-    if (
-      thinking.thinking?.type === "enabled" &&
-      maxTokens <= thinking.thinking.budget_tokens
-    ) {
-      // A thinking budget must be below max_tokens, or the request is refused
-      maxTokens = thinking.thinking.budget_tokens + MIN_ANSWER_TOKENS;
-    }
+    // max_tokens is required, and it must be above a thinking budget
+    const maxTokens = maxTokensAboveThinkingBudget(
+      oaiBody.max_tokens ?? this.maxTokensForModel(oaiBody.model),
+      thinking,
+    );
     const anthropicBody = {
       messages: this._convertMessages(
         oaiBody.messages.filter(

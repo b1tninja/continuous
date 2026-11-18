@@ -328,6 +328,21 @@ describe("Bedrock", () => {
         expect(JSON.stringify(input)).not.toContain("top_k");
       });
 
+      it("raises a maxTokens that is not above Claude's thinking budget", () => {
+        const input = request(haiku45, {
+          reasoning: true,
+          reasoningBudgetTokens: 1024,
+          maxTokens: 300,
+        });
+        expect(input.inferenceConfig.maxTokens).toBe(5120);
+        const room = request(haiku45, {
+          reasoning: true,
+          reasoningBudgetTokens: 1024,
+          maxTokens: 8192,
+        });
+        expect(room.inferenceConfig.maxTokens).toBe(8192);
+      });
+
       it("sends Nova both sampling fields", () => {
         const input = request(nova2, { temperature: 0.5, topP: 0.9 });
         expect(input.inferenceConfig).toMatchObject({

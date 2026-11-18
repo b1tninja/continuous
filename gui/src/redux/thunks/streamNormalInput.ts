@@ -15,6 +15,7 @@ import {
   noteCompileFailure,
   noteContextWindow,
 } from "../../util/chatDebugLog";
+import { emptyStopDetail } from "../../util/emptyStop";
 import {
   detectCacheMiss,
   expectedRebuildCauses,
@@ -650,49 +651,27 @@ export const streamNormalInput = createAsyncThunk<
       lastStopReason,
     );
 
-    // A reply that stops at the output limit with nothing written used to
-    // look like the prompt did nothing. Say which limit it was.
-    if (lastStopReason === "length" || lastStopReason === "max_tokens") {
-      const hist = getState().session.history;
-      const lastMsg = hist[hist.length - 1]?.message;
-      const content = lastMsg?.content;
-      const text =
-        typeof content === "string"
-          ? content.trim()
-          : Array.isArray(content)
-            ? content
-                .map((part) =>
-                  part &&
-                  typeof part === "object" &&
-                  "text" in part &&
-                  typeof part.text === "string"
-                    ? part.text
-                    : "",
-                )
-                .join("")
-                .trim()
-            : "";
-      if (
-        lastMsg?.role === "assistant" &&
-        text === "" &&
-        selectCurrentToolCalls(getState()).length === 0
-      ) {
-        const maxOut =
-          completionOptions.maxTokens ??
-          selectedChatModel.completionOptions?.maxTokens;
-        const detail =
-          `The model stopped without a reply because the output limit was reached` +
-          `${maxOut !== undefined ? ` (${maxOut} tokens)` : ""}. ` +
-          `The context window in use is ${selectedChatModel.contextLength ?? "unknown"} tokens. ` +
-          `Change either under Models → Configure → Context & cost.`;
+    // A turn that finishes with no answer and no tool call used to look like
+    // the prompt did nothing. An output-limit stop names the cap. Any other
+    // stop, including one whose only text was reasoning, says so.
+    const detail = emptyStopDetail({
+      history: getState().session.history,
+      stopReason: lastStopReason,
+      maxTokens:
+        completionOptions.maxTokens ??
+        selectedChatModel.completionOptions?.maxTokens,
+      contextLength: selectedChatModel.contextLength,
+    });
+    if (detail) {
+      if (lastStopReason === "length" || lastStopReason === "max_tokens") {
         noteContextWindow(detail);
-        dispatch(
-          setInlineErrorMessage({
-            kind: "out-of-context",
-            detail,
-          }),
-        );
       }
+      dispatch(
+        setInlineErrorMessage({
+          kind: "out-of-context",
+          detail,
+        }),
+      );
     }
 
     // A call to a tool the mode's role may not use is refused, offered or not

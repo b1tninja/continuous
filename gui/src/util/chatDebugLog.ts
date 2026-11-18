@@ -1,6 +1,5 @@
-import type { ChatMessage } from "core";
 import { parseContextOverflow } from "core/llm/contextOverflow";
-import { renderChatMessage } from "core/util/messageContent";
+import { modelTurnLacksReply, type TurnItem } from "./emptyStop";
 
 /**
  * In-memory diagnostic log for the chat webview. It is off until the person
@@ -159,28 +158,8 @@ export function noteToolFailure(name: string, detail: unknown): void {
   );
 }
 
-interface StopItem {
-  message: { role: string; content?: unknown };
-  toolCallStates?: readonly unknown[];
-}
-
-/** The reply ended with an assistant message that has neither text nor tool calls. */
-export function noteStreamStop(history: readonly StopItem[]): void {
-  let assistant: StopItem | undefined;
-  for (let i = history.length - 1; i >= 0; i--) {
-    const role = history[i].message.role;
-    if (role === "user") break;
-    if (role === "assistant") {
-      assistant = history[i];
-      break;
-    }
-  }
-  if (!assistant) return;
-  const content = assistant.message.content;
-  const text =
-    content == null
-      ? ""
-      : renderChatMessage(assistant.message as ChatMessage).trim();
-  if (text || (assistant.toolCallStates?.length ?? 0) > 0) return;
+/** The model's turn wrote thinking or an empty assistant, and no answer or tool call. */
+export function noteStreamStop(history: readonly TurnItem[]): void {
+  if (!modelTurnLacksReply(history)) return;
   noteChatDebug("stream-empty", "Stream stopped with no reply text");
 }

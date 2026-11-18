@@ -63,6 +63,16 @@ describe("chatDebugLog", () => {
     ]);
   });
 
+  it("notes a turn whose only text was reasoning", () => {
+    noteStreamStop([
+      { message: { role: "user", content: "hi" } },
+      { message: { role: "thinking", content: "The last word is Goodbye." } },
+    ]);
+    expect(getChatDebugEvents().map((event) => event.summary)).toEqual([
+      "Stream stopped with no reply text",
+    ]);
+  });
+
   it("notes compile, prune, and prompt ageing separately from a provider refusal", () => {
     noteCompiledRequest({ didPrune: false, didAge: false });
     noteCompiledRequest({ didPrune: true, didAge: true });

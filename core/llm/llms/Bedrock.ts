@@ -73,6 +73,7 @@ import {
   type ModelCatalogSettings,
 } from "../modelCatalogStore.js";
 import { resolvePromptCacheTtl } from "./anthropicCache.js";
+import { maxTokensAboveThinkingBudget } from "./anthropicThinking.js";
 import {
   bedrockCatalogCacheKey,
   readBedrockCatalogCache,
@@ -1539,6 +1540,16 @@ class Bedrock extends BaseLLM {
       !!options.reasoning,
       options.omitSampling,
     );
+    const outputCap = bedrockMinMaxTokens(options.model, options.maxTokens);
+    const maxTokens =
+      reasoningRequest.omitMaxTokens || outputCap === undefined
+        ? undefined
+        : maxTokensAboveThinkingBudget(
+            outputCap,
+            reasoningRequest.additionalModelRequestFields as {
+              thinking?: unknown;
+            },
+          );
 
     return {
       modelId: applyCrossRegionInference(
@@ -1554,9 +1565,7 @@ class Bedrock extends BaseLLM {
       toolConfig: toolConfig,
       messages: convertedMessages,
       inferenceConfig: bedrockOmitUnsupportedInference(options.model, {
-        maxTokens: reasoningRequest.omitMaxTokens
-          ? undefined
-          : bedrockMinMaxTokens(options.model, options.maxTokens),
+        maxTokens,
         temperature: sampling.temperature,
         topP: sampling.topP,
         // TODO: The current approach selects the first 4 items from the list to comply with Bedrock's requirement

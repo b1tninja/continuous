@@ -53,6 +53,7 @@ import {
   bedrockCacheTtl,
   bedrockFinishReason,
   bedrockMinMaxTokens,
+  maxTokensAboveThinkingBudget,
   bedrockModelAccessMessage,
   bedrockOmitUnsupportedInference,
   bedrockReasoningFields,
@@ -788,6 +789,19 @@ export class BedrockApi implements BaseLlmApi {
       reasoning === true,
       this.config.omitSampling,
     );
+    const outputCap = bedrockMinMaxTokens(
+      oaiBody.model,
+      oaiBody.max_tokens ?? undefined,
+    );
+    const maxTokens =
+      reasoningRequest.omitMaxTokens || outputCap === undefined
+        ? undefined
+        : maxTokensAboveThinkingBudget(
+            outputCap,
+            reasoningRequest.additionalModelRequestFields as {
+              thinking?: unknown;
+            },
+          );
 
     // Build final request body
     const body: any = {
@@ -801,9 +815,7 @@ export class BedrockApi implements BaseLlmApi {
       inferenceConfig: bedrockOmitUnsupportedInference(oaiBody.model, {
         temperature: sampling.temperature,
         topP: sampling.topP,
-        maxTokens: reasoningRequest.omitMaxTokens
-          ? undefined
-          : bedrockMinMaxTokens(oaiBody.model, oaiBody.max_tokens ?? undefined),
+        maxTokens,
         stopSequences: Array.isArray(oaiBody.stop)
           ? oaiBody.stop.filter((s) => s.trim() !== "").slice(0, 4)
           : oaiBody.stop
