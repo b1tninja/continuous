@@ -3,11 +3,7 @@ import { BuiltInToolNames } from "../builtIn";
 import type { ShellKind } from "../../util/shell";
 import { canonicalRuleName } from "./names";
 import { classifyReadOnly, type ReadOnlyClaim } from "./readOnlyCommand";
-import {
-  parsePolicyLevel,
-  POLICY_LEVELS,
-  type PolicyLevel,
-} from "./levelText";
+import { parsePolicyLevel, POLICY_LEVELS, type PolicyLevel } from "./levelText";
 
 export {
   DEPRECATED_LEVEL_ALIASES,

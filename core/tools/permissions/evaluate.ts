@@ -576,6 +576,39 @@ function outsideTargetNote(
   return outsideTargetReason(hit.path.slice(0, -suffix.length));
 }
 
+/**
+ * The safety floor's effect on the tool's own verdict. With the floor off
+ * (safety checks off, or the dangerous-command check off), a refusal becomes
+ * an ask. With it on, a command the floor cannot see through is refused.
+ */
+function applySafetyFloor(
+  input: EvaluateInput,
+  evaluated: ToolPolicy,
+  basePolicy: ToolPolicy,
+  commandText: string | undefined,
+): { evaluated: ToolPolicy; floorOn: boolean } {
+  const floorOn =
+    input.approval?.safetyChecks !== false &&
+    builtinRuleOn(input.approval, "refuse-dangerous-commands");
+  if (
+    evaluated === "disabled" &&
+    basePolicy !== "disabled" &&
+    commandText !== undefined &&
+    !floorOn
+  ) {
+    return { evaluated: "allowedWithPermission", floorOn };
+  }
+  if (
+    floorOn &&
+    basePolicy !== "disabled" &&
+    evaluated !== "disabled" &&
+    floorMustRefuse(commandText, input.shell)
+  ) {
+    return { evaluated: "disabled", floorOn };
+  }
+  return { evaluated, floorOn };
+}
+
 function evaluateRules(input: EvaluateInput): ToolPolicyResult {
   const { tool, toolName, basePolicy, parsedArgs, processedArgs } = input;
 
@@ -599,28 +632,11 @@ function evaluateRules(input: EvaluateInput): ToolPolicyResult {
     typeof parsedArgs.command === "string"
       ? parsedArgs.command
       : undefined;
-  const floorOn =
-    input.approval?.safetyChecks !== false &&
-    builtinRuleOn(input.approval, "refuse-dangerous-commands");
-  // The person switched off the safety check's refusals: such a command asks
-  if (
-    evaluated === "disabled" &&
-    basePolicy !== "disabled" &&
-    commandText !== undefined &&
-    !floorOn
-  ) {
-    evaluated = "allowedWithPermission";
-  }
-  // Obfuscation the floor cannot see through is the same as a refusal: a level
-  // must not turn it into a run.
-  if (
-    floorOn &&
-    basePolicy !== "disabled" &&
-    evaluated !== "disabled" &&
-    floorMustRefuse(commandText, input.shell)
-  ) {
-    evaluated = "disabled";
-  }
+  // Kept apart from this function: the floor's branches put it over the
+  // complexity limit.
+  const floor = applySafetyFloor(input, evaluated, basePolicy, commandText);
+  evaluated = floor.evaluated;
+  const floorOn = floor.floorOn;
 
   const resolved = processedArgs?.resolvedPath as
     ResolvedPath | null | undefined;
