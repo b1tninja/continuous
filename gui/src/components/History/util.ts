@@ -48,3 +48,21 @@ export const groupSessionsByDate = (
 
   return groups;
 };
+
+/**
+ * Sessions the person archived, apart from the rest, each in the order given.
+ * Archiving only hides a session from the date groups: its file is kept.
+ */
+export function splitArchivedSessions(
+  sessions: BaseSessionMetadata[],
+  archivedIds: Record<string, number> | undefined,
+): { active: BaseSessionMetadata[]; archived: BaseSessionMetadata[] } {
+  const active: BaseSessionMetadata[] = [];
+  const archived: BaseSessionMetadata[] = [];
+  for (const session of sessions) {
+    (archivedIds?.[session.sessionId] !== undefined ? archived : active).push(
+      session,
+    );
+  }
+  return { active, archived };
+}

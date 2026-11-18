@@ -30,13 +30,28 @@ describe("Agents window tool policy", () => {
       { command: "git push" },
       {
         approval: {
-          levels: { ...DEFAULT_POLICY_LEVELS, tools: "idgaf" },
+          levels: { ...DEFAULT_POLICY_LEVELS, tools: "permissive" },
           floor: ["runTerminalCommand(git push*)"],
         },
       },
     );
     expect(floor.policy).toBe("disabled");
     expect(floor.source).toBe("floor");
+
+    // IDGAF runs it, and the decision records the floor rule
+    const idgaf = decideAgentSessionTool(
+      "runInTerminal",
+      { command: "git push" },
+      {
+        approval: {
+          levels: { ...DEFAULT_POLICY_LEVELS, tools: "idgaf" },
+          floor: ["runTerminalCommand(git push*)"],
+        },
+      },
+    );
+    expect(idgaf.policy).toBe("allowedWithoutPermission");
+    expect(idgaf.source).toBe("idgaf");
+    expect(idgaf.reason).toContain("would have been refused");
 
     const secret = decideAgentSessionTool(
       "readFile",

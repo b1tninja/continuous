@@ -1,3 +1,4 @@
+import { idgafObjectionLine } from "../audit/idgafObjections.js";
 import { backgroundJobService } from "../services/BackgroundJobService.js";
 import { getSessionUsage } from "../session.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
@@ -7,12 +8,12 @@ import { hadUnhandledError } from "./errorState.js";
 import { fieldFallbackLines } from "./fieldFallbackLines.js";
 import { logger } from "./logger.js";
 import { formatReplyTally } from "./replyTally.js";
-import { formatSessionCost } from "./sessionCost.js";
+import { formatPriceSourceLines, formatSessionCost } from "./sessionCost.js";
 
 /**
  * Display session usage breakdown in verbose mode
  */
-function displaySessionUsage(): void {
+export function displaySessionUsage(): void {
   const isVerbose = process.argv.includes("--verbose");
   if (!isVerbose) {
     return;
@@ -28,6 +29,7 @@ function displaySessionUsage(): void {
     logger.info("Session Usage Summary");
     logger.info("=".repeat(60));
     logger.info(`Total Cost: ${formatSessionCost(usage)}`);
+    for (const line of formatPriceSourceLines(usage)) logger.info(line);
     logger.info("");
     logger.info("Token Usage:");
     // Input is what the provider processed: uncached plus cache reads plus
@@ -73,9 +75,22 @@ function displaySessionUsage(): void {
  * exit code is 0 (success), this will exit with code 1 instead to
  * signal that the process encountered errors.
  */
+/** One line on stderr at the end of a run in which IDGAF ran past objections. */
+export function printIdgafObjections(): void {
+  try {
+    const line = idgafObjectionLine();
+    if (line)
+      process.stderr.write(`${line}
+`);
+  } catch {
+    // the summary never holds the exit
+  }
+}
+
 export async function gracefulExit(code: number = 0): Promise<void> {
   // Display session usage breakdown in verbose mode
   displaySessionUsage();
+  printIdgafObjections();
 
   try {
     const runningJobs = backgroundJobService.getRunningJobCount();

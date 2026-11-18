@@ -1,0 +1,119 @@
+---
+title: "Environment variables"
+---
+
+Every `CONTINUOUS_*` and `CONTINUE_*` variable the shipped code reads, with the file that reads it. Paths are in the repository; "core" code runs in both the VS Code extension and the terminal agent.
+
+Both prefixes are in use. `CONTINUOUS_*` is the newer one; most switches still use `CONTINUE_*`, and only `CONTINUOUS_GLOBAL_DIR` has an alias under both names. Spell each variable exactly as listed.
+
+A working-directory `.env` file is never copied into the process, by either product, so a repository cannot set any of these. Set them in your shell or your editor's environment.
+
+## Location and access
+
+| Variable                                     | Values                    | What it does                                                                                                                                                | Read by                                                                       |
+| -------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `CONTINUOUS_GLOBAL_DIR`                      | a folder                  | Use this folder instead of `~/.continuous`. A relative path is resolved against the working directory. Wins over `CONTINUE_GLOBAL_DIR`                       | `core/util/paths.ts`, `extensions/cli/src/env.ts`, `hooks/hookTrust.ts`       |
+| `CONTINUE_GLOBAL_DIR`                        | a folder                  | The older name of the same setting                                                                                                                          | the same files                                                                |
+| `CONTINUOUS_HEADLESS_LEGACY_ALLOW`           | `1`                       | One release only (2.18.0), removed in the next: headless runs (`-p`, `serve`) allow `Bash` and every unlisted tool again, as before 2.18.0. Pass `--auto` or `--policy` instead | `extensions/cli/src/permissions/headlessPolicy.ts` |
+| `CONTINUOUS_SERVE_TOKEN`                     | 16 characters or more     | The bearer token of `continuous serve`, and the token `continuous agents` and the remote interface send. `--token` wins                                     | `extensions/cli/src/commands/serve.auth.ts`, `commands/agents.ts`             |
+| `CONTINUOUS_<PROVIDER>_API_KEY`              | a key                     | The default name a provider's key is stored and looked up under, for example `CONTINUOUS_ANTHROPIC_API_KEY`. Secrets are also looked up in the environment | `core/config/providerSecretName.ts`, `core/config/yaml/LocalPlatformClient.ts` |
+| `CONTINUOUS_WEB_SEARCH_URL`                  | a URL                     | The web search endpoint. Unset, the `search_web` tool and `@web` are not offered                                                                            | `core/context/providers/webSearchBackend.ts`                                  |
+| `CONTINUOUS_WEB_SEARCH_KEY`                  | a key                     | Sent as a bearer token to that endpoint and nowhere else                                                                                                    | the same file                                                                 |
+
+See [Web search](/customize/web-search) and [cn serve](/guides/cn-serve).
+
+## Terminal commands and safety checks
+
+| Variable                         | Values                                                     | What it does                                                                                                                                       | Read by                                         |
+| -------------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `CONTINUE_TERMINAL_ENV`          | `scrub`, `inherit`, `allowlist`                            | What environment the agent's commands get. Wins over `config.yaml`. Default `scrub`. See [Terminal environment](/ide-extensions/agent/terminal-environment) | `core/util/terminalEnvironment.ts`              |
+| `CONTINUOUS_TERMINAL_SHELL`      | `wsl`, `wsl:<distro>`, `container`, `container:docker`, `container:podman:<image>`, `container:<image>` | Run the agent's commands in WSL or a container. A shell set in the product's own settings wins over it | `core/util/shell.ts`                            |
+| `CONTINUE_COMMAND_LINT`          | `off`                                                      | Turn off the command lint                                                                                                                          | `core/tools/permissions/commandLint.ts`         |
+| `CONTINUE_MISSING_BINARY_CHECK`  | `off`                                                      | Turn off the check for a program that is not installed                                                                                             | `core/tools/permissions/missingBinaryGate.ts`   |
+| `CONTINUE_AUDIT`                 | `off`, `0`, `false`, `no`, `disabled` / `on`, `1`, `true`, `yes`, `enabled` | Turn the audit trail off or on. Wins over `audit.enabled` in `config.yaml`. See [Audit trail](/ide-extensions/agent/audit-trail) | `core/tools/permissions/audit/global.ts`        |
+| `CONTINUOUS_SPOTLIGHT_UNTRUSTED` | `1`                                                        | Wrap fetched web pages in spotlight markers, as the setting does                                                                                   | `core/tools/implementations/fetchUrlContent.ts` |
+
+## Prompt caching
+
+| Variable                    | Values | What it does                                                                                                                                                                        | Read by                                                                                         |
+| --------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `CONTINUOUS_FORCE_CACHE_5M` | `1`    | Debug override: every prompt cache entry gets the 5-minute lifetime, over the toolbar, `cacheBehavior.ttl` and `cacheBehavior.subagentTtl`. See [Prompt caching](/customize/deep-dives/prompt-caching#precedence) | `core/llm/llms/anthropicCache.ts`, `packages/openai-adapters/src/apis/cacheTtl.ts` |
+
+## Terminal agent output caps
+
+Positive whole numbers. Anything else keeps the default.
+
+| Variable                                   | Default | What it caps                             | Read by                                         |
+| ------------------------------------------ | ------- | ---------------------------------------- | ----------------------------------------------- |
+| `CONTINUE_CLI_BASH_MAX_OUTPUT_CHARS`       | 50000   | Characters of a shell command's output   | `extensions/cli/src/tools/runTerminalCommand.ts` |
+| `CONTINUE_CLI_BASH_MAX_OUTPUT_LINES`       | 1000    | Lines of a shell command's output        | the same file                                   |
+| `CONTINUE_CLI_READ_FILE_MAX_OUTPUT_CHARS`  | 100000  | Characters of a file read                | `extensions/cli/src/tools/readFile.ts`          |
+| `CONTINUE_CLI_READ_FILE_MAX_OUTPUT_LINES`  | 5000    | Lines of a file read                     | the same file                                   |
+| `CONTINUE_CLI_SEARCH_CODE_MAX_RESULTS`     | 100     | Results of a code search                 | `extensions/cli/src/tools/searchCode.ts`        |
+| `CONTINUE_CLI_SEARCH_CODE_MAX_RESULT_CHARS` | 1000   | Characters of one search result line     | the same file                                   |
+| `CONTINUE_CLI_FETCH_MAX_OUTPUT_LENGTH`     | 20000   | Characters of a fetched page             | `extensions/cli/src/tools/fetch.ts`             |
+| `CONTINUE_CLI_DIFF_MAX_OUTPUT_LENGTH`      | 50000   | Characters of a diff                     | `extensions/cli/src/tools/viewDiff.ts`          |
+
+## Agent behaviour
+
+| Variable                                      | Values                                    | What it does                                                                                                                         | Read by                                                       |
+| --------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| `CONTINUOUS_LOOP_FALLBACK_CHECK`              | a command                                 | A loop started in the terminal agent holds every to-do that has no `check:` to this command                                          | `extensions/cli/src/loop/loopSession.ts`                      |
+| `CONTINUE_CLI_DISABLE_STUCK_NOTES`            | any value but `0` or `false`              | Turn off the notes the terminal agent adds when the agent looks stuck. On by default                                                 | `extensions/cli/src/stream/stuckNotes.ts`                     |
+| `CONTINUE_NUDGE_LEAKED_CALLS`                 | `0`, `off`, `false`, `no`                 | Turn off the one extra request sent when a reply is a tool call written as text. On by default                                       | `extensions/cli/src/stream/leakedCallNudge.ts`                |
+| `CONTINUE_RECOVER_TEXT_TOOL_CALLS`            | a dialect name, or a comma-separated list | Recover tool calls a model wrote as text. Wins over a model's `toolDialect`. See [Tool-call recovery](/ide-extensions/agent/tool-call-recovery) | `packages/openai-adapters/src/dialects/recovery.ts`, `core/llm/index.ts` |
+| `CONTINUE_BEDROCK_REPAIR_STREAMED_TOOL_INPUT` | `1`                                       | Repair broken streamed tool input from the Bedrock model families measured broken. Off by default                                    | `core/llm/llms/bedrockHelpers.ts`, `packages/openai-adapters/src/apis/bedrockHelpers.ts` |
+| `CONTINUE_HISTORY_AGEING`                     | `1`, `true`, `on`                         | Turn on history ageing. Off by default. See [History ageing](/ide-extensions/agent/history-ageing)                                   | `core/util/contextAgeing.ts`                                  |
+| `CONTINUE_TOOL_SEARCH`                        | `auto`                                    | Terminal agent: defer MCP tools above a token budget behind a `search_tools` tool. The extension uses `experimental.toolSearch`      | `core/tools/toolSearch.ts`                                    |
+| `CONTINUE_STABLE_TOOL_ORDER`                  | `0`, `false`                              | Terminal agent: keep MCP tools in connection order instead of sorting them by name. Sorting is on by default                         | `core/tools/stableToolOrder.ts`, `extensions/cli/src/tools/index.tsx` |
+| `CONTINUE_PROMPT_PROFILE`                     | `full`, `short`, `tailored`               | Use this system prompt text for every model. For benchmarking                                                                        | `core/llm/prompts/turns.ts`                                   |
+| `CONTINUE_SURFACE_FACTS`                      | `1`, `true`                               | Drop a forced tool choice for a provider surface known not to support it. Off by default                                             | `core/util/forcedToolChoice.ts`                               |
+| `CONTINUE_USE_WEB_FETCH`                      | `1`                                       | Send requests through the newer HTTP client. Off by default                                                                          | `packages/fetch/src/fetch.ts`                                 |
+| `CONTINUE_USE_AI_SDK`                         | any value                                 | Use the AI SDK adapter for the `openai` and `anthropic` providers                                                                    | `packages/openai-adapters/src/index.ts`                       |
+| `CONTINUOUS_OTEL`                             | `1`                                       | Send OpenTelemetry metrics, only when an `OTEL_EXPORTER_OTLP_*` endpoint or `OTEL_METRICS_EXPORTER` is also set. Off by default      | `extensions/cli/src/telemetry/telemetryService.ts`            |
+
+## Debugging
+
+| Variable                   | Values      | What it does                                                                                                                       | Read by                                                                 |
+| -------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `CONTINUE_DUMP_REQUESTS`   | a folder    | The terminal agent writes every chat request body to a timestamped JSON file there, with credentials redacted and secrets scrubbed | `extensions/cli/src/util/requestDump.ts`                                |
+| `CONTINUE_PROMPT_SEGMENTS` | `1`, `true` | Print one line per prompt segment of every request (id, tokens, hash), never the contents, to see why a prompt cache missed       | `core/llm/promptSegments.ts`, `extensions/cli/src/stream/segmentDump.ts` |
+
+## Installer
+
+| Variable                 | What it does                                                         | Read by                                                              |
+| ------------------------ | -------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `CONTINUOUS_CLI_VERSION` | Install this release of the terminal agent, for example `2.14.0`     | `extensions/cli/scripts/install.sh`, `extensions/cli/scripts/install.ps1` |
+| `CONTINUOUS_CLI_URL`     | Install this exact tarball URL                                       | the same scripts                                                     |
+
+See [Install the terminal agent](/cli/install#pin-a-version).
+
+## Given to hooks
+
+| Variable               | What it holds                                                             | Set by                                                           |
+| ---------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `CONTINUE_PROJECT_DIR` | The project folder. `CLAUDE_PROJECT_DIR` is set to the same value         | `extensions/cli/src/hooks/hookRunner.ts`                         |
+
+In a hook's command, `$CONTINUE_PROJECT_DIR`, `${CONTINUE_PROJECT_DIR}` and `%CONTINUE_PROJECT_DIR%` are replaced with the folder.
+
+## Read but not for you to set
+
+| Variable                                          | What it is                                                                                                                    |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `CONTINUE_USE_BEDROCK`                            | `1` makes the terminal agent's first start print `Using AWS Bedrock` and skip the API key question. Nothing else reads it: it configures no model |
+| `CONTINUOUS_IGNORE_CWD_ENV`                       | Set by the terminal agent at start, so shared code does not read a working-directory `.env`                                   |
+| `CONTINUE_CLI_AUTO_UPDATED`                       | Set by the update code on the process it restarts. Self-update is off in Continuous                                           |
+| `CONTINUE_CLI_TEST_SESSION_ID`                    | Tests only: the id a new terminal session gets                                                                                |
+| `CONTINUE_CLI_TEST`                               | Tests only                                                                                                                    |
+| `CONTINUE_USER_ID`                                | Replaces the machine id the terminal agent uses as its user id                                                                |
+| `CONTINUE_REMOTE`                                 | Reported as an attribute of the terminal agent's optional metrics                                                             |
+| `CONTINUE_DEVELOPMENT`, `CONTINUE_TCP_TOKEN`      | Development builds of the core binary (a control port on 127.0.0.1 and its token)                                             |
+| `CONTINUE_BUILD_TARGET`, `CONTINUE_VSCODE_TARGET` | Packaging the extension                                                                                                       |
+| `CONTINUE_E2E_NON_NEXT_EDIT_TEST`                 | End-to-end tests of the extension                                                                                             |
+
+`CONTINUE_WORKSPACE_KEY`, `CONTINUE_VERSION` and `CONTINUE_CLI_TIPS` look like variables and are constants in the code. `CONTINUE_METRICS_ENABLED` and `CONTINUE_CLI_ENABLE_TELEMETRY` are no longer read.
+
+## Related
+
+- [`settings.json`](/reference/settings-json)
+- [Command reference](/cli/reference)

@@ -7,6 +7,8 @@ sidebarTitle: "Development Data"
 
 When you use Continuous, you automatically collect data on how you build software. By default, this development data is saved to `.continuous/dev_data` on your local machine.
 
+The local `chatInteraction` records keep the size of each prompt and completion, the token counts and a SHA-256 hash of the prompt, not the texts. To keep the full prompts for debugging, turn on the debug prompt log: the `continuous.debugPromptLog` setting in VS Code, or `--debug-prompt-log` (`CONTINUOUS_DEBUG_PROMPT_LOG=1`) for the terminal agent. It writes to `~/.continuous/logs/prompts/` with secrets the scanner recognises masked, keeps 50 MB at most in all, and deletes files not written to for 14 days. A data destination you configure below still receives the full `chatInteraction` event.
+
 
 ## How to Configure Custom Data Destinations
 

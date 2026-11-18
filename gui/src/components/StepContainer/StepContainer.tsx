@@ -91,6 +91,8 @@ export default function StepContainer(props: StepContainerProps) {
                 index={props.index}
                 prevItem={props.index > 0 ? props.item : null}
                 inProgress={!props.item.reasoning?.endAt}
+                startAt={props.item.reasoning.startAt}
+                endAt={props.item.reasoning.endAt}
               />
             )}
 

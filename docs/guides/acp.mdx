@@ -25,18 +25,28 @@ The editor sends the project folder as the session's working directory, and the 
 
 ## What is supported
 
-- One session per process. A second `session/new` is refused; start another process for another conversation.
+- One session per process. A second `session/new`, `session/load` or `session/resume` is refused; start another process for another conversation.
+- Earlier sessions: `session/list`, `session/load` (`loadSession` is on) and `session/resume`. These are the sessions `continuous ls` shows, saved by the terminal agent (`.json`) or the IDE (`.jsonl`), in `~/.continuous/sessions`. See [Earlier sessions](#earlier-sessions).
 - Text prompts, and file references (`resource_link`), which reach the model as `@<uri>`.
-- The model's reply as streamed text, and each tool call with its kind (read, edit, delete, search, execute, fetch or other), a title, the file path when the arguments name one, and its result, trimmed to 50,000 characters.
+- The model's reply as streamed text, and each tool call with its kind (read, edit, delete, search, execute, fetch or other), a title, the file path when the arguments name one, and its result, masked and then trimmed to 50,000 characters. A result or an error passes through the display masker and the secret scanner before it is sent, as the call's arguments do, so a key a command printed is shown as a placeholder in the editor; the model still gets the real text. The masking is by pattern, so a secret in a shape no rule lists is not caught.
+- Several calls of one tool in a turn. Each result is reported under the `toolCallId` of the call it belongs to, whichever finishes first.
 - Cancel. A cancelled prompt ends with the stop reason `cancelled`, and permission requests waiting at that moment are refused.
 
 ## What is not supported
 
-- Loading or listing earlier sessions (`loadSession` is off).
+- Deleting or closing sessions (`session/delete`, `session/close`), and the protocol's v2 draft. The agent speaks ACP version 1 and answers a client that asks for a later version with 1.
 - Images, audio and embedded resources in a prompt. A prompt that has them is refused with an invalid-params error rather than having them dropped.
 - MCP servers sent by the editor. The agent loads the MCP servers of its own configuration.
 - The editor's file and terminal methods. The agent reads and writes the disk and runs its own shell, so unsaved editor buffers are not seen and diffs are not drawn by the editor.
 - Session modes (chat, agent, plan) and plan or thought updates.
+
+## Earlier sessions
+
+- `session/list` lists saved sessions newest first, 50 to a page, with `sessionId`, `cwd`, `title` and `updatedAt`. With `cwd` it lists the sessions of that workspace, as `continuous ls` groups them: the folder itself, a folder inside it or around it, and another folder of the same git repository. A session saved without a folder, or in a remote IDE workspace, has no local working directory and is not listed. Pass the returned `nextCursor` as `cursor` for the next page; a cursor the agent did not hand out is refused with an invalid-params error.
+- `session/load` makes a saved session the process's session and replays it before it answers: each of your messages as `user_message_chunk`, each reply as `agent_message_chunk`, and each tool call as one `tool_call` with its final status and its output, masked as a live call's is. System prompts and reasoning are not replayed, and neither are images. A later `session/prompt` continues the conversation.
+- `session/resume` does the same without the replay, for an editor that still shows the conversation.
+
+An id that matches no saved session is refused with the error code `-32002` (resource not found). A damaged session file is set aside, as `--resume` sets it aside, and the request fails.
 
 ## Permission requests fail closed
 

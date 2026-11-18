@@ -109,6 +109,13 @@ const dialects: Array<[string, Recover, (n: number) => string, string]> = [
 // Generous: a quadratic parser on these inputs takes minutes, not seconds.
 const BOUND_MS = 10000;
 
+// A ratio of two wall-clock times measures the runner as much as the parser:
+// on a shared CI machine it failed now and then with nothing changed. These
+// cases carry the tag `perf`, which the default run leaves out (see
+// vitest.config.ts); `npm run test:perf` runs them, as data. The bounded-time
+// cases above them stay in every run and still catch a quadratic parser.
+const PERF = { tags: ["perf"] };
+
 function timed<T>(fn: () => T): { out: T; ms: number } {
   const t = Date.now();
   const out = fn();
@@ -207,7 +214,7 @@ describe.each(quotedCases)("%s quoted markers", (_name, recover, marker) => {
     }
   });
 
-  it("does not take three times as long for twice the input", () => {
+  it("does not take three times as long for twice the input", PERF, () => {
     const best = (text: string) =>
       Math.min(...[0, 1, 2].map(() => timed(() => recover(text, tools)).ms));
     for (const label of ["quoted", "held then quoted", "fenced"]) {
@@ -247,7 +254,7 @@ describe.each(streamers)("%s streamed", (_name, make, unit) => {
     expect(run(300_000)).toBeLessThan(BOUND_MS);
   });
 
-  it("does not take three times as long for twice the reply", () => {
+  it("does not take three times as long for twice the reply", PERF, () => {
     const small = Math.min(run(100_000), run(100_000));
     const large = Math.min(run(200_000), run(200_000));
     expect(large).toBeLessThan(3 * Math.max(small, 40));

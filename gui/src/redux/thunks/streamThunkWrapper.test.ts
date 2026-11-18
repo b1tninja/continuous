@@ -10,9 +10,10 @@ const model: ModelDescription = {
   underlyingProviderName: "bedrock",
 };
 
-function makeStore() {
+function makeStore(history: any[] = []) {
   const state = getEmptyRootState();
   state.session.id = "s1";
+  state.session.history = history;
   state.session.mode = "agent";
   state.config.config = {
     ...state.config.config,
@@ -98,5 +99,39 @@ describe("streamThunkWrapper records failed requests", () => {
     });
     await run(store, async () => {});
     expect(failures(store)).toBeUndefined();
+  });
+});
+
+describe("streamThunkWrapper saves the session", () => {
+  const withHistory = () => {
+    const store = makeStore([
+      {
+        message: { role: "user", content: "hi", id: "u1" },
+        contextItems: [],
+      },
+      {
+        message: { role: "assistant", content: "partial", id: "a1" },
+        contextItems: [],
+      },
+    ]);
+    const request = vi.spyOn(store.mockIdeMessenger, "request");
+    const saves = () =>
+      request.mock.calls.filter(([type]) => type === "history/save");
+    return { store, saves };
+  };
+
+  it("after a turn that failed, with what was answered before the failure", async () => {
+    const { store, saves } = withHistory();
+    await run(store, async () => {
+      throw new Error("500 Internal Server Error");
+    });
+    expect(saves()).toHaveLength(1);
+    expect((saves()[0][1] as any).history[1].message.content).toBe("partial");
+  });
+
+  it("after a turn that succeeded", async () => {
+    const { store, saves } = withHistory();
+    await run(store, async () => {});
+    expect(saves()).toHaveLength(1);
   });
 });

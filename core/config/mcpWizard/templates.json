@@ -1,0 +1,152 @@
+{
+  "$comment": "MCPW6: the bundled MCP server templates. Every version is exact and was checked on the date beside it; nothing here is fetched at run time. Field names follow the MCP Registry server.json (packages[].registryType, identifier, version, runtimeHint, runtimeArguments, packageArguments, environmentVariables, isRequired, isSecret, format, valueHint, default). To look for newer versions, run `node scripts/check-mcp-templates.mjs` (dev only, uses the network).",
+  "checked": "2026-11-15",
+  "templates": [
+    {
+      "id": "filesystem",
+      "title": "Filesystem",
+      "description": "Read, write and search files in the folders you choose.",
+      "category": "files",
+      "repository": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+      "package": {
+        "registryType": "npm",
+        "identifier": "@modelcontextprotocol/server-filesystem",
+        "version": "2.3.0",
+        "versionChecked": "2026-11-15",
+        "runtimeHint": "npx",
+        "transport": { "type": "stdio" },
+        "packageArguments": [
+          {
+            "type": "positional",
+            "valueHint": "allowed_directory",
+            "description": "The folder the server may read and write",
+            "isRequired": true,
+            "format": "filepath"
+          }
+        ]
+      }
+    },
+    {
+      "id": "git",
+      "title": "Git",
+      "description": "Read the history, diffs and status of a Git repository, and make commits.",
+      "category": "developer",
+      "repository": "https://github.com/modelcontextprotocol/servers/tree/main/src/git",
+      "package": {
+        "registryType": "pypi",
+        "identifier": "mcp-server-git",
+        "version": "2026.11.11",
+        "versionChecked": "2026-11-15",
+        "runtimeHint": "uvx",
+        "transport": { "type": "stdio" },
+        "packageArguments": [
+          {
+            "type": "named",
+            "name": "--repository",
+            "valueHint": "repository",
+            "description": "The repository folder; the server's tools take it as a parameter when left empty",
+            "isRequired": false,
+            "format": "filepath"
+          }
+        ]
+      }
+    },
+    {
+      "id": "fetch",
+      "title": "Fetch",
+      "description": "Fetch a web page and return it as Markdown.",
+      "category": "web",
+      "repository": "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",
+      "package": {
+        "registryType": "pypi",
+        "identifier": "mcp-server-fetch",
+        "version": "2026.11.11",
+        "versionChecked": "2026-11-15",
+        "runtimeHint": "uvx",
+        "transport": { "type": "stdio" }
+      }
+    },
+    {
+      "id": "memory",
+      "title": "Memory",
+      "description": "A knowledge graph the model can add facts to and read back across chats.",
+      "category": "memory",
+      "repository": "https://github.com/modelcontextprotocol/servers/tree/main/src/memory",
+      "package": {
+        "registryType": "npm",
+        "identifier": "@modelcontextprotocol/server-memory",
+        "version": "2.1.1",
+        "versionChecked": "2026-11-15",
+        "runtimeHint": "npx",
+        "transport": { "type": "stdio" },
+        "environmentVariables": [
+          {
+            "name": "MEMORY_FILE_PATH",
+            "description": "Where the knowledge graph is kept; the package's own folder when empty",
+            "isRequired": false,
+            "format": "filepath"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sequential-thinking",
+      "title": "Sequential thinking",
+      "description": "A tool for working through a problem step by step, with revisions and branches.",
+      "category": "reasoning",
+      "repository": "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking",
+      "package": {
+        "registryType": "npm",
+        "identifier": "@modelcontextprotocol/server-sequential-thinking",
+        "version": "2.1.1",
+        "versionChecked": "2026-11-15",
+        "runtimeHint": "npx",
+        "transport": { "type": "stdio" }
+      }
+    },
+    {
+      "id": "github",
+      "title": "GitHub",
+      "description": "Issues, pull requests, code search and repository files on GitHub, with your personal access token.",
+      "category": "developer",
+      "repository": "https://github.com/github/github-mcp-server",
+      "package": {
+        "registryType": "oci",
+        "identifier": "ghcr.io/github/github-mcp-server:v2.1.0",
+        "versionChecked": "2026-11-15",
+        "runtimeHint": "docker",
+        "transport": { "type": "stdio" },
+        "environmentVariables": [
+          {
+            "name": "GITHUB_PERSONAL_ACCESS_TOKEN",
+            "description": "A GitHub personal access token with the scopes the tools need",
+            "isRequired": true,
+            "isSecret": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "playwright",
+      "title": "Playwright",
+      "description": "Drive a browser: open pages, click, type and read them, with a fresh profile each session.",
+      "category": "web",
+      "repository": "https://github.com/microsoft/playwright-mcp",
+      "package": {
+        "registryType": "npm",
+        "identifier": "@playwright/mcp",
+        "version": "0.0.85",
+        "versionChecked": "2026-11-15",
+        "runtimeHint": "npx",
+        "transport": { "type": "stdio" },
+        "packageArguments": [
+          {
+            "type": "named",
+            "name": "--isolated",
+            "description": "Keep the browser profile in memory, so no cookies or sign-ins from earlier sessions are reused"
+          }
+        ]
+      }
+    }
+  ]
+}

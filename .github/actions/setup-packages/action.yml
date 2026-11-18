@@ -1,23 +1,70 @@
 name: "Setup Packages"
-description: "Cache and build packages with npm caching"
+description: "Build the workspace packages, restoring them from a cache when their sources and lockfiles are unchanged"
 
+inputs:
+  cache:
+    description: "Use caches (the built packages, the npm download cache). Release builds pass 'false' so that nothing restored from a cache reaches a shipped artefact."
+    required: false
+    default: "true"
+
+# Cache policy (docs/ci-caching.md): the built packages are keyed on everything that decides what
+# the build produces (node version, sources, tsconfig, package.json, lockfile, the build script), so
+# a restored copy is the same bytes a cold build would make. Pull requests restore and save it
+# (exact-key hits mean a PR only writes an entry when it changes a package); the npm download cache
+# is saved from main only, because it is hundreds of megabytes and every pull request ref would
+# otherwise keep its own copy.
 runs:
   using: "composite"
   steps:
     - uses: actions/setup-node@v7
+      id: node
       with:
         node-version-file: ".nvmrc"
-    - uses: actions/cache@v6
-      with:
-        path: ~/.npm
-        key: ${{ runner.os }}-npm-cache-packages-${{ hashFiles('packages/*/package-lock.json') }}
 
-    - uses: actions/cache@v6
+    - name: Restore built packages
+      id: built
+      if: inputs.cache == 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
           packages/*/node_modules
-        key: ${{ runner.os }}-packages-node-modules-${{ hashFiles('packages/*/package-lock.json') }}
+          packages/*/dist
+        key: ${{ runner.os }}-packages-built-node${{ steps.node.outputs.node-version }}-${{ hashFiles('packages/*/package.json', 'packages/*/package-lock.json', 'packages/*/tsconfig*.json', 'packages/*/src/**', 'scripts/build-packages.js') }}
+
+    - name: Restore npm download cache
+      id: npm
+      if: inputs.cache == 'true' && runner.os != 'Windows' && steps.built.outputs.cache-hit != 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-npm-cache-packages-${{ hashFiles('packages/*/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-npm-cache-packages-
 
     - name: Build packages
+      if: steps.built.outputs.cache-hit != 'true'
       shell: bash
       run: node ./scripts/build-packages.js
+
+    - name: Save built packages
+      if: inputs.cache == 'true' && steps.built.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          packages/*/node_modules
+          packages/*/dist
+        key: ${{ steps.built.outputs.cache-primary-key }}
+
+    - name: Save npm download cache
+      if: inputs.cache == 'true' && steps.npm.outcome == 'success' && steps.npm.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.npm
+        key: ${{ steps.npm.outputs.cache-primary-key }}
+
+    - uses: ./.github/actions/cache-report
+      if: always()
+      with:
+        entries: |
+          packages-built|${{ steps.built.outcome }}|${{ steps.built.outputs.cache-hit }}|${{ steps.built.outputs.cache-matched-key }}
+          npm-packages|${{ steps.npm.outcome }}|${{ steps.npm.outputs.cache-hit }}|${{ steps.npm.outputs.cache-matched-key }}

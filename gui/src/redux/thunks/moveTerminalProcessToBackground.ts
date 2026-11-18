@@ -38,9 +38,13 @@ export const moveTerminalProcessToBackground = createAsyncThunk<
       (item) => item.name === "Terminal",
     );
     const existingContent = existingOutput?.content || "";
+    const commandId = existingOutput?.commandOutput?.id;
 
-    const status =
-      "Command moved to background. Further output will be ignored.";
+    // The command keeps running and its output is kept (bounded, and in a
+    // file once it is long): the model reads it with read_command_output
+    const status = commandId
+      ? `Command moved to background (id ${commandId}). It keeps running; read its output with read_command_output and end it with stop_command.`
+      : "Command moved to background. Further output will be ignored.";
 
     const contextItems: ContextItem[] = [
       {

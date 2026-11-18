@@ -1,4 +1,5 @@
-import { exec, spawn } from "child_process";
+import { execFile, spawn } from "child_process";
+import * as os from "os";
 
 import { PreprocessedToolCall } from "src/tools/types.js";
 
@@ -6,6 +7,7 @@ import { getCurrentSession, getSessionFilePath } from "../session.js";
 import { logger } from "../util/logger.js";
 
 import { BaseService } from "./BaseService.js";
+import { isGitAiOptedIn, resolveGitAiBinary } from "./gitAiBinary.js";
 import { serviceContainer } from "./ServiceContainer.js";
 import type { ModelServiceState } from "./types.js";
 
@@ -28,13 +30,17 @@ export interface GitAiIntegrationServiceState {
 export class GitAiIntegrationService extends BaseService<GitAiIntegrationServiceState> {
   constructor() {
     super("GitAiIntegrationService", {
-      isEnabled: true,
+      isEnabled: false,
       isGitAiAvailable: null,
     });
   }
 
   async doInitialize(): Promise<GitAiIntegrationServiceState> {
-    // Check if git-ai is available on first initialization
+    // Off unless the user turned it on in their own settings.json
+    // ("gitAiIntegration": true). Nothing is executed otherwise.
+    if (!isGitAiOptedIn()) {
+      return { isEnabled: false, isGitAiAvailable: null };
+    }
     const isAvailable = await this.checkGitAiAvailable();
     return {
       isEnabled: true,
@@ -43,17 +49,16 @@ export class GitAiIntegrationService extends BaseService<GitAiIntegrationService
   }
 
   private async checkGitAiAvailable(): Promise<boolean> {
+    const binary = resolveGitAiBinary(process.cwd());
+    if (!binary) return false;
     return new Promise((resolve) => {
       try {
-        exec("git-ai --version", (error) => {
-          if (error) {
-            resolve(false);
-            return;
-          }
-          resolve(true);
+        // Not run in the workspace: the version check needs no project.
+        execFile(binary, ["--version"], { cwd: os.tmpdir() }, (error) => {
+          resolve(!error);
         });
       } catch {
-        // Handle edge case where exec throws synchronously
+        // Handle edge case where execFile throws synchronously
         resolve(false);
       }
     });
@@ -73,9 +78,14 @@ export class GitAiIntegrationService extends BaseService<GitAiIntegrationService
       workspaceDirectory,
     });
 
+    const binary = resolveGitAiBinary(workspaceDirectory);
+    if (!binary) {
+      throw new Error("git-ai was not found on a trusted PATH entry");
+    }
+
     await new Promise<void>((resolve, reject) => {
       const gitAiProcess = spawn(
-        "git-ai",
+        binary,
         ["checkpoint", "continue-cli", "--hook-input", "stdin"],
         { cwd: workspaceDirectory },
       );

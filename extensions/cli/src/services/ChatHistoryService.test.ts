@@ -1,7 +1,10 @@
 import type { ChatHistoryItem } from "core/index.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ChatHistoryService } from "./ChatHistoryService.js";
+import {
+  ChatHistoryService,
+  MAX_UNDO_SNAPSHOTS,
+} from "./ChatHistoryService.js";
 
 // Mock the dependencies
 vi.mock("../session.js", () => ({
@@ -450,6 +453,29 @@ describe("ChatHistoryService", () => {
         "A",
         "B",
       ]);
+    });
+
+    it("keeps at most MAX_UNDO_SNAPSHOTS snapshots, dropping the oldest", () => {
+      const changes = MAX_UNDO_SNAPSHOTS * 4;
+      for (let i = 0; i < changes; i++) {
+        service.addUserMessage(`m${i}`);
+      }
+      let undos = 0;
+      while (service.canUndo()) {
+        service.undo();
+        undos++;
+      }
+      expect(undos).toBe(MAX_UNDO_SNAPSHOTS);
+      // The oldest reachable state is MAX_UNDO_SNAPSHOTS changes back
+      expect(service.getHistory()).toHaveLength(changes - MAX_UNDO_SNAPSHOTS);
+
+      let redos = 0;
+      while (service.canRedo()) {
+        service.redo();
+        redos++;
+      }
+      expect(redos).toBe(MAX_UNDO_SNAPSHOTS);
+      expect(service.getHistory()).toHaveLength(changes);
     });
 
     it("should support undoing tool state updates", () => {

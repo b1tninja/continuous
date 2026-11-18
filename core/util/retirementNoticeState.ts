@@ -18,6 +18,12 @@ export interface NoticeState {
   dismissed: Record<string, string>;
   /** model id -> lifecycle from the user's own `GET /v1/models`, and the day. */
   live: Record<string, LiveLifecycle & { readOn: string }>;
+  /**
+   * notice key -> YYYY-MM-DD the config check last warned about it. Once per
+   * key: the key changes with the date or the severity, so "retiring" and then
+   * "retired" each warn once.
+   */
+  warned: Record<string, string>;
 }
 
 export function noticeStatePath(): string {
@@ -31,9 +37,10 @@ export function readNoticeState(file = noticeStatePath()): NoticeState {
       shown: p.shown ?? {},
       dismissed: p.dismissed ?? {},
       live: p.live ?? {},
+      warned: p.warned ?? {},
     };
   } catch {
-    return { shown: {}, dismissed: {}, live: {} };
+    return { shown: {}, dismissed: {}, live: {}, warned: {} };
   }
 }
 
@@ -90,6 +97,47 @@ export function recordLive(
 ): void {
   const s = readNoticeState(file);
   s.live[model] = { ...live, readOn: today };
+  write(s, file);
+}
+
+/**
+ * Several models' lifecycle in one read and one write, e.g. from a model list
+ * the person fetched. Unchanged entries keep their `readOn`; nothing is
+ * written when nothing changed.
+ */
+export function recordLiveMany(
+  entries: { model: string; live: LiveLifecycle }[],
+  today: string,
+  file = noticeStatePath(),
+): void {
+  if (entries.length === 0) return;
+  const s = readNoticeState(file);
+  let changed = false;
+  for (const { model, live } of entries) {
+    const before = s.live[model];
+    if (
+      before &&
+      before.lifecycle === live.lifecycle &&
+      before.deprecatedAt === live.deprecatedAt &&
+      before.retiresAt === live.retiresAt
+    ) {
+      continue;
+    }
+    s.live[model] = { ...live, readOn: today };
+    changed = true;
+  }
+  if (changed) write(s, file);
+}
+
+/** Marks the keys the config check warned about; one write. */
+export function markWarned(
+  keys: string[],
+  today: string,
+  file = noticeStatePath(),
+): void {
+  if (keys.length === 0) return;
+  const s = readNoticeState(file);
+  for (const k of keys) s.warned[k] = today;
   write(s, file);
 }
 

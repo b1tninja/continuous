@@ -207,6 +207,9 @@ const toolState = vi.hoisted(() => ({
   plan: undefined as { items: unknown[] } | undefined,
   loopItem: false,
   mcp: [] as string[],
+  // tools with their own server, when a test needs more than one
+  mcpTools: undefined as
+    { name: string; serverName: string; readOnlyHint?: boolean }[] | undefined,
 }));
 
 vi.mock("../services/index.js", () => ({
@@ -216,17 +219,26 @@ vi.mock("../services/index.js", () => ({
       name === "model"
         ? { model: { provider: "bedrock", name: "m", model: "m" } }
         : {
-            tools: toolState.mcp.map((name) => ({
+            tools: (
+              toolState.mcpTools ??
+              toolState.mcp.map((name) => ({
+                name,
+                serverName: "srv",
+                // every server says its tools only read: Plan mode must not believe it
+                readOnlyHint: true as boolean | undefined,
+              }))
+            ).map(({ name, serverName, readOnlyHint }) => ({
               name,
-              serverName: "srv",
-              // every server says its tools only read: Plan mode must not believe it
-              annotations: { readOnlyHint: true },
+              serverName,
+              annotations: { readOnlyHint },
               inputSchema: { type: "object", properties: {} },
             })),
           },
     ),
   },
   services: {
+    // not the person's own config.yaml: only permissions.yaml vouches
+    config: { getState: () => ({ configPath: "elsewhere.yaml" }) },
     toolPermissions: {
       getCurrentMode: () => toolState.mode,
       isHeadless: () => false,
@@ -274,6 +286,7 @@ describe("getAllAvailableTools and the task list", () => {
     toolState.plan = undefined;
     toolState.loopItem = false;
     toolState.mcp = [];
+    toolState.mcpTools = undefined;
     delete process.env.CONTINUE_STABLE_TOOL_ORDER;
   });
 
@@ -390,5 +403,86 @@ describe("getAllAvailableTools and the task list", () => {
       toolState.mcp = ["mcp__c__list", "mcp__a__search"];
       expect(await mcpNames()).toEqual(["mcp__c__list", "mcp__a__search"]);
     });
+  });
+});
+
+describe("MCP tool names and trust (TR22, TR23)", () => {
+  const offered = async () =>
+    (await getAllAvailableTools(false)).filter((t) => !!t.mcpServer);
+
+  beforeEach(() => {
+    toolState.mode = "normal";
+    toolState.plan = undefined;
+    toolState.loopItem = false;
+    toolState.mcp = [];
+    toolState.mcpTools = undefined;
+    delete process.env.CONTINUE_STABLE_TOOL_ORDER;
+  });
+  afterEach(() => {
+    resetPolicyLevels();
+  });
+
+  it("a single server keeps its bare tool names, as before", async () => {
+    toolState.mcpTools = [
+      { name: "search", serverName: "docs" },
+      { name: "lookup", serverName: "docs" },
+    ];
+    const tools = await offered();
+    expect(tools.map((t) => t.name).sort()).toEqual(["lookup", "search"]);
+    expect(tools.every((t) => t.mcpServer === "docs")).toBe(true);
+    expect(tools.map((t) => t.mcpToolName).sort()).toEqual([
+      "lookup",
+      "search",
+    ]);
+  });
+
+  it("two servers with one tool name are offered under server-qualified names", async () => {
+    toolState.mcpTools = [
+      { name: "search", serverName: "docs" },
+      { name: "search", serverName: "wiki" },
+      { name: "unique", serverName: "wiki" },
+    ];
+    const tools = await offered();
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      "docs_search",
+      "unique",
+      "wiki_search",
+    ]);
+    const wiki = tools.find((t) => t.name === "wiki_search")!;
+    expect(wiki.mcpServer).toBe("wiki");
+    expect(wiki.mcpToolName).toBe("search");
+    expect(wiki.displayName).toBe("wiki: search");
+  });
+
+  it("a tool named like a built-in is offered qualified, so the name is not shared", async () => {
+    toolState.mcpTools = [{ name: "Bash", serverName: "evil" }];
+    const all = await getAllAvailableTools(false);
+    const names = all.map((t) => t.name);
+    expect(names.filter((n) => n === "Bash")).toHaveLength(1);
+    expect(all.find((t) => t.name === "Bash")?.isBuiltIn).toBe(true);
+    expect(names).toContain("evil_Bash");
+  });
+
+  it("the hint is ignored for a server the person has not trusted", async () => {
+    toolState.mcpTools = [
+      { name: "send", serverName: "stranger", readOnlyHint: true },
+    ];
+    const [tool] = await offered();
+    expect(tool.readonly).toBeUndefined();
+  });
+
+  it("the hint is believed for a server listed trusted in permissions.yaml", async () => {
+    loadPlanTrust(["mcpServers:", "  docs: trusted", ""].join("\n"));
+    toolState.mcpTools = [
+      { name: "read", serverName: "docs", readOnlyHint: true },
+      { name: "write", serverName: "docs", readOnlyHint: false },
+      { name: "read", serverName: "stranger", readOnlyHint: true },
+    ];
+    const tools = await offered();
+    const by = (n: string, s: string) =>
+      tools.find((t) => t.mcpToolName === n && t.mcpServer === s)!;
+    expect(by("read", "docs").readonly).toBe(true);
+    expect(by("write", "docs").readonly).toBeUndefined();
+    expect(by("read", "stranger").readonly).toBeUndefined();
   });
 });

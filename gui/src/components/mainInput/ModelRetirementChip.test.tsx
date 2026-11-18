@@ -21,9 +21,17 @@ const notice = {
   key: "k",
 } as const;
 
-async function setup(model: any, content: any, calls: any[] = []) {
+async function setup(
+  model: any,
+  content: any,
+  calls: any[] = [],
+  asked: any[] = [],
+) {
   const ideMessenger = new MockIdeMessenger();
-  ideMessenger.responseHandlers["model/retirementNotice"] = async () => content;
+  ideMessenger.responseHandlers["model/retirementNotice"] = async (data) => {
+    asked.push(data);
+    return typeof content === "function" ? content() : content;
+  };
   ideMessenger.responseHandlers["model/dismissRetirementNotice"] = async (
     data,
   ) => {
@@ -46,6 +54,7 @@ async function setup(model: any, content: any, calls: any[] = []) {
       } as any),
     );
   });
+  return ideMessenger;
 }
 
 const sonnet = {
@@ -94,7 +103,45 @@ describe("ModelRetirementChip", () => {
   });
 
   it("does not ask for a model on another provider", async () => {
-    await setup({ ...sonnet, provider: "openai", model: "gpt-5" }, { notice });
+    const asked: any[] = [];
+    await setup(
+      { ...sonnet, provider: "mistral", model: "m" },
+      { notice },
+      [],
+      asked,
+    );
     expect(screen.queryByTestId("model-retirement-chip")).toBeNull();
+    expect(asked).toEqual([]);
+  });
+
+  it("shows an OpenAI model's shutdown date", async () => {
+    await setup(
+      { ...sonnet, provider: "openai", model: "gpt-4.1" },
+      {
+        notice: {
+          ...notice,
+          model: "gpt-4.1",
+          retiresAt: "2027-02-14",
+          from: "live",
+        },
+      },
+    );
+    expect(await screen.findByText("retires 2027-02-14")).toBeTruthy();
+  });
+
+  it("asks again when the background refresh updated the selected model", async () => {
+    const asked: any[] = [];
+    let answer: any = {};
+    const messenger = await setup(sonnet, () => answer, [], asked);
+    expect(screen.queryByTestId("model-retirement-chip")).toBeNull();
+    answer = { notice };
+    await act(async () => {
+      messenger.mockMessageToWebview("model/infoUpdated", {
+        provider: "anthropic",
+        model: "claude-sonnet-4-5-20250929",
+      });
+    });
+    expect(await screen.findByText("retires 2026-11-30")).toBeTruthy();
+    expect(asked.length).toBeGreaterThanOrEqual(2);
   });
 });

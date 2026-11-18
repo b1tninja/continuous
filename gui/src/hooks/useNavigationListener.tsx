@@ -8,6 +8,7 @@ const openGUITypes: (keyof ToWebviewProtocol)[] = [
   "focusContinueInput",
   "focusContinueInputWithoutClear",
   "newSession",
+  "addToChat",
 ];
 
 export const useNavigationListener = () => {

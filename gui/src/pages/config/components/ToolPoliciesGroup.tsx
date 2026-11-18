@@ -8,7 +8,7 @@ import ToggleSwitch from "../../../components/gui/Switch";
 import { ToolTip } from "../../../components/gui/Tooltip";
 import { Card } from "../../../components/ui";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks";
-import { useWarmCacheNote } from "../../../hooks/useWarmCacheNote";
+import { useToolChangeNote } from "../../../hooks/useToolChangeNote";
 import { toggleToolGroupSetting } from "../../../redux/slices/uiSlice";
 import { ToolPolicyItem } from "./ToolPolicyItem";
 
@@ -41,7 +41,7 @@ export function ToolPoliciesGroup({
     (state) => state.ui.toolGroupSettings,
   );
   const toolSettings = useAppSelector((state) => state.ui.toolSettings);
-  const warmCacheNote = useWarmCacheNote();
+  const warmCacheNote = useToolChangeNote();
   const isGroupEnabled = useMemo(() => {
     return toolGroupSettings[groupName] !== "exclude";
   }, [toolGroupSettings, groupName]);

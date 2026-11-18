@@ -7,6 +7,7 @@ import { ChatCompletionTool } from "openai/resources.mjs";
 import { runPreCompactHooks } from "./hooks/lifecycleHooks.js";
 import { streamChatResponse } from "./stream/streamChatResponse.js";
 import { StreamCallbacks } from "./stream/streamChatResponse.types.js";
+import { resetCliToolListHold } from "./tools/toolListHold.js";
 import { logger } from "./util/logger.js";
 import {
   countChatHistoryTokens,
@@ -163,6 +164,8 @@ export async function compactChatHistory(
       ? [systemMessage, compactionMessage]
       : [compactionMessage];
 
+    // The summary starts a new prompt: tool changes that waited apply now
+    resetCliToolListHold();
     return {
       compactedHistory,
       compactionContent,

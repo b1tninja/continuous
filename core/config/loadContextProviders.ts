@@ -11,7 +11,7 @@ import FileContextProvider from "../context/providers/FileContextProvider";
 import ProblemsContextProvider from "../context/providers/ProblemsContextProvider";
 import RulesContextProvider from "../context/providers/RulesContextProvider";
 import TerminalContextProvider from "../context/providers/TerminalContextProvider";
-import { WEB_SEARCH_URL_ENV } from "../context/providers/webSearchBackend";
+import { webSearchUnavailableReason } from "../context/providers/webSearchBackend";
 
 /*
     Loads context providers based on configuration
@@ -52,7 +52,7 @@ export function loadConfigContextProviders(
           fatal: false,
           message:
             config.provider === "web"
-              ? `The web context provider needs your own search endpoint: set ${WEB_SEARCH_URL_ENV}`
+              ? `The web context provider is not available. ${webSearchUnavailableReason() ?? ""}`.trim()
               : `Unknown context provider ${config.provider}`,
         });
         continue;

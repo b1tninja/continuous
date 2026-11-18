@@ -13,21 +13,32 @@ runs:
   using: "composite"
   steps:
     - uses: actions/setup-node@v7
+      id: node
       with:
         node-version-file: ".nvmrc"
 
-    # Restore only, from what setup-component saved after a clean install. Prepackage
-    # edits core/node_modules, so this job must not save it, and npm ci would delete it.
-    - uses: actions/cache/restore@v6
+    # Cache policy (docs/ci-caching.md). node_modules is restored, never saved, here: prepackage
+    # edits core/node_modules and the extension's, so the clean copies come from the
+    # setup-component action, which saves right after `npm ci`. The big entries (npm downloads,
+    # the Gradle wrapper) are saved from main only, so pull request refs do not each keep a copy.
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       id: core-node-modules-cache
       with:
         path: core/node_modules
-        key: ${{ runner.os }}-core-node-modules-${{ hashFiles('core/package-lock.json') }}
+        key: ${{ runner.os }}-core-node-modules-node${{ steps.node.outputs.node-version }}-${{ hashFiles('core/package-lock.json') }}
 
-    - name: Build packages and install core dependencies
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: gui-cache
+      with:
+        path: gui/node_modules
+        key: ${{ runner.os }}-gui-node-modules-node${{ steps.node.outputs.node-version }}-${{ hashFiles('gui/package-lock.json') }}
+
+    - name: Build packages
+      uses: ./.github/actions/setup-packages
+
+    - name: Install core dependencies
       shell: bash
       run: |
-        node ./scripts/build-packages.js
         if [ "${{ steps.core-node-modules-cache.outputs.cache-hit }}" != "true" ]; then
           cd core
           npm ci
@@ -37,7 +48,9 @@ runs:
       shell: bash
       run: |
         cd gui
-        npm ci
+        if [ "${{ steps.gui-cache.outputs.cache-hit }}" != "true" ]; then
+          npm ci
+        fi
         npm run build
 
     - name: Setup Java
@@ -57,7 +70,8 @@ runs:
 
     # The wrapper downloads the Gradle distribution from services.gradle.org on a cold run,
     # which has timed out. Cache it keyed on the wrapper properties, which name the version.
-    - uses: actions/cache@v6
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: gradle-wrapper-cache
       with:
         path: ~/.gradle/wrapper/dists
         key: ${{ runner.os }}-gradle-wrapper-${{ hashFiles('extensions/intellij/gradle/wrapper/gradle-wrapper.properties') }}
@@ -65,42 +79,30 @@ runs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
 
-    - uses: actions/cache@v6
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: npm-cache
       with:
         path: ~/.npm
         key: ${{ runner.os }}-npm-cache-jetbrains-${{ hashFiles('extensions/vscode/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-npm-cache-jetbrains-
 
-    - uses: actions/cache@v6
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       id: vscode-extension-cache
       with:
         path: extensions/vscode/node_modules
-        key: ${{ runner.os }}-vscode-node-modules-${{ hashFiles('extensions/vscode/package-lock.json') }}
-
-    - uses: actions/cache@v6
-      id: gui-cache
-      with:
-        path: gui/node_modules
-        key: ${{ runner.os }}-gui-node-modules-${{ hashFiles('gui/package-lock.json') }}
-
-    # Cache prepackaged extension build to share with other jobs
-    - uses: actions/cache@v6
-      id: vscode-prepackage-cache
-      with:
-        path: extensions/vscode/build
-        key: ${{ runner.os }}-vscode-prepackage-${{ hashFiles('extensions/vscode/package-lock.json', 'extensions/vscode/**/*.ts', 'extensions/vscode/**/*.json') }}
+        key: ${{ runner.os }}-vscode-node-modules-node${{ steps.node.outputs.node-version }}-${{ hashFiles('extensions/vscode/package-lock.json') }}
 
     # The pre-built sqlite3 binary comes from GitHub releases, which has returned 504s. Cache
     # the extracted build; download-copy-sqlite.js skips its download when the marker in it
     # matches. Bump the key when SQLITE_VERSION changes.
-    - uses: actions/cache@v6
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       id: sqlite-prebuilt-cache
       with:
         path: core/node_modules/sqlite3/build
         key: ${{ runner.os }}-sqlite3-prebuilt-v5.1.7
 
-    # Only run prepackage if not cached - saves ~1 minute
     - name: Run prepackage script
-      if: steps.vscode-prepackage-cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
         cd extensions/vscode
@@ -112,11 +114,25 @@ runs:
         # https://github.com/microsoft/vscode-ripgrep/issues/9#issuecomment-643965333
         GITHUB_TOKEN: ${{ inputs.ci-github-token }}
 
-    - uses: actions/cache@v6
+    - name: Save sqlite3 prebuilt
+      if: steps.sqlite-prebuilt-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: core/node_modules/sqlite3/build
+        key: ${{ steps.sqlite-prebuilt-cache.outputs.cache-primary-key }}
+
+    - name: Save npm download cache
+      if: steps.npm-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.npm
+        key: ${{ steps.npm-cache.outputs.cache-primary-key }}
+
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       id: binary-cache
       with:
         path: binary/node_modules
-        key: ${{ runner.os }}-binary-node-modules-${{ hashFiles('binary/package-lock.json') }}
+        key: ${{ runner.os }}-binary-node-modules-node${{ steps.node.outputs.node-version }}-${{ hashFiles('binary/package-lock.json') }}
 
     - name: Install binary dependencies
       if: steps.binary-cache.outputs.cache-hit != 'true'
@@ -124,6 +140,13 @@ runs:
       run: |
         cd binary
         npm ci
+
+    - name: Save binary node_modules
+      if: steps.binary-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: binary/node_modules
+        key: ${{ steps.binary-cache.outputs.cache-primary-key }}
 
     - name: Build the binaries
       shell: bash
@@ -151,6 +174,27 @@ runs:
         fi
         ./gradlew --stop > /dev/null 2>&1 || true
         exit "$status"
+
+    # Saved after the run (a failed run still gets here), from main only. The wrapper unpacks the
+    # Gradle distribution during the run.
+    - name: Save Gradle wrapper distribution
+      if: always() && steps.gradle-wrapper-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.gradle/wrapper/dists
+        key: ${{ steps.gradle-wrapper-cache.outputs.cache-primary-key }}
+
+    - uses: ./.github/actions/cache-report
+      if: always()
+      with:
+        entries: |
+          core-node-modules|${{ steps.core-node-modules-cache.outcome }}|${{ steps.core-node-modules-cache.outputs.cache-hit }}|${{ steps.core-node-modules-cache.outputs.cache-matched-key }}
+          gui-node-modules|${{ steps.gui-cache.outcome }}|${{ steps.gui-cache.outputs.cache-hit }}|${{ steps.gui-cache.outputs.cache-matched-key }}
+          vscode-node-modules|${{ steps.vscode-extension-cache.outcome }}|${{ steps.vscode-extension-cache.outputs.cache-hit }}|${{ steps.vscode-extension-cache.outputs.cache-matched-key }}
+          binary-node-modules|${{ steps.binary-cache.outcome }}|${{ steps.binary-cache.outputs.cache-hit }}|${{ steps.binary-cache.outputs.cache-matched-key }}
+          sqlite3-prebuilt|${{ steps.sqlite-prebuilt-cache.outcome }}|${{ steps.sqlite-prebuilt-cache.outputs.cache-hit }}|${{ steps.sqlite-prebuilt-cache.outputs.cache-matched-key }}
+          npm-jetbrains|${{ steps.npm-cache.outcome }}|${{ steps.npm-cache.outputs.cache-hit }}|${{ steps.npm-cache.outputs.cache-matched-key }}
+          gradle-wrapper|${{ steps.gradle-wrapper-cache.outcome }}|${{ steps.gradle-wrapper-cache.outputs.cache-hit }}|${{ steps.gradle-wrapper-cache.outputs.cache-matched-key }}
 
     - name: Move video
       if: ${{ failure() }}

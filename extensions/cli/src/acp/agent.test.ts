@@ -3,7 +3,7 @@ import { requestUserPermission } from "../stream/streamChatResponse.helpers.js";
 import type { StreamCallbacks } from "../stream/streamChatResponse.types.js";
 import type { PreprocessedToolCall } from "../tools/types.js";
 
-import { AcpAgent, type AcpBackend } from "./agent.js";
+import { AcpAgent, resultTextForClient, type AcpBackend } from "./agent.js";
 import { JsonRpcPeer } from "./rpc.js";
 
 const NL = String.fromCharCode(10);
@@ -87,6 +87,9 @@ function scriptedBackend(
 ): AcpBackend {
   return {
     newSession: async () => "s1",
+    listSessions: async () => [],
+    inWorkspace: () => false,
+    openSession: async () => undefined,
     runTurn: (_id, _text, cb, signal) => run(cb, signal),
     resolvePermission: (id, approved) => {
       resolved.push([id, approved]);
@@ -124,7 +127,11 @@ describe("ACP agent", () => {
     const client = setup(scriptedBackend(async () => {}));
     const res = await client.call("initialize", { protocolVersion: 1 });
     expect(res.result.protocolVersion).toBe(1);
-    expect(res.result.agentCapabilities.loadSession).toBe(false);
+    expect(res.result.agentCapabilities.loadSession).toBe(true);
+    expect(res.result.agentCapabilities.sessionCapabilities).toEqual({
+      list: {},
+      resume: {},
+    });
     expect(res.result.agentCapabilities.promptCapabilities.image).toBe(false);
     expect(res.result.authMethods).toEqual([]);
     expect(res.result.agentInfo.name).toBe("continuous");
@@ -319,5 +326,142 @@ describe("ACP agent", () => {
       prompt: [{ type: "text", text: "x" }],
     });
     expect(res.error.message).toBe("model unreachable");
+  });
+
+  describe("two calls of one tool in a turn", () => {
+    const prompt = async (client: ScriptedClient) => {
+      const sessionId = await start(client);
+      await client.call("session/prompt", {
+        sessionId,
+        prompt: [{ type: "text", text: "x" }],
+      });
+      const started = client.updates.filter(
+        (u) => u.sessionUpdate === "tool_call",
+      );
+      const finished = client.updates.filter(
+        (u) => u.sessionUpdate === "tool_call_update",
+      );
+      const idFor = (command: string) =>
+        started.find((u) => u.rawInput.command === command).toolCallId;
+      const resultOf = (toolCallId: string) =>
+        finished.find((u) => u.toolCallId === toolCallId);
+      return { started, finished, idFor, resultOf };
+    };
+
+    it("each result goes to its own call when the second finishes first", async () => {
+      const client = setup(
+        scriptedBackend(async (cb) => {
+          cb.onToolStart?.("Bash", { command: "sleep 2; echo slow" }, "m1");
+          cb.onToolStart?.("Bash", { command: "echo fast" }, "m2");
+          // Calls of one turn run at the same time: the later one ends first
+          cb.onToolResult?.("fast", "Bash", "done", "m2");
+          cb.onToolResult?.("slow", "Bash", "done", "m1");
+        }),
+      );
+      const { started, finished, idFor, resultOf } = await prompt(client);
+      expect(started).toHaveLength(2);
+      expect(finished).toHaveLength(2);
+      const slow = idFor("sleep 2; echo slow");
+      const fast = idFor("echo fast");
+      expect(slow).not.toBe(fast);
+      expect(resultOf(slow).content[0].content.text).toBe("slow");
+      expect(resultOf(fast).content[0].content.text).toBe("fast");
+    });
+
+    it("an error and a result of the same tool keep their own calls", async () => {
+      const client = setup(
+        scriptedBackend(async (cb) => {
+          cb.onToolStart?.("Bash", { command: "true" }, "m1");
+          cb.onToolStart?.("Bash", { command: "false" }, "m2");
+          cb.onToolError?.("exit 1", "Bash", "m2");
+          cb.onToolResult?.("ok", "Bash", "done", "m1");
+        }),
+      );
+      const { idFor, resultOf } = await prompt(client);
+      expect(resultOf(idFor("false"))).toMatchObject({ status: "failed" });
+      expect(resultOf(idFor("true"))).toMatchObject({ status: "completed" });
+      expect(resultOf(idFor("true")).content[0].content.text).toBe("ok");
+    });
+
+    it("a permission request names the call it is about, not the first of that tool", async () => {
+      let approved: boolean | undefined;
+      const client = setup(
+        scriptedBackend(async (cb) => {
+          cb.onToolStart?.("Bash", { command: "ls" }, "m1");
+          cb.onToolStart?.("Bash", { command: "git push" }, "m2");
+          // The real path: the engine asks about the second call
+          approved = await requestUserPermission(
+            { ...fakeCall("Bash", { command: "git push" }), id: "m2" },
+            cb,
+          );
+        }),
+      );
+      const { idFor } = await prompt(client);
+      expect(approved).toBe(true);
+      expect(client.permissionRequests).toHaveLength(1);
+      expect(client.permissionRequests[0].toolCall.toolCallId).toBe(
+        idFor("git push"),
+      );
+    });
+
+    it("a result for an id that was never started is dropped, not given to a namesake", async () => {
+      const client = setup(
+        scriptedBackend(async (cb) => {
+          cb.onToolStart?.("Bash", { command: "ls" }, "m1");
+          cb.onToolResult?.("someone else's output", "Bash", "done", "m9");
+          cb.onToolResult?.("mine", "Bash", "done", "m1");
+        }),
+      );
+      const { finished } = await prompt(client);
+      expect(finished).toHaveLength(1);
+      expect(finished[0].content[0].content.text).toBe("mine");
+    });
+  });
+
+  describe("tool results sent to the editor are masked", () => {
+    // Built at run time so no scanner reads a credential shape in this file.
+    const CANARY = ["ghp", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"].join("_");
+
+    it("a secret a tool printed does not reach the client, in a result or an error", async () => {
+      const client = setup(
+        scriptedBackend(async (cb) => {
+          cb.onToolStart?.("Bash", { command: "cat .npmrc" }, "m1");
+          cb.onToolResult?.(
+            `registry=https://example.test\n_authToken=${CANARY}\nend of file`,
+            "Bash",
+            "done",
+            "m1",
+          );
+          cb.onToolStart?.("Bash", { command: "gh api user" }, "m2");
+          cb.onToolError?.(`401 for token ${CANARY}`, "Bash", "m2");
+        }),
+      );
+      const sessionId = await start(client);
+      await client.call("session/prompt", {
+        sessionId,
+        prompt: [{ type: "text", text: "x" }],
+      });
+      const sent = JSON.stringify(client.updates);
+      expect(sent).not.toContain(CANARY);
+      const texts = client.updates
+        .filter((u) => u.sessionUpdate === "tool_call_update")
+        .map((u) => u.content[0].content.text);
+      expect(texts[0]).toContain("registry=https://example.test");
+      expect(texts[0]).toContain("end of file");
+      expect(texts[1]).toContain("401 for token");
+    });
+
+    it("masks before it cuts, so a secret across the 50,000 character cut is not sent in part", () => {
+      const text = "a".repeat(49_990) + " " + CANARY + " tail";
+      const out = resultTextForClient(text);
+      expect(out.length).toBeLessThanOrEqual(50_000);
+      expect(out).not.toContain(CANARY.slice(0, 12));
+    });
+
+    it("leaves ordinary output as it was", () => {
+      expect(resultTextForClient("src/a.ts\nsrc/b.ts\n")).toBe(
+        "src/a.ts\nsrc/b.ts\n",
+      );
+    });
   });
 });

@@ -36,8 +36,8 @@ export function FirstRunNotice() {
       className="mx-2 mt-2 flex min-w-0 items-start gap-2 rounded-sm border border-solid border-border bg-input px-2 py-1"
     >
       <p className="m-0 min-w-0 flex-1 text-xs text-description-muted">
-        New here? Each area has a level and a preset sets them all; Always on
-        rules apply first.{" "}
+        New here? Each area has a level and a preset sets them all; locked rules
+        apply first.{" "}
         <a
           href={CONFIG_ROUTES.PERMISSIONS}
           onClick={(e) => {
