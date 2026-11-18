@@ -285,6 +285,21 @@
           "default": false,
           "markdownDescription": "Pause Continuous's codebase index on start."
         },
+        "continuous.chatDropZone": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ],
+          "enumDescriptions": [
+            "Show it on VS Code 1.140 and later, where drags from the Explorer and editor tabs no longer reach the chat (microsoft/vscode#339036).",
+            "Always show it.",
+            "Never show it."
+          ],
+          "default": "auto",
+          "markdownDescription": "Show a small **Drop Files for Chat** view under the chat. Files and folders dropped on it from the Explorer, an editor tab or your file manager are added to the chat input as `@` mentions."
+        },
         "continuous.enableConsole": {
           "type": "boolean",
           "default": false,
@@ -310,6 +325,12 @@
       }
     },
     "commands": [
+      {
+        "command": "continuous.dropZone.pickFiles",
+        "category": "Continuous",
+        "title": "Pick Files or Folders for Chat",
+        "icon": "$(add)"
+      },
       {
         "command": "continuous.cleanUpOldSessions",
         "category": "Continuous",
@@ -829,6 +850,11 @@
           "command": "continuous.clearConsole",
           "group": "navigation@1",
           "when": "view == continuous.continueConsoleView"
+        },
+        {
+          "command": "continuous.dropZone.pickFiles",
+          "group": "navigation@1",
+          "when": "view == continuous.dropZone"
         }
       ],
       "editor/title": [
@@ -873,7 +899,16 @@
           "id": "continuous.continueGUIView",
           "name": "Continuous",
           "icon": "media/sidebar-icon.svg",
-          "visibility": "visible"
+          "visibility": "visible",
+          "initialSize": 12
+        },
+        {
+          "id": "continuous.dropZone",
+          "name": "Drop Files for Chat",
+          "icon": "$(inbox)",
+          "visibility": "visible",
+          "initialSize": 1,
+          "when": "config.continuous.chatDropZone == always || config.continuous.chatDropZone == auto && continuous.webviewDropBlocked"
         }
       ],
       "continuousConsole": [

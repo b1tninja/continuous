@@ -63,7 +63,7 @@ function getFullScreenTab() {
   );
 }
 
-function focusGUI() {
+export function focusGUI() {
   const fullScreenTab = getFullScreenTab();
   if (fullScreenTab) {
     // focus fullscreen
@@ -87,7 +87,7 @@ function hideGUI() {
   }
 }
 
-function waitForSidebarReady(
+export function waitForSidebarReady(
   sidebar: ContinueGUIWebviewViewProvider,
   timeout: number,
   interval: number,

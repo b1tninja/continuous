@@ -1,17 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <!-- Small-size variant (favicon, 16-48px): full-bleed, heavier stroke, larger dot. -->
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#312E81"/>
-      <stop offset="1" stop-color="#1E1B4B"/>
-    </linearGradient>
-    <linearGradient id="loop" gradientUnits="userSpaceOnUse" x1="72" y1="0" x2="440" y2="0">
-      <stop offset="0" stop-color="#6366F1"/>
-      <stop offset="0.5" stop-color="#818CF8"/>
-      <stop offset="1" stop-color="#A78BFA"/>
-    </linearGradient>
-  </defs>
-  <rect x="0" y="0" width="512" height="512" rx="120" fill="url(#bg)"/>
-  <path d="M256 256 C304 160 440 160 440 256 C440 352 304 352 256 256 C208 160 72 160 72 256 C72 352 208 352 256 256 Z" fill="none" stroke="url(#loop)" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="364" cy="208" r="42" fill="#67E8F9"/>
-</svg>
+  <!-- Small-size variant (favicon, 16-48px): full-bleed, heavier stroke and frame, no glow
+         (a blur turns to mud at this size). -->
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1B2455"/><stop offset="1" stop-color="#150F3D"/></linearGradient>
+<linearGradient id="loop" gradientUnits="userSpaceOnUse" x1="72" y1="0" x2="440" y2="0"><stop offset="0" stop-color="#3B82F6"/><stop offset="0.5" stop-color="#818CF8"/><stop offset="1" stop-color="#A78BFA"/></linearGradient>
+<linearGradient id="edge" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="512" y2="512"><stop offset="0" stop-color="#4C8DFF"/><stop offset="0.55" stop-color="#8B7CF6"/><stop offset="1" stop-color="#A78BFA"/></linearGradient></defs><rect width="512" height="512" rx="120" fill="url(#bg)"/><rect x="24" y="24" width="464" height="464" rx="100" fill="none" stroke="url(#edge)" stroke-width="24"/>
+<path d="M256 256 C304 160 440 160 440 256 C440 352 304 352 256 256 C208 160 72 160 72 256 C72 352 208 352 256 256 Z" fill="none" stroke="url(#loop)" stroke-width="60" stroke-linecap="round" stroke-linejoin="round"/></svg>

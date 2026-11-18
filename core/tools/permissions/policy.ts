@@ -138,24 +138,25 @@ export const BUILTIN_RULES: readonly {
     id: "ask-destructive-commands",
     label: "Ask before destroying work",
     description:
-      "History rewrites and recursive deletes (`git reset --hard`, `git push --force`, `git clean`, `rm -rf`). Build-output folders such as node_modules are not asked about.",
+      "Asks before history rewrites and recursive deletes (`git reset --hard`, `git push --force`, `git clean`, `rm -rf`). Build-output folders such as node_modules are not asked about. Turning this off is a loosening. An Always rule for one exact command exempts that command.",
   },
   {
     id: "ask-large-change",
     label: "Ask before a large change",
-    description: "One edit that changes more than 300 lines.",
+    description:
+      "Asks before one edit that changes more than 300 lines. Turning this off is a loosening.",
   },
   {
     id: "ask-dependency-change",
     label: "Ask before changing dependencies",
     description:
-      "Edits to manifests, lockfiles and registry settings, and commands that add, update or remove a package. Installing what the lockfile names does not ask.",
+      "Asks before edits to manifests, lockfiles and registry settings, and commands that add, update or remove a package. Installing what the lockfile names does not ask. Turning this off is a loosening. An Always rule for one exact command exempts that command.",
   },
   {
     id: "ask-unknown-host",
     label: "Ask before contacting an unlisted host",
     description:
-      "When you list trusted domains in your own config, a fetch or network command to any other host asks.",
+      "Asks before a fetch or network command to a host outside the trusted domains you list in your own config. Turning this off is a loosening.",
   },
   {
     id: "ask-outside-paths",
