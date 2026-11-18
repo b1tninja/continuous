@@ -1,0 +1,121 @@
+---
+title: "Slash commands"
+---
+
+In an interactive session of the terminal agent, a line that starts with `/` is a command, not a message. Type `/` to see the list and filter it as you type; Tab completes the selected one.
+
+A line is read as a command only when `/` is its first character. If the word after it is not part of any command's name, the line is sent to the model as ordinary text; a near miss answers `Unknown command`.
+
+## Session
+
+| Command          | What it does                                                                                                    |
+| ---------------- | --------------------------------------------------------------------------------------------------------------- |
+| `/help`          | Show the keyboard shortcuts                                                                                     |
+| `/info`          | Show the version, the config file and model in use, the session's title and id, and its token usage and cost    |
+| `/clear`         | Clear the chat history                                                                                          |
+| `/compact`       | Replace the history with a summary of it, to free context                                                       |
+| `/thinking <mode>` | How the model's reasoning shows: `fold`, `expanded` or `hide`. With no argument, prints the current mode       |
+| `/title <text>`  | Set the session's title                                                                                         |
+| `/rename <text>` | The same as `/title`                                                                                            |
+| `/exit`          | Leave the session                                                                                               |
+
+While the model thinks, its reasoning streams dimmed above the status line, newest lines only. When the reply is done the reasoning folds to one line above it, "∴ Thought for 4s". `/thinking expanded` keeps the reasoning under that line, and `/thinking hide` shows none of it; the choice holds for the session, and redraws the transcript. Start with a mode with `--thinking <mode>` or the `CONTINUE_CLI_THINKING` variable; without either, the IDE's **Keep Thinking Expanded** setting (`ui.keepThinkingExpanded`) starts the session in `expanded`. What a provider returns is often a summary of the model's thinking rather than all of it.
+
+The status line shows the model the next request goes to and its reasoning effort, as `• Claude Opus (high)`. When that changes without `/model` (a mode's or a Loop turn's `modeModels` entry, a Loop item's own `model:`), a line in the transcript says which model and effort now run and why, including when a model asked for is not configured and another runs instead. A subagent's output starts with the model it runs on. With `-p --format stream-json` the same changes are `model` lines ([headless output](/cli/headless-output)).
+
+## Sessions on disk
+
+| Command          | What it does                                                                                                                            |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `/resume`        | Pick an earlier session and continue it                                                                                                 |
+| `/sessions`      | Show all sessions. It opens the same picker as `/resume`                                                                                |
+| `/fork`          | Fork this session into a new one and continue there. The fork keeps the history unchanged, the mode, the model, the task plan and the prompt cache record, so its next message can read the cache the original built. The original is unchanged; `/resume` opens it |
+| `/export`        | Write this session as a masked Markdown transcript (`/export [path] [--force] [--reasoning]`) and say how many values were masked. `--json` picks a session and writes the JSON file `/import` reads, with secrets replaced. `--raw` masks nothing, with a warning. See [Export a session](/cli/export) |
+| `/import <file>` | Read a session from a JSON file written by `/export`. If a session with that id already exists, the import gets a new id                |
+
+## Model and configuration
+
+| Command   | What it does                                                                    |
+| --------- | ------------------------------------------------------------------------------- |
+| `/model`  | Switch between the chat models of the current config                            |
+| `/config` | Switch to another configuration                                                 |
+| `/mcp`    | List the MCP servers of the config; restart or stop one, or all of them         |
+| `/mcp pending` | List the MCP tools that wait for your approval, with the description the model would read |
+| `/mcp approve <server> [tool...]` | Approve those tools (all of the server's when you name none). They are offered once the prompt cache goes cold, or at once after `/tools apply` |
+| `/init`   | Ask the agent to write an `AGENTS.md` file that describes this codebase         |
+
+`/init` sends a prepared prompt to the model, so it is a normal turn: the file is written with the edit tools and asks for approval like any other edit.
+
+## Permissions
+
+| Command          | What it does                                                                                                                              |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `/policy`        | Show the preset and the level of each of the five areas                                                                                   |
+| `/policy <spec>` | Set them: a preset, a level, or `area=level` pairs. The same value as [`--policy`](/cli/reference#--policy)                               |
+| `/untaint`       | Acknowledge the untrusted content this session has read, so that network, publish and credential calls stop asking because of it          |
+| `/untaint <label>` | Acknowledge one label only, such as `mcp:github` or `web-fetch`; the others keep asking                                                   |
+
+```text
+/policy
+/policy acceptEdits
+/policy tools=permissive plan=manual
+/policy idgaf
+```
+
+`/policy <spec>` applies at once, with no confirmation, updates a running loop, and is saved to `permissions.yaml` for the next session and for the VS Code extension. IDGAF is the exception: it holds for this session and is never written. With no argument the command prints one line per area, for example:
+
+```text
+Preset: Careful
+
+Level of each area:
+  Context use  Permissive Reads anything no rule stops.
+  Tool use     Cautious   Runs what your Always rules and tool settings cover, asks otherwise.
+  File edits   Manual     You review each diff.
+  Plan edits   Cautious   In Loop, re-plans that add no to-do go on. A first plan waits.
+  Questions    Cautious   You decide, except types a rule gives the agent.
+```
+
+`/untaint` answers `Nothing to acknowledge` when the session has not been marked. The rule it lifts is `toolPermissions.auto.environment.taintedSessionRule` in your own `config.yaml`, which is `off` unless you set it to `ask`.
+
+Each MCP server's results carry their own label, `mcp:<server>`, so `/untaint mcp:github` forgives what the GitHub server returned and leaves a later result from another server asking. A label the session does not hold is refused, and the answer lists the labels it does hold. Every label added and every clear is written to the audit trail as a `taint` record with where it came from and why.
+
+## Loops and background work
+
+| Command | What it does                                                                                                                                   |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/loop` | Open the loop's inbox: answer its questions, allow or refuse a held call, change its level or strategy, resume it, or stop it after this item |
+| `/jobs` | List background jobs                                                                                                                           |
+
+See [Loop mode](/ide-extensions/agent/loop-mode).
+
+## Skills
+
+| Command                      | What it does                                                                                       |
+| ---------------------------- | -------------------------------------------------------------------------------------------------- |
+| `/skills`                    | List the skills found, each with its description and path                                          |
+| `/import-skill <url-or-name>` | Ask the agent to import a skill from a URL or by name into `~/.continuous/skills`                  |
+
+Skills are read from `.continuous/skills`, `.continue/skills` and `.claude/skills` in the current folder, and from `~/.continuous/skills`.
+
+## Updates
+
+`/update` opens a menu with **Run update** and a switch for auto-updates. Neither installs anything in Continuous: **Run update** answers with the address of the releases page. To update, see [Install the terminal agent](/cli/install#update-and-uninstall).
+
+## Commands from your configuration
+
+Three more kinds of command appear in the same list after the built-in ones:
+
+- **Prompts**: each entry under `prompts` in the config is a command named after the prompt. What you type after it is appended to the prompt's text.
+- **Invokable rules**: a rule with `invokable: true` is a command named after the rule.
+- **Skills**: each skill is a command. Running it tells the agent to load that skill.
+
+A built-in command wins over a prompt, rule or skill of the same name.
+
+## Remote mode
+
+Three commands are defined for an interface attached to a running `continuous serve` instead of a local session: `/exit` (leave the remote environment), `/diff` (show the remote working tree's diff) and `/apply` (apply that diff to the local working tree). In that mode they replace every command above. No command in this version starts the terminal interface in that mode, so you will not see them; they are listed because the code defines them.
+
+## Related
+
+- [First session](/cli/first-session)
+- [Command reference](/cli/reference)

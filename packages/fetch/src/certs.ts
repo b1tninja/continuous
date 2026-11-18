@@ -29,6 +29,27 @@ export function defaultUseSystemCa(): boolean {
   return process.platform === "win32" || process.platform === "darwin";
 }
 
+let warnedNoSystemCa = false;
+
+/**
+ * `tls.getCACertificates` was added in Node v23.10.0 and v22.15.0
+ * (https://nodejs.org/api/tls.html#tlsgetcacertificatestype). On an older
+ * runtime the OS store cannot be read, and corporate TLS-inspection roots that
+ * live only there are missing: say so once instead of failing silently.
+ */
+function warnNoSystemCaOnce() {
+  if (warnedNoSystemCa) return;
+  warnedNoSystemCa = true;
+  console.warn(
+    `The operating system certificate store is not being used: this Node.js (${process.version}) has no tls.getCACertificates, which needs Node 22.15 or 23.10 and later. Behind a TLS-inspecting proxy, upgrade Node or set requestOptions.caBundlePath / NODE_EXTRA_CA_CERTS.`,
+  );
+}
+
+/** Test hook: allow the missing-system-CA warning to be shown again. */
+export function resetSystemCaWarning(): void {
+  warnedNoSystemCa = false;
+}
+
 export class CertsCache {
   private static instance: CertsCache;
   private _fixedCa: string[] = [];
@@ -132,11 +153,7 @@ export class CertsCache {
     }
     const getCACertificates = (tls as any).getCACertificates;
     if (typeof getCACertificates !== "function") {
-      if (process.env.VERBOSE_FETCH) {
-        console.warn(
-          "System CA requested, but this Node.js has no tls.getCACertificates (needs 22.15+).",
-        );
-      }
+      warnNoSystemCaOnce();
       this._systemCa = [];
       return this._systemCa;
     }

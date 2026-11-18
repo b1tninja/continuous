@@ -13,7 +13,6 @@ export const useServices = vi.fn(() => ({
     config: { config: { name: "test-assistant" } },
     model: { model: "test-model", llmApi: {} },
     mcp: {},
-    apiClient: { apiClient: {} },
   },
   loading: false,
   error: null,

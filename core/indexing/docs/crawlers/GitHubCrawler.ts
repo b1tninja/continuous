@@ -2,6 +2,9 @@ import { URL } from "node:url";
 
 import { Octokit } from "@octokit/rest";
 
+import type { RequestOptions } from "../../..";
+import { networkFetchWith } from "../../../util/networkFetch";
+
 import { PageData } from "./DocsCrawler";
 
 class GitHubCrawler {
@@ -12,8 +15,13 @@ class GitHubCrawler {
   constructor(
     private readonly startUrl: URL,
     private readonly githubToken: string | undefined,
+    requestOptions?: RequestOptions,
   ) {
-    this.octokit = new Octokit({ auth: this.githubToken });
+    // Octokit's own fetch ignores the proxy and CA settings: hand it the shared one.
+    this.octokit = new Octokit({
+      auth: this.githubToken,
+      request: { fetch: networkFetchWith(requestOptions) },
+    });
   }
 
   async *crawl(): AsyncGenerator<PageData> {

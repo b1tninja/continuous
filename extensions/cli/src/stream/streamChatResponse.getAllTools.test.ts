@@ -37,12 +37,12 @@ describe("getRequestTools - Tool Filtering", () => {
     expect(serviceResult.state).toBe("ready");
     expect(serviceResult.value?.currentMode).toBe("plan");
 
-    // Get available tools - this should include Bash in plan mode
+    // Get available tools - plan mode drops Bash (plan.allowTerminal opts back in)
     const tools = await getRequestTools(false);
     const toolNames = tools.map((t) => t.function.name);
 
-    // Bash should be allowed in plan mode
-    expect(toolNames).toContain("Bash");
+    // Bash is not offered in plan mode
+    expect(toolNames).not.toContain("Bash");
 
     // Read-only tools should still be available
     expect(toolNames).toContain("Read");
@@ -153,8 +153,8 @@ describe("getRequestTools - Tool Filtering", () => {
     expect(toolNames).not.toContain("Write");
     expect(toolNames).not.toContain("Edit");
 
-    // Bash should be available in plan mode
-    expect(toolNames).toContain("Bash");
+    // Bash is not offered in plan mode
+    expect(toolNames).not.toContain("Bash");
 
     // Read-only tools should be available
     expect(toolNames).toContain("Read");

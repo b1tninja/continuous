@@ -8,15 +8,29 @@ import { Handler, HTTPResponse, Page } from "puppeteer";
 // @prettier-ignore
 import PCR from "puppeteer-chromium-resolver";
 
-import { ContinueConfig, IDE } from "../../..";
+import { ContinueConfig, IDE, RequestOptions } from "../../..";
 import { resolvesToNonPublic } from "../../../util/networkAddress";
 import {
   editConfigFile,
   getChromiumPath,
   getContinueUtilsPath,
 } from "../../../util/paths";
+import { webUserAgent } from "../../../web/webHeaders";
+import { chromiumNetworkArgs } from "./chromiumNetworkArgs";
 import { chromiumBuildFor, downloadVerifiedChromium } from "./chromiumDownload";
 import { PageData } from "./DocsCrawler";
+
+/**
+ * `--user-agent` for the crawl: `Continuous-Crawler/<major.minor> (+<info
+ * URL>)` by default, or what `web.userAgent` (or the start host's
+ * `web.hosts` entry) chooses. One string for the whole browser, chosen for
+ * the start host: the crawl stays on it. An empty custom string passes no
+ * flag, and Chromium then sends its own.
+ */
+export function chromiumUserAgentArgs(startUrl: URL): string[] {
+  const ua = webUserAgent("crawler", startUrl);
+  return ua ? [`--user-agent=${ua}`] : [];
+}
 
 export class ChromiumCrawler {
   private readonly LINK_GROUP_SIZE = 2;
@@ -26,6 +40,7 @@ export class ChromiumCrawler {
     private readonly startUrl: URL,
     private readonly maxRequestsPerCrawl: number,
     private readonly maxDepth: number,
+    private readonly requestOptions?: RequestOptions,
   ) {}
 
   static setUseChromiumForDocsCrawling(useChromiumForDocsCrawling: boolean) {
@@ -69,7 +84,8 @@ export class ChromiumCrawler {
     }
     const browser = await stats.puppeteer.launch({
       args: [
-        "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.150 Safari/537.36",
+        ...chromiumUserAgentArgs(this.startUrl),
+        ...chromiumNetworkArgs(this.startUrl, this.requestOptions),
       ],
       executablePath: stats.executablePath,
     });

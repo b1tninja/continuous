@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { chooseBrowser } from "./browser.mjs";
+import { runAxe } from "./axe.mjs";
 import { countDiff, pageCompare, pairEntries, summarize } from "./diff.mjs";
 import { serve } from "./server.mjs";
 
@@ -35,6 +36,7 @@ export function launchOptions(choice) {
  * @param {Array} o.jobs from planJobs
  * @param {string} o.playwrightDir folder of playwright-core (index.mjs)
  * @param {string} o.browser auto|chromium|edge|chrome
+ * @param {boolean} [o.axe] run axe-core after __shotReady and record violations per entry
  */
 export async function shoot(o) {
   fs.mkdirSync(o.out, { recursive: true });
@@ -59,7 +61,7 @@ export async function shoot(o) {
       const t1 = Date.now();
       const context = await browser.newContext({
         viewport: { width: job.width, height: job.height },
-        colorScheme: job.theme,
+        colorScheme: job.theme === "light" ? "light" : "dark",
         deviceScaleFactor: 1,
         reducedMotion: "reduce",
       });
@@ -77,6 +79,14 @@ export async function shoot(o) {
       });
       const harnessError = await page.evaluate(() => window.__shotError);
       if (harnessError) errors.push(`harness: ${harnessError.split("\n")[0]}`);
+      let axe;
+      if (o.axe) {
+        try {
+          axe = await runAxe(page);
+        } catch (e) {
+          errors.push(`axe: ${String(e.message).split("\n")[0]}`);
+        }
+      }
       const file = path.join(o.out, job.name);
       await page.screenshot({
         path: file,
@@ -96,6 +106,7 @@ export async function shoot(o) {
         sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
         ms: Date.now() - t1,
         errors,
+        ...(axe ? { axe } : {}),
       });
       console.error(
         `${job.name}  ${Date.now() - t1} ms${errors.length ? `  (${errors.length} errors, first: ${errors[0].slice(0, 120)})` : ""}`,

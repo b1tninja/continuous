@@ -1,5 +1,6 @@
 import { OnboardingModes } from "core/protocol/core";
-import { useEffect } from "react";
+import type { LocalOnboardingChoice } from "core";
+import { useEffect, useState } from "react";
 import { useAppSelector } from "../../redux/hooks";
 import { getLocalStorage, setLocalStorage } from "../../util/localStorage";
 import { ReusableCard } from "../ReusableCard";
@@ -20,6 +21,8 @@ interface OnboardingCardProps {
 export function OnboardingCard({ isDialog }: OnboardingCardProps) {
   const { activeTab, close, setActiveTab } = useOnboardingCard();
   const config = useAppSelector((store) => store.config.config);
+  // Kept here so it survives a look at the other tab.
+  const [localChoice, setLocalChoice] = useState<LocalOnboardingChoice>();
 
   if (getLocalStorage("onboardingStatus") === undefined) {
     setLocalStorage("onboardingStatus", "Started");
@@ -36,7 +39,12 @@ export function OnboardingCard({ isDialog }: OnboardingCardProps) {
       case OnboardingModes.API_KEY:
         return <OnboardingProvidersTab />;
       case OnboardingModes.LOCAL:
-        return <OnboardingLocalTab />;
+        return (
+          <OnboardingLocalTab
+            choice={localChoice}
+            onChoiceChange={setLocalChoice}
+          />
+        );
       default:
         return <OnboardingProvidersTab />;
     }

@@ -120,9 +120,9 @@ describe("the confused-deputy rule in the evaluator", () => {
     }
   });
 
-  it("YOLO is the one level that reaches past it", () => {
+  it("IDGAF is the one level that reaches past it", () => {
     const r = run(readFileTool, "/srv/x", {
-      level: "yolo",
+      level: "idgaf",
       within: false,
       resolved: "/srv/x",
     });

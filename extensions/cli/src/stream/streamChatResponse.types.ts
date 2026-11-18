@@ -1,20 +1,51 @@
 import { CompletionOptions } from "@continuedev/config-yaml";
-import type { ChatHistoryItem, ToolStatus } from "core/index.js";
+import type {
+  ChatHistoryItem,
+  PromptProgress,
+  ToolStatus,
+} from "core/index.js";
 import type { ChatCompletionCreateParamsStreaming } from "openai/resources.mjs";
 
 import { ToolCallPreview } from "../tools/types.js";
 
+import type { StreamedReasoning } from "./reasoning.js";
+
 export interface StreamCallbacks {
   onContent?: (content: string) => void;
   onContentComplete?: (content: string) => void;
-  onToolStart?: (toolName: string, toolArgs?: any) => void;
-  onToolResult?: (result: string, toolName: string, status: ToolStatus) => void;
-  onToolError?: (error: string, toolName?: string) => void;
+  /**
+   * The model's reasoning as it streams, one piece at a time. Never part of
+   * the reply's content; the terminal UI shows it dimmed while the model
+   * thinks.
+   */
+  onReasoning?: (text: string) => void;
+  /**
+   * A reply's whole reasoning, once, after its stream ends (and after the
+   * request's `onRequest`) and before `onContentComplete`. Not called for a
+   * reply without reasoning.
+   */
+  onReasoningComplete?: (reasoning: StreamedReasoning) => void;
+  /**
+   * `toolCallId` on the four tool callbacks is the model's id for the call.
+   * Calls of one turn can run at the same time, and two of them can be the
+   * same tool, so a consumer that pairs a result with its call uses the id,
+   * not the name. It is absent only where the caller has no call (a prompt
+   * raised from inside a tool, such as a subagent's).
+   */
+  onToolStart?: (toolName: string, toolArgs?: any, toolCallId?: string) => void;
+  onToolResult?: (
+    result: string,
+    toolName: string,
+    status: ToolStatus,
+    toolCallId?: string,
+  ) => void;
+  onToolError?: (error: string, toolName?: string, toolCallId?: string) => void;
   onToolPermissionRequest?: (
     toolName: string,
     toolArgs: any,
     requestId: string,
     preview?: ToolCallPreview[],
+    toolCallId?: string,
   ) => void;
   onSystemMessage?: (message: string) => void;
   /**
@@ -29,6 +60,13 @@ export interface StreamCallbacks {
    * for each; never called when recovery is off.
    */
   onRecoveryHold?: (holding: boolean) => void;
+  /**
+   * How far a local server (llama.cpp, Strata) has read a long prompt, at
+   * most once a second, and `undefined` once the reading is over (the reply
+   * has started or the request ended). Never called when the server sends no
+   * progress.
+   */
+  onPromptProgress?: (progress: PromptProgress | undefined) => void;
   /**
    * Called after a round of tool calls has finished and before the next model
    * request. A returned item (a user message the person asked to steer with)

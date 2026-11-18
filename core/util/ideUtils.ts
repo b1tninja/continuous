@@ -37,6 +37,39 @@ export function staysInDir(fullUri: string, dirUri: string): boolean {
   return plainInside(dirUri, fullUri);
 }
 
+/** Options for the path helpers below. */
+export interface ResolveOptions {
+  /**
+   * Resolve a path that leaves the workspace to the file it names. Set only
+   * where the person's File edits level is IDGAF, which has said
+   * nothing asks: without it a path outside every workspace folder is not
+   * a target, as before.
+   */
+  allowOutside?: boolean;
+}
+
+/**
+ * A local absolute path (POSIX, a Windows drive path, a UNC path) or a file
+ * URI as a file URI; undefined for a relative path or another scheme.
+ */
+export function absoluteLocalUri(value: string): string | undefined {
+  const text = value.trim();
+  if (!text) return undefined;
+  if (/^file:/i.test(text)) return text;
+  const drive = /^[a-zA-Z]:[\\/]/.test(text);
+  if (!drive && /^[a-zA-Z][a-zA-Z0-9+.-]+:/.test(text)) return undefined;
+  const unc = /^(\\\\|\/\/)[^\\/]/.test(text);
+  if (!drive && !unc && !path.isAbsolute(text)) return undefined;
+  const encoded = encodeURI(text.replace(/\\/g, "/")).replace(/#/g, "%23");
+  if (drive) return `file:///${encoded}`;
+  return unc ? `file:${encoded}` : `file://${encoded}`;
+}
+
+/** True when the URI is not inside any of the workspace folders. */
+export function isOutsideDirs(uri: string, dirs: readonly string[]): boolean {
+  return !dirs.some((dir) => staysInDir(uri, dir));
+}
+
 /*
   This function takes a relative (to workspace) filepath
   And checks each workspace for if it exists or not
@@ -46,6 +79,7 @@ export async function resolveRelativePathInDir(
   path: string,
   ide: IDE,
   dirUriCandidates?: string[],
+  options?: ResolveOptions,
 ): Promise<string | undefined> {
   const dirs = dirUriCandidates ?? (await ide.getWorkspaceDirs());
   for (const dirUri of dirs) {
@@ -55,6 +89,17 @@ export async function resolveRelativePathInDir(
     if (!staysInDir(fullUri, dirUri)) continue;
     if (await ide.fileExists(fullUri)) {
       return fullUri;
+    }
+  }
+
+  if (options?.allowOutside) {
+    // An absolute path, or a climb out of the folder, names the file itself.
+    const candidates = [
+      absoluteLocalUri(path),
+      ...dirs.slice(0, 1).map((dir) => joinPathsToUri(dir, path)),
+    ];
+    for (const uri of candidates) {
+      if (uri && (await ide.fileExists(uri))) return uri;
     }
   }
 
@@ -119,12 +164,21 @@ export async function inferResolvedUriFromRelativePath(
   _relativePath: string,
   ide: IDE,
   dirCandidates?: string[],
+  options?: ResolveOptions,
 ): Promise<string> {
   const relativePath = _relativePath.trim().replaceAll("\\", "/");
   const dirs = dirCandidates ?? (await ide.getWorkspaceDirs());
 
   if (dirs.length === 0) {
     throw new Error("inferResolvedUriFromRelativePath: no dirs provided");
+  }
+
+  // An absolute path names that file, not a place under the first folder.
+  // Inside a workspace folder it always did; outside one, only when the
+  // caller says the level allows it.
+  const absolute = absoluteLocalUri(relativePath);
+  if (absolute && (options?.allowOutside || !isOutsideDirs(absolute, dirs))) {
+    return absolute;
   }
 
   const segments = pathToUriPathSegment(relativePath).split("/");

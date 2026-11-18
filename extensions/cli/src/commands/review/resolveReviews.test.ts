@@ -11,7 +11,7 @@ vi.mock("../../auth/workos.js", () => ({
 }));
 
 vi.mock("../../env.js", () => ({
-  env: { apiBase: "https://api.continue.dev" },
+  env: { continueHome: "" },
 }));
 
 vi.mock("../../util/logger.js", () => ({

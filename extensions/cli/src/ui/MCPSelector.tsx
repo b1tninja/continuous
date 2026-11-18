@@ -118,12 +118,6 @@ export const MCPSelector: React.FC<MCPSelectorProps> = ({ onCancel }) => {
       );
     }
 
-    // Add "Explore MCP Servers" option at the bottom
-    options.push({
-      label: "🔍 Explore MCP Servers",
-      value: "explore-mcp-servers",
-    });
-
     return options;
   };
 
@@ -284,12 +278,6 @@ export const MCPSelector: React.FC<MCPSelectorProps> = ({ onCancel }) => {
       case "stop-all":
         await mcpService?.shutdownConnections();
         setMessage("All servers stopped");
-        break;
-      case "explore-mcp-servers":
-        // Open the MCP servers hub in the default browser
-        const open = (await import("open")).default;
-        await open("https://continue.dev/hub?type=mcpServers");
-        setMessage("Opened MCP servers hub in browser");
         break;
       case "back":
         onCancel();

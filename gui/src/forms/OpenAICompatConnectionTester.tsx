@@ -1,6 +1,6 @@
 import { useContext, useState } from "react";
 import type { ToolDialectSetting } from "@continuedev/config-yaml";
-import { openAICompatDefaultBase } from "core/util/openaiCompatBases";
+import { connectionTestDefaultBase } from "core/util/anthropicSurfaceTest";
 import type { OpenAICompatTestResult } from "core/util/openaiCompatTest";
 import {
   recoveryConfirmText,
@@ -47,12 +47,13 @@ export function OpenAICompatConnectionTester({
     "on" | "declined" | { snippet: string[] }
   >();
 
-  async function run(withModel?: string) {
+  async function run(withModel?: string, checkModel?: string) {
     const res = await ideMessenger.request("openaiCompat/testConnection", {
       provider,
       apiBase: apiBase || undefined,
       apiKey: apiKey || undefined,
       model: withModel,
+      ...(checkModel ? { checkModel } : {}),
     });
     return res.status === "success"
       ? res.content
@@ -68,12 +69,22 @@ export function OpenAICompatConnectionTester({
     setProbedModel(undefined);
     setRecovery(undefined);
     try {
-      const listed = await run();
+      if (provider === "anthropic") {
+        // Read-only: the listing and the configured id; no tool probe here.
+        return setResult(await run(model || undefined));
+      }
+      // The listing, and the configured id checked against the server
+      const listed = await run(undefined, model || undefined);
       if (!listed.ok || listed.models.length === 0) return setResult(listed);
       const pick =
         model && listed.models.includes(model) ? model : listed.models[0];
       setProbedModel(pick);
-      setResult(await run(pick));
+      const probed = await run(pick);
+      setResult(
+        probed.ok && listed.ok && listed.modelCheck
+          ? { ...probed, modelCheck: listed.modelCheck }
+          : probed,
+      );
     } catch (e) {
       setResult({
         ok: false,
@@ -104,8 +115,8 @@ export function OpenAICompatConnectionTester({
     }
   }
 
-  const needsBase = !openAICompatDefaultBase(provider) && !apiBase?.trim();
-  const defaultBase = openAICompatDefaultBase(provider);
+  const defaultBase = connectionTestDefaultBase(provider);
+  const needsBase = !defaultBase && !apiBase?.trim();
   return (
     <div className="flex flex-col gap-2">
       <div>
@@ -146,6 +157,44 @@ export function OpenAICompatConnectionTester({
           </span>
         </Alert>
       )}
+
+      {result?.ok && result.modelCheck && (
+        <Alert
+          type={result.modelCheck.status === "not-found" ? "warning" : "info"}
+          size="sm"
+          role="status"
+          data-testid="model-check"
+        >
+          <span className="block text-xs">
+            {result.modelCheck.status === "found"
+              ? result.modelCheck.summary
+              : result.modelCheck.message}
+          </span>
+          {result.modelCheck.status === "unverified" && (
+            <span className="block text-xs opacity-80">
+              Chat requests are not affected.
+            </span>
+          )}
+        </Alert>
+      )}
+
+      {result?.ok &&
+        result.retirement?.map((n) => (
+          <Alert
+            key={n.key}
+            type="warning"
+            size="sm"
+            role="status"
+            data-testid="retirement-notice"
+          >
+            <span className="block text-xs">{n.message}</span>
+            <span className="block text-xs opacity-80">
+              {n.from === "live"
+                ? "From your key's model list."
+                : `Checked-in table, read ${n.fetchedOn}.`}
+            </span>
+          </Alert>
+        ))}
 
       {probe && (
         <Alert

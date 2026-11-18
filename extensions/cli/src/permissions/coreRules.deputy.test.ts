@@ -5,6 +5,7 @@ import * as path from "node:path";
 import type { ApprovalSettings } from "core/tools/permissions/approval.js";
 import type { PolicyLevel } from "core/tools/permissions/policy.js";
 import { needsLink, tryLink } from "core/tools/permissions/testLinks.js";
+import { removeTestTempDir, testTempDir } from "core/util/testTempDir.js";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { evaluateWithCoreRules, toCoreCall } from "./coreRules.js";
@@ -14,9 +15,7 @@ import { evaluateWithCoreRules, toCoreCall } from "./coreRules.js";
  * CLI's own path: its tool names, its arguments, and the real path and
  * workspace test the CLI works out itself because it has no IDE to do it.
  */
-const base = fs.realpathSync(
-  fs.mkdtempSync(path.join(os.tmpdir(), "cli-dep-")),
-);
+const base = testTempDir("cli-dep-");
 const ws = path.join(base, "ws");
 const outside = path.join(base, "outside");
 fs.mkdirSync(ws);
@@ -24,7 +23,7 @@ fs.mkdirSync(outside);
 fs.writeFileSync(path.join(outside, "target.txt"), "x");
 fs.writeFileSync(path.join(ws, "a.ts"), "x");
 const link = tryLink(outside, path.join(ws, "link"));
-afterAll(() => fs.rmSync(base, { recursive: true, force: true }));
+afterAll(() => removeTestTempDir(base));
 
 const levels = (l: PolicyLevel) => ({
   context: l,
@@ -140,14 +139,14 @@ describe("the confused-deputy rule through the CLI", () => {
     );
   });
 
-  it("asks below YOLO and not at YOLO", async () => {
+  it("asks below IDGAF and not at IDGAF", async () => {
     const args = { filepath: path.join(outside, "new.txt") };
     for (const level of ["cautious", "permissive", "automatic"] as const) {
       expect((await decide("Write", args, { level }))?.decision, level).toBe(
         "ask",
       );
     }
-    expect((await decide("Write", args, { level: "yolo" }))?.decision).toBe(
+    expect((await decide("Write", args, { level: "idgaf" }))?.decision).toBe(
       "allow",
     );
   });
@@ -194,7 +193,7 @@ describe("MCP file tools through the CLI", () => {
   it("follows the same switch and level", async () => {
     const args = { path: path.join(outside, "x.txt") };
     expect(
-      (await decide("mcp__files__write_file", args, { mcp, level: "yolo" }))
+      (await decide("mcp__files__write_file", args, { mcp, level: "idgaf" }))
         ?.decision,
     ).toBe("allow");
     expect(
@@ -234,4 +233,75 @@ describe("an MCP tool's path argument, from its schema, through the CLI", () => 
       expect(v?.source).toBe("protected-path");
     },
   );
+});
+
+describe("File edits outside the working folder, by level, through the CLI", () => {
+  const editLevels = (edits: PolicyLevel): ApprovalSettings => ({
+    levels: { ...levels("cautious"), edits },
+  });
+  const run = (
+    tool: string,
+    args: Record<string, unknown>,
+    edits: PolicyLevel,
+    over: { headless?: boolean; deny?: string[] } = {},
+  ) =>
+    evaluateWithCoreRules({
+      cliToolName: tool,
+      args,
+      cliPermission: "ask",
+      assistantPermissions: over.deny ? { deny: over.deny } : undefined,
+      approval: editLevels(edits),
+      isHeadless: over.headless ?? false,
+      cwd: ws,
+    });
+  const targets = [
+    ["Write", { filepath: path.join(outside, "new.txt") }],
+    ["Edit", { file_path: path.join(outside, "target.txt") }],
+    ["MultiEdit", { file_path: path.join(outside, "target.txt") }],
+  ] as const;
+
+  it("IDGAF allows each, headless too, by the rules, and names the path", async () => {
+    for (const [tool, args] of targets) {
+      for (const headless of [false, true]) {
+        const v = await run(tool, args, "idgaf", { headless });
+        expect(v?.decision, `${tool} headless=${headless}`).toBe("allow");
+        expect(v?.by).toBe("rules");
+        expect(v?.source).toBe("idgaf");
+        expect(v?.reason).toContain("File edits is set to IDGAF");
+        expect(v?.reason).toContain("The target is outside the workspace: ");
+      }
+    }
+  });
+
+  it("IDGAF ignores a Never rule on the path", async () => {
+    const v = await run("Write", targets[0][1], "idgaf", {
+      deny: ["writeFile(**)"],
+    });
+    expect(v?.decision).toBe("allow");
+  });
+
+  it("IDGAF writes the product's own policy files too, and says it would have refused", async () => {
+    const v = await run(
+      "Write",
+      { filepath: path.join(os.homedir(), ".continuous", "permissions.yaml") },
+      "idgaf",
+    );
+    expect(v?.decision).toBe("allow");
+    expect(v?.source).toBe("idgaf");
+    expect(v?.reason).toContain("would have been refused");
+  });
+
+  it("Manual, Cautious, Automatic and Permissive hold each of them", async () => {
+    for (const edits of [
+      "manual",
+      "cautious",
+      "automatic",
+      "permissive",
+    ] as const) {
+      for (const [tool, args] of targets) {
+        const v = await run(tool, args, edits);
+        expect(v?.decision, `${edits} ${tool}`).toBe("ask");
+      }
+    }
+  });
 });

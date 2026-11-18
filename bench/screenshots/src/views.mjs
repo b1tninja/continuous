@@ -15,6 +15,10 @@ export const VIEWS = {
     fixture: "tool-call",
     note: "a terminal command card waiting for approval",
   },
+  approval: {
+    fixture: "approval",
+    note: "three calls waiting for approval: a long command, a path outside the workspace, an MCP tool",
+  },
   "tool-call-done": {
     fixture: "tool-call-done",
     note: "the same command after it ran",
@@ -31,9 +35,17 @@ export const VIEWS = {
     fixture: "attach-open",
     note: 'the "+" menu at the left of the prompt, open',
   },
-  "overflow-open": {
-    fixture: "overflow-open",
-    note: 'the "..." menu under the prompt, open',
+  "status-row": {
+    fixture: "status-row",
+    note: "the row under the prompt after a reply: usage, reasoning, prompt cache",
+  },
+  "usage-open": {
+    fixture: "usage-open",
+    note: "the usage breakdown, opened from the readout under the prompt",
+  },
+  "context-open": {
+    fixture: "context-open",
+    note: "what the context holds, opened from the context meter under the prompt",
   },
   "preset-open": {
     fixture: "preset-open",
@@ -42,6 +54,62 @@ export const VIEWS = {
   loop: {
     fixture: "loop",
     note: "Loop mode: the plan card, per-item budgets and loop controls",
+  },
+  "loop-running": {
+    fixture: "loop-running",
+    note: "Loop mode, running item 2: the status line with Now:, progress, round and budget",
+  },
+  "loop-questions": {
+    fixture: "loop-questions",
+    note: "Loop mode with three questions waiting: the Needs you tray shows one at a time",
+  },
+  "loop-replan": {
+    fixture: "loop-replan",
+    note: "Loop mode with a re-plan waiting: the Needs you tray holds Review diff, Keep planning and Accept plan",
+  },
+  "loop-failed": {
+    fixture: "loop-failed",
+    note: "Loop mode, a failed item being repaired: the red state",
+  },
+  "loop-finished": {
+    fixture: "loop-finished",
+    note: "Loop mode, every item done: the green state, Close",
+  },
+  "loop-stopped": {
+    fixture: "loop-stopped",
+    note: "Loop mode stopped by the person: Resume and Close",
+  },
+  "loop-settings-open": {
+    fixture: "loop-settings-open",
+    note: "Loop mode with the gear opened: strategy, Parallel and the note",
+  },
+  "loop-plan-tile": {
+    fixture: "loop-plan-tile",
+    note: "Loop mode: the plan card as a collapsed tile (title, file link, round line, one root row)",
+  },
+  "loop-plan-running": {
+    fixture: "loop-plan-running",
+    note: "Loop mode: the plan tree open while running: done fold, current item with live lines, upcoming rows, trace and auto-answer",
+  },
+  "loop-plan-waiting": {
+    fixture: "loop-plan-waiting",
+    note: "Loop mode: a re-plan waits to be accepted: dropped struck through, new to-do, kept folded; opens by itself",
+  },
+  "loop-plan-failed": {
+    fixture: "loop-plan-failed",
+    note: "Loop mode: an item failed and a repair runs: check output, fix-forward line; opens by itself",
+  },
+  "loop-plan-finished": {
+    fixture: "loop-plan-finished",
+    note: "Loop mode: finished, every to-do done folded into one row",
+  },
+  "loop-idgaf": {
+    fixture: "loop-idgaf",
+    note: "Loop mode at IDGAF with seven blocked calls: the one-line IDGAF chip and the blocked badge in the mode bar",
+  },
+  "loop-blocked-open": {
+    fixture: "loop-blocked-open",
+    note: "Loop mode: the Recently blocked list opened from its badge",
   },
   "settings-models": {
     fixture: "settings-models",
@@ -67,11 +135,15 @@ export const VIEWS = {
   "settings-help": { fixture: "settings-help", note: "Settings, Help tab" },
   "agents-running": {
     fixture: "agents-running",
-    note: "the agents tree with long names and unknown costs",
+    note: "the agents panel: Active and Done groups, long names, unknown costs",
   },
   "agents-ended": {
     fixture: "agents-ended",
-    note: "the agents tree after every agent ended, one interrupted",
+    note: "the agents panel after every agent ended (Done folded), one interrupted",
+  },
+  catalogue: {
+    fixture: "catalogue",
+    note: "OpenRouter provider setup with the one-time prompt to pull the model list",
   },
   "bedrock-ok": {
     fixture: "bedrock-ok",
@@ -109,9 +181,49 @@ export const VIEWS = {
     fixture: "audit-inbox",
     note: "Settings, Permissions, Inbox: open asks oldest first, ages, possibly-ended label, Show older",
   },
+  "onboarding-local": {
+    fixture: "onboarding-local",
+    note: "Onboarding, Local tab: the suggested model with Connect and Configure model",
+  },
+  "onboarding-local-chooser": {
+    fixture: "onboarding-local-chooser",
+    note: "Onboarding, Local tab, with the Configure model chooser open",
+  },
+  "onboarding-local-server": {
+    fixture: "onboarding-local-server",
+    note: "The chooser on an OpenAI-compatible server, with More open",
+  },
+  "loop-frame-running": {
+    fixture: "loop-frame-running",
+    note: "the gradient loop frame round a stand-in loop dock, running",
+  },
+  "loop-frame-waiting": {
+    fixture: "loop-frame-waiting",
+    note: "the loop frame, solid amber: waiting on you",
+  },
+  "loop-frame-failed": {
+    fixture: "loop-frame-failed",
+    note: "the loop frame, solid red: an item failed, repairing",
+  },
+  "loop-frame-finished": {
+    fixture: "loop-frame-finished",
+    note: "the loop frame, solid green: finished",
+  },
+  "loop-frame-stopped": {
+    fixture: "loop-frame-stopped",
+    note: "the loop frame, solid grey: stopped",
+  },
   "settings-tools": {
     fixture: "settings-tools",
     note: "Settings, Tools tab, with Commands and secrets",
+  },
+  "drop-target": {
+    fixture: "drop-target",
+    note: "the chat input while a file is dragged over it: the drop target and the VS Code Shift hint",
+  },
+  "drop-refused": {
+    fixture: "drop-refused",
+    note: "the chat input after a drop of .env and a file outside the workspace: the refusal note",
   },
 };
 
@@ -155,8 +267,8 @@ export function parseThemes(value) {
   if (!value || value === "both") return [...DEFAULTS.themes];
   return value.split(",").map((s) => {
     const t = s.trim();
-    if (t !== "dark" && t !== "light") {
-      throw new Error(`Bad theme "${s}": dark or light`);
+    if (t !== "dark" && t !== "light" && t !== "hc") {
+      throw new Error(`Bad theme "${s}": dark, light or hc`);
     }
     return t;
   });

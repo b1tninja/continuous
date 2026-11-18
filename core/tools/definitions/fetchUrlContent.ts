@@ -1,6 +1,10 @@
 import { ToolPolicy } from "@continuedev/terminal-security";
 import { Tool } from "../..";
-import { classifyHost, isPrivateFetchTarget } from "../../util/networkAddress";
+import {
+  classifyFetchTarget,
+  urlReviewReason,
+} from "../../util/fetchUrlSafety";
+import { isPrivateFetchTarget } from "../../util/networkAddress";
 import { BUILT_IN_GROUP_NAME, BuiltInToolNames } from "../builtIn";
 
 export const fetchUrlContentTool: Tool = {
@@ -15,7 +19,7 @@ export const fetchUrlContentTool: Tool = {
   function: {
     name: BuiltInToolNames.FetchUrlContent,
     description:
-      "Can be used to view the contents of a website using a URL. Do NOT use this for files.",
+      "Can be used to view the contents of a website using a URL (http or https). Returns HTML pages as markdown and text or JSON as text. Do NOT use this for files, binary downloads or credentials in URLs.",
     parameters: {
       type: "object",
       required: ["url"],
@@ -39,7 +43,9 @@ export const fetchUrlContentTool: Tool = {
     } catch {
       return {};
     }
-    const { addresses, nonPublic } = await classifyHost(hostname);
+    // Also true for a name that resolves to nothing here and has no real
+    // top-level domain: behind a proxy it may be an internal host
+    const { addresses, nonPublic } = await classifyFetchTarget(hostname);
     return { nonPublic, resolvedAddresses: addresses };
   },
   // A URL on loopback, a private network or a local name always asks, even
@@ -50,7 +56,10 @@ export const fetchUrlContentTool: Tool = {
     processedArgs?: Record<string, unknown>,
   ): ToolPolicy => {
     if (basePolicy === "disabled") return "disabled";
-    return isPrivateFetchTarget(args.url, processedArgs)
+    // Also a URL that carries credentials or a long encoded value: the shape
+    // of data being moved out through the address. Ask-only, never loosens.
+    return isPrivateFetchTarget(args.url, processedArgs) ||
+      urlReviewReason(args.url)
       ? "allowedWithPermission"
       : basePolicy;
   },

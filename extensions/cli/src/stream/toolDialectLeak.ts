@@ -40,6 +40,7 @@ export async function hintToolDialectLeak(args: {
       arguments: c.argumentsStr ?? "{}",
     })),
     current: model.toolDialect,
+    model: model.model,
   });
   if (!leak) return;
   // Claimed before the await so two replies in flight print once.

@@ -8,55 +8,11 @@ import {
   authorizeRequest,
   hostHeaderAllowed,
   installServeGuards,
-  isLoopbackHost,
   originHeaderAllowed,
-  resolveServeToken,
-  serveBindingProblem,
   serveRequestProblem,
 } from "./serve.helpers.js";
 
 const TOKEN = "0123456789abcdef0123";
-
-describe("cn serve binding", () => {
-  it("lets a loopback bind omit --token", () => {
-    for (const host of [
-      "127.0.0.1",
-      "localhost",
-      "::1",
-      "[::1]",
-      "127.1.2.3",
-    ]) {
-      expect(isLoopbackHost(host)).toBe(true);
-      expect(serveBindingProblem(host, undefined)).toBeUndefined();
-    }
-  });
-
-  it("requires a token of 16 characters or more off loopback", () => {
-    for (const host of ["0.0.0.0", "::", "192.168.1.20", "myhost"]) {
-      expect(isLoopbackHost(host)).toBe(false);
-      expect(serveBindingProblem(host, undefined)).toMatch(/16 characters/);
-      expect(serveBindingProblem(host, "   ")).toMatch(/16 characters/);
-      expect(serveBindingProblem(host, "short")).toMatch(/16 characters/);
-      expect(serveBindingProblem(host, "0123456789abcdef0123")).toBeUndefined();
-    }
-  });
-});
-
-describe("the serve access token", () => {
-  it("is optional: absent without --token, taken from --token or the environment", () => {
-    expect(resolveServeToken(undefined, {})).toBeUndefined();
-    expect(resolveServeToken("   ", {})).toBeUndefined();
-    expect(resolveServeToken(`  ${TOKEN}  `, {})).toBe(TOKEN);
-    expect(
-      resolveServeToken(undefined, { CONTINUOUS_SERVE_TOKEN: ` ${TOKEN} ` }),
-    ).toBe(TOKEN);
-    expect(
-      resolveServeToken("from-flag-0123456789", {
-        CONTINUOUS_SERVE_TOKEN: TOKEN,
-      }),
-    ).toBe("from-flag-0123456789");
-  });
-});
 
 describe("the bearer token", () => {
   it("accepts the exact token", () => {
@@ -117,7 +73,7 @@ describe("serve request headers", () => {
     expect(originHeaderAllowed("https://evil.example")).toBe(false);
 
     expect(serveRequestProblem({ host: "evil.example" }, "127.0.0.1")).toEqual({
-      status: 421,
+      status: 403,
       error:
         "The Host header must be the loopback name or address this server is bound to.",
     });
@@ -169,6 +125,7 @@ describe("serve request guards", () => {
     port: number,
     headers: http.OutgoingHttpHeaders,
     method = "POST",
+    body?: string,
   ): Promise<{ status: number; body: string }> {
     return new Promise((resolve, reject) => {
       const req = http.request(
@@ -185,7 +142,7 @@ describe("serve request guards", () => {
         },
       );
       req.on("error", reject);
-      req.end();
+      req.end(body);
     });
   }
 
@@ -195,7 +152,7 @@ describe("serve request guards", () => {
       host: "evil.example",
       authorization: `Bearer ${TOKEN}`,
     });
-    expect(res.status).toBe(421);
+    expect(res.status).toBe(403);
     expect(res.body).toContain("loopback");
   });
 
@@ -228,7 +185,7 @@ describe("serve request guards", () => {
     const ok = await request(port, { host: `127.0.0.1:${port}` });
     expect(ok.status).toBe(200);
     const badHost = await request(port, { host: "evil.example" });
-    expect(badHost.status).toBe(421);
+    expect(badHost.status).toBe(403);
     const badOrigin = await request(port, {
       host: `127.0.0.1:${port}`,
       origin: "https://evil.example",
@@ -243,5 +200,54 @@ describe("serve request guards", () => {
       authorization: `Bearer ${TOKEN}`,
     });
     expect(res.status).toBe(200);
+  });
+
+  it("refuses a request a web page made (Sec-Fetch-Site), allows none and absent", async () => {
+    const port = await start("127.0.0.1", null);
+    const host = `127.0.0.1:${port}`;
+    for (const site of ["cross-site", "same-site", "same-origin"]) {
+      const res = await request(port, { host, "sec-fetch-site": site });
+      expect(res.status).toBe(403);
+      expect(res.body).toContain("Sec-Fetch-Site");
+    }
+    expect(
+      (await request(port, { host, "sec-fetch-site": "none" })).status,
+    ).toBe(200);
+    expect((await request(port, { host })).status).toBe(200);
+  });
+
+  it("answers 415 to a body that is not JSON, and still takes JSON and bodiless posts", async () => {
+    const port = await start("127.0.0.1", null);
+    const host = `127.0.0.1:${port}`;
+    const text = "hello";
+    const length = String(Buffer.byteLength(text));
+    const plain = await request(
+      port,
+      { host, "content-type": "text/plain", "content-length": length },
+      "POST",
+      text,
+    );
+    expect(plain.status).toBe(415);
+    const none = await request(
+      port,
+      { host, "content-length": length },
+      "POST",
+      text,
+    );
+    expect(none.status).toBe(415);
+    const json = await request(
+      port,
+      {
+        host,
+        "content-type": "application/json; charset=utf-8",
+        "content-length": "2",
+      },
+      "POST",
+      "{}",
+    );
+    expect(json.status).toBe(200);
+    // /pause and /exit post nothing: no content type is needed
+    expect((await request(port, { host })).status).toBe(200);
+    expect((await request(port, { host }, "GET")).status).toBe(404);
   });
 });

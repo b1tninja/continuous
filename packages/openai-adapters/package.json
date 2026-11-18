@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "test": "vitest",
+    "test:perf": "vitest run --tags-filter=perf",
     "build": "tsc"
   },
   "author": "Nate Sesti and Ty Dunn",
@@ -16,7 +17,7 @@
     "@ai-sdk/deepseek": "^3.0.76",
     "@ai-sdk/google": "^4.0.109",
     "@ai-sdk/openai": "^4.0.109",
-    "@ai-sdk/xai": "^3.0.57",
+    "@ai-sdk/xai": "^5.0.40",
     "@anthropic-ai/sdk": "^1.6.0",
     "@aws-sdk/client-bedrock-runtime": "^3.931.0",
     "@aws-sdk/credential-providers": "^3.974.0",
@@ -27,7 +28,7 @@
     "@continuedev/llm-info": "file:../llm-info",
     "@google/genai": "^3.0.0",
     "@smithy/node-http-handler": "^4.14.1",
-    "ai": "^6.0.86",
+    "ai": "^7.0.166",
     "dotenv": "^18.0.9",
     "google-auth-library": "^11.3.3",
     "json-schema": "^0.4.0",

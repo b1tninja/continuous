@@ -60,6 +60,7 @@ vi.mock("../../tools/callTool", () => ({
 }));
 vi.mock("../../tools/mcpToolName", () => ({
   getMCPToolName: vi.fn(),
+  assignMcpToolNames: vi.fn(() => []),
 }));
 vi.mock("../../util/tts", () => ({
   TTS: { setup: vi.fn() },
@@ -74,6 +75,11 @@ vi.mock("../../util/GlobalContext", () => ({
 }));
 vi.mock("../../promptFiles/initPrompt", () => ({
   initSlashCommand: { name: "init", description: "init" },
+}));
+
+const mockRetirementWarnings = vi.fn((_models: any[]) => [] as string[]);
+vi.mock("../../util/retirementStartup", () => ({
+  configRetirementWarnings: (models: any[]) => mockRetirementWarnings(models),
 }));
 
 // Mock fs.existsSync to simulate missing file on disk
@@ -155,5 +161,54 @@ describe("doLoadConfig pre-read content bypass", () => {
 
     expect(mockLoadYaml).not.toHaveBeenCalled();
     expect(mockLoadJson).toHaveBeenCalled();
+  });
+});
+
+describe("doLoadConfig retirement check", () => {
+  it("passes every configured model to the check and shows each warning it returns", async () => {
+    const sonnet = {
+      providerName: "anthropic",
+      model: "claude-sonnet-4-5-20250929",
+      title: "Sonnet",
+    };
+    mockLoadJson.mockResolvedValueOnce({
+      config: {
+        ...stubConfig,
+        modelsByRole: {
+          ...stubConfig.modelsByRole,
+          chat: [sonnet],
+          edit: [sonnet],
+        },
+      },
+      errors: [],
+      configLoadInterrupted: false,
+    });
+    mockRetirementWarnings.mockReturnValueOnce(['Model "Sonnet": retires']);
+    mockIde.showToast.mockClear();
+
+    await doLoadConfig({
+      ide: mockIde,
+      llmLogger: mockLlmLogger,
+      profileId: "test-profile",
+      overrideConfigYamlByPath: "/nowhere/config.yaml",
+      packageIdentifier: { uriType: "file", fileUri: "/nowhere/config.yaml" },
+    });
+
+    expect(mockRetirementWarnings).toHaveBeenLastCalledWith([
+      {
+        provider: "anthropic",
+        model: "claude-sonnet-4-5-20250929",
+        title: "Sonnet",
+      },
+      {
+        provider: "anthropic",
+        model: "claude-sonnet-4-5-20250929",
+        title: "Sonnet",
+      },
+    ]);
+    expect(mockIde.showToast).toHaveBeenCalledWith(
+      "warning",
+      'Model "Sonnet": retires',
+    );
   });
 });

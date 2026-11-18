@@ -11,6 +11,7 @@ import { SERVICE_NAMES } from "../../services/types.js";
 import { updateSessionPlanFile, updateSessionTaskPlan } from "../../session.js";
 import { messageQueue } from "../../stream/messageQueue.js";
 import { AppRoot } from "../AppRoot.js";
+import { CONFIRM_ARM_MS } from "../hooks/useInterruptConfirm.js";
 
 /**
  * A harness for end-to-end flows through the TUI: the real AppRoot, useChat,
@@ -99,6 +100,12 @@ export class ScriptedLlm {
             tools: body.tools ?? [],
           });
           const turn = self.turns.shift() ?? textTurn("(script ended)");
+          // A held turn may stream part of its reply before it waits
+          for (const c of (turn as { prefix?: ChatCompletionChunk[] }).prefix ??
+            []) {
+            if (signal?.aborted) return;
+            yield c;
+          }
           const chunks = typeof turn === "function" ? await turn(signal) : turn;
           for (const c of chunks) {
             if (signal?.aborted) return;
@@ -133,6 +140,18 @@ export function heldTurn(chunks: ChatCompletionChunk[]) {
     /** Whether the request's signal was aborted while it was held. */
     wasAborted: () => state.aborted,
   };
+}
+
+/**
+ * A turn that streams `partial` and then holds, as a reply that is still
+ * being written when the person stops it.
+ */
+export function partialHeldTurn(partial: string, rest: string) {
+  const held = heldTurn(textTurn(rest));
+  const turn = Object.assign(held.turn, {
+    prefix: [chunk({ content: partial })],
+  });
+  return { ...held, turn };
 }
 
 export const testModel = {
@@ -171,9 +190,6 @@ export async function registerFlowServices({
   serviceContainer.registerValue(SERVICE_NAMES.AUTH, {
     authConfig: null,
     isAuthenticated: false,
-  });
-  serviceContainer.registerValue(SERVICE_NAMES.API_CLIENT, {
-    apiClient: null,
   });
   serviceContainer.registerValue(SERVICE_NAMES.CONFIG, {
     config: assistant,
@@ -254,6 +270,18 @@ export async function waitUntil(
 /** Lets Ink process input and re-render. */
 export function tick(ms = 50): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Stops the running turn as a person does: Esc asks "Stop the response?" and
+ * Enter, once the question is armed, answers yes (useInterruptConfirm).
+ */
+export async function stopWithEsc(stdin: {
+  write: (s: string) => void;
+}): Promise<void> {
+  await type(stdin, ESC);
+  await tick(CONFIRM_ARM_MS);
+  await type(stdin, ENTER);
 }
 
 /** Types text and lets the input handler see it before the next key. */

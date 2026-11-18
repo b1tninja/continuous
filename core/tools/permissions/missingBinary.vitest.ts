@@ -295,9 +295,7 @@ describe("missingBinaryGate", () => {
     kind,
     shell: { kind: shell, executable: "x", args: () => [], runsProfile: false },
     invocation: () => ({ shell: "x", args: [] }),
-    spawn: () => {
-      throw new Error("not used");
-    },
+    spawn: () => Promise.reject(new Error("not used")),
     describe: () => "bash on this machine",
   });
 

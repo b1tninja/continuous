@@ -6,7 +6,7 @@
 export const SYSTEM_MARKERS = {
   plan: '\n<context name="planMode">\n',
   agent: '\n<context name="agentMode">\n',
-  commit: '\n<context name="commitSignature">',
+  commit: '\n<context name="attribution">',
   headless: "\n\nIMPORTANT: You are running in headless mode.",
   json: "\n\nIMPORTANT: You are operating in JSON output mode.",
   rules: '\n\n<context name="userRules">',

@@ -112,6 +112,24 @@ describe("multiEdit shared validation", () => {
       );
     });
 
+    it("should reject whitespace-only old_string in any edit", () => {
+      for (const ws of ["   ", "\n", "    \t"]) {
+        for (const position of [0, 1]) {
+          const edits = [
+            { old_string: "Hello world", new_string: "Hi there" },
+            { old_string: "Goodbye", new_string: "Bye" },
+          ];
+          edits[position] = { old_string: ws, new_string: "x" };
+          expect(() => validateMultiEdit({ edits })).toThrowError(
+            expect.objectContaining({
+              reason: ContinueErrorReason.FindAndReplaceWhitespaceOnlyOldString,
+              message: expect.stringContaining(`edit at index ${position}: `),
+            }),
+          );
+        }
+      }
+    });
+
     it("should allow first edit to have empty old_string", () => {
       const args = {
         edits: [

@@ -1,0 +1,13 @@
+```bash
+# Run with Streamable HTTP transport on port 3000 (default)
+npx @notionhq/notion-mcp-server --transport http
+
+# Run on a custom port
+npx @notionhq/notion-mcp-server --transport http --port 8080
+
+# Bind to a different host. The default is 127.0.0.1.
+npx @notionhq/notion-mcp-server --transport http --host 0.0.0.0
+
+# Run with a custom authentication token
+npx @notionhq/notion-mcp-server --transport http --auth-token "your-secret-token"
+```

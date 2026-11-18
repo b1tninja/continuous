@@ -61,7 +61,7 @@ const CASES = (c) => {
     ["chip Manual/Careful text on success tint", "foreground", tint("success")],
     ["chip Automatic text on link tint", "foreground", tint("link")],
     ["chip Permissive text on warning tint", "foreground", tint("warning")],
-    ["chip YOLO text on error tint", "foreground", tint("error")],
+    ["chip IDGAF text on error tint", "foreground", tint("error")],
     ["Mode and preset chip text on gray tint", "foreground", over(c.lightgray, 0.2, panel)],
     ["loop panel secondary text (pending, budget:, Loops)", "description", panel],
     ["tool-call hints", "description", panel],

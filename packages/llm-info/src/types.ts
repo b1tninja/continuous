@@ -30,6 +30,14 @@ export interface LlmInfo {
   mediaTypes?: MediaType[];
   recommendedFor?: UseCase[];
 
+  /**
+   * Where the vendor says the model is in its life. Unset means active. Dates
+   * and sources are in core/util/modelRetirements.generated.json; a test there
+   * fails when a firm retirement date has passed and the model is not marked
+   * "retired" here.
+   */
+  lifecycle?: "deprecated" | "retired";
+
   /** Any additional parameters required to configure the model */
   extraParameters?: Parameter[];
 }

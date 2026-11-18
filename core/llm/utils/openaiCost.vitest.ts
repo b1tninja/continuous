@@ -55,4 +55,46 @@ describe("OpenAI cost", () => {
     expect(cost("gpt-4o", 1_000_000)!.cost).toBeCloseTo(2.5, 9);
     expect(cost("gpt-3.5-turbo-0125", 1_000_000)!.cost).toBeCloseTo(0.5, 9);
   });
+
+  describe("cache writes (GPT-5.6 and later)", () => {
+    const withWrites = (
+      model: string,
+      prompt: number,
+      written: number,
+      written12h?: number,
+    ) =>
+      calculateRequestCost("openai", model, {
+        promptTokens: prompt,
+        completionTokens: 0,
+        promptTokensDetails: {
+          cacheWriteTokens: written,
+          ...(written12h !== undefined && { cacheWriteTokens1h: written12h }),
+        },
+      })!;
+
+    it("prices 30m writes at 1.25x input, out of the plain input", () => {
+      // gpt-5.6-sol: $4 input; 600k plain + 400k written at $5
+      const c = withWrites("gpt-5.6-sol", 1_000_000, 400_000);
+      expect(c.cost).toBeCloseTo(0.6 * 4 + 0.4 * 5, 9);
+      expect(c.breakdown).toContain("Cache write (30m): 400,000 tokens");
+    });
+
+    it("prices the 12h part at 2.5x input when it is reported", () => {
+      const c = withWrites("gpt-5.6-sol", 1_000_000, 400_000, 100_000);
+      expect(c.cost).toBeCloseTo(0.6 * 4 + 0.3 * 5 + 0.1 * 10, 9);
+    });
+
+    it("leaves models before 5.6 alone: no write rate is documented", () => {
+      expect(openAIPriceFor("gpt-5.5")?.writes).toBeUndefined();
+      expect(withWrites("gpt-5.4-mini", 1_000_000, 400_000).cost).toBeCloseTo(
+        0.75,
+        9,
+      );
+    });
+
+    it("never counts more written tokens than the prompt holds", () => {
+      const c = withWrites("gpt-6.1-terra", 100_000, 900_000);
+      expect(c.cost).toBeCloseTo(0.1 * 1.25, 9);
+    });
+  });
 });

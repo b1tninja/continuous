@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 
+import { writeFileAtomicSync } from "core/util/atomicWrite.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
 import { createTwoFilesPatch } from "diff";
 
@@ -15,6 +16,7 @@ import {
   checkWorkspaceWrite,
   outsideWorkspacePreview,
   resolveWorkspacePath,
+  wroteOutsideResult,
 } from "./workspaceBoundary.js";
 
 export function generateDiff(
@@ -45,7 +47,7 @@ export const writeFileTool: Tool = {
       filepath: {
         type: "string",
         description:
-          "The path to the file to write, inside the working directory; a relative path is resolved against it",
+          "The path to the file to write, inside the working directory unless File edits is set to IDGAF; a relative path is resolved against it",
       },
       content: {
         type: "string",
@@ -147,7 +149,7 @@ export const writeFileTool: Tool = {
       }
 
       // Write new content
-      fs.writeFileSync(args.filepath, args.content, "utf-8");
+      writeFileAtomicSync(args.filepath, args.content);
 
       // Track lines of code changes if file existed before
       if (oldContent) {
@@ -171,7 +173,7 @@ export const writeFileTool: Tool = {
         // Generate diff for result display
         const diff = generateDiff(oldContent, args.content, args.filepath);
 
-        return `Successfully wrote to file: ${args.filepath}\nDiff:\n${diff}`;
+        return `Successfully wrote to file: ${args.filepath}\nDiff:\n${diff}${wroteOutsideResult(args.filepath)}`;
       } else {
         // New file creation - count all lines as added
         const lineCount = args.content.split("\n").length;
@@ -183,7 +185,7 @@ export const writeFileTool: Tool = {
           language,
         );
 
-        return `Successfully created file: ${args.filepath}`;
+        return `Successfully created file: ${args.filepath}${wroteOutsideResult(args.filepath)}`;
       }
     } catch (error) {
       if (error instanceof ContinueError) {

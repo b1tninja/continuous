@@ -7,7 +7,8 @@ import { allowAllReviewer, askAllReviewer, oracleReviewer } from "./stubs";
 
 /**
  * Runs the evaluation against a real model. Skipped unless
- * REVIEWER_EVAL_MODEL (or REVIEWER_EVAL_STUB) is set, so CI never calls a model.
+ * REVIEWER_EVAL_STUB is set, or REVIEWER_EVAL_MODEL with RUN_LIVE_PROVIDER_TESTS=1
+ * (the wrapper sets both), so CI never calls a model.
  *
  * Normally run it through the wrapper, which adds flags, a check before calling
  * a hosted API, and an exit code:
@@ -28,7 +29,10 @@ import { allowAllReviewer, askAllReviewer, oracleReviewer } from "./stubs";
  * The test passes whatever the result; read the printed report, or use the
  * wrapper's --strict for an exit code.
  */
-const model = process.env.REVIEWER_EVAL_MODEL;
+const model =
+  process.env.RUN_LIVE_PROVIDER_TESTS === "1"
+    ? process.env.REVIEWER_EVAL_MODEL
+    : undefined;
 const stub = process.env.REVIEWER_EVAL_STUB;
 
 function pickReviewer() {
@@ -63,30 +67,33 @@ function pickReviewer() {
   };
 }
 
-describe.skipIf(!model && !stub)("reviewer evaluation (live model)", () => {
-  it(
-    "runs every case and prints the report",
-    async () => {
-      const { label, reviewer } = pickReviewer();
-      const results = await runEval(reviewer, {
-        concurrency: 4,
-        timeoutMs: 60_000,
-      });
-      const summary = summarize(results);
-      const report = formatReport(label, summary);
-      // Written to stdout directly so the report is not swallowed by a reporter.
-      process.stdout.write(`\n${report}\n`);
-      if (process.env.REVIEWER_EVAL_OUT) {
-        writeFileSync(process.env.REVIEWER_EVAL_OUT, report + "\n");
-      }
-      if (process.env.REVIEWER_EVAL_RESULT) {
-        writeFileSync(
-          process.env.REVIEWER_EVAL_RESULT,
-          JSON.stringify({ passed: summary.passed }),
-        );
-      }
-      expect(results.length).toBeGreaterThan(0);
-    },
-    30 * 60_000,
-  );
-});
+describe.skipIf(!model && !stub)(
+  `reviewer evaluation (live model)${model || stub ? "" : " (skipped: set REVIEWER_EVAL_STUB, or REVIEWER_EVAL_MODEL with RUN_LIVE_PROVIDER_TESTS=1)"}`,
+  () => {
+    it(
+      "runs every case and prints the report",
+      async () => {
+        const { label, reviewer } = pickReviewer();
+        const results = await runEval(reviewer, {
+          concurrency: 4,
+          timeoutMs: 60_000,
+        });
+        const summary = summarize(results);
+        const report = formatReport(label, summary);
+        // Written to stdout directly so the report is not swallowed by a reporter.
+        process.stdout.write(`\n${report}\n`);
+        if (process.env.REVIEWER_EVAL_OUT) {
+          writeFileSync(process.env.REVIEWER_EVAL_OUT, report + "\n");
+        }
+        if (process.env.REVIEWER_EVAL_RESULT) {
+          writeFileSync(
+            process.env.REVIEWER_EVAL_RESULT,
+            JSON.stringify({ passed: summary.passed }),
+          );
+        }
+        expect(results.length).toBeGreaterThan(0);
+      },
+      30 * 60_000,
+    );
+  },
+);

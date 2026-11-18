@@ -1,7 +1,7 @@
 import type { LoopCostMark, LoopState } from "..";
 import { formatCostAmount } from "./costOf";
 import { itemCostNow, loopCostUsed } from "./loopCost";
-import { loopTokensUsed } from "./loopMode";
+import { loopElapsedMs, loopTokensUsed } from "./loopMode";
 
 /**
  * What a loop has used against its budget, and what is left, for the loop's
@@ -22,7 +22,7 @@ export interface LoopLimitUsage {
 export interface LoopUsage {
   rounds: LoopLimitUsage;
   tokens: LoopLimitUsage;
-  /** Milliseconds since the loop started */
+  /** Milliseconds since the loop started, without the time it waited on the person */
   time: LoopLimitUsage;
   /**
    * What the loop has cost so far (core/util/loopCost.ts): USD, or "unknown"
@@ -66,10 +66,7 @@ export function loopUsage(
 ): LoopUsage {
   const skipped = loop.items.filter((i) => i.skipped).length;
   const done = loop.items.filter((i) => i.status === "done").length - skipped;
-  const elapsed = Math.max(
-    0,
-    ctx.now.getTime() - new Date(loop.startedAt).getTime(),
-  );
+  const elapsed = loopElapsedMs(loop, ctx.now);
   return {
     rounds: limit(loop.round, loop.budget.maxRounds),
     tokens: limit(

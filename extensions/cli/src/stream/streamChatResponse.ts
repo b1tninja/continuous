@@ -11,8 +11,10 @@ import {
   TURN_NUDGE_LIMIT,
   TURN_NUDGE_TOTAL,
 } from "core/util/turnEnd.js";
+import { webContentStore } from "core/util/web/contentStore.js";
 import type { ChatCompletionTool } from "openai/resources.mjs";
 
+import { runStoppedAfter, runStoppedBefore } from "../budget/runLimits.js";
 import { pruneLastMessage } from "../compaction.js";
 import {
   endItemRunOverBudget,
@@ -25,9 +27,11 @@ import {
   loopRunGoing,
 } from "../loop/loopSession.js";
 import { services } from "../services/index.js";
+import { getCurrentSession } from "../session.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
 import { applyChatCompletionToolOverrides } from "../tools/applyToolOverrides.js";
 import { ToolCall } from "../tools/index.js";
+import { logCliDebugPrompt } from "../util/debugPromptLog.js";
 import {
   chatCompletionStreamWithBackoff,
   isContextLengthError,
@@ -39,13 +43,22 @@ import {
   TRUNCATED_REPLY_MESSAGE,
 } from "../util/replyTally.js";
 import { dumpRequest } from "../util/requestDump.js";
-import { validateContextLength } from "../util/tokenizer.js";
+import {
+  countTotalInputTokens,
+  validateContextLength,
+} from "../util/tokenizer.js";
 
 import { getRequestTools, handleToolCalls } from "./handleToolCalls.js";
 import {
   leakedCallNudgeAllowed,
   noteLeakedCallNudge,
 } from "./leakedCallNudge.js";
+import {
+  promptProgressOf,
+  promptProgressSinkFor,
+  requestsPromptProgress,
+} from "./promptProgress.js";
+import { ReasoningAccumulator, type StreamedReasoning } from "./reasoning.js";
 import { resetRefusalCount } from "./refusalCap.js";
 import { resetRepeatGuard } from "./repeatGuard.js";
 import { buildChatRequestBody } from "./requestBody.js";
@@ -58,6 +71,7 @@ import {
   handlePreApiCompaction,
 } from "./streamChatResponse.compactionHelpers.js";
 import {
+  announceIdgafAtTurnStart,
   cacheReadTokens,
   processChunkContent,
   recoveryHoldOf,
@@ -68,6 +82,11 @@ import {
 import { StreamCallbacks } from "./streamChatResponse.types.js";
 import { taskListBlockForRequest } from "./taskListBlock.js";
 import { hintToolDialectLeak } from "./toolDialectLeak.js";
+import {
+  historyForHeldTools,
+  holdRequestTools,
+  noteHeldToolsUsage,
+} from "./toolListHoldStep.js";
 
 function updateFinalResponse(
   content: string,
@@ -128,6 +147,8 @@ interface ProcessChunkOptions {
   indexToIdMap: Map<number, string>;
   callbacks?: StreamCallbacks;
   isHeadless?: boolean;
+  /** The reply's reasoning so far. */
+  reasoning?: ReasoningAccumulator;
 }
 
 function processChunk(options: ProcessChunkOptions): {
@@ -141,6 +162,7 @@ function processChunk(options: ProcessChunkOptions): {
     indexToIdMap,
     callbacks,
     isHeadless,
+    reasoning,
   } = options;
   const holding = recoveryHoldOf(chunk);
   if (holding !== undefined) callbacks?.onRecoveryHold?.(holding);
@@ -155,6 +177,15 @@ function processChunk(options: ProcessChunkOptions): {
   }
 
   let updatedResponse = aiResponse;
+
+  // The model's reasoning, shown live where a caller asks for it; never
+  // written to stdout or added to the reply
+  const now = Date.now();
+  const thought = reasoning?.add(choice.delta, now);
+  if (thought) callbacks?.onReasoning?.(thought);
+  if (choice.delta.content || choice.delta.tool_calls) {
+    reasoning?.markAnswer(now);
+  }
 
   // Handle content streaming
   if (choice.delta.content) {
@@ -343,6 +374,8 @@ export async function processStreamingResponse(
   usage?: any;
   /** The provider's finish_reason of the last chunk that carried one. */
   finishReason?: string;
+  /** The reply's reasoning, when the model sent any. */
+  reasoning?: StreamedReasoning;
 }> {
   const {
     model,
@@ -427,6 +460,14 @@ export async function processStreamingResponse(
     isCompacting,
     turnTail,
   });
+  // llama.cpp and Strata say how far they are in a long prompt when asked;
+  // asked only when someone will see it, and only of a server whose /props
+  // says it takes the field (J17)
+  const progressSink = promptProgressSinkFor(callbacks, !!isHeadless);
+  if (progressSink && (await requestsPromptProgress(model))) {
+    // Not an OpenAI field, so not in the SDK's type
+    (requestBody as unknown as Record<string, unknown>).return_progress = true;
+  }
   dumpPromptSegments({
     body: requestBody,
     systemMessage,
@@ -445,6 +486,11 @@ export async function processStreamingResponse(
     });
     // CONTINUE_DUMP_REQUESTS: the body as handed to the adapter, for diffing
     dumpRequest(requestBody);
+    // --debug-prompt-log: the messages, scrubbed, in the capped prompt log
+    logCliDebugPrompt({
+      model: requestBody.model,
+      messages: requestBody.messages,
+    });
     return await chatCompletionStreamWithBackoff(
       llmApi,
       requestBody,
@@ -456,6 +502,7 @@ export async function processStreamingResponse(
   let finalContent = "";
   const toolCallsMap = new Map<string, ToolCall>();
   const indexToIdMap = new Map<number, string>(); // Track index to ID mapping
+  const reasoning = new ReasoningAccumulator();
   let firstTokenTime: number | null = null;
   let inputTokens = 0;
   let outputTokens = 0;
@@ -495,6 +542,15 @@ export async function processStreamingResponse(
         break;
       }
 
+      // The server's prompt-reading update is not part of the reply; the
+      // first chunk that is not one means the reading is over
+      const progress = promptProgressOf(chunk);
+      if (progress) {
+        progressSink?.update(progress);
+        continue;
+      }
+      progressSink?.clear();
+
       // Track first token time
       firstTokenTime = trackFirstTokenTime(
         firstTokenTime,
@@ -511,6 +567,7 @@ export async function processStreamingResponse(
         indexToIdMap,
         callbacks,
         isHeadless,
+        reasoning,
       });
       aiResponse = result.aiResponse;
       if (!result.shouldContinue) break;
@@ -574,6 +631,7 @@ export async function processStreamingResponse(
         toolCalls: [],
         shouldContinue: false,
         usage: fullUsage,
+        reasoning: reasoning.result(Date.now()),
       };
     }
 
@@ -584,6 +642,8 @@ export async function processStreamingResponse(
     }
 
     throw error;
+  } finally {
+    progressSink?.clear();
   }
 
   const toolCalls = Array.from(toolCallsMap.values());
@@ -612,6 +672,7 @@ export async function processStreamingResponse(
     shouldContinue: validToolCalls.length > 0,
     usage: fullUsage,
     finishReason,
+    reasoning: reasoning.result(Date.now()),
   };
 }
 
@@ -634,6 +695,52 @@ export interface StreamChatResponseOptions {
    * next request, so the budget can stop the wave during the item.
    */
   onRequest?: () => void;
+  /**
+   * The web content store's session for this run's tool calls: a subagent's
+   * run passes its own (`subagentStoreId`). Default: the current session's.
+   */
+  webSessionId?: string;
+}
+
+/** The current session's id, or none before one exists (some tests). */
+function currentWebSessionId(): string | undefined {
+  try {
+    return getCurrentSession().sessionId;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * One turn. When it ends, however it ends, its turn-scoped pages (no-store,
+ * credentialed, non-public) leave the web content store
+ * (core/util/web/contentStore.ts); a compaction runs inside a turn and does
+ * not end it.
+ */
+// eslint-disable-next-line max-params
+export async function streamChatResponse(
+  chatHistory: ChatHistoryItem[],
+  model: ModelConfig,
+  llmApi: BaseLlmApi,
+  abortController: AbortController,
+  callbacks?: StreamCallbacks,
+  isCompacting = false,
+  options: StreamChatResponseOptions = {},
+) {
+  const webSessionId = options.webSessionId ?? currentWebSessionId();
+  try {
+    return await runTurn(
+      chatHistory,
+      model,
+      llmApi,
+      abortController,
+      callbacks,
+      isCompacting,
+      { ...options, ...(webSessionId ? { webSessionId } : {}) },
+    );
+  } finally {
+    if (!isCompacting && webSessionId) webContentStore.endTurn(webSessionId);
+  }
 }
 
 /**
@@ -657,8 +764,8 @@ async function turnTextsForRequest(
 }
 
 // Main function that handles the conversation loop
-// eslint-disable-next-line max-params, max-statements
-export async function streamChatResponse(
+// eslint-disable-next-line max-params, max-statements, complexity
+async function runTurn(
   chatHistory: ChatHistoryItem[],
   model: ModelConfig,
   llmApi: BaseLlmApi,
@@ -667,7 +774,7 @@ export async function streamChatResponse(
   isCompacting = false,
   options: StreamChatResponseOptions = {},
 ) {
-  const { persistSession = true, use: fixedUse } = options;
+  const { persistSession = true, use: fixedUse, webSessionId } = options;
   logger.debug("streamChatResponse called", {
     model,
     historyLength: chatHistory.length,
@@ -684,6 +791,7 @@ export async function streamChatResponse(
   // End-of-turn nudges (core/util/turnEnd.ts): one between tool calls, a few per turn
   const nudges: TurnNudges = { sinceToolUse: 0, thisTurn: 0, leaked: 0 };
   resetTurnGuards(isCompacting);
+  if (!isCompacting && !fixedUse && persistSession) announceIdgafAtTurnStart();
 
   while (true) {
     // Token and time budgets are also checked between items (decideNext).
@@ -711,10 +819,18 @@ export async function streamChatResponse(
       fixedUse,
     );
 
-    // Recompute tools on each iteration to handle mode changes during streaming
-    const rawTools = await getRequestTools(isHeadless);
+    // Recompute tools on each iteration to handle mode changes during
+    // streaming; while the prompt cache is warm a change to them waits (C80)
+    const mainRequest = !fixedUse && persistSession;
+    const held = holdRequestTools({
+      rawTools: await getRequestTools(isHeadless),
+      model,
+      historyLength: chatHistory.length,
+      main: mainRequest,
+      callbacks,
+    });
     const tools = applyChatCompletionToolOverrides(
-      rawTools,
+      held.tools,
       model.chatOptions?.toolOverrides,
     );
 
@@ -737,13 +853,30 @@ export async function streamChatResponse(
       toolNames: tools.map((t) => t.function.name),
     });
 
+    // Run limits: do not send a request the budget, turn or time limit forbids
+    if (
+      runStoppedBefore(isCompacting, () =>
+        countTotalInputTokens({ chatHistory, model, systemMessage, tools }),
+      )
+    ) {
+      break;
+    }
+
     // Get response from LLM ("Steer now" interrupts only while it streams;
     // Loop mode sends each run without the turns before it)
     callbacks?.onModelStreaming?.(true);
-    const { content, toolCalls, shouldContinue, usage } =
+    const { content, toolCalls, shouldContinue, usage, reasoning } =
       await processStreamingResponse({
         isHeadless,
-        chatHistory: loopRequestHistory(chatHistory, isCompacting),
+        // Reasoning minted under an earlier tool list is left out on the
+        // models that refuse it (core thinkingCutAfterToolChange)
+        chatHistory: loopRequestHistory(
+          historyForHeldTools(
+            chatHistory,
+            preCompactionResult.wasCompacted ? undefined : held.thinkingCut,
+          ),
+          isCompacting,
+        ),
         model,
         llmApi,
         abortController,
@@ -755,6 +888,11 @@ export async function streamChatResponse(
       }).finally(() => callbacks?.onModelStreaming?.(false));
 
     options.onRequest?.();
+    if (mainRequest && !isCompacting) noteHeldToolsUsage(model, usage);
+
+    // The reply's whole reasoning, once: after the request's usage and
+    // before the reply's message is reported
+    if (reasoning) callbacks?.onReasoningComplete?.(reasoning);
 
     if (abortController?.signal.aborted) {
       return finalResponse || content || fullResponse;
@@ -779,6 +917,11 @@ export async function streamChatResponse(
     // Handle content display
     handleContentDisplay(content, callbacks, isHeadless);
 
+    // Run limits: this reply's real usage is counted; stop before its tools
+    if (runStoppedAfter(isCompacting, usage)) {
+      break;
+    }
+
     // Handle tool calls and check for early return. This updates history via ChatHistoryService.
     const shouldReturn = await handleToolCalls({
       toolCalls,
@@ -787,7 +930,9 @@ export async function streamChatResponse(
       callbacks,
       isHeadless,
       usage,
+      reasoning,
       abortSignal: abortController.signal,
+      ...(webSessionId ? { sessionId: webSessionId } : {}),
     });
 
     if (shouldReturn) {

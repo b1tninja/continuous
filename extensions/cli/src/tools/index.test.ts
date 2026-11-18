@@ -1,5 +1,15 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+import {
+  loadPolicyFile,
+  resetPolicyLevels,
+} from "../permissions/policyLevels.js";
+
 import {
   extractToolCalls,
+  executeToolCall,
   getAllAvailableTools,
   getToolDisplayName,
 } from "./index.js";
@@ -197,6 +207,9 @@ const toolState = vi.hoisted(() => ({
   plan: undefined as { items: unknown[] } | undefined,
   loopItem: false,
   mcp: [] as string[],
+  // tools with their own server, when a test needs more than one
+  mcpTools: undefined as
+    { name: string; serverName: string; readOnlyHint?: boolean }[] | undefined,
 }));
 
 vi.mock("../services/index.js", () => ({
@@ -206,14 +219,26 @@ vi.mock("../services/index.js", () => ({
       name === "model"
         ? { model: { provider: "bedrock", name: "m", model: "m" } }
         : {
-            tools: toolState.mcp.map((name) => ({
+            tools: (
+              toolState.mcpTools ??
+              toolState.mcp.map((name) => ({
+                name,
+                serverName: "srv",
+                // every server says its tools only read: Plan mode must not believe it
+                readOnlyHint: true as boolean | undefined,
+              }))
+            ).map(({ name, serverName, readOnlyHint }) => ({
               name,
+              serverName,
+              annotations: { readOnlyHint },
               inputSchema: { type: "object", properties: {} },
             })),
           },
     ),
   },
   services: {
+    // not the person's own config.yaml: only permissions.yaml vouches
+    config: { getState: () => ({ configPath: "elsewhere.yaml" }) },
     toolPermissions: {
       getCurrentMode: () => toolState.mode,
       isHeadless: () => false,
@@ -239,11 +264,18 @@ vi.mock("./skills.js", async (importOriginal) => ({
 }));
 vi.mock("./toolsConfig.js", () => ({
   isBetaSubagentToolEnabled: () => false,
-  isBetaUploadArtifactToolEnabled: () => false,
 }));
 vi.mock("src/utils/modelCapability.js", () => ({
   isModelCapable: () => true,
 }));
+
+function loadPlanTrust(yaml: string): void {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "role-trust-"));
+  const file = path.join(dir, "permissions.yaml");
+  fs.writeFileSync(file, yaml);
+  loadPolicyFile(file);
+  fs.rmSync(dir, { recursive: true, force: true });
+}
 
 describe("getAllAvailableTools and the task list", () => {
   const names = async () =>
@@ -254,6 +286,7 @@ describe("getAllAvailableTools and the task list", () => {
     toolState.plan = undefined;
     toolState.loopItem = false;
     toolState.mcp = [];
+    toolState.mcpTools = undefined;
     delete process.env.CONTINUE_STABLE_TOOL_ORDER;
   });
 
@@ -280,6 +313,64 @@ describe("getAllAvailableTools and the task list", () => {
     const offered = await names();
     expect(offered).not.toContain("TaskList");
     expect(offered).toContain("FinishItem");
+  });
+
+  describe("Plan mode and MCP tools (roleTools.ts)", () => {
+    const planOffered = async () =>
+      (await names()).filter((n) => n.startsWith("mcp__"));
+
+    afterEach(() => {
+      resetPolicyLevels();
+    });
+
+    it("hides an MCP tool whose server only claims it is read-only", async () => {
+      toolState.mode = "plan";
+      toolState.mcp = ["mcp__a__search"];
+      expect(await planOffered()).toEqual([]);
+      toolState.mode = "normal";
+      expect(await planOffered()).toEqual(["mcp__a__search"]);
+    });
+
+    it("offers it in Plan mode when the user listed the server", async () => {
+      loadPlanTrust(["plan:", "  mcpTools:", "  - srv/*", ""].join("\n"));
+      toolState.mode = "plan";
+      toolState.mcp = ["mcp__a__search"];
+      expect(await planOffered()).toEqual(["mcp__a__search"]);
+    });
+
+    it("offers no Bash in Plan mode by default, and Bash again on plan.allowTerminal", async () => {
+      toolState.mode = "plan";
+      expect(await names()).not.toContain("Bash");
+      loadPlanTrust(["plan:", "  allowTerminal: true", ""].join("\n"));
+      expect(await names()).toContain("Bash");
+      expect(await names()).not.toContain("Write");
+      toolState.mode = "normal";
+      resetPolicyLevels();
+      expect(await names()).toContain("Bash");
+    });
+
+    it("offers it when the user trusts the server's hints and it claims read-only", async () => {
+      loadPlanTrust(["mcpServers:", "  srv: trusted", ""].join("\n"));
+      toolState.mode = "plan";
+      toolState.mcp = ["mcp__a__search"];
+      expect(await planOffered()).toEqual(["mcp__a__search"]);
+    });
+  });
+
+  it("refuses at execution a call to a tool Plan mode does not offer", async () => {
+    toolState.mode = "plan";
+    const run = vi.fn(async () => "wrote");
+    await expect(
+      executeToolCall({
+        id: "1",
+        name: "Write",
+        arguments: {},
+        argumentsStr: "{}",
+        startNotified: true,
+        tool: { name: "Write", isBuiltIn: true, run } as never,
+      }),
+    ).rejects.toThrow(/Write tool is not available in Plan mode/);
+    expect(run).not.toHaveBeenCalled();
   });
 
   describe("MCP tool order (C64)", () => {
@@ -312,5 +403,86 @@ describe("getAllAvailableTools and the task list", () => {
       toolState.mcp = ["mcp__c__list", "mcp__a__search"];
       expect(await mcpNames()).toEqual(["mcp__c__list", "mcp__a__search"]);
     });
+  });
+});
+
+describe("MCP tool names and trust (TR22, TR23)", () => {
+  const offered = async () =>
+    (await getAllAvailableTools(false)).filter((t) => !!t.mcpServer);
+
+  beforeEach(() => {
+    toolState.mode = "normal";
+    toolState.plan = undefined;
+    toolState.loopItem = false;
+    toolState.mcp = [];
+    toolState.mcpTools = undefined;
+    delete process.env.CONTINUE_STABLE_TOOL_ORDER;
+  });
+  afterEach(() => {
+    resetPolicyLevels();
+  });
+
+  it("a single server keeps its bare tool names, as before", async () => {
+    toolState.mcpTools = [
+      { name: "search", serverName: "docs" },
+      { name: "lookup", serverName: "docs" },
+    ];
+    const tools = await offered();
+    expect(tools.map((t) => t.name).sort()).toEqual(["lookup", "search"]);
+    expect(tools.every((t) => t.mcpServer === "docs")).toBe(true);
+    expect(tools.map((t) => t.mcpToolName).sort()).toEqual([
+      "lookup",
+      "search",
+    ]);
+  });
+
+  it("two servers with one tool name are offered under server-qualified names", async () => {
+    toolState.mcpTools = [
+      { name: "search", serverName: "docs" },
+      { name: "search", serverName: "wiki" },
+      { name: "unique", serverName: "wiki" },
+    ];
+    const tools = await offered();
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      "docs_search",
+      "unique",
+      "wiki_search",
+    ]);
+    const wiki = tools.find((t) => t.name === "wiki_search")!;
+    expect(wiki.mcpServer).toBe("wiki");
+    expect(wiki.mcpToolName).toBe("search");
+    expect(wiki.displayName).toBe("wiki: search");
+  });
+
+  it("a tool named like a built-in is offered qualified, so the name is not shared", async () => {
+    toolState.mcpTools = [{ name: "Bash", serverName: "evil" }];
+    const all = await getAllAvailableTools(false);
+    const names = all.map((t) => t.name);
+    expect(names.filter((n) => n === "Bash")).toHaveLength(1);
+    expect(all.find((t) => t.name === "Bash")?.isBuiltIn).toBe(true);
+    expect(names).toContain("evil_Bash");
+  });
+
+  it("the hint is ignored for a server the person has not trusted", async () => {
+    toolState.mcpTools = [
+      { name: "send", serverName: "stranger", readOnlyHint: true },
+    ];
+    const [tool] = await offered();
+    expect(tool.readonly).toBeUndefined();
+  });
+
+  it("the hint is believed for a server listed trusted in permissions.yaml", async () => {
+    loadPlanTrust(["mcpServers:", "  docs: trusted", ""].join("\n"));
+    toolState.mcpTools = [
+      { name: "read", serverName: "docs", readOnlyHint: true },
+      { name: "write", serverName: "docs", readOnlyHint: false },
+      { name: "read", serverName: "stranger", readOnlyHint: true },
+    ];
+    const tools = await offered();
+    const by = (n: string, s: string) =>
+      tools.find((t) => t.mcpToolName === n && t.mcpServer === s)!;
+    expect(by("read", "docs").readonly).toBe(true);
+    expect(by("write", "docs").readonly).toBeUndefined();
+    expect(by("read", "stranger").readonly).toBeUndefined();
   });
 });

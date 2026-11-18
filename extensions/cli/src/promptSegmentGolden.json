@@ -1,37 +1,32 @@
 {
   "cli-agent": {
-    "tools.builtin@agent": "265b0e18943b",
+    "tools.builtin@agent": "2d8add2eba23",
     "preamble": "86df2e5027c5",
-    "turn.act@full": "dc81e6a64288",
-    "commit-signature": "c87efdc42c61"
+    "turn.act@full": "dc81e6a64288"
   },
   "cli-agent-plain": {
-    "tools.builtin@agent": "6afdc7725842",
+    "tools.builtin@agent": "2d7ba4558919",
     "preamble": "86df2e5027c5",
-    "turn.act@full": "dc81e6a64288",
-    "commit-signature": "c87efdc42c61"
+    "turn.act@full": "dc81e6a64288"
   },
   "cli-plan": {
-    "tools.builtin@plan": "fec5e83dbca0",
+    "tools.builtin@plan": "b8054f3bb1a2",
     "preamble": "86df2e5027c5",
     "turn.plan@full": "84edafbe30a5"
   },
   "cli-subagent": {
-    "tools.builtin@agent": "6afdc7725842",
+    "tools.builtin@agent": "2d7ba4558919",
     "preamble": "86df2e5027c5",
-    "turn.act@full": "dc81e6a64288",
-    "commit-signature": "c87efdc42c61"
+    "turn.act@full": "dc81e6a64288"
   },
   "cli-compaction": {
-    "tools.builtin@agent": "6afdc7725842",
+    "tools.builtin@agent": "2d7ba4558919",
     "preamble": "86df2e5027c5",
-    "turn.act@full": "dc81e6a64288",
-    "commit-signature": "c87efdc42c61"
+    "turn.act@full": "dc81e6a64288"
   },
   "cli-resume": {
-    "tools.builtin@agent": "6afdc7725842",
+    "tools.builtin@agent": "2d7ba4558919",
     "preamble": "86df2e5027c5",
-    "turn.act@full": "dc81e6a64288",
-    "commit-signature": "c87efdc42c61"
+    "turn.act@full": "dc81e6a64288"
   }
 }

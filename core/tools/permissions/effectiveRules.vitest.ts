@@ -131,10 +131,10 @@ describe("listEffectiveRules", () => {
     expect(byRaw(r, "writeFile(docs/**)").state).toBe("effective");
   });
 
-  it("ignores every rule but the floor at YOLO", () => {
+  it("ignores every rule but the floor at IDGAF", () => {
     const r = listEffectiveRules({
       ...full,
-      levels: { ...DEFAULT_POLICY_LEVELS, tools: "yolo" },
+      levels: { ...DEFAULT_POLICY_LEVELS, tools: "idgaf" },
     });
     expect(byRaw(r, "runTerminalCommand(terraform apply*)").state).toBe(
       "ignored",

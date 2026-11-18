@@ -36,6 +36,8 @@ export type GlobalContextType = {
   preferredKeyStorage?: "secure" | "env";
   /** The CLI showed its one-time permissions line in the header. */
   cliFirstRunBannerShown?: boolean;
+  /** Plan files the interactive start already offered to resume: path to modified time */
+  cliPlanResumeOffered?: { [file: string]: number };
   cliSelectedModel?: string; // CLI-specific model selection for unauthenticated users
 
   /**

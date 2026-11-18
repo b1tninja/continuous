@@ -20,7 +20,7 @@ export const RELEASES_URL = "https://github.com/b1tninja/continuous/releases";
 
 /**
  * The newest published version, for the update check. Continuous does not
- * look this up: upstream's endpoint (api.continue.dev, with a machine id)
+ * look this up: upstream's endpoint (with a machine id)
  * reports upstream's CLI, and the fork's CLI is installed from its GitHub
  * releases. Always null, so the update check stays idle.
  */

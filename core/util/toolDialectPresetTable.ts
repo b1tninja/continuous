@@ -39,26 +39,51 @@ export const TOOL_DIALECT_PRESETS: DialectPreset[] = [
     serverParser: {
       vllm: "qwen3_coder",
       basis: "model-card",
-      note: "Nano 3 card also sets --reasoning-parser nano_v3 with its plugin file; the Super recipe uses nemotron_v3",
+      note: "Nano 3 card also sets --reasoning-parser nano_v3 with its plugin file; the Super recipe and the Ultra card use nemotron_v3 (vLLM and SGLang; TensorRT-LLM names it nano-v3)",
     },
     source: [
       "https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16/raw/main/chat_template.jinja",
+      "https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16/raw/main/chat_template.jinja",
+      "https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16/raw/main/README.md",
       "https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16",
       "https://recipes.vllm.ai/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16",
     ],
     readOn: READ,
     unverified: [
-      "Nemotron 3 Ultra and 3.5: not read; assumed to follow the family",
+      "Nemotron 3 Ultra: template and card read 2026-11-11 (plans/research/rq8-templates.md): the Qwen3-Coder markup, served with --reasoning-parser nemotron_v3 --tool-call-parser qwen3_coder; Nemotron 3.5 is not read and is assumed to follow the family",
+      "Qwen3.5 and Ultra templates write a boolean argument as Python True/False; qwen-xml recovery accepts that for a boolean-typed parameter only",
+      "Ultra card, read 2026-11-11: SGLang tool calls must send chat_template_kwargs {enable_thinking: true, force_nonempty_content: true}; for coding agents on vLLM it only advises {force_nonempty_content: true}. It is a template variable passed through the engines' chat_template_kwargs field, not an engine parameter: a recommendation, no request option is added (set it with extraBodyProperties)",
       "the Super recipe page was read only through a search summary",
     ],
   },
   {
     id: "nemotron-h",
-    label: "NVIDIA Nemotron-H / Nano v2",
-    match: [
-      /nemotron[-._ ]?h(?![a-z])/,
-      /nemotron[-._ ]?(?:nano[-._ ]?)?(?:9b|12b)[-._ ]?v2/,
+    label: "NVIDIA Nemotron-H (4B-Instruct, 8B and 47B Reasoning)",
+    match: [/nemotron[-._ ]?h(?![a-z])/],
+    bedrockTools: "unmeasured",
+    toolsEvidence: "unmeasured",
+    nativeOnConverse: "unmeasured",
+    textDialect: "none",
+    promptStyle: {
+      style: "codeblock",
+      evidence:
+        "prompted path, not parser: the 4B-Instruct, 8B and 47B Reasoning templates render no tools (no tools variable, no tool_calls branch, no tool role; read 2026-11-11); codeblock (core/tools/systemMessageTools) is the only existing prompted path and is UNTESTED on them",
+    },
+    source: [
+      "https://huggingface.co/nvidia/Nemotron-H-8B-Reasoning-128K/raw/main/tokenizer_config.json",
+      "https://huggingface.co/nvidia/Nemotron-H-47B-Reasoning-128K",
+      "https://huggingface.co/nvidia/Nemotron-H-4B-Instruct-128K",
     ],
+    readOn: READ,
+    unverified: [
+      "the 4B-Instruct, 8B and 47B Reasoning templates render no tools (read 2026-11-11); the family's tool template is Nano v2 (row nemotron-nano-v2)",
+      "no live capture",
+    ],
+  },
+  {
+    id: "nemotron-nano-v2",
+    label: "NVIDIA Nemotron Nano v2 (9B, 12B)",
+    match: [/nemotron[-._ ]?(?:nano[-._ ]?)?(?:9b|12b)[-._ ]?v2/],
     bedrockTools: "unmeasured",
     toolsEvidence: "unmeasured",
     nativeOnConverse: "unmeasured",
@@ -66,16 +91,16 @@ export const TOOL_DIALECT_PRESETS: DialectPreset[] = [
     promptStyle: {
       style: "toolcall-json",
       evidence:
-        'Nano-9B-v2 template instructs <TOOLCALL>[{"name","arguments"}]</TOOLCALL> (read 2026-11-10); no parser built',
+        'Nano-9B-v2 template instructs <TOOLCALL>[{"name","arguments"}]</TOOLCALL> then <SPECIAL_12> (read 2026-11-11); a toolcall-json parser and a synthesised corpus fixture exist (nemotron-nano-v2-two-calls-one-array)',
     },
     source: [
       "https://huggingface.co/nvidia/NVIDIA-Nemotron-Nano-9B-v2/raw/main/tokenizer_config.json",
     ],
     readOn: READ,
     unverified: [
-      "format read in the Nano-9B-v2 chat template only; Nemotron-H-4B/8B/47B templates were not read",
+      "format read in the Nano-9B-v2 chat template only; the fixture is built from the template, not recorded from a model",
       "a parser plugin (nemotron_toolcall_parser_no_streaming.py) is named in a repo commit listing seen through search; its use was not read",
-      "no recovery parser: no corpus fixture and no live capture",
+      "no live capture; recoverWith is left unset so no request changes",
     ],
   },
   {
@@ -1122,12 +1147,15 @@ export const TOOL_DIALECT_PRESETS: DialectPreset[] = [
     source: [
       "https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.3/blob/main/tokenizer_config.json",
       "https://huggingface.co/unsloth/Devstral-Small-2507/blob/main/chat_template.jinja",
+      "https://github.com/mistralai/mistral-common/blob/main/src/mistral_common/tokens/tokenizers/instruct.py",
+      "https://github.com/mistralai/mistral-common/blob/main/src/mistral_common/tokens/tokenizers/base.py",
       VLLM_DOCS,
       LIVE,
     ],
     readOn: READ,
     unverified: [
       'undecided upstream: Devstral-Small-2507 and Mistral-Small-3.2-24B-Instruct-2506 declare library_name mistral-common and carry no chat template in the API config or as chat_template.jinja (404, read 2026-11-10); their cards say "Supports Mistral\'s function calling format" and link the mistral-common docs, and serve with --tokenizer_mode mistral --tool-call-parser mistral',
+      "call layouts, from mistral-common instruct.py and base.py (read 2026-11-11): array [TOOL_CALLS][{name, arguments, id?}] for tokenizer v3 and v7 (V7 inherits V3's encoder); [TOOL_CALLS]NAME[CALL_ID]ID[ARGS]{json} for v11; [TOOL_CALLS]NAME[ARGS]{json} for v13 and v15; the mistral dialect handles all three. Which released model uses which tokenizer version was not read",
       "the [TOOL_CALLS] [ form is read in the Mistral-7B-Instruct-v0.3 template (an older format) and in the unsloth mirror, not in any current official repository; Mistral Large 3, Devstral 2 and Ministral 3 were not read",
     ],
   },
@@ -1190,8 +1218,14 @@ export const TOOL_DIALECT_PRESETS: DialectPreset[] = [
       evidence:
         "xAI documents an OpenAI-style envelope only; raw format undocumented",
     },
-    source: ["https://docs.x.ai/docs/guides/function-calling"],
+    source: [
+      "https://docs.x.ai/docs/guides/function-calling",
+      "https://huggingface.co/xai-org/grok-2",
+    ],
     readOn: READ,
-    unverified: ["the raw text format is not documented"],
+    unverified: [
+      "nothing public describes the raw tool-call text of a current Grok model (read 2026-11-11, plans/research/rq12-grok.md): xai-org publishes only Grok-1 and Grok-2 weights, and the Grok-2 template has no tool section; SGLang has no Grok tool parser",
+      "tool_choice is documented for xAI's own API, undocumented and untested on Mantle",
+    ],
   },
 ];

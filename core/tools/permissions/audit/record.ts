@@ -22,7 +22,16 @@ export type AuditBy = "rules" | "reviewer" | "person" | "system";
 
 export interface AuditEnvelope {
   v: typeof AUDIT_VERSION;
-  ev: "decision" | "outcome" | "turn" | "policy" | "shadow";
+  ev:
+    | "decision"
+    | "outcome"
+    | "turn"
+    | "policy"
+    | "shadow"
+    | "setting"
+    | "taint"
+    | "fetch"
+    | "secret-read";
   /** UTC, ISO 8601 */
   ts: string;
   session: string;
@@ -51,6 +60,8 @@ export interface AuditAgent {
   role?: string;
   /** The permission mode or loop, as a short word */
   mode?: string;
+  /** The role the tool table applied to its calls (core/tools/roleTools.ts): agent, planner, ... */
+  toolRole?: string;
   /** The spawning agent's id; absent for the main agent */
   parentId?: string;
 }
@@ -69,13 +80,20 @@ export function auditAgentOf(
     kind: AUDIT_AGENT_KINDS.includes(agent.kind) ? agent.kind : "subagent",
     role: line(agent.role),
     mode: line(agent.mode),
+    toolRole: line(agent.toolRole),
     parentId: line(agent.parentId),
   });
 }
 
 /** What the command analysis found; every part is optional while it is wired up */
 export interface AuditReading {
+  /** The grammar the command was read with: bash, powershell, cmd, unknown */
   shell?: string;
+  /**
+   * How that shell is known: "spawned" when this process starts it (a fact),
+   * "terminal" when the command goes to a terminal whose shell it cannot see
+   */
+  shellSource?: "spawned" | "terminal";
   understood?: boolean;
   verdict?: "reads" | "writes" | "unsure";
   effects?: string[];
@@ -119,6 +137,8 @@ export interface DecisionEvent extends AuditEnvelope {
   source?: string;
   /** Built-in rules an exact Always rule exempted this call from (B55) */
   exempts?: string[];
+  /** Source kinds of untrusted content in the session when the call was decided; absent when none or the rule is off */
+  tainted?: string[];
   /** The rule as written in config.yaml */
   rule?: string;
   area?: string;
@@ -130,6 +150,11 @@ export interface DecisionEvent extends AuditEnvelope {
   /** The `seq` of the ask this line answers */
   answers?: number;
   reviewer?: AuditReviewer;
+  /**
+   * IDGAF ran the call past an objection: what the rule or guard would have
+   * decided below IDGAF. Masked like `reason`.
+   */
+  wouldHave?: AuditWouldHave;
   jail?: string;
   loopItem?: string;
   modelMain?: string;
@@ -139,6 +164,11 @@ export interface DecisionEvent extends AuditEnvelope {
    * tell the two apart here.
    */
   recovered?: true;
+  /**
+   * The host gave the call no id, so `callId` was made up here
+   * (`nocall-<hash>-<n>`). Such a line cannot be joined to an outcome.
+   */
+  synthetic?: true;
 }
 
 export interface OutcomeEvent extends AuditEnvelope {
@@ -207,6 +237,61 @@ export interface PolicyEvent extends AuditEnvelope {
   maskedKinds?: string[];
 }
 
+/** Where a settings change came from. */
+export type SettingChangeSource =
+  "cli-policy" | "flag" | "gui-settings" | "file" | "cli-command" | "env";
+
+/**
+ * What kind of setting changed. A reader that does not know a kind shows it
+ * as written; new kinds are added here without a version bump.
+ */
+export type SettingChangeKind =
+  | "level"
+  | "preset"
+  | "floor"
+  | "builtin"
+  | "mcp-trust"
+  | "plan-terminal"
+  | "project-trust"
+  | "hook-trust"
+  /**
+   * IDGAF came into force for one session (a flag, `/policy`, the mode
+   * cycle, the IDE's level picker). Never saved; `name` lists the areas.
+   */
+  | "idgaf-session"
+  /**
+   * A loosening read from an environment variable: it holds for every run
+   * while the variable is set, not only this session. `name` is the variable.
+   */
+  | "env-loosening";
+
+/**
+ * A change to a permission setting that is not a rule: a level, the preset
+ * the levels add up to, a floor rule, a built-in rule switched off, a trusted
+ * MCP server, or trust granted to a project's configuration or hooks.
+ * It records the setting's name and its old and new value (a level word, on or
+ * off, a floor rule as masked text, or a trust scope); never file contents.
+ * It is a separate `ev` from `policy`, so a reader written before it existed
+ * skips it, as it skips every kind it does not know.
+ */
+export interface SettingEvent extends AuditEnvelope {
+  ev: "setting";
+  kind: SettingChangeKind;
+  op: "set" | "add" | "remove" | "grant" | "revoke";
+  source: SettingChangeSource;
+  /** The area, built-in rule id, server name, floor rule or trust scope */
+  name: string;
+  from?: string;
+  to?: string;
+  /** The change lets something run, or run unasked, that did not before */
+  loosens: boolean;
+  /** How it was confirmed: a prompt answered, a flag typed on the command line, the IDE's own dialog */
+  confirmed?: "prompt" | "flag" | "native";
+  /** The session the change was made in, when it is not this file's */
+  viaSession?: string;
+  maskedKinds?: string[];
+}
+
 /**
  * What the reviewer WOULD have decided for a call it was not asked about
  * (shadow mode, ROADMAP B16). It sits beside the real decision, joined by
@@ -232,8 +317,78 @@ export interface ShadowEvent extends AuditEnvelope {
   maskedKinds?: string[];
 }
 
+/**
+ * A taint label added to or cleared from a session (the tainted-session rule,
+ * plans/design/tainted-session.md). Written only while the person's
+ * `taintedSessionRule` is `ask`, since nothing is marked otherwise. It names
+ * the label and where it came from, never the content: `source` is the tool
+ * that brought the content in (an add) or the control that cleared it (a
+ * clear), `reason` why. A separate `ev`, so a reader written before it
+ * existed skips it.
+ */
+export interface TaintEvent extends AuditEnvelope {
+  ev: "taint";
+  op: "add" | "clear";
+  /** `web-fetch`, `mcp:<server>`, `secret`, ... */
+  label: string;
+  source?: string;
+  /** add: tool-result, subagent, inherited; clear: user-ack, untaint-command, new-session */
+  reason: string;
+  maskedKinds?: string[];
+}
+
+/**
+ * One web request (plans/research/web-fetch-deep-dive.md, section 5.5): which
+ * path made it, where it went, what decided it and what came back. URLs have
+ * their query values masked; the body is never stored, only its hash. A
+ * separate `ev`, so a reader written before it existed skips it.
+ */
+export interface FetchEvent extends AuditEnvelope {
+  ev: "fetch";
+  /** tool, url, favicon, search, crawler, panel */
+  purpose: string;
+  /** model, person, page, config */
+  origin: string;
+  url: string;
+  finalUrl: string;
+  redirects: number;
+  outcome: string;
+  rule: string;
+  robots: string;
+  status?: number;
+  bytes: number;
+  truncated?: true;
+  sha256?: string;
+  durMs: number;
+  callId?: string;
+  error?: string;
+  maskedKinds?: string[];
+}
+
 export type AuditRecord =
-  DecisionEvent | OutcomeEvent | TurnEvent | PolicyEvent | ShadowEvent;
+  | DecisionEvent
+  | OutcomeEvent
+  | TurnEvent
+  | PolicyEvent
+  | ShadowEvent
+  | SettingEvent
+  | TaintEvent
+  | FetchEvent
+  | SecretReadEvent;
+
+/**
+ * B92: a secret was read in the session, so a later call that can send data
+ * out asks (and is refused at IDGAF) with source `secret-egress`. Written
+ * whatever `taintedSessionRule` says, once per session, when the session is
+ * marked. `source` is what read it with the path cut to the file's name
+ * (`read_file .npmrc`, `a command that reads credentials`), never the content.
+ * A separate `ev`, so a reader written before it existed skips it.
+ */
+export interface SecretReadEvent extends AuditEnvelope {
+  ev: "secret-read";
+  source: string;
+  maskedKinds?: string[];
+}
 
 /** A record as the builders produce it: the writer adds `v`, `ts` and `seq`. */
 export type AuditDraft = DistributiveOmit<AuditRecord, "v" | "seq" | "ts"> & {
@@ -242,6 +397,14 @@ export type AuditDraft = DistributiveOmit<AuditRecord, "v" | "seq" | "ts"> & {
 type DistributiveOmit<T, K extends keyof any> = T extends unknown
   ? Omit<T, K>
   : never;
+
+/** What a rule or guard would have decided for a call IDGAF ran anyway. */
+export interface AuditWouldHave {
+  policy: "ask" | "deny";
+  source?: string;
+  rule?: string;
+  reason?: string;
+}
 
 export interface DecisionInput {
   session: string;
@@ -261,14 +424,18 @@ export interface DecisionInput {
   level?: string;
   mode?: string;
   agent?: AuditAgent;
+  tainted?: string[];
   reason?: string;
   answers?: number;
   reviewer?: AuditReviewer;
+  wouldHave?: AuditWouldHave;
   jail?: string;
   loopItem?: string;
   modelMain?: string;
   /** Set for a recovered call; also derived from the call id */
   recovered?: boolean;
+  /** Set when `callId` was generated because the host sent none */
+  synthetic?: boolean;
 }
 
 const clean = <T extends object>(o: T): T =>
@@ -291,6 +458,13 @@ export function decisionDraft(input: DecisionInput): AuditDraft {
     displayValue: maskLine(input.displayValue, MAX_ARGS_CHARS),
     reason: maskLine(input.reason, MAX_REASON_CHARS),
     reviewer: input.reviewer ? clean({ ...input.reviewer }) : undefined,
+    wouldHave: input.wouldHave
+      ? clean({
+          ...input.wouldHave,
+          rule: maskLine(input.wouldHave.rule, MAX_REASON_CHARS),
+          reason: maskLine(input.wouldHave.reason, MAX_REASON_CHARS),
+        })
+      : undefined,
     agent: auditAgentOf(input.agent),
   }) as AuditDraft;
 }
@@ -419,5 +593,159 @@ export function shadowDraft(input: ShadowInput): AuditDraft {
     reviewer: clean({ ...input.reviewer }),
     agent: auditAgentOf(input.agent),
     maskedKinds: reason?.kinds.length ? reason.kinds : undefined,
+  }) as AuditDraft;
+}
+
+export interface SettingInput {
+  session?: string;
+  kind: SettingChangeKind;
+  op: SettingEvent["op"];
+  source: SettingChangeSource;
+  name: string;
+  from?: string;
+  to?: string;
+  loosens: boolean;
+  confirmed?: SettingEvent["confirmed"];
+  viaSession?: string;
+}
+
+const MAX_SETTING_FIELD_CHARS = 300;
+
+export function settingDraft(input: SettingInput): AuditDraft {
+  const name = maskText(input.name);
+  const from = input.from === undefined ? undefined : maskText(input.from);
+  const to = input.to === undefined ? undefined : maskText(input.to);
+  const kinds = [
+    ...new Set([...name.kinds, ...(from?.kinds ?? []), ...(to?.kinds ?? [])]),
+  ];
+  const { session, ...rest } = input;
+  return clean({
+    ...rest,
+    session: session ?? POLICY_SESSION,
+    ev: "setting" as const,
+    name: clipMasked(name.text, MAX_SETTING_FIELD_CHARS),
+    from: from ? clipMasked(from.text, MAX_SETTING_FIELD_CHARS) : undefined,
+    to: to ? clipMasked(to.text, MAX_SETTING_FIELD_CHARS) : undefined,
+    maskedKinds: kinds.length ? kinds : undefined,
+  }) as AuditDraft;
+}
+
+export interface TaintInput {
+  session: string;
+  op: TaintEvent["op"];
+  label: string;
+  source?: string;
+  reason: string;
+  turn?: number;
+}
+
+const MAX_TAINT_FIELD_CHARS = 120;
+
+export interface SecretReadInput {
+  session: string;
+  source: string;
+  turn?: number;
+}
+
+export function secretReadDraft(input: SecretReadInput): AuditDraft {
+  const source = maskText(input.source);
+  return clean({
+    ...input,
+    ev: "secret-read" as const,
+    source: clipMasked(source.text, MAX_TAINT_FIELD_CHARS),
+    maskedKinds: source.kinds.length ? source.kinds : undefined,
+  }) as AuditDraft;
+}
+
+export function taintDraft(input: TaintInput): AuditDraft {
+  const label = maskText(input.label);
+  const source =
+    input.source === undefined ? undefined : maskText(input.source);
+  const kinds = [...new Set([...label.kinds, ...(source?.kinds ?? [])])];
+  return clean({
+    ...input,
+    ev: "taint" as const,
+    label: clipMasked(label.text, MAX_TAINT_FIELD_CHARS),
+    source: source ? clipMasked(source.text, MAX_TAINT_FIELD_CHARS) : undefined,
+    reason: input.reason.slice(0, MAX_TAINT_FIELD_CHARS),
+    maskedKinds: kinds.length ? kinds : undefined,
+  }) as AuditDraft;
+}
+
+export interface FetchAuditInput {
+  session?: string;
+  purpose: string;
+  origin: string;
+  startUrl: string;
+  finalUrl: string;
+  redirects: number;
+  outcome: string;
+  rule: string;
+  robots: string;
+  status?: number;
+  bytes: number;
+  truncated: boolean;
+  sha256?: string;
+  durationMs: number;
+  callId?: string;
+  error?: string;
+}
+
+/** The session name fetches with no known session are written under. */
+export const FETCH_SESSION = "web-fetches";
+
+const MAX_URL_CHARS = 500;
+
+/**
+ * A URL as the audit keeps it: every query value replaced by `*` (the names
+ * stay, so a reader sees the shape), the fragment dropped, then masked like
+ * any other text so a credential in the path is caught too.
+ */
+export function maskUrlForAudit(raw: string): {
+  text: string;
+  kinds: string[];
+} {
+  let text = raw;
+  try {
+    const url = new URL(raw);
+    const names = [...url.searchParams.keys()];
+    url.hash = "";
+    url.search = names.length
+      ? `?${names.map((n) => `${encodeURIComponent(n)}=*`).join("&")}`
+      : "";
+    text = url.toString();
+  } catch {
+    // not a URL: masked as text below
+  }
+  const masked = maskText(text);
+  return { text: clipMasked(masked.text, MAX_URL_CHARS), kinds: masked.kinds };
+}
+
+export function fetchDraft(input: FetchAuditInput): AuditDraft {
+  const url = maskUrlForAudit(input.startUrl);
+  const finalUrl = maskUrlForAudit(input.finalUrl);
+  const error = input.error === undefined ? undefined : maskText(input.error);
+  const kinds = [
+    ...new Set([...url.kinds, ...finalUrl.kinds, ...(error?.kinds ?? [])]),
+  ];
+  return clean({
+    session: input.session ?? FETCH_SESSION,
+    ev: "fetch" as const,
+    purpose: input.purpose,
+    origin: input.origin,
+    url: url.text,
+    finalUrl: finalUrl.text,
+    redirects: input.redirects,
+    outcome: input.outcome,
+    rule: clipMasked(maskText(input.rule).text, MAX_REASON_CHARS),
+    robots: input.robots,
+    status: input.status,
+    bytes: input.bytes,
+    truncated: input.truncated ? (true as const) : undefined,
+    sha256: input.sha256,
+    durMs: input.durationMs,
+    callId: input.callId,
+    error: error ? clipMasked(error.text, MAX_REASON_CHARS) : undefined,
+    maskedKinds: kinds.length ? kinds : undefined,
   }) as AuditDraft;
 }

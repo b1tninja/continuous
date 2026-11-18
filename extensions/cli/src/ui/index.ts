@@ -2,11 +2,13 @@ import { render, RenderOptions } from "ink";
 import React from "react";
 
 import { enableSigintHandler, setTUIUnmount } from "../index.js";
+import { enableAttentionNotifications } from "../notify/attention.js";
 import { PermissionMode } from "../permissions/types.js";
 import { initializeServices } from "../services/index.js";
 import { ServiceContainerProvider } from "../services/ServiceContainerContext.js";
 import { isHeadlessMode, isTTYless } from "../util/cli.js";
 import { logger } from "../util/logger.js";
+import { holdUserNotices } from "../util/userNotice.js";
 
 import { AppRoot } from "./AppRoot.js";
 
@@ -53,6 +55,9 @@ export async function startTUIChat(
     );
   }
 
+  // Bell and OS notifications, when the person's settings turn them on
+  enableAttentionNotifications();
+
   // Critical safeguard: Prevent TUI initialization in TTY-less environment
   if (isTTYless() && !customStdin) {
     throw new Error(
@@ -93,6 +98,10 @@ export async function startTUIChat(
   } else if (!customStdin) {
     logger.warn("stdin is not a TTY or does not support setRawMode");
   }
+
+  // From here the screen belongs to Ink: lines for the person wait for the
+  // chat instead of being written across it.
+  holdUserNotices();
 
   // Start the TUI immediately - it will handle loading states
   const renderOptions: RenderOptions = {

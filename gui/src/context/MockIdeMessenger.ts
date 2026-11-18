@@ -27,6 +27,7 @@ type MockResponseHandlers = Partial<{
 
 const DEFAULT_MOCK_CORE_RESPONSES: MockResponses = {
   fileExists: true,
+  "instructionFiles/state": { withheld: [], notices: [] },
   getCurrentFile: {
     isUntitled: false,
     contents: "Current file contents",
@@ -36,10 +37,30 @@ const DEFAULT_MOCK_CORE_RESPONSES: MockResponses = {
     "file:///Users/user/workspace1",
     "file:///Users/user/workspace2",
   ],
+  "modelCatalog/status": { policy: "ask", refreshHours: 24 },
+  "modelCatalog/cached": null,
+  "model/retirementNotices": { notices: [] },
+  "modelCatalog/communityCached": null,
   "history/list": [],
+  "history/listTrash": [],
+  "history/search": {
+    query: "",
+    hits: [],
+    scanned: 0,
+    total: 0,
+    skippedLarge: 0,
+  },
   "docs/getIndexedPages": [],
   "history/save": undefined,
+  "history/saveDelta": { rev: null, needFull: true },
   "policy/save": undefined,
+  "policy/preview": {
+    before: "",
+    after: "",
+    changed: false,
+    diff: [],
+    loosens: [],
+  },
   "providers/list": {
     instances: [],
     globalFileUri: "file:///Users/user/.continuous/providers.yaml",
@@ -105,6 +126,13 @@ const DEFAULT_MOCK_CORE_RESPONSES: MockResponses = {
     didPrune: false,
     contextPercentage: 0.5,
   },
+  // No local server in tests: the pre-warm (C106) is skipped
+  "llm/prewarm": {
+    status: "skipped",
+    reason: "unsupported-server",
+    detail: "No server in tests",
+  },
+  "llm/strataMetrics": undefined,
   "context/getContextItems": [
     {
       id: {
@@ -187,6 +215,41 @@ export class MockIdeMessenger implements IIdeMessenger {
   };
   chatResponse: ChatMessage[] = DEFAULT_CHAT_RESPONSE;
   chatStreamDelay: number = 0;
+  private streamGate: Promise<void> | null = null;
+
+  /**
+   * Hold every chat stream open after the chunk it just yielded until the
+   * returned function is called (or the stream is cancelled). Unlike
+   * `chatStreamDelay` this does not depend on wall-clock time, so a test that
+   * needs "the turn is still running" does not race a slow machine. Once
+   * released, later streams are not held.
+   */
+  holdStream(): () => void {
+    let release!: () => void;
+    this.streamGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return release;
+  }
+
+  private async waitForStreamGate(cancelToken: AbortSignal): Promise<void> {
+    if (!this.streamGate) {
+      return;
+    }
+    await Promise.race([
+      this.streamGate,
+      new Promise<void>((resolve) => {
+        if (cancelToken.aborted) {
+          resolve();
+        } else {
+          cancelToken.addEventListener("abort", () => resolve(), {
+            once: true,
+          });
+        }
+      }),
+    ]);
+  }
+
   setChatResponseText(text: string): void {
     this.chatResponse = [
       {
@@ -210,6 +273,7 @@ export class MockIdeMessenger implements IIdeMessenger {
         JSON.stringify(response, null, 2),
       );
       yield [response];
+      await this.waitForStreamGate(cancelToken);
       if (this.chatStreamDelay > 0) {
         await new Promise((resolve) =>
           setTimeout(resolve, this.chatStreamDelay),
@@ -275,5 +339,6 @@ export class MockIdeMessenger implements IIdeMessenger {
     this.responseHandlers = { ...DEFAULT_MOCK_CORE_RESPONSE_HANDLERS };
     this.chatResponse = DEFAULT_CHAT_RESPONSE;
     this.chatStreamDelay = 0;
+    this.streamGate = null;
   }
 }

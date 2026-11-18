@@ -8,6 +8,10 @@
 
     <depends>com.intellij.modules.platform</depends>
     <depends>org.jetbrains.plugins.terminal</depends>
+    <!-- JetBrains 2026.2 ships JCEF as its own plugin. Optional, because the IDEs this
+         plugin is built and tested against (2024.1) do not declare that module, and a
+         required dependency on it keeps the plugin from loading there. -->
+    <depends optional="true" config-file="continueintellijextension-withJcef.xml">com.intellij.modules.jcef</depends>
 
     <!-- See here for why this is optional:  https://github.com/continuedev/continue/issues/2775#issuecomment-2535620877-->
     <depends optional="true" config-file="continueintellijextension-withJSON.xml">

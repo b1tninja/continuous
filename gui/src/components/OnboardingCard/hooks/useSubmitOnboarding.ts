@@ -1,3 +1,4 @@
+import type { LocalOnboardingChoice } from "core";
 import { OnboardingModes } from "core/protocol/core";
 import { useContext } from "react";
 import { IdeMessengerContext } from "../../../context/IdeMessenger";
@@ -8,14 +9,20 @@ export function useSubmitOnboarding(mode: OnboardingModes, isDialog = false) {
   const ideMessenger = useContext(IdeMessengerContext);
   const { close: closeOnboardingCard } = useOnboardingCard();
 
-  /** The Local tab: write the Ollama setup to config.yaml and close the card. */
-  function submitOnboarding() {
+  /**
+   * The Local tab: write the Ollama setup, or the person's own choice, to
+   * config.yaml and close the card.
+   */
+  function submitOnboarding(local?: LocalOnboardingChoice) {
     const onboardingStatus = getLocalStorage("onboardingStatus");
 
     // Always close the onboarding card and update config.yaml
     closeOnboardingCard(isDialog);
 
-    ideMessenger.post("onboarding/complete", { mode });
+    ideMessenger.post("onboarding/complete", {
+      mode,
+      ...(local ? { local } : {}),
+    });
 
     if (onboardingStatus === "Started") {
       // Local state

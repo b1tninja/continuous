@@ -20,8 +20,31 @@ Each call produces a `decision` line when it is decided and an `outcome` line wh
 | Reviewer                      | Model, latency, token usage, category and whether the verdict was reused                   |
 | Arguments                     | The masked arguments, clipped to 2,000 characters, with a hash of the masked text and the original length |
 | Outcome                       | Whether it ran, exit status, duration, output size and a hash of the masked output         |
+| Agent                         | Which agent made the call: an id, a kind, and when known a role, a mode and the parent's id |
 
 Tool output is not stored, only its size and hash. Assistant text is not stored.
+
+A call the host sent with no call id is still recorded, under an id of the form `nocall-<hash>-<n>` and with `"synthetic": true`. The hash is of the session, turn, tool and arguments; `n` counts such calls in the process, so two identical calls stay two lines. Such a decision cannot be joined to an outcome, and a reviewer's verdict for the same call is a separate line with its own made-up id.
+
+### Setting changes
+
+A change to a permission setting is a `setting` line, written to `<global dir>/audit/<yyyy-mm>/policy-changes.jsonl` (rule edits from the Permissions page and `continuous permissions` are `policy` lines in the same file). It records the setting, the old and new value and where the change came from, never file contents.
+
+| Field       | Content                                                                                                                                   |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `kind`      | `level` (one area), `preset` (the preset the five levels add up to, or `custom`), `floor` (a floor rule added or removed), `builtin` (a built-in rule switched on or off), `mcp-trust` (a server's read-only hints trusted or not), `plan-terminal`, `project-trust`, `hook-trust` |
+| `name`      | The area, the preset, the built-in rule id, the floor rule (masked), the server name, or the project directory for trust                    |
+| `from`, `to` | The old and new value: a level word, `on` or `off`, `trusted`                                                                              |
+| `source`    | `cli-policy` (`/policy`), `flag` (`--policy`, `--auto`, `--trust-project-hooks`, `--trust-project-config`), `gui-settings` (the settings page), `file` (an edit of `permissions.yaml` seen when it was next loaded), `cli-command` (`continuous project trust`, `continuous hooks trust`) |
+| `loosens`   | The change lets something run, or run unasked, that did not before                                                                         |
+| `confirmed` | `prompt` (a question was answered), `flag` (typed on the command line) or absent                                                        |
+| `viaSession`| The session the change was made in                                                                                                         |
+
+A level change is written as one line per area plus one `preset` line. An edit made to `permissions.yaml` by hand is found by comparing it with the settings last seen, kept in `<global dir>/audit/settings-seen.json`; the first run records that baseline only. The line says `file` and has no more detail than the setting, so it cannot say who edited the file. A reader that does not know a `kind` shows it as written, and a reader written before `setting` lines existed skips them.
+
+### Agent identity
+
+Decision, outcome and turn records carry an `agent` field: `id` (`main-<session>`, `sub-<toolCallId>`, `worker-<itemId>` or `bg-<taskId>`), `kind` (`main`, `subagent`, `loop-worker` or `background`), and optionally `role` (the subagent definition's name, such as `Explore`, or `item 3` for a Loop worker), `mode` (the permission mode) and `parentId` (the agent that started it). Each value is masked and clipped to 80 characters, and no prompt is stored. Records written before this field existed have none and read as unknown. Stuck-agent detection counts each agent's turns on its own.
 
 In the IDE, a call is recorded when it is evaluated and when it runs. Edit tools are recorded as allowed unless a rule or protected path stops them; the diff you accept or reject is not part of the audit.
 
@@ -40,16 +63,37 @@ The global directory is `~/.continuous` unless `CONTINUOUS_GLOBAL_DIR` points el
 ## Read it
 
 ```bash
-continuous audit list [--session <id>] [--decision allow|ask|deny|reviewer] [--tool <name>] [--since <date>] [--until <date>] [--limit <n>] [--json]
+continuous audit list [--session <id>] [--decision allow|ask|deny|reviewer] [--tool <name>] [--agent <role|id|kind>] [--since <date>] [--until <date>] [--limit <n>] [--json]
 continuous audit show <session> [--json]
+continuous audit changes [--since <date>] [--until <date>] [--limit <n>] [--json]
+continuous audit inbox [--agent <role|id|kind>] [--session <id>] [--since <date>] [--json]
+continuous audit suggest [--decision allow|deny] [--min <n>] [--max-age-days <n>] [--max-mb <n>] [--max-rows <n>] [--verbose] [--json]
 continuous audit prune [--days <n>] [--dry-run]
 ```
 
-`--decision ask` matches calls that asked at any point, including those you then approved. `--decision reviewer` matches calls the reviewer model decided. `--json` prints one array: rows for `list`, raw records for `show`.
+`--decision ask` matches calls that asked at any point, including those you then approved. `--decision reviewer` matches calls the reviewer model decided. `--agent` keeps calls whose agent role, id or kind equals the value exactly (`Explore`, `sub-call_1`, `loop-worker`). `--json` prints one array: rows for `list`, raw records for `show`. The `list` row shows the agent's role, or its kind when it has no role.
+
+### Changes
+
+`continuous audit changes` lists setting and rule changes across all sessions, oldest first: `2026-11-12 09:14:02  cli-policy    level          loosens  set tools: cautious -> permissive (confirmed: prompt)`. It prints "No setting changes recorded." when there are none.
+
+### Inbox
+
+`continuous audit inbox` lists the calls that asked and have no outcome yet, oldest first, with the agent that is waiting on each: `2026-11-11 09:14:02  Explore [agent] under main-s1  runTerminalCommand  git push origin topic`. A session that ended with a question open (a crash, a closed window) looks the same, so each line carries its time. It prints "Nothing is waiting for an answer." when the list is empty.
+
+### Suggested rules
+
+`continuous audit suggest` reads asks you answered the same way again and again and prints candidate rules, each with how many times it was allowed or refused, the date range, the agents involved, a risk note, examples and the `continuous permissions add ...` command that would apply it. It changes nothing; applying a rule goes through the [Permissions page](/ide-extensions/agent/permissions-page) confirmation. A pattern needs 3 answers by default (`--min`). The read is bounded: at most 90 days (or your retention, if longer), 32 MB and 100,000 records unless you raise `--max-age-days`, `--max-mb` or `--max-rows`, and the output says when a limit cut the read. `--verbose` also lists candidates that were withheld and why.
+
+## Use figures on the Permissions page
+
+The [Permissions page](/ide-extensions/agent/permissions-page) shows how your rules are used, read from the audit trail through a small index, `audit-index.json`, in the audit directory. The index holds daily counts per rule and per call shape (asked, allowed, denied, answered by you, decided by the reviewer), masked, never raw arguments, and is rebuilt if the trail files change. It is derived data: delete it and it is rebuilt. It is refreshed when the page is opened, and there is no command for it.
+
+Each rule shows "Asked n times, matched n times in 30 days". A rule with no use shows "No use in the N days the audit covers", worded with the days the trail actually covers and only a hint: nothing is removed. **Most asked in 30 days** lists up to 10 asks you answered the same way at least 3 times, passed through the same checks as `continuous audit suggest` (locked rules, protected paths, Ask rules, risky commands, paths outside the workspace) before a rule is offered. **Review** opens the rule editor with the rule filled in; nothing is saved from the list.
 
 ## Measure the reviewer on your own work
 
-Shadow mode asks the reviewer model about calls it was not asked about, and records what it would have decided next to what actually happened. It never changes a decision, never holds a tool call up (it runs alongside the call and is dropped if it is slow), and sends the reviewer the same masked text the reviewer always gets. It is off until you turn it on in your own global `config.yaml`; a workspace or assistant file cannot enable it. A dollar budget is required:
+Shadow mode runs in the terminal agent and in the IDE. It asks the reviewer model about calls it was not asked about, and records what it would have decided next to what actually happened. It never changes a decision, never holds a tool call up (it runs alongside the call and is dropped if it is slow), and sends the reviewer the same masked text the reviewer always gets. It is off until you turn it on, either in **Settings, Tools, Shadow review** (a switch, a budget in dollars, a timeout in milliseconds and **Save**) or in your own global `config.yaml`; a workspace or assistant file cannot enable it. Turning it on from Settings asks you in the editor's own dialog, because tool-call text goes to the reviewer model a second time. The budget must be above 0 and at most $100, and the timeout a whole number from 500 to 15000. Settings writes only the `audit.shadowReviewer` keys of your own `config.yaml`, keeps its comments, and refuses a file it cannot read. A dollar budget is required:
 
 ```yaml
 audit:
@@ -59,7 +103,7 @@ audit:
     timeoutMs: 5000
 ```
 
-`budgetUsd` caps all shadow reviews kept in the audit trail (30 days by default). Once reached, no more run. A reviewer model with no known price stops after one review, because a budget cannot be held to it. It needs a reviewer model (see [the reviewer](/customize/model-roles/reviewer)) and the audit trail on.
+`budgetUsd` caps all shadow reviews kept in the audit trail (30 days by default). Once reached, no more run. Spend is kept in a small ledger, `shadow-spend.jsonl`, in the audit directory (amounts, a model id and a call id, nothing else). A review reserves its estimated cost before the request and settles with the real cost after, so an IDE and a terminal agent running together share one cap. A reservation from a process that died counts as spent after 2 minutes. If the ledger cannot be read or written, no review runs. Settings shows how much is spent, how much is left and how many reviews ran. A reviewer model with no known price stops after one review, because a budget cannot be held to it. In the IDE it reviews calls from the main chat agent that settle by rules or that you answer; file edits (whose answer is a diff) and calls from subagents, Loop workers and MCP apps are not shadowed. It needs a reviewer model (see [the reviewer](/customize/model-roles/reviewer)) and the audit trail on.
 
 ```bash
 continuous audit shadow [--session <id>] [--model <name>] [--since <date>] [--until <date>] [--limit <n>] [--json]

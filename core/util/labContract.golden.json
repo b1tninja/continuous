@@ -1,5 +1,5 @@
 {
-  "contractVersion": 1,
+  "contractVersion": 3,
   "wilson": [
     {
       "k": 0,
@@ -118,6 +118,17 @@
     },
     {
       "input": {
+        "model": "qwen3.6:27b",
+        "transport": "ollama",
+        "streamed": false,
+        "temperature": "inherited",
+        "pass": 1,
+        "promptId": "edit"
+      },
+      "output": "live-qwen3-6-27b-ollama-whole-tinherited-p1-edit"
+    },
+    {
+      "input": {
         "model": "us.meta.llama3-3-70b-instruct-v1:0",
         "transport": "bedrock",
         "streamed": false,
@@ -179,6 +190,79 @@
         "k must be a non-negative integer",
         "n must be a non-negative integer"
       ]
+    }
+  ],
+  "validateServerIdentity": [
+    {
+      "input": {
+        "name": "vllm",
+        "version": "0.25.1",
+        "parser": "qwen3_coder",
+        "parserSource": "declared"
+      },
+      "problems": []
+    },
+    {
+      "input": {
+        "name": "ollama"
+      },
+      "problems": []
+    },
+    {
+      "input": "vllm",
+      "problems": ["not an object"]
+    },
+    {
+      "input": {
+        "name": "",
+        "version": ""
+      },
+      "problems": [
+        "name must be a non-empty string",
+        "version must be a non-empty string when present"
+      ]
+    },
+    {
+      "input": {
+        "name": "llama-server",
+        "parserSource": "reported"
+      },
+      "problems": ["parserSource needs a parser"]
+    },
+    {
+      "input": {
+        "name": "x",
+        "parser": "p",
+        "parserSource": "guessed"
+      },
+      "problems": ["parserSource must be one of reported, declared"]
+    }
+  ],
+  "serverIdentityLabel": [
+    {
+      "input": {
+        "name": "vllm",
+        "version": "0.25.1",
+        "parser": "qwen3_coder",
+        "parserSource": "declared"
+      },
+      "output": "vllm 0.25.1, parser qwen3_coder (declared)"
+    },
+    {
+      "input": {
+        "name": "ollama",
+        "version": "0.40.13",
+        "parser": "qwen3-coder",
+        "parserSource": "reported",
+        "templateSha": "0123456789abcdef"
+      },
+      "output": "ollama 0.40.13, parser qwen3-coder (reported), template 0123456789abcdef"
+    },
+    {
+      "input": {
+        "name": "llama-server"
+      },
+      "output": "llama-server"
     }
   ]
 }

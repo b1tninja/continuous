@@ -11,6 +11,7 @@ describe("a Loop worker's identity", () => {
       kind: "loop-worker",
       role: "item 3",
       mode: "agent",
+      toolRole: "agent",
       parentId: "main-s1",
     });
   });

@@ -56,12 +56,14 @@ describe("trusted-host GET allow (B56)", () => {
   });
 
   it("does not apply below Automatic", () => {
-    expect(fetchAt("https://docs.example.com/a", "cautious").decision).toBe(
-      "ask",
-    );
-    expect(fetchAt("https://docs.example.com/a", "manual").decision).toBe(
-      "ask",
-    );
+    // Cautious already runs a trusted domain through the web area (step 11).
+    // B56's trusted-host allow is only Automatic and Permissive.
+    const cautious = fetchAt("https://docs.example.com/a", "cautious");
+    expect(cautious.decision).toBe("allow");
+    expect(cautious.source).not.toBe("trusted-host");
+    const manual = fetchAt("https://docs.example.com/a", "manual");
+    expect(manual.decision).toBe("ask");
+    expect(manual.source).not.toBe("trusted-host");
   });
 
   it("does not apply to a query, credentials, a port, http or an extra argument", () => {

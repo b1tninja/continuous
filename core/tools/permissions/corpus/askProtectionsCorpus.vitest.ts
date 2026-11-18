@@ -96,6 +96,8 @@ describe("the deterministic protections on the 287 labelled calls", () => {
   });
 
   it("takes 57 calls away from the reviewer model at Automatic", () => {
+    // WB45: a fetch to a host in trustedDomains runs at Automatic (and
+    // Cautious) without the reviewer, so 5 fewer calls reach it either way
     expect(m.automatic.before.reviewer).toBe(246);
     expect(m.automatic.after.reviewer).toBe(189);
   });
@@ -136,7 +138,7 @@ describe("each rule alone on the same calls", () => {
     return { falseAllow, overAsk, reviewer };
   };
 
-  // With all four off: 117 false allows, 1 over-ask, 246 calls for the reviewer (251 before B56 settled five trusted-host fetches)
+  // With all four off: 117 false allows, 1 over-ask, 246 calls for the reviewer
   // (the environment-variable ask, envNames.ts, is not one of the four and is always on:
   // it takes `export NODE_TLS_REJECT_UNAUTHORIZED=0 && npm test` out of both)
   it.each([

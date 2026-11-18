@@ -5,10 +5,17 @@ import { afterAll, beforeAll } from "vitest";
 import { evaluateTerminalCommandSecurity } from "@continuedev/terminal-security";
 import { describe, expect, it } from "vitest";
 import type { ShellKind } from "../../util/shell";
-import { evaluateToolPolicyWithRules } from "./evaluate";
+import { evaluateToolPolicyWithRules as evaluateAndRun } from "./evaluate";
+import { wouldDecide } from "./idgafView.testutil";
 import { DEFAULT_POLICY_LEVELS } from "./policy";
 import { runtimeWriteTarget } from "./runtimeWriteTarget";
 import { tryLink } from "./testLinks";
+
+// At IDGAF every call runs; these tests read what the guard would have
+// decided (wouldDecide), which IDGAF records instead of acting on.
+const evaluateToolPolicyWithRules = (
+  input: Parameters<typeof evaluateAndRun>[0],
+) => wouldDecide(evaluateAndRun(input));
 
 const ASK = "allowedWithPermission" as const;
 const RUN = "allowedWithoutPermission" as const;
@@ -150,7 +157,7 @@ describe("a write target that is written out, or a command that writes nothing, 
   });
 });
 
-describe("at YOLO such a command asks, and nothing loosens it", () => {
+describe("at IDGAF such a command asks, and nothing loosens it", () => {
   const terminalTool = {
     group: "Built-In",
     evaluateToolCallPolicy: (base: any, args: Record<string, unknown>) =>
@@ -159,7 +166,7 @@ describe("at YOLO such a command asks, and nothing loosens it", () => {
   const run = (
     command: string,
     shell: ShellKind,
-    tools: "yolo" | "permissive" | "automatic" | "cautious",
+    tools: "idgaf" | "permissive" | "automatic" | "cautious",
     extra: Record<string, unknown> = {},
   ) =>
     evaluateToolPolicyWithRules({
@@ -182,17 +189,17 @@ describe("at YOLO such a command asks, and nothing loosens it", () => {
     ["bash", "echo x > $HOME/notes.txt"],
   ];
 
-  it.each(cases)("%s: %j asks at YOLO, with a reason", (shell, command) => {
-    const r = run(command, shell, "yolo");
+  it.each(cases)("%s: %j asks at IDGAF, with a reason", (shell, command) => {
+    const r = run(command, shell, "idgaf");
     expect(r.policy).toBe(ASK);
     expect(r.source).toBe("floor");
     expect(r.reason).toContain("built when it runs");
   });
 
   it.each(cases)(
-    "%s: %j asks at YOLO whatever allow rule is written",
+    "%s: %j asks at IDGAF whatever allow rule is written",
     (shell, command) => {
-      const r = run(command, shell, "yolo", {
+      const r = run(command, shell, "idgaf", {
         permissions: { allow: ["runTerminalCommand(*)"] },
       });
       expect(r.policy).toBe(ASK);
@@ -210,9 +217,9 @@ describe("at YOLO such a command asks, and nothing loosens it", () => {
   );
 
   it("a floor rule still refuses it, and a refusal is not turned into an ask", () => {
-    const r = run("rm $x; git push origin main", "bash", "yolo", {
+    const r = run("rm $x; git push origin main", "bash", "idgaf", {
       approval: {
-        levels: { ...DEFAULT_POLICY_LEVELS, tools: "yolo" },
+        levels: { ...DEFAULT_POLICY_LEVELS, tools: "idgaf" },
         floor: ["runTerminalCommand(git push*)"],
       },
     });
@@ -221,27 +228,27 @@ describe("at YOLO such a command asks, and nothing loosens it", () => {
     expect(r.reason).not.toContain("built when it runs");
   });
 
-  it("a deny rule, which YOLO reaches past, leaves the command asking rather than running", () => {
-    const r = run("rm $x; git push origin main", "bash", "yolo", {
+  it("a deny rule, which IDGAF reaches past, leaves the command asking rather than running", () => {
+    const r = run("rm $x; git push origin main", "bash", "idgaf", {
       permissions: { deny: ["runTerminalCommand(git push*)"] },
     });
     expect(r.policy).toBe(ASK);
   });
 
-  it("a command with a written-out target still runs at YOLO", () => {
+  it("a command with a written-out target still runs at IDGAF", () => {
     for (const [shell, command] of [
       ["powershell", "Remove-Item build\\out.txt"],
       ["bash", "rm -rf build"],
       ["powershell", "Set-Content out.txt $text"],
     ] as [ShellKind, string][]) {
-      expect(run(command, shell, "yolo").policy, command).toBe(RUN);
+      expect(run(command, shell, "idgaf").policy, command).toBe(RUN);
     }
   });
 
   it("never turns an ask or a refusal into a run", () => {
     for (const [shell, command] of cases) {
       for (const tools of [
-        "yolo",
+        "idgaf",
         "permissive",
         "automatic",
         "cautious",

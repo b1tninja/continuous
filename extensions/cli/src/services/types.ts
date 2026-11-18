@@ -5,9 +5,8 @@ import {
   parseAgentFileRules,
   parseAgentFileTools,
 } from "@continuedev/config-yaml";
+import type { AssistantUnrolled as AssistantConfig } from "@continuedev/config-yaml";
 import { BaseLlmApi } from "@continuedev/openai-adapters";
-import { AssistantConfig } from "@continuedev/sdk";
-import { DefaultApiInterface } from "@continuedev/sdk/dist/api/dist/index.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 
 import type { AuthConfig } from "../auth/workos.js";
@@ -15,6 +14,7 @@ import { BaseCommandOptions } from "../commands/BaseCommandOptions.js";
 import { PermissionMode } from "../permissions/types.js";
 
 import { type MCPService } from "./MCPService.js";
+import type { ModelInUse } from "./modelInUse.js";
 
 /**
  * Service lifecycle states
@@ -60,6 +60,8 @@ export interface ModelServiceState {
   model: ModelConfig | null;
   assistant: AssistantUnrolled | null;
   authConfig: AuthConfig | null;
+  /** The model and effort the next request goes to, and why (ROADMAP M7). */
+  inUse?: ModelInUse;
 }
 
 export type MCPServerStatus = "idle" | "connecting" | "connected" | "error";
@@ -111,28 +113,12 @@ export interface UpdateServiceState {
   currentVersion: string;
 }
 
-export interface ApiClientServiceState {
-  apiClient: DefaultApiInterface | null;
-}
-
-export interface StorageSyncServiceState {
-  isEnabled: boolean;
-  storageId?: string;
-  lastUploadAt?: number;
-  lastError?: string | null;
-}
-
 export interface AgentFileServiceState {
   agentFile: AgentFile | null;
   slug: string | null;
   agentFileModel: ModelConfig | null;
   parsedTools: ReturnType<typeof parseAgentFileTools> | null;
   parsedRules: ReturnType<typeof parseAgentFileRules> | null;
-}
-
-export interface ArtifactUploadServiceState {
-  uploadsInProgress: number;
-  lastError: string | null;
 }
 
 export type {
@@ -151,16 +137,13 @@ export const SERVICE_NAMES = {
   CONFIG: "config",
   MODEL: "model",
   MCP: "mcp",
-  API_CLIENT: "apiClient",
   TOOL_PERMISSIONS: "toolPermissions",
   FILE_INDEX: "fileIndex",
   RESOURCE_MONITORING: "resourceMonitoring",
   SYSTEM_MESSAGE: "systemMessage",
   CHAT_HISTORY: "chatHistory",
   UPDATE: "update",
-  STORAGE_SYNC: "storageSync",
   AGENT_FILE: "agentFile",
-  ARTIFACT_UPLOAD: "artifactUpload",
   GIT_AI_INTEGRATION: "gitAiIntegration",
   BACKGROUND_JOBS: "backgroundJobs",
   QUIZ: "quiz",
@@ -179,6 +162,8 @@ export interface ServiceInitOptions {
     ask?: string[];
     exclude?: string[];
     mode?: PermissionMode;
+    /** See InitializeToolServiceOverrides.interactiveDefaults */
+    interactiveDefaults?: boolean;
   };
 }
 

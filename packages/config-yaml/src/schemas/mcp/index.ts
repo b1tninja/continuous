@@ -29,6 +29,22 @@ const sseOrHttpMcpServerSchema = baseMcpServerSchema.extend({
     .object({
       /** Port of the local redirect server used while signing in (default 3000). */
       callbackPort: z.number().int().min(1).max(65535).optional(),
+      /**
+       * Client id registered with the server's authorization server. When set,
+       * dynamic client registration is not used (for example GitHub's MCP server,
+       * which has none).
+       */
+      clientId: z.string().min(1).optional(),
+      /**
+       * Secret of that client, for servers that issue one. Write it as
+       * `${{ secrets.NAME }}`, never inline.
+       */
+      clientSecret: z.string().min(1).optional(),
+      /**
+       * Host name in the redirect URI. The local listener binds loopback only
+       * either way (default "localhost"; RFC 8252 prefers the IP literal).
+       */
+      redirectHost: z.enum(["localhost", "127.0.0.1"]).optional(),
     })
     .optional(),
 });

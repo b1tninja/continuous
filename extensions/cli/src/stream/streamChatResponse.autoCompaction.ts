@@ -198,6 +198,7 @@ export async function handleAutoCompaction(
             onStreamComplete: () => {},
           },
       systemMessageTokens,
+      trigger: "auto",
     });
 
     // Save the compacted session

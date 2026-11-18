@@ -14,6 +14,7 @@
  * surface row for the provider/engine/API, then unknown. Presets only suggest:
  * `actionAllowed` is the evidence floor that says what a layer may cause.
  */
+import { claudeRefusesSampling } from "./anthropicSamplingGuard.js";
 import data from "./surfaceFacts.generated.json";
 
 export type FactLevel = "declared" | "measured" | "derived";
@@ -46,6 +47,12 @@ export interface FactValues {
   schemaOutput: "json-schema" | "json-object" | "per-model" | "none";
   /** Whether a raw grammar is accepted: "gbnf" (llama.cpp), "grammar" (vLLM, any dialect its backend takes), "none". */
   grammar: "gbnf" | "grammar" | "none";
+  /**
+   * Whether `temperature`, `top_p` and `top_k` may be sent. "refused": the
+   * surface answers HTTP 400 for a non-default value (Claude 4.7 and later),
+   * so the request leaves them out (core/util/anthropicSamplingGuard.ts).
+   */
+  samplingParams: "accepted" | "refused";
 }
 
 export type FactName = keyof FactValues;
@@ -262,6 +269,7 @@ export const FACT_NAMES: FactName[] = [
   "toolStrictArgs",
   "schemaOutput",
   "grammar",
+  "samplingParams",
 ];
 
 export type ResolvedFacts = { [N in FactName]: ResolvedFact<N> };
@@ -442,11 +450,12 @@ export function surfaceForProvider(
 const CLAUDE_5_5 =
   /claude[-.]?(?:opus|sonnet)[-.]5[-.]5|fable[-.]5|mythos[-.]5/i;
 
-/** The family key rows use: the preset id, or the named Claude generation. */
+/** The family key rows use: the preset id, or the named Claude generation (5.5, or 4.7 up to 5.4). */
 export function surfaceFamily(
   presetId: string | undefined,
   modelId: string | undefined,
 ): string | undefined {
   if (modelId && CLAUDE_5_5.test(modelId)) return "claude-5.5-generation";
+  if (modelId && claudeRefusesSampling(modelId)) return "claude-4.7-generation";
   return presetId;
 }

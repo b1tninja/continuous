@@ -21,7 +21,7 @@ const AREA_HINTS = {
   context: "Reading files and searching. What the agent looks at.",
   tools: "Commands, MCP tools and the web. What the agent runs.",
   edits:
-    "Changing files. At Permissive and YOLO an edit is kept without a diff review.",
+    "Changing files. At Permissive and IDGAF an edit is kept without a diff review.",
   plan: "Loop only. Whether a plan or re-plan goes on without you.",
   questions: "Loop only. Whether the agent answers its own questions.",
 } as const;
@@ -42,7 +42,7 @@ function whoDecides(
 /**
  * Settings > Tools: the same five controls as the toolbar, with their
  * explanations, then the settings beside them. Deny rules, ask rules and
- * protected paths always win, except for an area set to YOLO.
+ * protected paths always win, except for an area set to IDGAF.
  */
 export function PolicyCard() {
   const dispatch = useAppDispatch();
@@ -68,8 +68,8 @@ export function PolicyCard() {
       <h3 className="my-0 mb-1 text-sm font-semibold">Approval</h3>
       <p className="mt-0 mb-2 text-xs text-description">
         One decision per area: who decides a call your rules leave open. Fewer
-        decisions reach you as you go from Manual to YOLO. Saved in
-        permissions.yaml, which the CLI reads too. YOLO is never saved.
+        decisions reach you as you go from Manual to IDGAF. Saved in
+        permissions.yaml, which the CLI reads too. IDGAF is never saved.
       </p>
       <Card>
         <div className="flex flex-col gap-2 py-1">
@@ -102,7 +102,7 @@ export function PolicyCard() {
 
       <h4 className="mt-3 mb-1 text-xs font-semibold">Built-in rules</h4>
       <p className="mt-0 mb-1 text-2xs text-description">
-        Protections you can see and switch off. YOLO ignores them.
+        Protections you can see and switch off. IDGAF ignores them.
       </p>
       <Card>
         <div className="flex flex-col gap-2 py-1">
@@ -131,7 +131,8 @@ export function PolicyCard() {
             <div key={rule.id} data-testid={`locked-${rule.id}`}>
               <div className="text-xs">{rule.label} (locked)</div>
               <div className="text-2xs text-description">
-                {rule.description} No setting, including YOLO, turns this off.
+                {rule.description} No setting turns this off; at IDGAF it is
+                recorded, not applied.
               </div>
             </div>
           ))}
@@ -195,9 +196,9 @@ export function PolicyCard() {
           className="mt-2 mb-0 text-2xs text-description"
           data-testid="policy-floor"
         >
-          {floor.length} floor rule{floor.length === 1 ? "" : "s"} in
-          permissions.yaml block these calls at every level, YOLO included. Edit
-          the file to change them.
+          {floor.length} locked rule{floor.length === 1 ? "" : "s"} in
+          permissions.yaml block these calls at every level below IDGAF. At
+          IDGAF they are recorded, not applied. Edit the file to change them.
         </p>
       )}
     </div>

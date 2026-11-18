@@ -25,19 +25,18 @@ This document specifies the behavior of the CLI's configuration loading system, 
 1. **CLI `--config` Flag** (highest priority)
 
    - File path (starts with `.`, `/`, `~`): Loads local YAML file
-   - Assistant slug (`owner/package`): Fetches from Continue platform
+   - Assistant slug (`owner/package`): rejected with "hub assistants are not supported; pass a config.yaml path"
    - Overrides any saved preferences
 
 2. **Saved Config URI** (if no `--config` flag)
 
    - Retrieved from authentication config
    - Converts `file://` URIs back to file paths
-   - Converts `slug://` URIs back to assistant slugs
+   - A `slug://` URI is rejected with the same hub-assistants error
 
 3. **Default Resolution** (if no flag and no saved URI)
-   - **Authenticated**: First user assistant from `listAssistants()`
    - **config.yaml**: The saved config file at `~/.continue/config.yaml`
-   - **Unauthenticated**: Falls back to `continuedev/default-cli-config`
+   - **Nothing configured**: an empty local assistant; no hosted default config is fetched, and a model comes from `~/.continuous/config.yaml` or `--config <file>`
 
 ## Authentication State Interactions
 
@@ -45,14 +44,10 @@ This document specifies the behavior of the CLI's configuration loading system, 
 
 **Available Options:**
 
-- Personal assistants
-- Organization assistants (if organization selected)
 - Local YAML files
-- Public assistants
 
 **Behavior:**
 
-- `listAssistants()` returns personalized results
 - Config selections are saved as URIs in auth config
 - Organization context affects available assistants
 
@@ -61,13 +56,12 @@ This document specifies the behavior of the CLI's configuration loading system, 
 **Available Options:**
 
 - Local YAML files only
-- Default assistant (`continuedev/default-cli-config`)
 
 **Behavior:**
 
 - No access to personal or organization assistants
 - No config URI persistence
-- Direct fallback to default when no config specified
+- No config specified: an empty local assistant (no network call)
 
 ### Environment Variable Auth (`CONTINUE_API_KEY`)
 
@@ -89,7 +83,6 @@ This document specifies the behavior of the CLI's configuration loading system, 
 **Effects on Config Loading:**
 
 - Organization ID passed to all API calls
-- Affects which assistants appear in `listAssistants()`
 - Organization changes trigger complete config reload
 
 ## Error Handling Behavior
@@ -121,12 +114,12 @@ This document specifies the behavior of the CLI's configuration loading system, 
 **No User Assistants:**
 
 - Authenticated user has no personal assistants
-- **Result**: Falls back to `continuedev/default-cli-config`
+- **Result**: Falls back to an empty local assistant
 
-**Default Agent Unavailable:**
+**No Model Configured:**
 
-- Fallback to default agent fails
-- **Result**: Error thrown, CLI cannot start
+- No `config.yaml` and no `--config`
+- **Result**: Headless runs stop with a message naming `~/.continuous/config.yaml` and `--config <file>`
 
 **Token Expired:**
 

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createUITestContext } from "../../test-helpers/ui-test-context.js";
 import { AppRoot } from "../AppRoot.js";
+import { CONFIRM_ARM_MS } from "../hooks/useInterruptConfirm.js";
 
 // ink 8 holds a lone ESC for ~20ms to tell it apart from the start of an
 // escape sequence, so a keypress must be followed by a short wait (and two
@@ -39,7 +40,7 @@ describe("TUIChat - Compaction Cancellation", () => {
     vi.clearAllMocks();
   });
 
-  it("calls handleInterrupt when ESC is pressed during compaction", () => {
+  it("asks when ESC is pressed during compaction, and Enter interrupts", async () => {
     const compactionStartTime = Date.now();
 
     mockUseChat.mockReturnValue({
@@ -60,17 +61,24 @@ describe("TUIChat - Compaction Cancellation", () => {
       handleToolPermissionResponse: vi.fn(),
     });
 
-    const { stdin, unmount } = render(React.createElement(AppRoot, {}));
+    const { stdin, lastFrame, unmount } = render(
+      React.createElement(AppRoot, {}),
+    );
 
     try {
-      // Give some time for the component to render and set up input handling
-      setTimeout(() => {
-        // Simulate ESC key press during compaction
-        stdin.write("\x1b"); // ESC key
+      // One ESC asks and does not interrupt; a second keeps it going
+      await pressEsc(stdin);
+      expect(mockHandleInterrupt).not.toHaveBeenCalled();
+      expect(lastFrame()).toContain("Stop the response?");
+      await pressEsc(stdin);
+      expect(lastFrame()).not.toContain("Stop the response?");
+      expect(mockHandleInterrupt).not.toHaveBeenCalled();
 
-        // The handleInterrupt should be called
-        expect(mockHandleInterrupt).toHaveBeenCalledTimes(1);
-      }, 100);
+      await pressEsc(stdin);
+      await new Promise((resolve) => setTimeout(resolve, CONFIRM_ARM_MS));
+      stdin.write("\r");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(mockHandleInterrupt).toHaveBeenCalledTimes(1);
     } finally {
       unmount();
     }
@@ -134,13 +142,20 @@ describe("TUIChat - Compaction Cancellation", () => {
       handleToolPermissionResponse: vi.fn(),
     });
 
-    const { stdin, unmount } = render(React.createElement(AppRoot, {}));
+    const { stdin, lastFrame, unmount } = render(
+      React.createElement(AppRoot, {}),
+    );
 
     try {
-      // Simulate ESC key press when both states are active
+      // Simulate ESC key press when both states are active: it asks first
       await pressEsc(stdin);
+      expect(mockHandleInterrupt).not.toHaveBeenCalled();
+      expect(lastFrame()).toContain("Stop the response?");
 
-      // Should still call handleInterrupt (which will prioritize compaction)
+      // Enter stops (handleInterrupt prioritizes compaction)
+      await new Promise((resolve) => setTimeout(resolve, CONFIRM_ARM_MS));
+      stdin.write("\r");
+      await new Promise((resolve) => setTimeout(resolve, 50));
       expect(mockHandleInterrupt).toHaveBeenCalledTimes(1);
     } finally {
       unmount();

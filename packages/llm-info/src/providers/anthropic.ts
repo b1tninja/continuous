@@ -65,6 +65,9 @@ export const Anthropic: ModelProvider = {
     },
     {
       model: "claude-sonnet-4-5-20250929",
+      // Stays "deprecated" past 2026-11-30: the notice reads "retired" from the
+      // date in core/util/modelRetirements.generated.json (rowStateOn).
+      lifecycle: "deprecated",
       displayName: "Claude Sonnet 4.5",
       contextLength: 200000,
       maxCompletionTokens: 64000,
@@ -85,6 +88,7 @@ export const Anthropic: ModelProvider = {
     },
     {
       model: "claude-opus-4-1-20250805",
+      lifecycle: "retired",
       displayName: "Claude 4.1 Opus",
       contextLength: 200000,
       maxCompletionTokens: 32000,
@@ -95,6 +99,7 @@ export const Anthropic: ModelProvider = {
     },
     {
       model: "claude-sonnet-4-20250514",
+      lifecycle: "retired",
       displayName: "Claude 4 Sonnet",
       contextLength: 200000,
       maxCompletionTokens: 8192,
@@ -117,6 +122,7 @@ export const Anthropic: ModelProvider = {
     // order matters for regex conflicts
     {
       model: "claude-opus-4.1",
+      lifecycle: "retired",
       displayName: "Claude Opus 4.1",
       contextLength: 200000,
       maxCompletionTokens: 32000,
@@ -126,6 +132,7 @@ export const Anthropic: ModelProvider = {
     },
     {
       model: "claude-opus-4",
+      lifecycle: "retired",
       displayName: "Claude 4 Opus",
       contextLength: 200000,
       maxCompletionTokens: 8192,
@@ -137,6 +144,7 @@ export const Anthropic: ModelProvider = {
 
     {
       model: "claude-3-7-sonnet-latest",
+      lifecycle: "retired",
       displayName: "Claude 3.7 Sonnet",
       contextLength: 200000,
       maxCompletionTokens: 128000,
@@ -147,6 +155,7 @@ export const Anthropic: ModelProvider = {
     },
     {
       model: "claude-3-5-sonnet-latest",
+      lifecycle: "retired",
       displayName: "Claude 3.5 Sonnet",
       contextLength: 200000,
       maxCompletionTokens: 8192,
@@ -157,6 +166,7 @@ export const Anthropic: ModelProvider = {
     },
     {
       model: "claude-3-opus-20240229",
+      lifecycle: "retired",
       displayName: "Claude 3 Opus",
       contextLength: 200000,
       maxCompletionTokens: 4096,
@@ -175,6 +185,7 @@ export const Anthropic: ModelProvider = {
     },
     {
       model: "claude-3-haiku-20240307",
+      lifecycle: "retired",
       displayName: "Claude 3 Haiku",
       contextLength: 200000,
       maxCompletionTokens: 4096,

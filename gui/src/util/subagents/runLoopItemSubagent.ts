@@ -12,6 +12,8 @@ import {
   loopWorkerAuditAgent,
 } from "core/tools/permissions/audit/identity";
 import { BuiltInToolNames } from "core/tools/builtIn";
+import { ideToolRef } from "core/tools/roleToolRefs";
+import { filterToolsForRole } from "core/tools/roleTools";
 import { ContinueError, ContinueErrorReason } from "core/util/errors";
 import {
   DEFAULT_LOOP_BUDGET,
@@ -135,7 +137,17 @@ export function loopWorkerTools(
     state.ui.toolGroupSettings,
     true,
     false,
+    state.ui.policyExtras.planMcpTools,
+    state.ui.policyExtras.trustedMcpServers,
+    state.ui.policyExtras.backgroundMcpTools,
+    state.ui.policyLevels.tools === "idgaf",
   );
+  // Nobody watches a worker: it gets only the MCP tools the person listed
+  // for unattended runs (`background.mcpTools`, TR1 and TR25)
+  parentTools = filterToolsForRole("background", parentTools, ideToolRef, {
+    unattendedMcpTools: state.ui.policyExtras.backgroundMcpTools,
+    approvalWaived: state.ui.policyLevels.tools === "idgaf",
+  });
   if (model.toolOverrides?.length) {
     parentTools = applyToolOverrides(parentTools, model.toolOverrides).tools;
   }

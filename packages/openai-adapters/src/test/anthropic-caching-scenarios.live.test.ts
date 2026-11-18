@@ -4,18 +4,20 @@
  * Tests diverse real-world scenarios to validate caching works correctly
  * across tool use, long conversations, large payloads, and edge cases.
  *
- * Guarded by ANTHROPIC_API_KEY env var — skipped if not set.
+ * Guarded by RUN_LIVE_PROVIDER_TESTS=1 and ANTHROPIC_API_KEY — skipped unless both are set.
  * Uses claude-haiku-4-5-20251001 to minimize cost.
  *
  * IMPORTANT: Haiku 4.5 requires a minimum of 4096 tokens for caching.
  *
- * Run: ANTHROPIC_API_KEY=sk-ant-... npx vitest packages/openai-adapters/src/test/anthropic-caching-scenarios.live.test.ts
+ * Run: RUN_LIVE_PROVIDER_TESTS=1 ANTHROPIC_API_KEY=sk-ant-... npx vitest packages/openai-adapters/src/test/anthropic-caching-scenarios.live.test.ts
  */
 import { describe, expect, test } from "vitest";
 
 import { constructLlmApi } from "../index.js";
+import { liveKey, liveProviderSkipReason } from "./liveProviderGuard.js";
 
-const API_KEY = process.env.ANTHROPIC_API_KEY;
+const API_KEY = liveKey("ANTHROPIC_API_KEY");
+const SKIP_REASON = liveProviderSkipReason(["ANTHROPIC_API_KEY"]);
 const MODEL = "claude-haiku-4-5-20251001";
 
 // ─── Shared fixtures ────────────────────────────────────────────────
@@ -449,7 +451,7 @@ const signal = new AbortController().signal;
 // ─── Tests ──────────────────────────────────────────────────────────
 
 describe.skipIf(!API_KEY)(
-  "Anthropic Prompt Caching - Battle Test Scenarios",
+  `Anthropic Prompt Caching - Battle Test Scenarios${SKIP_REASON ? ` (skipped: ${SKIP_REASON})` : ""}`,
   () => {
     // ── Scenario 1: Tool use round-trip ──────────────────────────
     // Simulates: user asks to read a file → assistant calls read_file →

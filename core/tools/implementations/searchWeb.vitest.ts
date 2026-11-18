@@ -2,7 +2,7 @@ import { expect, test, vi } from "vitest";
 import { searchWebImpl } from "./searchWeb";
 
 // Mock the fetchSearchResults function
-vi.mock("../../context/providers/WebContextProvider", () => ({
+vi.mock("../../context/providers/webSearchBackend", () => ({
   fetchSearchResults: vi.fn(),
 }));
 const mockExtras = {
@@ -11,7 +11,7 @@ const mockExtras = {
 } as unknown as ToolExtras;
 
 import { ToolExtras } from "../..";
-import { fetchSearchResults } from "../../context/providers/WebContextProvider";
+import { fetchSearchResults } from "../../context/providers/webSearchBackend";
 
 test("searchWeb should not truncate results under character limit", async () => {
   const shortContent = "This is a short search result content";

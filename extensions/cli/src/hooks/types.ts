@@ -52,6 +52,14 @@ interface HookHandlerBase {
    */
   onError?: "block" | "allow";
   /**
+   * Claude Code's spelling of `onError`, accepted so one hooks file means the
+   * same failure semantics in both tools: "continue" is `onError: "allow"`,
+   * "block" is `onError: "block"`. Unlike Claude Code, an unset value blocks
+   * here (fail closed). When both are set the stricter one wins, and any value
+   * that is not "continue" counts as "block".
+   */
+  onFailure?: "continue" | "block";
+  /**
    * Where the hook came from. Set by the loader on handlers from a project
    * settings file, never read from a file. A project hook can deny or ask but
    * its `allow` is ignored: only the user's own hooks may approve a call.
@@ -111,6 +119,9 @@ export interface HookMatcherGroup {
 /** Top-level hooks configuration object (the `hooks` key in settings.json) */
 export type HooksConfig = Partial<Record<HookEventName, HookMatcherGroup[]>>;
 
+/** The key inside `hooks` that switches `~/.claude` hooks on. Not an event. */
+export const READ_CLAUDE_SETTINGS_KEY = "readClaudeSettings";
+
 /** Full settings file shape (only the hooks portion) */
 export interface HookSettingsFile {
   hooks?: HooksConfig;
@@ -118,6 +129,19 @@ export interface HookSettingsFile {
   description?: string;
   /** If true, all hooks are disabled */
   disableAllHooks?: boolean;
+  /**
+   * If true, only hooks from the user's own settings files run; hooks that
+   * come with a project are not loaded, trusted or not. Read from the user's
+   * own files only: a project file cannot set it.
+   */
+  managedHooksOnly?: boolean;
+  /**
+   * `hooks.readClaudeSettings` in the user's Continuous settings file: `true`
+   * runs the hooks in `~/.claude/settings.json` too. It is written inside
+   * `hooks` but is not an event, so the loader lifts it out to here. Off by
+   * default (D-023): another tool's file does not run code here unasked.
+   */
+  readClaudeSettings?: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +160,8 @@ export interface PreToolUseInput extends HookInputBase {
   hook_event_name: "PreToolUse";
   tool_name: string;
   tool_input: unknown;
+  /** The MCP server this tool belongs to; absent for built-in tools. `tool_name` stays the server's own tool name. */
+  server?: string;
   tool_use_id: string;
 }
 
@@ -143,6 +169,8 @@ export interface PostToolUseInput extends HookInputBase {
   hook_event_name: "PostToolUse";
   tool_name: string;
   tool_input: unknown;
+  /** The MCP server this tool belongs to; absent for built-in tools. `tool_name` stays the server's own tool name. */
+  server?: string;
   tool_response: unknown;
   tool_use_id: string;
 }
@@ -151,6 +179,8 @@ export interface PostToolUseFailureInput extends HookInputBase {
   hook_event_name: "PostToolUseFailure";
   tool_name: string;
   tool_input: unknown;
+  /** The MCP server this tool belongs to; absent for built-in tools. `tool_name` stays the server's own tool name. */
+  server?: string;
   tool_use_id: string;
   error: string;
   is_interrupt?: boolean;
@@ -160,6 +190,9 @@ export interface PermissionRequestInput extends HookInputBase {
   hook_event_name: "PermissionRequest";
   tool_name: string;
   tool_input: unknown;
+  /** The MCP server this tool belongs to; absent for built-in tools. `tool_name` stays the server's own tool name. */
+  server?: string;
+  permission_suggestions?: unknown[];
 }
 
 export interface UserPromptSubmitInput extends HookInputBase {
@@ -464,3 +497,9 @@ export const NO_MATCHER_EVENTS: HookEventName[] = [
   "WorktreeCreate",
   "WorktreeRemove",
 ];
+
+/**
+ * Most characters of `additionalContext` an event can add to the conversation,
+ * all hooks together. Longer text is cut and a notice says so.
+ */
+export const MAX_ADDITIONAL_CONTEXT_CHARS = 10_000;

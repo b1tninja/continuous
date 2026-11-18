@@ -3,6 +3,7 @@ import {
   uniqueOpenFileInWorkspace,
 } from "core/util/ideUtils";
 import { v4 as uuid } from "uuid";
+import { allowOutsideWorkspaceOf } from "../outsideEdits";
 import { applyForEditTool } from "../../redux/thunks/handleApplyStateUpdate";
 import { ClientToolImpl } from "./callClientTool";
 
@@ -21,9 +22,13 @@ export const editToolImpl: ClientToolImpl = async (
     filepath = filepath.slice(2);
   }
 
+  // File edits at IDGAF: a path outside the workspace is a target
+  const allowOutside = allowOutsideWorkspaceOf(extras.getState?.());
   let firstUriMatch = await resolveRelativePathInDir(
     filepath,
     extras.ideMessenger.ide,
+    undefined,
+    { allowOutside },
   );
 
   if (!firstUriMatch) {

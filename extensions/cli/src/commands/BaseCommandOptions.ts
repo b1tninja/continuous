@@ -21,14 +21,19 @@ export interface BaseCommandOptions {
   ask?: string[];
   /** Array of tools to exclude from use (--exclude) */
   exclude?: string[];
+  /** Run limits of a headless run or serve (--max-budget-usd, --max-turns, --max-duration, --budget-allow-unpriced) */
+  maxBudgetUsd?: string | number;
+  maxTurns?: string | number;
+  maxDuration?: string | number;
+  budgetAllowUnpriced?: boolean;
   /** Agent file slug from the hub (--agent) */
   agent?: string;
-  /** Enable beta UploadArtifact tool */
-  betaUploadArtifactTool?: boolean;
   /** Enable beta Subagent tool */
   betaSubagentTool?: boolean;
   /** Run this project's hooks for this session without asking (--trust-project-hooks) */
   trustProjectHooks?: boolean;
+  /** Headless: continue with a broken hook settings or permissions file ignored (--ignore-broken-config) */
+  ignoreBrokenConfig?: boolean;
   /** Use this project's Continuous configuration for this session (--trust-project-config) */
   trustProjectConfig?: boolean;
 }

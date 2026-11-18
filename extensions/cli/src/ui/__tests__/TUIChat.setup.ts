@@ -1,12 +1,11 @@
 import type { AssistantUnrolled } from "@continuedev/config-yaml";
 import { vi } from "vitest";
 
-import { MockApiClient } from "./mocks/MockApiClient.js";
 import { MockLlmApi } from "./mocks/MockLlmApi.js";
 import { MockMCPService } from "./mocks/MockMCPService.js";
 
 // Re-export the mocks for backward compatibility
-export { MockApiClient, MockLlmApi, MockMCPService };
+export { MockLlmApi, MockMCPService };
 
 // Mock Assistant config
 export const mockAssistant: AssistantUnrolled = {
@@ -46,7 +45,6 @@ export const createProps = (overrides: any = {}) => ({
   model: "test-model",
   llmApi: new MockLlmApi(),
   mcpService: new MockMCPService(),
-  apiClient: new MockApiClient(),
   configPath: undefined,
   initialPrompt: undefined,
   resume: false,

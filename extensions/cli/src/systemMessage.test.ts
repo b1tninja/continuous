@@ -1,3 +1,6 @@
+import * as os from "os";
+import * as path from "path";
+
 import { describe, expect, it, vi } from "vitest";
 
 // Use the actual implementation instead of the mocked one
@@ -334,5 +337,24 @@ describe("constructSystemMessage: the prompt a use chose", () => {
       '<context name="planMode">\nPlan briefly, then call PresentPlan.\n</context>',
     );
     expect(result).not.toContain("Two kinds of unknowns");
+  });
+});
+
+describe("constructSystemMessage attribution", () => {
+  it("adds no commit or PR attribution by default", async () => {
+    const prior = process.env.CONTINUOUS_GLOBAL_DIR;
+    process.env.CONTINUOUS_GLOBAL_DIR = path.join(
+      os.tmpdir(),
+      "continuous-no-such-settings",
+    );
+    try {
+      const result = await constructSystemMessage("normal");
+      expect(result).not.toMatch(/generated with/i);
+      expect(result).not.toMatch(/co-authored-by/i);
+      expect(result).not.toContain("continue.dev");
+    } finally {
+      if (prior === undefined) delete process.env.CONTINUOUS_GLOBAL_DIR;
+      else process.env.CONTINUOUS_GLOBAL_DIR = prior;
+    }
   });
 });

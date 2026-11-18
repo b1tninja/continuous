@@ -18,6 +18,16 @@ export interface ReviewResult {
 
 const MAX_REASON = 300;
 
+export interface ParseOptions {
+  /**
+   * The v3 prompt asks for `"category": "none"` on an allow, to show the
+   * category check was done. An allow without it is a model that did not apply
+   * the check: low confidence, so it becomes an ask. The default prompt says
+   * "omit for allow", so this is off unless v3 is in use.
+   */
+  allowNeedsNone?: boolean;
+}
+
 function unusable(why: string): ReviewResult {
   return {
     decision: "ask",
@@ -25,6 +35,12 @@ function unusable(why: string): ReviewResult {
     reason: `The reviewer's answer could not be used (${why}).`,
     unusable: true,
   };
+}
+
+function namesNone(category: unknown): boolean {
+  return (
+    typeof category === "string" && category.trim().toLowerCase() === "none"
+  );
 }
 
 /**
@@ -35,7 +51,10 @@ function unusable(why: string): ReviewResult {
  * - "deny" only stands for a category whose default outcome is deny; for an
  *   "ask" category, or an unknown or missing one, it becomes an ask.
  */
-export function parseReviewerReply(text: string): ReviewResult {
+export function parseReviewerReply(
+  text: string,
+  opts: ParseOptions = {},
+): ReviewResult {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start < 0 || end <= start) return unusable("no JSON object");
@@ -56,6 +75,14 @@ export function parseReviewerReply(text: string): ReviewResult {
       : undefined;
 
   if (decision === "allow") {
+    if (opts.allowNeedsNone && !namesNone(category)) {
+      return {
+        decision: "ask",
+        category: "uncertain",
+        reason:
+          "The reviewer allowed this without saying that no category applies, so you are asked.",
+      };
+    }
     return { decision: "allow", reason: sentence ?? "Reviewer allowed this." };
   }
   if (decision !== "ask" && decision !== "deny") {

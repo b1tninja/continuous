@@ -66,6 +66,38 @@ afterEach(() => {
 const text = () => stdout.join("");
 
 describe("continuous audit", () => {
+  it("lists setting changes with their surface, and leaves calls alone", () => {
+    const trail = new AuditTrail({
+      dir,
+      enabled: true,
+      now: () => new Date("2026-11-10T13:00:00Z"),
+      syncImportant: false,
+    });
+    trail.setting({
+      kind: "level",
+      op: "set",
+      source: "cli-policy",
+      name: "tools",
+      from: "cautious",
+      to: "permissive",
+      loosens: true,
+      confirmed: "prompt",
+    });
+    expect(auditCommand("changes", undefined, { dir })).toBe(0);
+    expect(text()).toContain("cli-policy");
+    expect(text()).toContain(
+      "set tools: cautious -> permissive (confirmed: prompt)",
+    );
+    stdout.length = 0;
+    expect(auditCommand("list", undefined, { dir, json: true })).toBe(0);
+    expect(JSON.parse(text())).toHaveLength(2);
+  });
+
+  it("says so when no setting changed", () => {
+    expect(auditCommand("changes", undefined, { dir })).toBe(0);
+    expect(text()).toContain("No setting changes recorded.");
+  });
+
   it("lists calls as JSON, filtered", () => {
     expect(auditCommand("list", undefined, { dir, json: true })).toBe(0);
     const all = JSON.parse(text());

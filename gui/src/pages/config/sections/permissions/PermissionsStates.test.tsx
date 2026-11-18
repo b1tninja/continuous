@@ -98,11 +98,11 @@ describe("Permissions first-run overview", () => {
     const card = screen.getByTestId("permissions-intro");
     expect(card.textContent).toContain("Context use");
     expect(card.textContent).toContain("Questions");
-    for (const preset of ["Careful", "Accept edits", "Hands off", "YOLO"]) {
+    for (const preset of ["Careful", "Accept edits", "Hands off", "IDGAF"]) {
       expect(card.textContent).toContain(preset);
     }
     const dismiss = screen.getByRole("button", {
-      name: "Dismiss the permissions overview",
+      name: "Got it, dismiss the permissions overview",
     });
     expect(dismiss.className).toContain("h-6");
     expect(document.querySelectorAll("[id]").length).toBe(

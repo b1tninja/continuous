@@ -230,3 +230,7 @@ Built as P4 on 2026-11-07 (phase P of `agent-ux-parity.md`).
 
 - Whether to show the plan in a side panel instead of under the input.
 - Automatic creation of a list for a complex request without the model asking for one. Roo does this; it is a prompt change that can follow once the list is reliable.
+
+## Plan commands (F7)
+
+Built 2026-11-11. `continuous plan list` lists `.continuous/plans/*.md` (status draft, approved, in-progress or done, done/total, modified time, path). `continuous plan build <name|path>` runs the plain agent loop on a plan file: the to-dos seed the task list (a resumed plan starts at its first unchecked to-do), each reported status is written back to the file's checkbox marker only, and a to-do's `check:` is run by the harness when the model marks it completed (the Loop's runner and the Bash permission decision; a failed or refused check returns the to-do to in progress). It does not use the Loop driver. Names and paths are resolved inside `.continuous/plans` by real path, and plan writes go through the at-rest secret scrubber. An interactive start offers an in-progress plan once per change to it. Page: `docs/ide-extensions/agent/plan-files.mdx`.

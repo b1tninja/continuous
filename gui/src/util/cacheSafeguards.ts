@@ -1,4 +1,8 @@
-import type { ChatMessage, ModelDescription } from "core";
+import type {
+  ChatMessage,
+  LLMFullCompletionOptions,
+  ModelDescription,
+} from "core";
 import {
   findModelPricing,
   type ModelPricing,
@@ -6,7 +10,6 @@ import {
 import {
   AUTO_ESCALATE_MAX_GAP_MS,
   AUTO_ESCALATE_MIN_GAP_MS,
-  LOCAL_CACHE_WARM_MS,
   modelSupportsOneHourCache,
   modelSupportsPromptCacheControl,
   modelUsesLocalPrefixCache,
@@ -17,6 +20,14 @@ import {
   type PromptCacheSetting,
   type PromptCacheTtl,
 } from "./promptCache";
+import { localCacheWarmMs } from "./localWarmWindow";
+import {
+  hasImages,
+  type KeyTool,
+  requestPartChanges,
+  toolChoiceText,
+  toolsFingerprint,
+} from "./cacheKeyParts";
 
 /**
  * Rules for when the app warns about a cost the user may not expect. Every
@@ -151,7 +162,7 @@ export function warmCacheLoss(
     if (
       !state.lastInputTokens ||
       state.lastRequestAt === undefined ||
-      now - state.lastRequestAt > LOCAL_CACHE_WARM_MS
+      now - state.lastRequestAt > localCacheWarmMs(model)
     ) {
       return undefined;
     }
@@ -277,22 +288,47 @@ export function messageChecksum(message: ChatMessage): string {
  */
 export function promptCacheKey(
   model: ModelDescription,
-  toolNames: string[],
+  /** Tool names, or the tools themselves to also cover descriptions and schemas. */
+  tools: KeyTool[],
   systemMessage: string | undefined,
   /** The messages after the system message, in the order they are sent. */
   messages?: ChatMessage[],
   /**
    * For a model with routes, the account serving the request: each account
-   * has its own cache, so a different route is a different model here.
+   * has its own cache, so a different route is a different model here. An
+   * object also carries the request options that rebuild the cache.
    */
-  route?: string,
+  extras?: string | PromptCacheKeyExtras,
 ): PromptCacheKey {
+  const { route, options } =
+    typeof extras === "string"
+      ? { route: extras, options: undefined }
+      : (extras ?? {});
   return {
     model: `${model.provider}/${model.model}${route ? ` via ${route}` : ""}`,
-    tools: hashString(toolNames.join("\u0000")),
+    tools: hashString(toolsFingerprint(tools)),
     system: hashString(systemMessage ?? ""),
     ...(messages && { messages: messages.map(messageChecksum) }),
+    ...(options && {
+      effort: JSON.stringify([
+        reasoningSettings(model),
+        options.reasoning ?? null,
+        options.reasoningBudgetTokens ?? null,
+      ]),
+      toolChoice: toolChoiceText(options.toolChoice),
+    }),
+    ...(messages && options && { images: hasImages(messages) }),
   };
+}
+
+/** What `promptCacheKey` takes beyond the prompt itself. */
+export interface PromptCacheKeyExtras {
+  route?: string;
+  /** The completion options of the request: reasoning and tool choice. */
+  options?: Pick<
+    LLMFullCompletionOptions,
+    "reasoning" | "reasoningBudgetTokens" | "toolChoice"
+  >;
 }
 
 /**
@@ -312,6 +348,9 @@ export function expectedRoute(
   }
   return routes[0];
 }
+
+/** The cause named when the request was pruned to fit the window. */
+export const PRUNED_CAUSE = "the oldest messages were dropped to fit";
 
 /** The cause named when the model differs from the previous request's. */
 export const MODEL_CHANGED = "the model changed";
@@ -341,7 +380,9 @@ export function keyChanges(
   if (before.model !== after.model) changes.push(MODEL_CHANGED);
   if (before.tools !== after.tools) changes.push("the tools changed");
   if (before.system !== after.system) {
-    changes.push("the system prompt changed (a rule or a summary)");
+    // A compaction summary is not in it any more (C104): only the base prompt
+    // and the rules that apply to the whole conversation are
+    changes.push("the system prompt changed (the base prompt or a rule)");
   }
   if (before.messages && after.messages) {
     const i = firstChangedMessage(before.messages, after.messages);
@@ -351,6 +392,7 @@ export function keyChanges(
       );
     }
   }
+  changes.push(...requestPartChanges(before, after));
   return changes;
 }
 
@@ -394,7 +436,7 @@ export function detectCacheMiss(args: {
   aged?: boolean;
   /**
    * How long the cache is taken to last, when it is not a cache-control
-   * lifetime: a local server's (LOCAL_CACHE_WARM_MS).
+   * lifetime: a local server's (localCacheWarmMs).
    */
   lifetimeMs?: number;
 }): CacheMissReport | undefined {
@@ -419,7 +461,7 @@ export function detectCacheMiss(args: {
   // Once the window is full, every request drops the oldest messages, so the
   // start of the prompt moves and nothing can be read. That is not a fault in
   // the cache; it is the conversation not fitting.
-  if (args.pruned) causes.push("the oldest messages were dropped to fit");
+  if (args.pruned) causes.push(PRUNED_CAUSE);
   return { readTokens, expectedTokens: expected, causes };
 }
 
@@ -428,7 +470,7 @@ export const MODEL_SWITCH_CAUSE = MODEL_CHANGED;
 export const AGEING_CAUSE =
   "old tool results were replaced by placeholders (history ageing)";
 export const SHORTER_PROMPT_CAUSE =
-  "the conversation was shortened (compaction or truncation)";
+  "the conversation was shortened (a compaction, or the oldest messages left out to fit)";
 
 /**
  * A request whose cache could not be read because of something the user or the

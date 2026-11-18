@@ -9,6 +9,7 @@ import OpenAI from "./OpenAI.js";
 import { resolvePromptCacheTtl } from "./anthropicCache.js";
 import { anthropicStyleCacheTtl } from "./bedrockHelpers.js";
 import { applyCacheControlToOpenAIBody } from "./openaiCacheControl.js";
+import { withReasoningEffort } from "../reasoningEffort.js";
 
 class OpenRouter extends OpenAI {
   static providerName = "openrouter";
@@ -86,7 +87,11 @@ class OpenRouter extends OpenAI {
     body: ChatCompletionCreateParams,
     options?: CompletionOptions,
   ): ChatCompletionCreateParams {
-    body = super.modifyChatBody(body);
+    body = super.modifyChatBody(body, options);
+    // The toggle as OpenRouter's `reasoning` (the adapter moves the field);
+    // off is not sent, since Edit and Apply ask for it and a model that must
+    // reason refuses it
+    body = withReasoningEffort(body, options ?? {}, true);
 
     if (this.isGeminiModel(body.model)) {
       body = this.addGeminiThoughtSignatures(body);

@@ -1,8 +1,4 @@
-import path from "node:path";
-
 import { getGlobalDirPath } from "core/util/paths.js";
-
-import { readDotEnvFile, resolveApiBase } from "./childEnv.js";
 
 /**
  * The global folder, shared with the VS Code extension: ~/.continuous
@@ -14,9 +10,7 @@ import { readDotEnvFile, resolveApiBase } from "./childEnv.js";
  * (and the workspace .env files) when resolving secrets.
  */
 const continueHome = getGlobalDirPath();
-const globalFileEnv = readDotEnvFile(path.join(continueHome, ".env"));
 
 export const env = {
-  apiBase: resolveApiBase(process.env, globalFileEnv),
   continueHome,
 };

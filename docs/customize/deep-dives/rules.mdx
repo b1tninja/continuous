@@ -24,7 +24,7 @@ To form the system message, rules are joined with new lines, in the order they a
 
 Below is a quick example of setting up a new rule file:
 
-1. Create a folder called `.continue/rules` at the top level of your workspace
+1. Create a folder called `.continuous/rules` at the top level of your workspace (the older `.continue/rules` is still read)
 2. Add a file called `pirates-rule.md` to this folder.
 3. Write the following contents to `pirates-rule.md` and save.
 
@@ -125,7 +125,7 @@ rules:
 
 ### How to Set Up Project-Specific Rules
 
-You can create project-specific rules by adding a `.continue/rules` folder to the root of your project and adding new rule files.
+You can create project-specific rules by adding a `.continuous/rules` folder to the root of your project and adding new rule files.
 
 Rules files are loaded in lexicographical order, so you can prefix them with numbers to control the order in which they are applied. For example: `01-general.md`, `02-frontend.md`, `03-backend.md`.
 
@@ -161,6 +161,6 @@ globs: ["**/*.ts", "**/*.tsx"]
 
 Continuous includes a simple default system message for [Agent mode](../../ide-extensions/agent/quick-start.mdx) and [Chat](../../ide-extensions/chat/quick-start.mdx) requests, to help the model provide reliable codeblock formats in its output.
 
-This can be viewed in the rules section of the toolbar (see above), or in the source code [here](https://github.com/b1tninja/continuous/blob/main/core/llm/constructMessages.ts#L4).
+This can be viewed in the rules section of the toolbar (see above), or in the source code [here](https://github.com/b1tninja/continuous/blob/main/core/llm/defaultSystemMessages.ts).
 
 Advanced users can override this system message for a specific model if needed by using `chatOptions.baseSystemMessage`. See the [`config.yaml` reference](../../reference.mdx#models).

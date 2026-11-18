@@ -35,22 +35,54 @@ Plan mode includes these read-only built-in tools:
 - **Glob search** (`glob_search`): Search for files matching a pattern
 - **Grep search** (`grep_search`): Search file contents using regex patterns
 - **Fetch URL content** (`fetch_url_content`): Retrieve content from web URLs
-- **Search web** (`search_web`): Perform web searches for additional context
+- **Search web** (`search_web`): Perform web searches for additional context. Offered only when you have set up your own search endpoint (see [Web search](/customize/web-search))
 - **View diff** (`view_diff`): View the current git diff
 - **View repo map** (`view_repo_map`): Get an overview of the repository structure
 - **View subdirectory** (`view_subdirectory`): Get a detailed view of a specific directory
 - **Codebase tool** (`codebase_tool`): Advanced codebase analysis capabilities
 
+### Terminal commands
+
+Plan mode has no terminal. The IDE and the CLI both leave the terminal tool (`run_terminal_command` in the IDE, `Bash` in the CLI) out of the list the model is offered, and a call to it anyway is refused with an error. Plan mode follows the role-by-tool table in `core/tools/roleTools.ts`, which allows reading, searching, fetching, delegation and the session tools, and nothing that runs or writes.
+
+This is the same choice Gemini CLI makes. Claude Code's plan mode differs: it can run shell commands once you approve them.
+
+If you want the CLI to offer `Bash` in Plan mode again, set `plan.allowTerminal` in your own `permissions.yaml`:
+
+```yaml title="~/.continue/permissions.yaml"
+plan:
+  allowTerminal: true
+```
+
+The default is `false`. With it set, `Bash` still goes through the normal permission engine, so each command is checked and asks as it would anywhere else; the setting only puts the tool back in the list. It applies to the CLI only, and a workspace file cannot set it.
+
 ### MCP Tools Support
 
-In addition to built-in read-only tools, Plan mode also supports all MCP (Model Context Protocol) tools. This allows integration with external services that provide additional context or analysis capabilities without modifying your local environment.
+Plan mode offers an MCP tool only when you, not the server, have said it only reads. A server's own read-only hint is a claim, and it opens nothing by itself. In your own `permissions.yaml`, either trust a server's hints or list the tools:
+
+```yaml title="~/.continue/permissions.yaml"
+mcpServers:
+  docs: trusted # believe this server's readOnlyHint
+plan:
+  mcpTools: # or name the tools, whatever the server claims
+    - search/query
+    - wiki/*
+```
 
 <Info>
-  While Plan mode restricts built-in tools to read-only operations, MCP tools
-  are not filtered by Continuous. Some MCP tools may have write capabilities that
-  could modify your system or external services. Always verify what actions your
-  MCP tools can perform before using them in Plan mode.
+  A server that came with the open folder is never trusted this way. Unlisted
+  MCP tools are left out of Plan mode and refused if called.
 </Info>
+
+### Who may say a tool only reads
+
+The read-only hint a server sends about its own tool is a claim, not a fact. Continuous believes it only for a server you vouch for:
+
+- one you marked `trusted` under `mcpServers` in your own `permissions.yaml` (above),
+- one written inline in your own `config.yaml`, or
+- one defined by a file in your global folder (`~/.continue/mcpServers`).
+
+For any other server, including one that came with the open folder, a `--mcp` flag or an agent file, the hint is ignored. Its tools ask before they run, and in a tainted session they count as a send. Name a server `trusted` once to believe its hints. In the terminal agent, two servers that offer a tool with the same name are shown as `<server>_<tool>`, and a call runs on exactly the server shown.
 
 ## The Planning Workflow
 

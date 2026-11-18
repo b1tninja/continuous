@@ -1,5 +1,5 @@
 // Screenshot harness entry. URL query:
-//   ?fixture=<name>&theme=dark|light&font=<px>
+//   ?fixture=<name>&theme=dark|light|hc&font=<px>
 // Renders the real <App/> against the real redux store with MockIdeMessenger,
 // then sets `window.__shotReady = true` once the fixture is applied and the
 // page has settled, so the driver knows when to take the picture.
@@ -10,12 +10,14 @@ import { setLocalStorage } from "@gui/util/localStorage";
 import { shouldForwardProp } from "@gui/styles/shouldForwardProp";
 import App from "@gui/App";
 import { BedrockConnectionTester } from "@gui/forms/BedrockConnectionTester";
+import { ProviderSetupFlow } from "@gui/components/ProviderSetup/ProviderSetupFlow";
 import "@gui/index.css";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { Provider } from "react-redux";
 import { StyleSheetManager } from "styled-components";
 import { FIXTURES, seedMessenger, sendConfig } from "./fixtures";
+import { LoopFrameDemo } from "./LoopFrameDemo";
 import { applyTheme, type ThemeName } from "./themes";
 
 declare global {
@@ -27,7 +29,9 @@ declare global {
 }
 
 const params = new URLSearchParams(window.location.search);
-const theme: ThemeName = params.get("theme") === "light" ? "light" : "dark";
+const themeParam = params.get("theme");
+const theme: ThemeName =
+  themeParam === "light" || themeParam === "hc" ? themeParam : "dark";
 const fixtureName = params.get("fixture") ?? "idle";
 
 // A webview has no `process`. core/util/scrubEnvironment.ts reads
@@ -62,7 +66,14 @@ async function main() {
         <StyleSheetManager shouldForwardProp={shouldForwardProp}>
           <IdeMessengerProvider messenger={messenger}>
             <Provider store={store}>
-              {fixtureName.startsWith("bedrock") ? (
+              {fixtureName.startsWith("catalogue") ? (
+                <div className="bg-background text-foreground p-2">
+                  <ProviderSetupFlow
+                    initialProvider="openrouter"
+                    onDone={() => {}}
+                  />
+                </div>
+              ) : fixtureName.startsWith("bedrock") ? (
                 <div className="bg-background text-foreground p-2">
                   <BedrockConnectionTester
                     connection={{ region: "eu-west-1" }}
@@ -71,6 +82,11 @@ async function main() {
                     onModelsLoaded={() => {}}
                   />
                 </div>
+              ) : fixtureName.startsWith("loop-frame-") ? (
+                <LoopFrameDemo
+                  state={fixtureName.slice("loop-frame-".length) as never}
+                  animate={params.get("animate") === "1"}
+                />
               ) : (
                 <App />
               )}

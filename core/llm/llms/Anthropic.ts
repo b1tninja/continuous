@@ -12,6 +12,10 @@ import {
 } from "@anthropic-ai/sdk/resources/messages.mjs";
 import { streamSse } from "@continuedev/fetch";
 import {
+  noteSamplingOmitted,
+  omitsSampling,
+} from "../../util/anthropicSamplingGuard.js";
+import {
   getAnthropicErrorMessage,
   getAnthropicHeaders,
   getAnthropicMediaTypeFromDataUrl,
@@ -33,6 +37,7 @@ import {
 import { renderChatMessage, stripImages } from "../../util/messageContent.js";
 import { extractBase64FromDataUrl } from "../../util/url.js";
 import { BaseLLM } from "../index.js";
+import { orphanToolResultText } from "../normalizeTurns.js";
 import { withResponseInfo } from "../utils/cacheStats.js";
 import {
   cacheControlFor,
@@ -45,6 +50,7 @@ import {
 import {
   AnthropicThinkingParams,
   getAnthropicThinkingParams,
+  thinkingDisplayDefaultsToOmitted,
 } from "./anthropicThinking.js";
 
 // The pinned @anthropic-ai/sdk types do not yet include adaptive thinking or
@@ -72,6 +78,12 @@ export function anthropicSamplingParams(
   return { temperature, top_p: topP };
 }
 
+/** `usage.service_tier` of a Messages response, when it is a string. */
+function serviceTierOf(usage: unknown): string | undefined {
+  const tier = (usage as { service_tier?: unknown } | undefined)?.service_tier;
+  return typeof tier === "string" && tier ? tier : undefined;
+}
+
 class Anthropic extends BaseLLM {
   static providerName = "anthropic";
   static defaultOptions: Partial<LLMOptions> = {
@@ -97,13 +109,19 @@ class Anthropic extends BaseLLM {
   // Public for use within VertexAI
   public convertArgs(options: CompletionOptions): AnthropicRequestParams {
     const thinking = getAnthropicThinkingParams(options);
-    const sampling = anthropicSamplingParams(
-      options.temperature,
-      options.topP,
-      thinking.thinking !== undefined,
-    );
+    const noSampling = omitsSampling(options.model, options.omitSampling);
+    if (noSampling) {
+      noteSamplingOmitted(options.model, options.omitSampling === true);
+    }
+    const sampling = noSampling
+      ? {}
+      : anthropicSamplingParams(
+          options.temperature,
+          options.topP,
+          thinking.thinking !== undefined,
+        );
     const finalOptions = {
-      top_k: options.topK,
+      top_k: noSampling ? undefined : options.topK,
       top_p: sampling.top_p,
       temperature: sampling.temperature,
       max_tokens: options.maxTokens ?? 2048,
@@ -185,6 +203,7 @@ class Anthropic extends BaseLLM {
 
   private getContentBlocksFromChatMessage(
     message: ChatMessage,
+    model?: string,
   ): ContentBlockParam[] {
     switch (message.role) {
       // One tool message = one tool_result block
@@ -210,6 +229,13 @@ class Anthropic extends BaseLLM {
         // Strip thinking that has no signature
         const signature = message.signature;
         if (!signature) {
+          return [];
+        }
+        // A model that hides its thinking by default is asked for a summary
+        // to show in the chat (getAnthropicThinkingParams). Before that its
+        // blocks arrived empty and were dropped just below, so they are still
+        // not sent back: the conversation sent stays the one it was.
+        if (model && thinkingDisplayDefaultsToOmitted(model)) {
           return [];
         }
         if (typeof message.content === "string") {
@@ -255,6 +281,7 @@ class Anthropic extends BaseLLM {
     msgs: ChatMessage[],
     cachePrompt: boolean,
     ttl?: PromptCacheTtl,
+    model?: string,
   ): MessageParam[] {
     const nonSystemMessages = msgs.filter((m) => m.role !== "system");
 
@@ -272,6 +299,9 @@ class Anthropic extends BaseLLM {
       }
     };
 
+    // A tool_result must answer a tool_use that was sent. One whose call was
+    // left out (no id or name) goes as text instead of a 400.
+    const sentToolUseIds = new Set<string>();
     for (const message of nonSystemMessages) {
       const newRole =
         message.role === "user" || message.role === "tool"
@@ -281,7 +311,22 @@ class Anthropic extends BaseLLM {
         flushCurrentMessage();
         currentRole = newRole;
       }
-      currentParts.push(...this.getContentBlocksFromChatMessage(message));
+      const blocks: ContentBlockParam[] =
+        message.role === "tool" && !sentToolUseIds.has(message.toolCallId)
+          ? [
+              {
+                type: "text",
+                text: orphanToolResultText(
+                  message.toolCallId,
+                  renderChatMessage(message),
+                ),
+              },
+            ]
+          : this.getContentBlocksFromChatMessage(message, model);
+      for (const block of blocks) {
+        if (block.type === "tool_use") sentToolUseIds.add(block.id);
+      }
+      currentParts.push(...blocks);
     }
     flushCurrentMessage();
 
@@ -383,6 +428,7 @@ class Anthropic extends BaseLLM {
             usage: withResponseInfo(usage, {
               stopReason: json.stop_reason,
               requestId: response.headers?.get?.("request-id") ?? json.id,
+              serviceTier: serviceTierOf(json.usage),
             }),
           }
         : {}),
@@ -427,6 +473,8 @@ class Anthropic extends BaseLLM {
     let lastToolUseName: string | undefined;
     let stopReason: string | undefined;
     let messageId: string | undefined;
+    // `usage.service_tier` of message_start: standard, priority or batch
+    let serviceTier: string | undefined;
     let sawMessageStop = false;
     // Set while a content block has started (or streamed) and not stopped.
     let blockOpen = false;
@@ -448,6 +496,7 @@ class Anthropic extends BaseLLM {
           const startEvent = rawEvent as RawMessageStartEvent;
           messageId = startEvent.message.id;
           usage = this.anthropicUsage(startEvent.message.usage);
+          serviceTier = serviceTierOf(startEvent.message.usage);
           break;
         case "message_delta":
           // Update usage information during streaming
@@ -550,6 +599,7 @@ class Anthropic extends BaseLLM {
         // The header is what Anthropic support asks for; the message ID is
         // the fallback when a proxy strips it.
         requestId: response.headers?.get?.("request-id") ?? messageId,
+        serviceTier,
       }),
     };
   }
@@ -579,7 +629,12 @@ class Anthropic extends BaseLLM {
     );
     const anyCaching = parts.tools || parts.system || parts.conversation;
 
-    const msgs = this.convertMessages(messages, parts.conversation, ttl);
+    const msgs = this.convertMessages(
+      messages,
+      parts.conversation,
+      ttl,
+      options.model,
+    );
     const headers = getAnthropicHeaders(this.apiKey, anyCaching, this.apiBase);
 
     const convertedArgs = this.convertArgs(options);

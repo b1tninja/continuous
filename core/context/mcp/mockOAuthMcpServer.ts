@@ -20,6 +20,12 @@ export interface MockOptions {
   customMetadataPath?: string;
   /** Body of the 401 response; real servers rarely say "401" or "Unauthorized". */
   unauthorizedBody?: string;
+  /** false: no registration endpoint (GitHub-style), only static clients work. */
+  dcr?: boolean;
+  /** A client registered out of band; the token endpoint then requires it. */
+  staticClient?: { id: string; secret?: string };
+  /** Advertise authorization_response_iss_parameter_supported (RFC 9207). */
+  issParameterSupported?: boolean;
   /** Serve over HTTPS with this key / certificate. */
   tls?: { key: string; cert: string };
 }
@@ -30,6 +36,13 @@ export class MockOAuthMcpServer {
   port = 0;
   readonly requests: string[] = [];
   readonly grants: string[] = [];
+  /** Bodies POSTed to /register. */
+  readonly registrations: Record<string, unknown>[] = [];
+  /** Token endpoint requests: form fields plus whether Basic auth was sent. */
+  readonly tokenRequests: {
+    form: Record<string, string>;
+    basicAuth?: string;
+  }[] = [];
   private codes = new Map<string, { challenge: string }>();
   validAccess = new Set<string>();
   validRefresh = new Set<string>();
@@ -126,21 +139,53 @@ export class MockOAuthMcpServer {
         issuer: this.base,
         authorization_endpoint: `${this.base}/authorize`,
         token_endpoint: `${this.base}/token`,
-        registration_endpoint: `${this.base}/register`,
+        ...(this.options.dcr === false
+          ? {}
+          : { registration_endpoint: `${this.base}/register` }),
+        ...(this.options.issParameterSupported
+          ? { authorization_response_iss_parameter_supported: true }
+          : {}),
         response_types_supported: ["code"],
         grant_types_supported: ["authorization_code", "refresh_token"],
         code_challenge_methods_supported: ["S256"],
-        token_endpoint_auth_methods_supported: ["none"],
+        token_endpoint_auth_methods_supported: this.options.staticClient?.secret
+          ? ["client_secret_basic"]
+          : ["none"],
       });
     }
     if (path === "/register" && req.method === "POST") {
+      if (this.options.dcr === false) {
+        res.writeHead(404);
+        return res.end();
+      }
       const body = JSON.parse(await this.readBody(req));
+      this.registrations.push(body);
       return this.json(res, 201, { ...body, client_id: "mock-client" });
     }
     if (path === "/token" && req.method === "POST") {
       const form = new URLSearchParams(await this.readBody(req));
       const grant = form.get("grant_type") ?? "";
       this.grants.push(grant);
+      const basic = req.headers.authorization?.startsWith("Basic ")
+        ? Buffer.from(req.headers.authorization.slice(6), "base64").toString()
+        : undefined;
+      this.tokenRequests.push({
+        form: Object.fromEntries(form.entries()),
+        basicAuth: basic,
+      });
+      const client = this.options.staticClient;
+      if (client) {
+        const sentId = basic ? basic.split(":")[0] : form.get("client_id");
+        const sentSecret = basic
+          ? basic.slice(basic.indexOf(":") + 1)
+          : form.get("client_secret");
+        if (
+          sentId !== client.id ||
+          (client.secret && sentSecret !== client.secret)
+        ) {
+          return this.json(res, 401, { error: "invalid_client" });
+        }
+      }
       if (grant === "authorization_code") {
         const entry = this.codes.get(form.get("code") ?? "");
         const verifier = form.get("code_verifier") ?? "";

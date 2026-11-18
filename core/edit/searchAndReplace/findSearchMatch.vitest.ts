@@ -12,13 +12,9 @@ describe("findSearchMatch", () => {
       });
     });
 
-    it("should return position 0 for whitespace-only string", () => {
+    it("should not treat a whitespace-only string as an insert-at-top", () => {
       const result = findSearchMatch("some file content", "   \n\t  ");
-      expect(result).toEqual({
-        startIndex: 0,
-        endIndex: 0,
-        strategyName: "emptySearch",
-      });
+      expect(result?.strategyName).not.toBe("emptySearch");
     });
 
     it("should handle empty file content with empty search", () => {
@@ -235,11 +231,7 @@ describe("findSearchMatch", () => {
       const searchContent = "   \t\n   ";
       const result = findSearchMatch(fileContent, searchContent);
 
-      expect(result).toEqual({
-        startIndex: 0,
-        endIndex: 0,
-        strategyName: "emptySearch",
-      });
+      expect(result?.strategyName).not.toBe("emptySearch");
     });
 
     it("should handle complex nested structures with whitespace differences", () => {

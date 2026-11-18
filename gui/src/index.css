@@ -198,3 +198,88 @@ body {
   font-weight: 600;
   letter-spacing: 0.02em;
 }
+
+/*
+ * Reduced motion. Two signals say it: VS Code's Reduce Motion setting (the
+ * vscode-reduce-motion class on body) and the system's (the media query).
+ * Every loop, spinner, pulse and slide stops; the glyph and the words stay, so
+ * nothing is lost but the movement. util/reducedMotion.ts reads the same two.
+ */
+body.vscode-reduce-motion *,
+body.vscode-reduce-motion *::before,
+body.vscode-reduce-motion *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
+ * Forced colours and VS Code's high contrast themes. The theme colours
+ * disappear there, so what carried a state by colour keeps a visible border
+ * and its words: chips are bordered in the system text colour, the input's
+ * gradient border becomes a real one, and focus gets an outline (the global
+ * `*:focus` rule above removes the default).
+ */
+@media (forced-colors: active) {
+  .gui-chip {
+    border: 1px solid ButtonText;
+  }
+  .gui-chip[data-tone="warning"],
+  .gui-chip[data-tone="error"] {
+    border-style: dashed;
+    border-width: 2px;
+  }
+  *:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 1px;
+  }
+}
+
+body.vscode-high-contrast .gui-chip,
+body.vscode-high-contrast-light .gui-chip {
+  border: 1px solid var(--vscode-contrastBorder, currentColor);
+}
+
+body.vscode-high-contrast *:focus-visible,
+body.vscode-high-contrast-light *:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder, currentColor);
+  outline-offset: 1px;
+}
+
+/*
+ * The plan tree's running dot pulses; under reduced motion (the system's or
+ * VS Code's) it is a static ring instead, so "running" does not depend on
+ * movement. The rule above already stops every animation.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  body:not(.vscode-reduce-motion) .plan-tree-dot {
+    animation: plan-tree-pulse 1.4s ease-in-out infinite;
+  }
+}
+@keyframes plan-tree-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-tree-dot {
+    box-shadow:
+      0 0 0 1px var(--vscode-editor-background, transparent),
+      0 0 0 3px var(--vscode-textLink-foreground, currentColor);
+  }
+}
+body.vscode-reduce-motion .plan-tree-dot {
+  box-shadow:
+    0 0 0 1px var(--vscode-editor-background, transparent),
+    0 0 0 3px var(--vscode-textLink-foreground, currentColor);
+}

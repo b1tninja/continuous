@@ -152,6 +152,8 @@ describe("singleFindAndReplaceImpl", () => {
       expect(mockResolveRelativePathInDir).toHaveBeenCalledWith(
         "test.txt",
         mockExtras.ideMessenger.ide,
+        undefined,
+        { allowOutside: false },
       );
       expect(mockExtras.ideMessenger.ide.readFile).toHaveBeenCalledWith(
         "/absolute/path/test.txt",

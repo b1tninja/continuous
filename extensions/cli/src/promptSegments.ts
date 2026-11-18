@@ -99,7 +99,7 @@ function systemSegments(
   } else {
     find(SYSTEM_MARKERS.agent, `turn.act@${profile}`, ["mode-switch"]);
   }
-  find(SYSTEM_MARKERS.commit, "commit-signature");
+  find(SYSTEM_MARKERS.commit, "attribution");
   find(SYSTEM_MARKERS.headless, "headless");
   find(SYSTEM_MARKERS.json, "json-format");
   find(SYSTEM_MARKERS.rules, "rules.user", ["instruction-file-edit"]);
@@ -123,7 +123,7 @@ function systemSegments(
       id: b.id,
       source: b.id.startsWith("rules")
         ? "rules"
-        : b.id.startsWith("turn") || b.id === "commit-signature"
+        : b.id.startsWith("turn") || b.id === "attribution"
           ? "mode"
           : "builtin",
       stability: b.id === "rules.user" ? "session" : "static",

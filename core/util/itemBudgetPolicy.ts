@@ -5,7 +5,8 @@ import {
   type BudgetKind,
   type ItemBudget,
 } from "./itemBudget";
-import { skipItem } from "./loopMode";
+import { questionsNeverAsk } from "../tools/permissions/policy";
+import { bankWait, skipItem } from "./loopMode";
 import type { StuckLevel } from "./stuckSignals";
 
 /**
@@ -172,7 +173,11 @@ export function extendItem(
           : i,
       ),
       ...(loop.status === "waiting"
-        ? { status: "running" as const, waitingSince: undefined }
+        ? {
+            status: "running" as const,
+            waitingSince: undefined,
+            waitedMs: bankWait(loop).waitedMs,
+          }
         : {}),
     },
   };
@@ -293,7 +298,15 @@ export function applyLimitPolicy(
   const state = loop.items.find((i) => i.id === item.id);
   const breach = state?.overBudget;
   if (!state || !breach) return undefined;
-  switch (limitPolicyOf(loop)) {
+  // Questions is IDGAF: nobody is asked, so a limit that would ask (Suggest)
+  // is decided by the review rule instead (extend, split or stop)
+  const policy =
+    limitPolicyOf(loop) === "suggest" &&
+    loop.policy &&
+    questionsNeverAsk(loop.policy.questions)
+      ? "review"
+      : limitPolicyOf(loop);
+  switch (policy) {
     case "force":
       return {
         kind: "stop",
@@ -437,7 +450,7 @@ export function answerLimitQuestion(
     ),
   };
   if (next.status === "waiting") {
-    next = { ...next, status: "running", waitingSince: undefined };
+    next = { ...bankWait(next, now), status: "running" };
   }
   return { ok: true, loop: next, answer, ...(budget ? { budget } : {}) };
 }

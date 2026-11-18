@@ -218,11 +218,19 @@ export async function runProbes(
       continue;
     }
     const before = opts.canaries.hits();
-    const child = executor.spawn(rendered.command, {
-      cwd: opts.cwd,
-      env: { ...(opts.env ?? process.env), ...opts.canaries.env },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    let child: ChildProcess;
+    try {
+      child = await executor.spawn(rendered.command, {
+        cwd: opts.cwd,
+        env: { ...(opts.env ?? process.env), ...opts.canaries.env },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      // As collect reports a process that emits "error" on start
+      const why = error instanceof Error ? error.message : String(error);
+      results.push(result(probe, "error", `could not start: ${why}`));
+      continue;
+    }
     const { out, code, reason } = await collect(
       child,
       opts.timeoutMs ?? 90_000,

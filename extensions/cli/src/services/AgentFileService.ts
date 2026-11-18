@@ -22,7 +22,6 @@ import { BaseService, ServiceWithDependencies } from "./BaseService.js";
 import { serviceContainer } from "./ServiceContainer.js";
 import {
   AgentFileServiceState,
-  ApiClientServiceState,
   AuthServiceState,
   SERVICE_NAMES,
 } from "./types.js";
@@ -49,7 +48,7 @@ export class AgentFileService
   }
 
   getDependencies(): string[] {
-    return [SERVICE_NAMES.AUTH, SERVICE_NAMES.API_CLIENT];
+    return [SERVICE_NAMES.AUTH];
   }
 
   async getAgentFile(agentPath: string): Promise<AgentFile> {
@@ -98,8 +97,7 @@ export class AgentFileService
    */
   async doInitialize(
     agentFilePath: string | undefined,
-    authServiceState: AuthServiceState,
-    apiClientState: ApiClientServiceState,
+    _authServiceState: AuthServiceState,
   ): Promise<AgentFileServiceState> {
     if (!agentFilePath) {
       return {
@@ -117,11 +115,6 @@ export class AgentFileService
       });
 
       if (agentFile.model) {
-        if (!apiClientState.apiClient) {
-          throw new Error(
-            "Cannot load agent model, failed to load api client service",
-          );
-        }
         const model = await loadModelFromHub(agentFile.model);
         this.setState({
           agentFileModel: model,

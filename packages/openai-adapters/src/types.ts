@@ -34,6 +34,11 @@ export const BaseConfig = z.object({
    * instead.
    */
   maxRetries: z.number().int().min(0).optional(),
+  /**
+   * Force `temperature`, `top_p` and `top_k` out of (`true`) or into (`false`)
+   * a Claude request. Unset follows the model: Claude 4.7 and later refuse them.
+   */
+  omitSampling: z.boolean().optional(),
 });
 
 export const BasePlusConfig = BaseConfig.extend({

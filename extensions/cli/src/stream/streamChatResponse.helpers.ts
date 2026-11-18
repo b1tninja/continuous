@@ -3,9 +3,18 @@
 
 import type { ToolStatus, Usage } from "core/index.js";
 import { totalInputTokens } from "core/llm/utils/cacheStats.js";
-import { calculateRequestCost } from "core/llm/utils/calculateRequestCost.js";
-import { flagToolText } from "core/tools/permissions/injection.js";
+import {
+  calculateRequestCost,
+  type CostBreakdown,
+} from "core/llm/utils/calculateRequestCost.js";
+import {
+  flagToolText,
+  stripsHiddenCharacters,
+} from "core/tools/permissions/injection.js";
+import { hostAllowRules } from "core/tools/permissions/webHostRules.js";
+import { effectiveWebLevel } from "core/tools/permissions/webPolicy.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
+import { getWebConfig } from "core/util/webConfig.js";
 import { ChatCompletionToolMessageParam } from "openai/resources/chat/completions.mjs";
 
 import { ToolPermissionServiceState } from "src/services/ToolPermissionService.js";
@@ -17,20 +26,32 @@ import {
   type ApprovalTrace,
 } from "../audit/cliAudit.js";
 import { startShadowReview } from "../audit/shadowHook.js";
+import { firePermissionRequest } from "../hooks/fireHook.js";
+import { notifyAttention } from "../hooks/lifecycleHooks.js";
 import { itemBudgetNoteNow } from "../loop/loopBudget.js";
 import { holdLoopCall, loopRepeatGuard } from "../loop/loopHolds.js";
+import { noteCliToolResult } from "../permissions/cliTaint.js";
 import {
   evaluateWithCoreRules,
+  cliWebContext,
   keepCoreVerdict,
   getReviewer,
   isAutoReviewEnabled,
+  liftAtIdgaf,
+  runsAtIdgaf,
   type CoreVerdict,
 } from "../permissions/coreRules.js";
+import {
+  headlessAskRefusal,
+  noteHeadlessRefusal,
+  noteHeadlessFetchTransition,
+  webFetchDefault,
+} from "../permissions/headlessPolicy.js";
+import { announceIdgaf } from "../permissions/idgafNotices.js";
 import { checkToolPermission } from "../permissions/permissionChecker.js";
 import { toolPermissionManager } from "../permissions/permissionManager.js";
 import {
   effectiveLevels,
-  getPolicyLevels,
   policyIsDefault,
   approvalExtras,
 } from "../permissions/policyLevels.js";
@@ -41,7 +62,7 @@ import {
   serviceContainer,
   services,
 } from "../services/index.js";
-import { trackSessionUsage } from "../session.js";
+import { getCurrentSession, trackSessionUsage } from "../session.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
 import {
   executeToolCall,
@@ -50,6 +71,8 @@ import {
   TOOL_ALIASES,
   validateToolCallArgsPresent,
 } from "../tools/index.js";
+import { cliRoleRefusal, cliToolRole } from "../tools/roleGate.js";
+import { cliWithheldRefusal } from "../tools/toolListHold.js";
 import { PreprocessedToolCall, ToolCall } from "../tools/types.js";
 import { recordCacheTally } from "../util/cacheTally.js";
 import { logger } from "../util/logger.js";
@@ -61,9 +84,20 @@ import {
   runPreToolUseHooks,
 } from "./toolHooks.js";
 
-/** A tool result with the injection notice in front when it reads like instructions. */
-export function flagToolResult(result: string): string {
-  return typeof result === "string" ? flagToolText(result).text : result;
+/**
+ * A tool result with the injection notice in front when it reads like
+ * instructions. An MCP result or a file read flagged for hidden characters
+ * also has them removed; other output is returned as it was.
+ */
+export function flagToolResult(
+  result: string,
+  call?: { name: string; tool?: { mcpServer?: string } },
+): string {
+  if (typeof result !== "string") return result;
+  const stripHidden =
+    !!call &&
+    (!!call.tool?.mcpServer || stripsHiddenCharacters(call.name, undefined));
+  return flagToolText(result, { stripHidden }).text;
 }
 
 export interface ToolResultWithStatus extends ChatCompletionToolMessageParam {
@@ -94,7 +128,12 @@ export function handlePermissionDenied(
     content: deniedMessage,
   });
 
-  callbacks?.onToolResult?.(deniedMessage, toolCall.name, "canceled");
+  callbacks?.onToolResult?.(
+    deniedMessage,
+    toolCall.name,
+    "canceled",
+    toolCall.id,
+  );
   logger.debug(`Tool call rejected (${reason}) - stopping stream`);
 }
 
@@ -114,10 +153,34 @@ export function requestUserPermission(
     return Promise.resolve(false);
   }
   const prompt = permissionPrompts.then(() =>
-    promptForPermission(toolCall, callbacks),
+    askWithHooks(toolCall, callbacks),
   );
   permissionPrompts = prompt.catch(() => undefined);
   return prompt;
+}
+
+/**
+ * PermissionRequest hooks run before the person is asked: a hook that denies
+ * answers for them. An `allow` from a hook does not skip the question, because
+ * the question here can be one a rule insisted on; only a deny is honoured.
+ * Notification hooks hear that an approval is waiting.
+ */
+async function askWithHooks(
+  toolCall: PreprocessedToolCall,
+  callbacks: StreamCallbacks,
+): Promise<boolean> {
+  const hooked = await firePermissionRequest(
+    toolCall.name,
+    toolCall.preprocessResult?.args ?? toolCall.arguments,
+    toolCall.tool?.mcpServer,
+  );
+  if (hooked.blocked) return false;
+  notifyAttention(
+    `Approval needed for ${toolCall.name}`,
+    "permission_prompt",
+    "Permission needed",
+  );
+  return promptForPermission(toolCall, callbacks);
 }
 
 async function promptForPermission(
@@ -146,6 +209,7 @@ async function promptForPermission(
         event.toolCall.arguments,
         event.requestId,
         event.toolCall.preview,
+        toolCall.id,
       );
     }
   };
@@ -165,10 +229,27 @@ async function promptForPermission(
 
 /**
  * The `toolPermissions` rules from config.yaml and the Auto reviewer (`--auto-review`),
- * run by core's engine. Any failure here leaves the CLI's own result in place
- * for rules, and for the reviewer it is an unusable reviewer (asks, or refuses
- * when headless), never an allow.
+ * run by core's engine. A failure here is never an allow: the call asks, and
+ * is refused when headless (see the catch in coreRulesVerdict).
  */
+/**
+ * At the start of the main session's turn: the IDGAF line, once per session
+ * (D-001, D-002), and the mark a later `--resume` reads (ID 5). Never throws.
+ */
+export function announceIdgafAtTurnStart(): void {
+  try {
+    let session;
+    try {
+      session = getCurrentSession();
+    } catch {
+      session = undefined;
+    }
+    announceIdgaf(effectiveLevels(currentPermissionMode()), session);
+  } catch (e) {
+    logger.debug("IDGAF line not shown", { error: e });
+  }
+}
+
 /** The permission mode, or the normal one when the service is not up yet. */
 function currentPermissionMode(): "normal" | "plan" | "auto" {
   try {
@@ -187,10 +268,72 @@ function mcpPinChange(server: string, tool: string) {
   }
 }
 
+/** The Web area's facts; a session without a chat history (a test, a worker) still gets web.enabled and grants. */
+function webContextSafely(hostAllow: string[]) {
+  let history;
+  try {
+    history = services.chatHistory?.getHistory?.();
+  } catch {
+    history = undefined;
+  }
+  return cliWebContext(Array.isArray(history) ? history : undefined, hostAllow);
+}
+
+/**
+ * WB45: a Fetch only the product's default list allowed follows the Web
+ * level at Cautious or stricter, so it asks; headless keeps the default
+ * until 2.38 and says so once (webFetchDefault). Every other result is
+ * returned as it is.
+ */
+function webFetchPermission(
+  toolCall: PreprocessedToolCall,
+  check: ReturnType<typeof liftAtIdgaf>,
+  mode: "normal" | "plan" | "auto" | undefined,
+  opts: { headless: boolean },
+): ReturnType<typeof liftAtIdgaf>["permission"] {
+  if (
+    check.permission !== "allow" ||
+    check.idgafLifted ||
+    !check.matchedPolicy?.productDefault ||
+    toolCall.name !== "Fetch"
+  ) {
+    return check.permission;
+  }
+  const fetchDefault = webFetchDefaultFor(mode, opts.headless);
+  if (fetchDefault === "follow") return "ask";
+  if (fetchDefault === "transition") noteHeadlessFetchTransition();
+  return check.permission;
+}
+
+/** The Web level in force decides a default-allowed Fetch, or not; never throws. */
+function webFetchDefaultFor(
+  mode: "normal" | "plan" | "auto" | undefined,
+  headless: boolean,
+): ReturnType<typeof webFetchDefault> {
+  try {
+    const level = effectiveWebLevel(effectiveLevels(mode ?? "normal"), {
+      enabled: getWebConfig().enabled,
+    }).level;
+    return webFetchDefault({ level, headless });
+  } catch {
+    return "keep";
+  }
+}
+
+/** `host:` allow rules among the CLI's lists (permissions.yaml `allow:`, `--allow host:<h>`). */
+function hostAllowOf(permissions: ToolPermissions): string[] {
+  return hostAllowRules(
+    permissions.policies
+      .filter((p) => p.permission === "allow" && !p.argumentMatches)
+      .map((p) => p.tool),
+  );
+}
+
 async function coreRulesVerdict(
   toolCall: PreprocessedToolCall,
   cliPermission: "allow" | "ask",
   isHeadless?: boolean,
+  hostAllow: string[] = [],
 ): Promise<CoreVerdict | undefined> {
   const autoReview = isAutoReviewEnabled();
   try {
@@ -212,6 +355,12 @@ async function coreRulesVerdict(
       args: toolCall.arguments,
       cliPermission,
       evaluateToolCallPolicy: toolCall.tool?.evaluateToolCallPolicy,
+      ...(toolCall.preprocessResult?.processedArgs
+        ? { processedArgs: toolCall.preprocessResult.processedArgs }
+        : {}),
+      ...(toolCall.tool?.ownAskReason
+        ? { ownAskReason: toolCall.tool.ownAskReason }
+        : {}),
       assistantPermissions: permissions,
       approval,
       autoReview,
@@ -221,14 +370,22 @@ async function coreRulesVerdict(
           : null,
       isHeadless: !!isHeadless,
       history: autoReview ? services.chatHistory.getHistory() : undefined,
+      // WB45: web.enabled, the session's web grants, the URLs the person wrote
+      web: webContextSafely(hostAllow),
       ...(mcpServer
         ? {
-            mcp: { serverName: mcpServer, toolName: toolCall.name },
+            mcp: {
+              serverName: mcpServer,
+              toolName: toolCall.tool?.mcpToolName ?? toolCall.name,
+            },
             mcpSchema: toolCall.tool?.parameters as unknown as Record<
               string,
               unknown
             >,
-            mcpDefinitionChange: mcpPinChange(mcpServer, toolCall.name),
+            mcpDefinitionChange: mcpPinChange(
+              mcpServer,
+              toolCall.tool?.mcpToolName ?? toolCall.name,
+            ),
           }
         : {}),
     });
@@ -239,25 +396,43 @@ async function coreRulesVerdict(
     });
   } catch (e) {
     logger.warn("Could not apply toolPermissions rules", { error: e });
-    // Fail toward asking, and toward refusing when nobody can be asked.
-    return autoReview ||
-      assistantHasRules() ||
-      !policyIsDefault(getPolicyLevels())
-      ? { decision: "ask", by: "system", reason: "Could not check your rules." }
-      : undefined;
+    // IDGAF has nothing for the engine to decide: the call runs
+    if (callRunsAtIdgaf(toolCall, currentPermissionMode())) {
+      return {
+        decision: "allow",
+        by: "system",
+        source: "idgaf",
+        reason: `${ENGINE_ERROR_REASON} The level is IDGAF, so it runs anyway.`,
+      };
+    }
+    // Fail closed, at the default levels too: the engine also holds the
+    // protected-path, floor and deny checks, so a call it could not look at
+    // is never left to a list default (which allows Bash and unlisted tools
+    // in a headless run). An ask goes to the person, is held by a loop, and
+    // is a refusal when nobody can be asked. The audit trail gets the verdict.
+    return { decision: "ask", by: "system", reason: ENGINE_ERROR_REASON };
   }
 }
 
-function assistantHasRules(): boolean {
+/** True when the call's area is IDGAF (and the mode is not Plan); never throws. */
+function callRunsAtIdgaf(
+  toolCall: PreprocessedToolCall,
+  mode: "normal" | "plan" | "auto" | undefined,
+): boolean {
   try {
-    const state = serviceContainer.getSync<ModelServiceState>(
-      SERVICE_NAMES.MODEL,
-    );
-    return !!state?.value?.assistant?.toolPermissions;
+    return runsAtIdgaf(effectiveLevels(mode ?? "normal"), mode, {
+      name: toolCall.name,
+      arguments: toolCall.arguments,
+      readonly: toolCall.tool?.readonly,
+    });
   } catch {
     return false;
   }
 }
+
+/** What the person, the model and the audit trail are told when the rule check itself failed. */
+export const ENGINE_ERROR_REASON =
+  "The permission rules could not be checked (internal error), so this call was not allowed automatically.";
 
 // Helper function to check if tool permission is needed. The decision and who
 // made it go to the audit trail; the outcome is written where the call ends.
@@ -299,11 +474,47 @@ async function decideToolApproval(
   denialMessage?: string;
 }> {
   const { callbacks, isHeadless, hookDecision } = options;
-  const permissionCheck = withReadOnlyMcp(
-    checkToolPermission(toolCall, permissions),
-    toolCall.tool,
+  // The role table first: a call the mode's role may not make never reaches a
+  // prompt, a rule or the reviewer, so nothing there can loosen it
+  const mode = services.toolPermissions?.getCurrentMode?.();
+  trace.role = cliToolRole(mode);
+  const roleRefusal = cliRoleRefusal(mode, toolCall.tool);
+  if (roleRefusal) {
+    trace.verdict = {
+      decision: "deny",
+      by: "system",
+      source: "role",
+      reason: roleRefusal,
+    };
+    return {
+      approved: false,
+      denialReason: "policy",
+      denialMessage: roleRefusal,
+    };
+  }
+  // Withheld, not removed (C88): turned off while the prompt cache was warm,
+  // so still offered until it goes cold, and refused here
+  const withheld = cliWithheldRefusal(toolCall.name, true);
+  if (withheld) {
+    trace.verdict = {
+      decision: "deny",
+      by: "system",
+      source: "withheld",
+      reason: withheld,
+    };
+    return { approved: false, denialReason: "policy", denialMessage: withheld };
+  }
+  // IDGAF: the CLI's own ask and exclude do not stop the call (runsAtIdgaf)
+  const idgaf = callRunsAtIdgaf(toolCall, mode);
+  const permissionCheck = liftAtIdgaf(
+    withReadOnlyMcp(checkToolPermission(toolCall, permissions), toolCall.tool),
+    idgaf,
   );
-  let permission = permissionCheck.permission;
+  if (permissionCheck.idgafLifted)
+    trace.idgafLifted = permissionCheck.idgafLifted;
+  let permission = webFetchPermission(toolCall, permissionCheck, mode, {
+    headless: !!isHeadless,
+  });
 
   // PreToolUse hooks adjust the CLI policy first; the CLI's own exclude
   // always stands.
@@ -318,7 +529,12 @@ async function decideToolApproval(
   // reviewer may tighten the result, and an allow rule may loosen an "ask",
   // but not one a hook asked for: the hook wants the user to confirm.
   if (permission !== "exclude") {
-    const verdict = await coreRulesVerdict(toolCall, permission, isHeadless);
+    const verdict = await coreRulesVerdict(
+      toolCall,
+      permission,
+      isHeadless,
+      hostAllowOf(permissions),
+    );
     trace.verdict = verdict;
     if (verdict?.decision === "allow" && hookDecision !== "ask") {
       return { approved: true };
@@ -341,10 +557,11 @@ async function decideToolApproval(
         return held;
       }
       if (isHeadless) {
+        noteHeadlessRefusal(toolCall.name);
         return {
           approved: false,
           denialReason: "policy",
-          denialMessage: `${verdict.reason ?? "This call needs approval."} Running headless, so it was refused.`,
+          denialMessage: headlessAskRefusal(toolCall.name, verdict.reason),
         };
       }
       trace.askedPerson = true;
@@ -364,8 +581,13 @@ async function decideToolApproval(
       return held;
     }
     if (isHeadless) {
-      // "ask" tools are excluded in headless so can only get here by policy evaluation
-      return { approved: false, denialReason: "policy" };
+      // Nobody to ask (CO2): refused, with how to allow it
+      noteHeadlessRefusal(toolCall.name);
+      return {
+        approved: false,
+        denialReason: "policy",
+        denialMessage: headlessAskRefusal(toolCall.name),
+      };
     }
     trace.askedPerson = true;
     const userApproved = await requestUserPermission(toolCall, callbacks);
@@ -594,6 +816,9 @@ export function recordStreamTelemetry(options: {
   // the session total is then marked an estimate. Against the AWS list the
   // fallback reported $4.00 for a $2.35 run (research-bedrock-families.md).
   let estimated = false;
+  // Left undefined when the request had no usage to price from: the
+  // session then prices it itself, as before
+  let costBreakdown: CostBreakdown | null | undefined;
   const provider = pricingProvider(model);
 
   if (fullUsage) {
@@ -621,13 +846,20 @@ export function recordStreamTelemetry(options: {
 
     // Price under the config's provider. A provider with no price table
     // (a proxy, say) falls back to the name guess, which prices Claude and
-    // GPT models by their vendors' lists; anything else gets the fallback.
+    // GPT models by their vendors' lists; then the community catalogue
+    // (models.dev, when a copy is held) under the config's provider, which
+    // never comes before a better source; anything else gets the fallback.
     const guessed = guessProviderFromName(model.model);
-    const costBreakdown =
-      calculateRequestCost(provider, model.model, usage) ??
+    costBreakdown =
+      calculateRequestCost(provider, model.model, usage, {
+        community: false,
+      }) ??
       (guessed === provider
         ? null
-        : calculateRequestCost(guessed, model.model, usage));
+        : calculateRequestCost(guessed, model.model, usage, {
+            community: false,
+          })) ??
+      calculateRequestCost(provider, model.model, usage);
 
     // Use fallback for unknown models
     if (costBreakdown) {
@@ -670,7 +902,10 @@ export function recordStreamTelemetry(options: {
   // The session totals count the input the provider processed (uncached plus
   // cache reads plus writes), which needs the provider to know what its own
   // count leaves out; the cache tally does the same per request.
-  trackSessionUsage(cost, usage, provider, model.model, estimated);
+  trackSessionUsage(cost, usage, provider, model.model, {
+    estimated,
+    pricedAs: costBreakdown,
+  });
   recordCacheTally(provider, model.model, usage);
 
   telemetryService.recordResponseTime(
@@ -720,7 +955,23 @@ export async function preprocessStreamedToolCalls(
         availableTools.find((t) => t.name === toolCall.name) ??
         TOOL_ALIASES.find((t) => t.name === toolCall.name);
       if (!tool) {
-        throw new Error(`Tool ${toolCall.name} not found`);
+        // A withheld tool whose server is gone says so (C88)
+        const gone = cliWithheldRefusal(toolCall.name, false);
+        if (gone) {
+          recordCliDecision(
+            toolCall,
+            {
+              verdict: {
+                decision: "deny",
+                by: "system",
+                source: "withheld",
+                reason: gone,
+              },
+            },
+            { approved: false, denialMessage: gone },
+          );
+        }
+        throw new Error(gone ?? `Tool ${toolCall.name} not found`);
       }
 
       validateToolCallArgsPresent(toolCall, tool);
@@ -742,7 +993,7 @@ export async function preprocessStreamedToolCalls(
       preprocessedCalls.push(preprocessedCall);
     } catch (error) {
       // Notify the UI about the tool start, even though it failed
-      callbacks?.onToolStart?.(toolCall.name, toolCall.arguments);
+      callbacks?.onToolStart?.(toolCall.name, toolCall.arguments, toolCall.id);
 
       const errorReason =
         error instanceof ContinueError
@@ -774,7 +1025,7 @@ export async function preprocessStreamedToolCalls(
       });
 
       // Notify about the error
-      callbacks?.onToolError?.(errorMessage, toolCall.name);
+      callbacks?.onToolError?.(errorMessage, toolCall.name, toolCall.id);
     }
   }
 
@@ -814,6 +1065,8 @@ export async function executeStreamedToolCalls(
   isHeadless?: boolean,
   /** The turn's signal, handed to each tool run so it can stop on cancel. */
   abortSignal?: AbortSignal,
+  /** The web content store's session for these calls (ToolRunContext). */
+  sessionId?: string,
 ): Promise<{
   hasRejection: boolean;
   chatHistoryEntries: ToolResultWithStatus[];
@@ -849,14 +1102,14 @@ export async function executeStreamedToolCalls(
     try {
       const repeated = loopRepeat.check(call);
       if (repeated) {
-        callbacks?.onToolStart?.(call.name, call.arguments);
+        callbacks?.onToolStart?.(call.name, call.arguments, call.id);
         entriesByIndex.set(index, {
           role: "tool",
           tool_call_id: call.id,
           content: repeated,
           status: "canceled",
         });
-        callbacks?.onToolResult?.(repeated, call.name, "canceled");
+        callbacks?.onToolResult?.(repeated, call.name, "canceled", call.id);
         try {
           services.chatHistory.addToolResult(call.id, repeated, "canceled");
         } catch {}
@@ -869,7 +1122,7 @@ export async function executeStreamedToolCalls(
       });
 
       // Notify tool start before permission check to display in UI fallbacks
-      callbacks?.onToolStart?.(call.name, call.arguments);
+      callbacks?.onToolStart?.(call.name, call.arguments, call.id);
 
       // PreToolUse hooks run before the permission check, so it sees the final
       // arguments. A blocked call goes back to the model with the hook's
@@ -888,6 +1141,7 @@ export async function executeStreamedToolCalls(
           String(blockedEntry.content),
           call.name,
           "canceled",
+          call.id,
         );
         try {
           services.chatHistory.addToolResult(
@@ -937,6 +1191,7 @@ export async function executeStreamedToolCalls(
           String(deniedEntry.content),
           call.name,
           "canceled",
+          call.id,
         );
         // Immediate service update for UI feedback
         try {
@@ -973,13 +1228,15 @@ export async function executeStreamedToolCalls(
               parallelToolCallCount,
               abortSignal,
               onToolPermissionRequest: callbacks?.onToolPermissionRequest,
+              ...(sessionId ? { sessionId } : {}),
             });
             // Output that reads like instructions to the agent gets the same
             // notice the IDE puts in front of it (plans/prompt-injection.md P5).
             const toolResult = await runPostToolUseHooks(
               approvedCall,
-              flagToolResult(rawResult),
+              flagToolResult(rawResult, approvedCall),
             );
+            noteCliToolResult(approvedCall, approvedCall.tool?.mcpServer);
             recordCliOutcome(approvedCall, {
               ran: true,
               durMs: Date.now() - startedAt,
@@ -992,7 +1249,12 @@ export async function executeStreamedToolCalls(
               status: "done",
             };
             entriesByIndex.set(index, entry);
-            callbacks?.onToolResult?.(toolResult, approvedCall.name, "done");
+            callbacks?.onToolResult?.(
+              toolResult,
+              approvedCall.name,
+              "done",
+              approvedCall.id,
+            );
             // Immediate service update for UI feedback
             try {
               services.chatHistory.addToolResult(
@@ -1021,7 +1283,11 @@ export async function executeStreamedToolCalls(
               content: errorMessage,
               status: "errored",
             });
-            callbacks?.onToolError?.(errorMessage, approvedCall.name);
+            callbacks?.onToolError?.(
+              errorMessage,
+              approvedCall.name,
+              approvedCall.id,
+            );
             // Immediate service update for UI feedback
             try {
               services.chatHistory.addToolResult(
@@ -1047,7 +1313,7 @@ export async function executeStreamedToolCalls(
         content: errorMessage,
         status: "errored",
       });
-      callbacks?.onToolError?.(errorMessage, call.name);
+      callbacks?.onToolError?.(errorMessage, call.name, call.id);
       // Treat permission errors like execution errors but do not stop the batch
       try {
         services.chatHistory.addToolResult(

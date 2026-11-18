@@ -36,7 +36,7 @@ describe("validateFlags", () => {
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].code).toBe("INVALID_FORMAT_VALUE");
       expect(result.errors[0].message).toContain(
-        "--format currently only supports 'json'",
+        "--format supports 'json' and 'stream-json'",
       );
     });
   });
@@ -217,5 +217,23 @@ describe("handleValidationErrors", () => {
       expect(Array.isArray(errorArray)).toBe(true);
       expect(errorArray.every((e) => e.code && e.message)).toBe(true);
     }).not.toThrow();
+  });
+});
+
+describe("--no-session-persistence (V11)", () => {
+  test("passes with -p", () => {
+    expect(
+      validateFlags({ sessionPersistence: false, print: true }).isValid,
+    ).toBe(true);
+  });
+
+  test("fails without -p", () => {
+    const result = validateFlags({ sessionPersistence: false });
+    expect(result.isValid).toBe(false);
+    expect(result.errors[0].code).toBe("NO_SESSION_PERSISTENCE_REQUIRES_PRINT");
+  });
+
+  test("the default (persistence on) needs nothing", () => {
+    expect(validateFlags({ sessionPersistence: true }).isValid).toBe(true);
   });
 });

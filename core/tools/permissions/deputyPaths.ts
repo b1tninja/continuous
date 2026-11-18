@@ -25,7 +25,7 @@ import { hasWindowsShortName } from "./protectedPaths";
  * host here, so a Windows spelling is judged the same on a Linux CI machine
  * and a POSIX one on Windows. A hit makes the call ask. It never refuses and
  * never loosens: the caller applies it after the tool's own check, and only
- * YOLO or the person's own `builtin` switch reaches past it.
+ * IDGAF or the person's own `builtin` switch reaches past it.
  */
 export type PathFlavor = "win32" | "posix";
 

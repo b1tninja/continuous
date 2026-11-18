@@ -128,7 +128,9 @@ describe("E2E: Headless Mode with JSON Format", () => {
       expectError: true,
     });
 
-    expect(result.stderr).toContain("--format currently only supports 'json'");
+    expect(result.stderr).toContain(
+      "--format supports 'json' and 'stream-json'",
+    );
     expect(result.exitCode).toBe(1);
   }, 10000);
 });

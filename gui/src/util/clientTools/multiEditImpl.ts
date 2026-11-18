@@ -2,6 +2,7 @@ import { validateMultiEdit } from "core/edit/searchAndReplace/multiEditValidatio
 import { executeMultiFindAndReplace } from "core/edit/searchAndReplace/performReplace";
 import { validateSearchAndReplaceFilepath } from "core/edit/searchAndReplace/validateArgs";
 import { v4 as uuid } from "uuid";
+import { allowOutsideWorkspaceOf } from "../outsideEdits";
 import { applyForEditTool } from "../../redux/thunks/handleApplyStateUpdate";
 import { ClientToolImpl } from "./callClientTool";
 
@@ -16,6 +17,7 @@ export const multiEditImpl: ClientToolImpl = async (
   const fileUri = await validateSearchAndReplaceFilepath(
     args.filepath,
     extras.ideMessenger.ide,
+    { allowOutside: allowOutsideWorkspaceOf(extras.getState?.()) },
   );
 
   const editingFileContents = await extras.ideMessenger.ide.readFile(fileUri);

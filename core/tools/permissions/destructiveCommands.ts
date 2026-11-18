@@ -5,7 +5,7 @@ import { infraCommandHit } from "./infraCommands";
 
 /**
  * The built-in rule `ask-destructive-commands` (ROADMAP B14): a command that
- * throws away work or rewrites history asks, at every level below YOLO, with
+ * throws away work or rewrites history asks, at every level below IDGAF, with
  * no model call. It reads the candidate strings the other rules read, word by
  * word, and over-matches on purpose: a flag that could be what makes the
  * command destructive asks.

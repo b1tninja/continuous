@@ -141,3 +141,16 @@ describe("ModelSelect with a per-mode list", () => {
     expect(first).not.toBe("Alpha");
   });
 });
+
+describe("Configure... on a model", () => {
+  it("opens the model configuration dialog for that model, without selecting it", async () => {
+    const { user, store } = await setup(undefined, "Alpha");
+    await user.click(screen.getByTestId("model-select-button"));
+    await user.click(screen.getByRole("button", { name: "Configure Bravo" }));
+    expect(store.getState().ui.showDialog).toBe(true);
+    expect(store.getState().ui.dialogMessage?.props).toMatchObject({
+      title: "Bravo",
+    });
+    expect(selectedTitle(store)).toBe("Alpha");
+  });
+});

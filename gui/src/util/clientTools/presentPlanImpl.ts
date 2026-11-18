@@ -7,7 +7,14 @@ import {
   taskPlanForProposal,
   validatePlanArgs,
 } from "core/util/planFile";
+import {
+  policyLevelLabel,
+  questionsNeverAsk,
+} from "core/tools/permissions/policy";
+import { autoAnsweredLine } from "core/util/autoAnswer";
 import { joinPathsToUri } from "core/util/uri";
+import { selectPolicySettings } from "../../redux/selectors/selectAutoApproval";
+import { autoAnswerPlanFile } from "../planDecisions";
 import { setPlanFile, setTaskPlan } from "../../redux/slices/sessionSlice";
 import { startLoopIfRequested } from "../../redux/thunks/loop";
 import { ClientToolImpl } from "./callClientTool";
@@ -63,6 +70,12 @@ export const presentPlanImpl: ClientToolImpl = async (
     }),
   );
 
+  // Questions is IDGAF: the plan's open decisions are answered from what it
+  // offered, in the file, before the plan card or the loop sees them
+  const autoLines = parsed.decisions.length
+    ? await autoAnswerOpenDecisions(extras, fileUri)
+    : [];
+
   extras.dispatch(setTaskPlan(result.plan));
   extras.dispatch(setPlanFile(fileUri));
   // Loop: the person chose to build in a loop before the plan existed
@@ -81,10 +94,41 @@ export const presentPlanImpl: ClientToolImpl = async (
         description: relativePath,
         content: loopStarted
           ? `Plan saved to ${relativePath}. The loop started building it, one to-do per turn: stop here.`
-          : planProposedResult(relativePath, result.plan, parsed.decisions),
+          : planProposedResult(relativePath, result.plan, parsed.decisions) +
+            (autoLines.length ? `\n\n${autoLines.join("\n")}` : ""),
         uri: { type: "file", value: fileUri },
         hidden: false,
       },
     ],
   };
 };
+
+/**
+ * Where Questions is IDGAF, answers the plan file's open decisions for the
+ * person (core/util/autoAnswer.ts), tells the audit trail, and returns the
+ * compact lines. Nothing at any other level.
+ */
+export async function autoAnswerOpenDecisions(
+  extras: Parameters<ClientToolImpl>[2],
+  fileUri: string,
+): Promise<string[]> {
+  const level = selectPolicySettings(extras.getState()).levels.questions;
+  if (!questionsNeverAsk(level)) return [];
+  const source = `Questions: ${policyLevelLabel("questions", level)}`;
+  try {
+    const answers = await autoAnswerPlanFile(extras.ideMessenger.ide, fileUri);
+    answers.forEach(
+      (a, i) =>
+        void extras.ideMessenger.request("audit/autoAnswer", {
+          callId: `plan-decision-${Date.now()}-${i}`,
+          question: a.question,
+          answer: a.answer,
+          source,
+        }),
+    );
+    return answers.map((a) => autoAnsweredLine(a.question, a.answer));
+  } catch (e) {
+    console.warn("Could not answer the plan's decisions", e);
+    return [];
+  }
+}

@@ -4,14 +4,24 @@
 import path from "node:path";
 import { armOf, groupBy, usable } from "./report.mjs";
 import { slug, writeText } from "./paths.mjs";
-import { wilson } from "./stats.mjs";
+import { effectiveRate } from "./stats.mjs";
 
 const MIN_N = 8;
 
 function armStats(rs) {
   const scored = rs.filter((r) => r.score);
+  const e = effectiveRate(scored, (r) => r.score.valid);
+  // k and n are the effective counts (distinct prompts), rounded for the
+  // profile; the raw counts stay beside them
   return {
-    ...wilson(scored.filter((r) => r.score.valid).length, scored.length),
+    k: Math.round(e.k),
+    n: Math.floor(e.n + 1e-9),
+    rate: e.rate,
+    lo: e.lo,
+    hi: e.hi,
+    rawK: e.rawK,
+    rawN: e.rawN,
+    units: e.units,
   };
 }
 
@@ -52,10 +62,17 @@ export function buildProfile(
   const native = arms.filter((a) => a.mode === "native" && !a.variant);
   const text = arms.filter((a) => a.mode === "text" && !a.variant);
   const nativeAll = rs.filter((r) => r.mode === "native" && r.score);
-  const nativeRate = wilson(
-    nativeAll.filter((r) => r.score.valid).length,
-    nativeAll.length,
-  );
+  const nativeEff = effectiveRate(nativeAll, (r) => r.score.valid);
+  const nativeRate = {
+    k: Math.round(nativeEff.k),
+    n: Math.floor(nativeEff.n + 1e-9),
+    rate: nativeEff.rate,
+    lo: nativeEff.lo,
+    hi: nativeEff.hi,
+    rawK: nativeEff.rawK,
+    rawN: nativeEff.rawN,
+    units: nativeEff.units,
+  };
   const textReplies = rs.filter(
     (r) => r.outcome === "text-call" || r.outcome === "format-broken",
   );
@@ -72,11 +89,11 @@ export function buildProfile(
   const preset = product?.presets?.resolve?.(model);
   const date = now.toISOString().slice(0, 10);
   const ev = (a) =>
-    `local lab ${date}: ${a.k}/${a.n} valid, 95% CI ${Math.round(a.lo * 100)}-${Math.round(a.hi * 100)}%`;
+    `local lab ${date}: ${a.k}/${a.n} valid (effective n; raw ${a.rawK}/${a.rawN}), 95% CI ${Math.round(a.lo * 100)}-${Math.round(a.hi * 100)}%`;
   const row = {
     id: slug(model).toLowerCase(),
     match: [`^${model.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`],
-    nativeToolCalls: nativeClass(nativeRate, nativeAll.length),
+    nativeToolCalls: nativeClass(nativeRate, nativeRate.n),
     textDialect: leakDialects[0]?.[0] ?? preset?.textDialect ?? null,
     promptStyle: bestText
       ? { style: bestText.style, evidence: ev(bestText) }
@@ -86,7 +103,7 @@ export function buildProfile(
     readOn: date,
     unverified: [
       "measured on a local Ollama build and quantisation; the hosted model and its template may differ",
-      `fewer than ${minN} replies per arm decide nothing`,
+      `fewer than ${minN} distinct prompts per arm decide nothing (n is the effective n: passes of one prompt repeat at temperature 0)`,
     ],
   };
   let comparison = "not enough evidence to compare native and text";

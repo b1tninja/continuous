@@ -62,7 +62,14 @@ module.exports = {
         },
         description: {
           DEFAULT: varWithFallback("description"),
-          muted: varWithFallback("description-muted"),
+          // The theme's muted colour (VS Code's list.deemphasizedForeground) is
+          // often under WCAG 2.1 AA 4.5:1 on input and chip backgrounds (3.87:1
+          // for #8c8c8c on #313131). Pull it 40% toward the theme foreground:
+          // still the theme's hue, and over the 4.5:1 on the surfaces the app
+          // draws it on in the dark and light Modern themes. Pure CSS; a
+          // webview without color-mix drops the declaration and the text
+          // inherits the foreground, which is only stronger.
+          muted: `color-mix(in srgb, ${varWithFallback("description-muted")}, ${varWithFallback("foreground")} 40%)`,
         },
         input: {
           DEFAULT: varWithFallback("input-background"),

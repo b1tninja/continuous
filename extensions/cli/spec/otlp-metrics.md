@@ -15,20 +15,21 @@ The Continue CLI should emit metrics that provide insights into:
 
 ## Configuration
 
+Metrics are **off by default**. They are exported only when `CONTINUOUS_OTEL=1` is set and an exporter or endpoint is named with `OTEL_*`. The resource carries `service.name` `continuous-cli`, the host name, the OS type and the version, and the export goes only to the endpoint you name. Nothing is sent to a service of ours.
+
 ### Environment Variables
 
-| Environment Variable            | Description                                                     | Example Values                       |
-| ------------------------------- | --------------------------------------------------------------- | ------------------------------------ |
-| `CONTINUE_METRICS_ENABLED`      | Enables OTEL telemetry collection (preferred, takes precedence) | `0` to disable, `1` to enable        |
-| `CONTINUE_CLI_ENABLE_TELEMETRY` | Enables OTEL telemetry collection (legacy, lower precedence)    | `0` to disable, `1` to enable        |
-| `OTEL_METRICS_EXPORTER`         | Metrics exporter type(s) (comma-separated)                      | `console`, `otlp`, `prometheus`      |
-| `OTEL_LOGS_EXPORTER`            | Logs/events exporter type(s) (comma-separated)                  | `console`, `otlp`                    |
-| `OTEL_EXPORTER_OTLP_PROTOCOL`   | Protocol for OTLP exporter (all signals)                        | `grpc`, `http/json`, `http/protobuf` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`   | OTLP collector endpoint (all signals)                           | `http://localhost:4317`              |
-| `OTEL_EXPORTER_OTLP_HEADERS`    | Authentication headers for OTLP                                 | `Authorization=Bearer token`         |
-| `OTEL_METRIC_EXPORT_INTERVAL`   | Export interval in milliseconds (default: 60000)                | `5000`, `60000`                      |
-| `OTEL_LOGS_EXPORT_INTERVAL`     | Logs export interval in milliseconds (default: 5000)            | `1000`, `10000`                      |
-| `OTEL_LOG_USER_PROMPTS`         | Enable logging of user prompt content (default: disabled)       | `1` to enable                        |
+| Environment Variable          | Description                                                                              | Example Values                       |
+| ----------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------ |
+| `CONTINUOUS_OTEL`             | Opt in to OTEL metrics. Off unless this is `1`; `OTEL_*` variables alone never enable it | `1` to enable                        |
+| `OTEL_METRICS_EXPORTER`       | Metrics exporter type(s) (comma-separated)                                               | `console`, `otlp`, `prometheus`      |
+| `OTEL_LOGS_EXPORTER`          | Logs/events exporter type(s) (comma-separated)                                           | `console`, `otlp`                    |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | Protocol for OTLP exporter (all signals)                                                 | `grpc`, `http/json`, `http/protobuf` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP collector endpoint (all signals)                                                    | `http://localhost:4317`              |
+| `OTEL_EXPORTER_OTLP_HEADERS`  | Authentication headers for OTLP                                                          | `Authorization=Bearer token`         |
+| `OTEL_METRIC_EXPORT_INTERVAL` | Export interval in milliseconds (default: 60000)                                         | `5000`, `60000`                      |
+| `OTEL_LOGS_EXPORT_INTERVAL`   | Logs export interval in milliseconds (default: 5000)                                     | `1000`, `10000`                      |
+| `OTEL_LOG_USER_PROMPTS`       | Enable logging of user prompt content (default: disabled)                                | `1` to enable                        |
 
 ### Metrics Cardinality Control
 
@@ -311,7 +312,7 @@ The core metrics (`session_count`, `lines_of_code_count`, `token_usage`, `cost_u
 
 All metrics should include these resource attributes:
 
-- `service.name`: `continue-cli`
+- `service.name`: `continuous-cli`
 - `service.version`: CLI version
 - `deployment.environment`: `development` | `production`
 - `os.type`: Operating system

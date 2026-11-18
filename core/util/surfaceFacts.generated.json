@@ -504,6 +504,22 @@
       }
     },
     {
+      "id": "anthropic-messages-claude-4.7",
+      "provider": "anthropic",
+      "engine": "*",
+      "api": "messages",
+      "modelFamily": "claude-4.7-generation",
+      "facts": {
+        "samplingParams": {
+          "value": "refused",
+          "level": "declared",
+          "source": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+          "readOn": "2026-11-11",
+          "note": "API parameter deprecations table: earlier API versions return HTTP 400 for a non-default temperature, top_p or top_k on Claude 4.7 and later and Claude Mythos Preview; API version 2026-10-21 removes the three for every model. Family: Claude 4.7 up to 5.4 (Opus 4.7, 4.8, Opus 5, Sonnet 5, Haiku 5.5, Fable 5, Mythos 5 and the Mythos Preview); the 5.5 row carries the same fact."
+        }
+      }
+    },
+    {
       "id": "anthropic-messages-claude-5.5",
       "provider": "anthropic",
       "engine": "*",
@@ -535,6 +551,13 @@
           "source": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs",
           "readOn": "2026-11-11",
           "note": "the documented replacement when forced tool use is rejected (strict tools on auto is the other)"
+        },
+        "samplingParams": {
+          "value": "refused",
+          "level": "declared",
+          "source": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+          "readOn": "2026-11-11",
+          "note": "API parameter deprecations table: earlier API versions return HTTP 400 for a non-default temperature, top_p or top_k on Claude 4.7 and later and Claude Mythos Preview; API version 2026-10-21 removes the three for every model."
         }
       }
     },

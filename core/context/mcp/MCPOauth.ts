@@ -2,6 +2,7 @@ import {
   OAuthClientProvider,
   auth,
 } from "@modelcontextprotocol/sdk/client/auth.js";
+import { OAuthDiscoveryState } from "@modelcontextprotocol/sdk/client/auth.js";
 import {
   OAuthClientInformationFull,
   OAuthClientInformationSchema,
@@ -16,8 +17,22 @@ import { v4 as uuidv4 } from "uuid";
 import { McpOauthStore } from "./mcpOauthStore";
 import { getTlsErrorHint } from "@continuedev/fetch";
 import { probeResourceMetadataUrl } from "./mcpAuthProbe";
+import { checkAuthorizationIssuer } from "./mcpOauthIssuer";
+import {
+  DEFAULT_OAUTH_CALLBACK_PORT,
+  DEFAULT_OAUTH_REDIRECT_HOST,
+  OAUTH_REDIRECT_HOSTS,
+  OauthRedirectHost,
+  closeServers,
+  getOauthCallbackUrl,
+  listenOnLoopback,
+} from "./mcpOauthLoopback";
 
-export const DEFAULT_OAUTH_CALLBACK_PORT = 3000;
+export {
+  DEFAULT_OAUTH_CALLBACK_PORT,
+  DEFAULT_OAUTH_REDIRECT_HOST,
+  getOauthCallbackUrl,
+};
 
 /** How long a sign-in may stay open in the browser before we give up. */
 const SIGN_IN_TIMEOUT_MS = 5 * 60 * 1000;
@@ -27,6 +42,15 @@ type FetchLike = (url: string | URL, init?: any) => Promise<Response>;
 export interface McpOauthOptions {
   /** Port of the local redirect server (default 3000). */
   callbackPort?: number;
+  /**
+   * Pre-registered OAuth client. When set, dynamic client registration is
+   * skipped and this client is used for the authorization and token requests.
+   */
+  clientId?: string;
+  /** Secret of the pre-registered client; public clients leave it out. */
+  clientSecret?: string;
+  /** Host written into the redirect URI (default "localhost"). */
+  redirectHost?: OauthRedirectHost;
   /** Fetch used for discovery, registration and token requests. */
   fetchFn?: FetchLike;
   /**
@@ -45,6 +69,11 @@ interface MCPOauthContext {
   resourceMetadataUrl?: URL;
   fetchFn?: FetchLike;
   oauthScope?: string;
+  options: McpOauthOptions;
+  /** Issuer of the authorization server the request was sent to (RFC 9207). */
+  expectedIssuer?: string;
+  /** authorization_response_iss_parameter_supported from its metadata. */
+  issParameterSupported?: boolean;
   timeout?: ReturnType<typeof setTimeout>;
 }
 const authenticatingContexts = new Map<string, MCPOauthContext>();
@@ -52,11 +81,43 @@ const authenticatingContexts = new Map<string, MCPOauthContext>();
 // Map state parameters to server URLs for OAuth callback matching
 const stateToServerUrl = new Map<string, string>();
 
-// One local redirect server per port, so servers can use different ports
-const callbackServers = new Map<number, http.Server>();
+// Local redirect servers per port (one per loopback address), so servers can
+// use different ports
+const callbackServers = new Map<number, http.Server[]>();
 
-export function getOauthCallbackUrl(port = DEFAULT_OAUTH_CALLBACK_PORT) {
-  return `http://localhost:${port}`;
+/** Addresses the callback listener for `port` is bound to (empty if closed). */
+export function getCallbackListenAddresses(port: number): string[] {
+  return (callbackServers.get(port) ?? []).flatMap((server) => {
+    const address = server.address();
+    return address && typeof address === "object" ? [address.address] : [];
+  });
+}
+
+/**
+ * Decide whether a redirect may be handed to the code exchange: the `state`
+ * must be one this process issued, and `iss` (RFC 9207) must match.
+ */
+function verifyCallback(
+  state: string | undefined,
+  iss: string | undefined,
+): { ok: true } | { ok: false; reason: string; abortFlow: boolean } {
+  const serverUrl = state ? stateToServerUrl.get(state) : undefined;
+  const context = serverUrl ? authenticatingContexts.get(serverUrl) : undefined;
+  if (!context) {
+    return {
+      ok: false,
+      reason:
+        "The sign-in response did not match a sign-in this app started (unknown or missing `state`).",
+      // A stray request must not be able to cancel the sign-in that is waiting
+      abortFlow: false,
+    };
+  }
+  const check = checkAuthorizationIssuer({
+    iss,
+    expectedIssuer: context.expectedIssuer,
+    issParameterSupported: context.issParameterSupported === true,
+  });
+  return check.ok ? check : { ...check, abortFlow: true };
 }
 
 function html(message: string) {
@@ -109,6 +170,19 @@ const createServerForOAuth = (port: number) =>
       }
 
       const code = parsedUrl.query["code"] as string;
+      const iss = parsedUrl.query["iss"] as string | undefined;
+
+      const verdict = verifyCallback(state, iss);
+      if (!verdict.ok) {
+        res.writeHead(400, { "Content-Type": "text/html" });
+        res.end(html("Sign-in was rejected. You can close this page."));
+        if (verdict.abortFlow) {
+          res.once("finish", () => {
+            void handleMCPOauthFailure(verdict.reason, state, port);
+          });
+        }
+        return;
+      }
 
       res.writeHead(200, {
         "Content-Type": "text/html",
@@ -124,50 +198,38 @@ const createServerForOAuth = (port: number) =>
     }
   });
 
-async function startCallbackServer(port: number): Promise<void> {
-  let server = callbackServers.get(port);
-  if (!server) {
-    server = createServerForOAuth(port);
-    callbackServers.set(port, server);
-  }
-  if (server.listening) {
+async function startCallbackServer(
+  port: number,
+  host: OauthRedirectHost,
+): Promise<void> {
+  const existing = callbackServers.get(port);
+  if (existing?.every((server) => server.listening)) {
     return;
   }
-  const instance = server;
-  await new Promise<void>((resolve, reject) => {
-    const onError = (err: NodeJS.ErrnoException) => {
-      callbackServers.delete(port);
-      reject(
-        err.code === "EADDRINUSE"
-          ? new Error(
-              `The OAuth callback port ${port} is already in use. Close the program using it, or choose another port with \`oauth.callbackPort\` on this MCP server.`,
-            )
-          : err,
-      );
-    };
-    instance.once("error", onError);
-    instance.listen(port, () => {
-      instance.off("error", onError);
-      console.debug(
-        `Server started for MCP Oauth process at http://localhost:${port}/`,
-      );
-      resolve();
-    });
-  });
+  try {
+    const servers = await listenOnLoopback(port, host, () =>
+      createServerForOAuth(port),
+    );
+    callbackServers.set(port, servers);
+    console.debug(
+      `Server started for MCP Oauth process on loopback port ${port}`,
+    );
+  } catch (err) {
+    callbackServers.delete(port);
+    throw (err as NodeJS.ErrnoException).code === "EADDRINUSE"
+      ? new Error(
+          `The OAuth callback port ${port} is already in use. Close the program using it, or choose another port with \`oauth.callbackPort\` on this MCP server.`,
+        )
+      : err;
+  }
 }
 
 async function stopCallbackServer(port: number): Promise<void> {
-  const server = callbackServers.get(port);
-  if (!server) return;
+  const servers = callbackServers.get(port);
+  if (!servers) return;
   callbackServers.delete(port);
-  await new Promise<void>((resolve) => {
-    server.close(() => {
-      console.debug("Server for MCP Oauth process was closed");
-      resolve();
-    });
-    // Don't wait on idle keep-alive connections from the browser
-    (server as any).closeIdleConnections?.();
-  });
+  await closeServers(servers);
+  console.debug("Server for MCP Oauth process was closed");
 }
 
 export class MCPConnectionOauthProvider implements OAuthClientProvider {
@@ -175,6 +237,7 @@ export class MCPConnectionOauthProvider implements OAuthClientProvider {
   private _redirectUrl: string;
   private _redirectUrlInitialized: Promise<void>;
   private port: number;
+  private redirectHost: OauthRedirectHost;
 
   /**
    * @param interactive false for connect-time use: stored tokens are used and
@@ -192,8 +255,9 @@ export class MCPConnectionOauthProvider implements OAuthClientProvider {
       options.oauthScope,
     );
     this.port = options.callbackPort ?? DEFAULT_OAUTH_CALLBACK_PORT;
+    this.redirectHost = options.redirectHost ?? DEFAULT_OAUTH_REDIRECT_HOST;
     // Set default redirect URL immediately for synchronous access
-    this._redirectUrl = getOauthCallbackUrl(this.port);
+    this._redirectUrl = getOauthCallbackUrl(this.port, this.redirectHost);
     // Initialize actual redirect URL asynchronously
     this._redirectUrlInitialized = this._initializeRedirectUrl();
   }
@@ -202,7 +266,7 @@ export class MCPConnectionOauthProvider implements OAuthClientProvider {
     try {
       // If IDE supports getExternalUri (VS Code extension), use it for dynamic redirect URI
       if (this.ide.getExternalUri) {
-        const localUri = getOauthCallbackUrl(this.port);
+        const localUri = getOauthCallbackUrl(this.port, this.redirectHost);
         const externalUri = await this.ide.getExternalUri(localUri);
         this._redirectUrl = externalUri;
       }
@@ -218,13 +282,6 @@ export class MCPConnectionOauthProvider implements OAuthClientProvider {
     return this._redirectUrl;
   }
 
-  getRedirectUrlWithState(state: string): string {
-    // Add state parameter to redirect URL
-    const urlObj = new URL(this._redirectUrl);
-    urlObj.searchParams.set("state", state);
-    return urlObj.toString();
-  }
-
   async ensureRedirectUrl(): Promise<string> {
     // Wait for initialization to complete before returning
     await this._redirectUrlInitialized;
@@ -232,27 +289,58 @@ export class MCPConnectionOauthProvider implements OAuthClientProvider {
   }
 
   get clientMetadata() {
-    // Generate state parameter if needed
-    const state = authenticatingContexts.get(this.oauthServerUrl)?.state;
-    const redirectUri = state
-      ? this.getRedirectUrlWithState(state)
-      : this.redirectUrl;
-
+    // The redirect URI is registered exactly as it is sent in the authorization
+    // request: no query, so a server that matches it exactly accepts it. The
+    // per-flow `state` travels in the authorization request, see state().
     return {
-      redirect_uris: [redirectUri],
+      redirect_uris: [this.redirectUrl],
       token_endpoint_auth_method: "none",
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
+      // Not part of RFC 7591 (it comes from OpenID Connect Dynamic Client
+      // Registration); the MCP authorization spec asks desktop clients to send it
+      application_type: "native",
       client_name: "Continuous",
       client_uri: "https://github.com/b1tninja/continuous",
     };
   }
 
+  /** Per-flow CSRF token; the callback must echo it (see verifyCallback). */
+  state(): string {
+    // Outside a sign-in nothing will compare it; a fresh value is harmless
+    return authenticatingContexts.get(this.oauthServerUrl)?.state ?? uuidv4();
+  }
+
+  /**
+   * The SDK reports what it discovered before opening the browser. Record the
+   * issuer the request goes to, for the RFC 9207 `iss` check on the way back.
+   */
+  saveDiscoveryState(discovery: OAuthDiscoveryState) {
+    const context = authenticatingContexts.get(this.oauthServerUrl);
+    if (!context) return;
+    const metadata = discovery.authorizationServerMetadata;
+    context.expectedIssuer =
+      metadata?.issuer ?? String(discovery.authorizationServerUrl);
+    context.issParameterSupported =
+      (metadata as Record<string, unknown> | undefined)
+        ?.authorization_response_iss_parameter_supported === true;
+  }
+
   async saveClientInformation(clientInformation: OAuthClientInformationFull) {
+    // A configured client is never overwritten by (or mixed with) a registration
+    if (this.options.clientId) return;
     await this.store.update((c) => ({ ...c, clientInformation }));
   }
 
   async clientInformation() {
+    if (this.options.clientId) {
+      return {
+        client_id: this.options.clientId,
+        ...(this.options.clientSecret
+          ? { client_secret: this.options.clientSecret }
+          : {}),
+      };
+    }
     const { clientInformation } = await this.store.load();
     if (!clientInformation) {
       return undefined;
@@ -315,8 +403,11 @@ export class MCPConnectionOauthProvider implements OAuthClientProvider {
 
     // Only create and start local server if using localhost redirect
     // For web-based VS Code, the redirect will be handled by VS Code's built-in mechanism
-    if (!this.ide.getExternalUri || this._redirectUrl.includes("localhost")) {
-      await startCallbackServer(this.port);
+    if (
+      !this.ide.getExternalUri ||
+      OAUTH_REDIRECT_HOSTS.some((host) => this._redirectUrl.includes(host))
+    ) {
+      await startCallbackServer(this.port, this.redirectHost);
     }
     await this.ide.openUrl(authorizationUrl.toString());
   }
@@ -408,6 +499,7 @@ export async function performAuth(
     resourceMetadataUrl,
     fetchFn: options.fetchFn,
     oauthScope: options.oauthScope,
+    options,
   });
 
   // Map state to server URL for callback matching
@@ -543,6 +635,7 @@ async function handleMCPOauthCode(authorizationCode: string, state?: string) {
     }
 
     const authProvider = new MCPConnectionOauthProvider(serverUrl, ide, {
+      ...context.options,
       callbackPort: port,
       interactive: true,
       oauthScope: context.oauthScope,

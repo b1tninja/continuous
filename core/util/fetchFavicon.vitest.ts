@@ -10,6 +10,24 @@ import {
   fetchFavicon,
 } from "./fetchFavicon";
 
+// The favicon requests go through the shared fetch; the tests stand in for it
+// with the global mock they already use, and for DNS with a public answer.
+vi.mock("@continuedev/fetch", () => ({
+  fetchwithRequestOptions: (...args: unknown[]) =>
+    (globalThis as any).fetch(...args),
+}));
+vi.mock("./networkAddress", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./networkAddress")>()),
+  classifyHost: async () => ({ addresses: [], nonPublic: false }),
+}));
+
+function expectFetched(url: string) {
+  const urls = (global.fetch as any).mock.calls.map((c: unknown[]) =>
+    String(c[0]),
+  );
+  expect(urls).toContain(new URL(url).toString());
+}
+
 describe("findFaviconPath", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -26,6 +44,7 @@ describe("findFaviconPath", () => {
     `;
     const mockResponse = {
       ok: true,
+      status: 200,
       text: vi.fn().mockResolvedValue(mockHtml),
     };
 
@@ -35,7 +54,7 @@ describe("findFaviconPath", () => {
     const faviconPath = await findFaviconPath(url);
 
     expect(faviconPath).toBe("https://example.com/favicon.ico");
-    expect(global.fetch).toHaveBeenCalledWith("https://example.com");
+    expectFetched("https://example.com");
   });
 
   it("should return undefined when no favicon link is present", async () => {
@@ -47,6 +66,7 @@ describe("findFaviconPath", () => {
     `;
     const mockResponse = {
       ok: true,
+      status: 200,
       text: vi.fn().mockResolvedValue(mockHtml),
     };
 
@@ -56,7 +76,7 @@ describe("findFaviconPath", () => {
     const faviconPath = await findFaviconPath(url);
 
     expect(faviconPath).toBeUndefined();
-    expect(global.fetch).toHaveBeenCalledWith("https://example.com");
+    expectFetched("https://example.com");
   });
 
   it("should handle fetch errors gracefully and return undefined", async () => {
@@ -66,7 +86,7 @@ describe("findFaviconPath", () => {
     const faviconPath = await findFaviconPath(url);
 
     expect(faviconPath).toBeUndefined();
-    expect(global.fetch).toHaveBeenCalledWith("https://example.com");
+    expectFetched("https://example.com");
   });
 
   it("should handle non-OK responses and return undefined", async () => {
@@ -81,7 +101,7 @@ describe("findFaviconPath", () => {
     const faviconPath = await findFaviconPath(url);
 
     expect(faviconPath).toBeUndefined();
-    expect(global.fetch).toHaveBeenCalledWith("https://example.com");
+    expectFetched("https://example.com");
   });
 
   it("should handle relative favicon URLs", async () => {
@@ -95,6 +115,7 @@ describe("findFaviconPath", () => {
     `;
     const mockResponse = {
       ok: true,
+      status: 200,
       text: vi.fn().mockResolvedValue(mockHtml),
     };
 
@@ -104,7 +125,7 @@ describe("findFaviconPath", () => {
     const faviconPath = await findFaviconPath(url);
 
     expect(faviconPath).toBe("https://example.com/favicon.ico");
-    expect(global.fetch).toHaveBeenCalledWith("https://example.com");
+    expectFetched("https://example.com");
   });
 });
 
@@ -118,6 +139,7 @@ describe("getFaviconBase64", () => {
     const arrayBuffer = new TextEncoder().encode(iconData).buffer;
     const mockResponse = {
       ok: true,
+      status: 200,
       arrayBuffer: vi.fn().mockResolvedValue(arrayBuffer),
       headers: {
         get: vi.fn().mockReturnValue("image/png"),
@@ -137,7 +159,7 @@ describe("getFaviconBase64", () => {
     const expectedBase64 = Buffer.from(iconData).toString("base64");
 
     expect(base64DataUri).toBe(`data:image/png;base64,${expectedBase64}`);
-    expect(global.fetch).toHaveBeenCalledWith(faviconUrl);
+    expectFetched(faviconUrl);
   });
 
   it("should handle fetch errors gracefully and return undefined", async () => {
@@ -147,7 +169,7 @@ describe("getFaviconBase64", () => {
     const base64DataUri = await getFaviconBase64(faviconUrl);
 
     expect(base64DataUri).toBeUndefined();
-    expect(global.fetch).toHaveBeenCalledWith(faviconUrl);
+    expectFetched(faviconUrl);
   });
 
   it("should handle non-OK responses and return undefined", async () => {
@@ -162,14 +184,16 @@ describe("getFaviconBase64", () => {
     const base64DataUri = await getFaviconBase64(faviconUrl);
 
     expect(base64DataUri).toBeUndefined();
-    expect(global.fetch).toHaveBeenCalledWith(faviconUrl);
+    expectFetched(faviconUrl);
   });
 
-  it("should use default mime type if content-type header is missing", async () => {
-    const iconData = "icon data";
-    const arrayBuffer = new TextEncoder().encode(iconData).buffer;
+  it("should take the type from the bytes if content-type header is missing", async () => {
+    // An ICO header: reserved 0, type 1
+    const iconData = Buffer.from([0, 0, 1, 0, 1, 0, 16, 16]);
+    const arrayBuffer = new Uint8Array(iconData).buffer;
     const mockResponse = {
       ok: true,
+      status: 200,
       arrayBuffer: vi.fn().mockResolvedValue(arrayBuffer),
       headers: {
         get: vi.fn().mockReturnValue(null),
@@ -189,7 +213,7 @@ describe("getFaviconBase64", () => {
     const expectedBase64 = Buffer.from(iconData).toString("base64");
 
     expect(base64DataUri).toBe(`data:image/x-icon;base64,${expectedBase64}`);
-    expect(global.fetch).toHaveBeenCalledWith(faviconUrl);
+    expectFetched(faviconUrl);
   });
 });
 
@@ -212,6 +236,7 @@ describe("fetchFavicon", () => {
     `;
     const homepageResponse = {
       ok: true,
+      status: 200,
       text: vi.fn().mockResolvedValue(homepageHtml),
     };
 
@@ -220,6 +245,7 @@ describe("fetchFavicon", () => {
     const arrayBuffer = new TextEncoder().encode(iconData).buffer;
     const faviconResponse = {
       ok: true,
+      status: 200,
       arrayBuffer: vi.fn().mockResolvedValue(arrayBuffer),
       headers: {
         get: vi.fn().mockReturnValue("image/png"),
@@ -243,10 +269,8 @@ describe("fetchFavicon", () => {
 
     expect(result).toBe(`data:image/png;base64,${expectedBase64}`);
     expect(global.fetch).toHaveBeenCalledTimes(2);
-    expect(global.fetch).toHaveBeenCalledWith("https://example.com");
-    expect(global.fetch).toHaveBeenCalledWith(
-      "https://example.com/favicon.ico",
-    );
+    expectFetched("https://example.com");
+    expectFetched("https://example.com/favicon.ico");
   });
 
   it("should return undefined when favicon is not found", async () => {
@@ -261,6 +285,7 @@ describe("fetchFavicon", () => {
     `;
     const homepageResponse = {
       ok: true,
+      status: 200,
       text: vi.fn().mockResolvedValue(homepageHtml),
     };
 
@@ -273,6 +298,6 @@ describe("fetchFavicon", () => {
 
     expect(result).toBeUndefined();
     expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(global.fetch).toHaveBeenCalledWith("https://example.com");
+    expectFetched("https://example.com");
   });
 });

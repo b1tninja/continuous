@@ -3,7 +3,14 @@ import {
   loopWorkerAgentId,
   mainAgentId,
 } from "../../../agents/fromRuns";
+import { toolRoleOfMode } from "../../roleTools";
 import type { AuditAgent } from "./record";
+
+/** The tool table's role for a mode word, as the audit field. */
+const withToolRole = (mode?: string): { toolRole?: string } => {
+  const toolRole = toolRoleOfMode(mode);
+  return toolRole ? { toolRole } : {};
+};
 
 /**
  * Who is calling, for the audit record. The ids are the agent map's
@@ -19,6 +26,7 @@ export function mainAuditAgent(sessionId: string, mode?: string): AuditAgent {
     id: mainAgentId(sessionId),
     kind: "main",
     ...(mode ? { mode } : {}),
+    ...withToolRole(mode),
   };
 }
 
@@ -34,6 +42,7 @@ export function subagentAuditAgent(
     kind: "subagent",
     role,
     ...(mode ? { mode } : {}),
+    ...withToolRole(mode),
     parentId: mainAgentId(sessionId),
   };
 }
@@ -48,6 +57,7 @@ export function loopWorkerAuditAgent(
     kind: "loop-worker",
     role: `item ${itemId}`,
     mode,
+    ...withToolRole(mode),
     parentId: mainAgentId(sessionId),
   };
 }
@@ -68,6 +78,7 @@ export function backgroundAuditAgent(
     kind: "background",
     role,
     mode,
+    ...withToolRole(mode),
     parentId: mainAgentId(sessionId),
   };
 }

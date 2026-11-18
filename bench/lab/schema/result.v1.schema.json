@@ -18,11 +18,25 @@
     "scanStatus"
   ],
   "properties": {
-    "schemaVersion": { "const": 1 },
-    "runId": { "type": "string", "minLength": 1 },
-    "labSha": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
-    "productSha": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
-    "contractVersion": { "type": "integer", "minimum": 1 },
+    "schemaVersion": {
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "labSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,40}$"
+    },
+    "productSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,40}$"
+    },
+    "contractVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
     "arm": {
       "type": "object",
       "additionalProperties": false,
@@ -36,10 +50,21 @@
         "sampling"
       ],
       "properties": {
-        "model": { "type": "string", "minLength": 1 },
-        "declaredQuant": { "type": "string" },
-        "provider": { "type": "string", "minLength": 1 },
-        "engine": { "type": "string", "minLength": 1 },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "declaredQuant": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "engine": {
+          "type": "string",
+          "minLength": 1
+        },
         "apiSurface": {
           "enum": [
             "ollama-chat",
@@ -50,31 +75,95 @@
           ]
         },
         "clientPath": { "type": "string", "minLength": 1 },
+        "server": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "version": { "type": "string", "minLength": 1 },
+            "parser": { "type": "string", "minLength": 1 },
+            "parserSource": { "enum": ["reported", "declared"] },
+            "templateSha": { "type": "string", "pattern": "^[0-9a-f]{16}$" }
+          }
+        },
         "sampling": {
           "type": "object",
           "additionalProperties": false,
           "required": ["temperature"],
           "properties": {
-            "temperature": { "type": ["number", "string"] },
-            "topP": { "type": "number", "minimum": 0 },
-            "topK": { "type": "integer", "minimum": 0 },
-            "seed": { "type": "integer" },
-            "maxTokens": { "type": "integer", "minimum": 1 }
+            "temperature": {
+              "type": ["number", "string"],
+              "description": "A number when sent; the string \"inherited\" when the request carried no temperature and the engine (or the Modelfile) chose."
+            },
+            "topP": {
+              "type": "number",
+              "minimum": 0
+            },
+            "topK": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "seed": {
+              "type": "integer"
+            },
+            "maxTokens": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "minP": {
+              "type": "number",
+              "minimum": 0
+            },
+            "presencePenalty": {
+              "type": "number"
+            },
+            "repeatPenalty": {
+              "type": "number",
+              "minimum": 0
+            },
+            "inherited": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Wire names of the sampling knobs the lab did not send (temperature, top_p, top_k, min_p, presence_penalty, repeat_penalty)."
+            },
+            "serverDefaults": {
+              "type": "object",
+              "description": "What the engine reported it applies when nothing is sent: Ollama /api/show parameters, or llama-server /props default_generation_settings.params."
+            }
           }
         }
       }
     },
-    "request": { "$ref": "#/$defs/hashed" },
-    "reply": { "$ref": "#/$defs/hashed" },
+    "request": {
+      "$ref": "#/$defs/hashed"
+    },
+    "reply": {
+      "$ref": "#/$defs/hashed"
+    },
     "usage": {
       "type": "object",
       "additionalProperties": false,
       "required": [],
       "properties": {
-        "inputTokens": { "type": "integer", "minimum": 0 },
-        "outputTokens": { "type": "integer", "minimum": 0 },
-        "costUsd": { "type": "number", "minimum": 0 },
-        "wallMs": { "type": "number", "minimum": 0 }
+        "inputTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outputTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "costUsd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "wallMs": {
+          "type": "number",
+          "minimum": 0
+        }
       }
     },
     "classification": {
@@ -82,11 +171,17 @@
       "additionalProperties": false,
       "required": ["outcome", "dialect"],
       "properties": {
-        "outcome": { "enum": ["structured", "leak", "refused", "error"] },
-        "dialect": { "type": "string" }
+        "outcome": {
+          "enum": ["structured", "leak", "refused", "error"]
+        },
+        "dialect": {
+          "type": "string"
+        }
       }
     },
-    "scanStatus": { "enum": ["clean", "flagged", "unscanned"] }
+    "scanStatus": {
+      "enum": ["clean", "flagged", "unscanned"]
+    }
   },
   "$defs": {
     "hashed": {
@@ -94,8 +189,14 @@
       "additionalProperties": false,
       "required": ["sha256"],
       "properties": {
-        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-        "bytes": { "type": "integer", "minimum": 0 }
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     }
   }

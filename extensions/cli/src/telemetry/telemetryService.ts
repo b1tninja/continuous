@@ -72,14 +72,10 @@ class TelemetryService {
       process.env.OTEL_METRICS_EXPORTER
     );
 
-    let telemetryEnabled = true;
-    if (process.env.CONTINUE_METRICS_ENABLED === "0") {
-      telemetryEnabled = false;
-    } else if (process.env.CONTINUE_METRICS_ENABLED === "1") {
-      telemetryEnabled = true;
-    } else {
-      telemetryEnabled = process.env.CONTINUE_CLI_ENABLE_TELEMETRY !== "0";
-    }
+    // Off unless the user opts in with CONTINUOUS_OTEL=1 AND names an exporter
+    // or endpoint. OTEL_* variables alone (often set for other tools) never
+    // turn this on, and the legacy CONTINUE_* switches are no longer read.
+    const telemetryEnabled = process.env.CONTINUOUS_OTEL === "1";
 
     const enabled = telemetryEnabled && hasOtelConfig;
     const sessionId = uuidv4();
@@ -99,7 +95,7 @@ class TelemetryService {
     try {
       // Create resource
       const resource = resourceFromAttributes({
-        [SEMRESATTRS_SERVICE_NAME]: "continue-cli",
+        [SEMRESATTRS_SERVICE_NAME]: "continuous-cli",
         [SEMRESATTRS_SERVICE_VERSION]: getVersion(),
         [SEMRESATTRS_HOST_NAME]: os.hostname(),
         [SEMRESATTRS_DEPLOYMENT_ENVIRONMENT]:
@@ -162,7 +158,7 @@ class TelemetryService {
       });
 
       metrics.setGlobalMeterProvider(this.meterProvider);
-      this.meter = metrics.getMeter("continue-cli", getVersion());
+      this.meter = metrics.getMeter("continuous-cli", getVersion());
 
       this.initializeMetrics();
 

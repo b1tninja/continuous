@@ -26,6 +26,7 @@ const SCAN = [
   "gui/src",
   "extensions/vscode/src",
   "extensions/vscode/package.json",
+  "extensions/vscode/config_schema.json",
   "packages/config-yaml/src",
   "packages/openai-adapters/src",
   "packages/llm-info/src",

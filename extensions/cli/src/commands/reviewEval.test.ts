@@ -229,4 +229,48 @@ describe("continuous reviewer eval", () => {
     expect(all).toContain("Estimated cost:");
     expect(all).toContain("WARNING");
   });
+  it("--prompt v3 sends the tightened prompt for the candidate only", async () => {
+    const seen: string[] = [];
+    const { deps, out } = setup(async () => ({
+      model: "m",
+      client: {
+        chat: async (messages: any[]) => {
+          seen.push(String(messages[0].content));
+          return {
+            role: "assistant",
+            content: '{"decision":"ask","category":"uncertain","reason":"r"}',
+          };
+        },
+      } as any,
+    }));
+    const code = await reviewEvalCommand(
+      {
+        dataset: "ds.json",
+        prompt: "v3",
+        compare: "default",
+        run: true,
+        json: true,
+        concurrency: 1,
+      },
+      deps,
+    );
+    expect(code).toBeGreaterThanOrEqual(0);
+    expect(seen.some((p) => p.includes("Check the categories first"))).toBe(
+      true,
+    );
+    expect(seen.some((p) => p.includes("Two scores, then the outcome"))).toBe(
+      true,
+    );
+    expect(JSON.parse(out.join("\n")).candidate.label).toBe(
+      "built-in prompt v3",
+    );
+  });
+
+  it("--prompt takes default or v3", async () => {
+    const { deps, err } = setup();
+    expect(
+      await reviewEvalCommand({ dataset: "ds.json", prompt: "v4" }, deps),
+    ).toBe(1);
+    expect(err.join("\n")).toContain("--prompt takes default or v3");
+  });
 });

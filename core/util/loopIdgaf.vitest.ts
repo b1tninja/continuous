@@ -62,7 +62,7 @@ describe("IDGAF", () => {
       kind: "assumption",
     });
     expect(holdQuestionResult(held.question, held.duplicate)).toContain(
-      "Nobody will answer this",
+      "No one is available to answer",
     );
   });
 

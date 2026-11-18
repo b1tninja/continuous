@@ -405,3 +405,54 @@ describe("qwen-xml recovery setting", () => {
     ).toBe(false);
   });
 });
+
+describe("qwen-xml recovery: Python booleans from the Qwen3.5 template", () => {
+  const call = (value: string) =>
+    `<tool_call>\n<function=Bash>\n<parameter=command>\nls\n</parameter>\n<parameter=background>\n${value}\n</parameter>\n</function>\n</tool_call>`;
+
+  it("accepts True and False for a boolean-typed parameter", () => {
+    expect(
+      recoverQwenXmlFromText(call("True"), tools).calls[0]?.arguments,
+    ).toEqual({ command: "ls", background: true });
+    expect(
+      recoverQwenXmlFromText(call("False"), tools).calls[0]?.arguments,
+    ).toEqual({ command: "ls", background: false });
+  });
+
+  it("still accepts JSON true and false", () => {
+    expect(
+      recoverQwenXmlFromText(call("true"), tools).calls[0]?.arguments,
+    ).toEqual({ command: "ls", background: true });
+  });
+
+  it("refuses other spellings and None", () => {
+    for (const v of ["TRUE", "None", "yes", "1"]) {
+      const out = recoverQwenXmlFromText(call(v), tools);
+      expect(out.calls).toEqual([]);
+      expect(out.text).toBe(call(v));
+    }
+  });
+
+  it("never coerces a string-typed or untyped parameter", () => {
+    const text = `<tool_call>\n<function=Write>\n<parameter=filepath>\na.txt\n</parameter>\n<parameter=content>\nTrue\n</parameter>\n</function>\n</tool_call>`;
+    expect(recoverQwenXmlFromText(text, tools).calls[0]?.arguments).toEqual({
+      filepath: "a.txt",
+      content: "True",
+    });
+    const untyped: DialectTool[] = [
+      {
+        name: "Flag",
+        parameters: { type: "object", properties: { on: {} } },
+      },
+    ];
+    const t2 = `<tool_call>\n<function=Flag>\n<parameter=on>\nFalse\n</parameter>\n</function>\n</tool_call>`;
+    expect(recoverQwenXmlFromText(t2, untyped).calls[0]?.arguments).toEqual({
+      on: "False",
+    });
+  });
+
+  it("refuses True for an integer-typed parameter", () => {
+    const t = `<tool_call>\n<function=Bash>\n<parameter=command>\nls\n</parameter>\n<parameter=timeout>\nTrue\n</parameter>\n</function>\n</tool_call>`;
+    expect(recoverQwenXmlFromText(t, tools).calls).toEqual([]);
+  });
+});

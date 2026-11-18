@@ -3,15 +3,17 @@ import {
   type RecoveryStatRow,
 } from "@continuedev/openai-adapters";
 import chalk from "chalk";
-import { maskArgsForDisplay } from "core/tools/permissions/displayMask.js";
 import type { Express, Request, Response } from "express";
 
+import { currentRunStop, reportRunStop } from "../budget/runLimits.js";
 import {
   describePromptBlocked,
   runUserPromptSubmitHooks,
 } from "../hooks/promptHook.js";
+import { safeStderr } from "../init.js";
 import { runLoopCheck } from "../loop/loopChecks.js";
 import { loopWakeDelay, nextLoopTurn } from "../loop/loopDriver.js";
+import { stopLoopForRunLimit } from "../loop/loopRunLimit.js";
 import { prepareLoopTurn } from "../loop/loopSession.js";
 import { getSessionLoop, interruptRunningLoop } from "../loop/loopSession.js";
 import { startWave } from "../loop/loopWave.js";
@@ -23,15 +25,15 @@ import {
   MessageQueue,
   messageQueue,
 } from "../stream/messageQueue.js";
-import { reportFailureTool } from "../tools/reportFailure.js";
 import {
   cacheTallySnapshot,
   type CacheTallySnapshot,
   describeCacheTally,
 } from "../util/cacheTally.js";
-import { updateAgentMetadata } from "../util/exit.js";
+import { gracefulExit } from "../util/exit.js";
 import { formatError } from "../util/formatError.js";
 import { logger } from "../util/logger.js";
+import { maskForSupervisor } from "../util/maskForSupervisor.js";
 import {
   answerPendingQuestion,
   listPendingQuestions,
@@ -43,7 +45,6 @@ import {
 import { formatReplyTally, getTruncatedReplies } from "../util/replyTally.js";
 
 import {
-  checkAgentComplete,
   removePartialAssistantMessage,
   streamChatResponseWithInterruption,
   type ServerState,
@@ -94,7 +95,7 @@ export interface ServeMessageContext {
   llmApi: any;
   syncSessionHistory: () => void;
   /** Called when a run of turns has ended with nothing left in the queue. */
-  onIdle: () => Promise<void>;
+  onIdle?: () => Promise<void>;
   /** processMessages is sending turns; another call only asks it to look again */
   draining?: boolean;
   lookAgain?: boolean;
@@ -127,16 +128,19 @@ export interface RunTallySnapshot {
 export function getServeStateSnapshot(
   state: ServerState,
 ): StateSnapshot & QueueSnapshot & LoopSnapshot & RunTallySnapshot {
-  return {
-    // Masked: a supervisor reads this, and a pending approval carries the
-    // call's arguments (plans/ROADMAP.md X10, "no secrets on a supervisor surface").
-    ...maskArgsForDisplay(
-      getCompleteStateSnapshot(
-        state.session,
-        state.isProcessing,
-        messageQueue.getQueueLength(),
-        state.pendingPermission,
-      ),
+  // Masked as one value: a supervisor reads this, and a pending approval
+  // carries the call's arguments (plans/ROADMAP.md X10, "no secrets on a
+  // supervisor surface"). A queued message, a held question and the loop's
+  // questions, reports and check output are text a person or a tool wrote, so
+  // they go through the same two passes as the conversation: the display
+  // masker first, then the shared secret scanner over what is left. Masking
+  // the whole snapshot keeps a field added later inside it.
+  return maskForSupervisor({
+    ...getCompleteStateSnapshot(
+      state.session,
+      state.isProcessing,
+      messageQueue.getQueueLength(),
+      state.pendingPermission,
     ),
     ...getQueueSnapshot(),
     ...getLoopSnapshot(),
@@ -150,7 +154,7 @@ export function getServeStateSnapshot(
       state: pendingQuestionState(q),
     })),
     openQuestions: openPendingQuestions().length,
-  };
+  });
 }
 
 /**
@@ -317,16 +321,6 @@ async function reportTurnError(state: ServerState, e: unknown) {
       contextItems: [],
     });
   }
-
-  // Report failure to control plane (retries exhausted or non-retryable error)
-  try {
-    await reportFailureTool.run({
-      errorMessage: formatError(e),
-    });
-  } catch (reportError) {
-    logger.error(`Failed to report agent failure: ${formatError(reportError)}`);
-    // Don't block on reporting failure
-  }
 }
 
 async function runTurn(ctx: ServeMessageContext, prompt: string) {
@@ -359,20 +353,6 @@ async function runTurn(ctx: ServeMessageContext, prompt: string) {
 
     state.lastActivity = Date.now();
     logTurnTally();
-
-    // Update metadata after successful agent turn
-    try {
-      const history = services.chatHistory?.getHistory();
-      await updateAgentMetadata({
-        history,
-        isComplete: checkAgentComplete(history),
-      });
-    } catch (metadataErr) {
-      logger.debug(
-        "Failed to update metadata after turn (non-critical)",
-        metadataErr as any,
-      );
-    }
   } catch (e: any) {
     if (e.name === "AbortError") {
       logger.debug("Response interrupted");
@@ -434,6 +414,15 @@ async function drainMessages(ctx: ServeMessageContext) {
   const { state } = ctx;
   let processedMessage = false;
   while (state.serverRunning) {
+    // A run limit (--max-budget-usd, --max-turns, --max-duration) ends the
+    // server with its own exit code
+    const runStop = currentRunStop();
+    if (runStop) {
+      state.serverRunning = false;
+      stopLoopForRunLimit(`A run limit was reached: ${runStop.detail}`);
+      await gracefulExit(reportRunStop(runStop, safeStderr));
+      break;
+    }
     // Everything queued while the last turn ran goes as one message;
     // nothing goes while paused.
     const queuedMessage = mergeQueuedMessages(messageQueue.takeNextBatch());
@@ -499,6 +488,6 @@ async function drainMessages(ctx: ServeMessageContext) {
     state.serverRunning &&
     messageQueue.getQueueLength() === 0
   ) {
-    await ctx.onIdle();
+    await ctx.onIdle?.();
   }
 }

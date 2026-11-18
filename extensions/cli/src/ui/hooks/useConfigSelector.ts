@@ -1,4 +1,3 @@
-import { exec } from "child_process";
 import * as path from "path";
 
 import { env } from "../../env.js";
@@ -35,38 +34,12 @@ export function useConfigSelector({
     closeCurrentScreen();
 
     if (config.type === "create") {
-      // Open the web browser to create new assistant
-      const url = new URL("https://continue.dev/new");
-      url.searchParams.set("type", "assistant");
-
-      try {
-        let command: string;
-        if (process.platform === "darwin") {
-          command = `open "${url}"`;
-        } else if (process.platform === "win32") {
-          command = `start "${url}"`;
-        } else {
-          command = `xdg-open "${url}"`;
-        }
-
-        exec(command, (error) => {
-          if (error) {
-            console.error("Failed to open browser:", error);
-          }
-        });
-
-        onMessage({
-          role: "system",
-          content: `Opening ${url} in your browser to create a new assistant...`,
-          messageType: "system" as const,
-        });
-      } catch {
-        onMessage({
-          role: "system",
-          content: `Please visit ${url} to create a new assistant`,
-          messageType: "system" as const,
-        });
-      }
+      // Nothing is opened or fetched: say where the file goes.
+      onMessage({
+        role: "system",
+        content: `To add a configuration, create ${CONFIG_PATH} (or pass --config <path>).`,
+        messageType: "system" as const,
+      });
       return;
     }
 

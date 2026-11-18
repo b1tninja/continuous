@@ -184,6 +184,9 @@ if (isMain) {
 
   const env = { ...process.env };
   env.REVIEWER_PROBE_RUN = "1";
+  // The wrapper's checks (--yes before a billed API) are the consent the live
+  // test asks for; without this flag the test setup removes provider credentials.
+  env.RUN_LIVE_PROVIDER_TESTS = "1";
   env.REVIEWER_PROBE_PROVIDER = p.provider;
   env.REVIEWER_PROBE_MODEL = p.model;
   env.REVIEWER_PROBE_CREDENTIAL = process.env[p.keyName];

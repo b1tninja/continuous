@@ -153,6 +153,7 @@ export function ModeSelect() {
         <ListboxButton
           data-testid="mode-select-button"
           data-roving=""
+          aria-label={`${ENTRY_LABELS[mode]} mode`}
           className="min-h-6 gap-1 rounded-full border-none bg-lightgray/20 px-2 text-foreground transition-colors duration-200 hover:brightness-110"
         >
           <ModeIcon mode={mode} />

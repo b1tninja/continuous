@@ -1,4 +1,4 @@
-import type { AssistantConfig } from "@continuedev/sdk";
+import type { AssistantUnrolled as AssistantConfig } from "@continuedev/config-yaml";
 import { Box } from "ink";
 import React from "react";
 
@@ -8,6 +8,7 @@ import type {
 } from "../hooks/useChat.types.js";
 import { UserInput } from "../UserInput.js";
 
+import { loopFrameInfo } from "./loopFrame.js";
 import { LoopStrip, useLoopState } from "./LoopInbox.js";
 import { QuizPrompt } from "./QuizPrompt.js";
 import { TaskProgressStrip } from "./TaskProgressStrip.js";
@@ -98,6 +99,7 @@ export const ChatScreenContent: React.FC<ChatScreenContentProps> = ({
       isRemoteMode={isRemoteMode}
       onImageInClipboardChange={onImageInClipboardChange}
       onShowEditSelector={onShowEditSelector}
+      loopFrame={loop ? loopFrameInfo(loop) : undefined}
     />
   );
 
