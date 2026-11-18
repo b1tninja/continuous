@@ -245,6 +245,7 @@ async function evaluateBasePolicy(
     // call no rule, protected path or safety check has settled.
     details.source !== "allow-rule" &&
     details.source !== "permissive" &&
+    details.source !== "trusted-host" &&
     details.source !== "idgaf"
   ) {
     return { ...details, policy: "allowedWithPermission", toolCallState }; // Cannot make more lenient
@@ -532,6 +533,7 @@ export async function evaluateToolPolicies(
         source === "auto" ||
         source === "once" ||
         source === "permissive" ||
+        source === "trusted-host" ||
         source === "idgaf")
     ) {
       dispatch(

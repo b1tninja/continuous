@@ -13,6 +13,8 @@ export function decisionLabel(d: ToolCallDecision): string {
         return "Allowed by Auto";
       case "permissive":
         return "Allowed by Permissive";
+      case "trusted-host":
+        return "Allowed: trusted host";
       // "yolo": a decision saved by 2.14.x
       case "yolo":
       case "idgaf":

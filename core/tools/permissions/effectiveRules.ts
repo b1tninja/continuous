@@ -1,3 +1,8 @@
+import {
+  exemptedByOf,
+  listExemptions,
+  type BuiltinExemption,
+} from "./builtinExemptions";
 import { isKnownRuleName, canonicalRuleName } from "./names";
 import {
   areaOfTool,
@@ -90,6 +95,8 @@ export interface BuiltinProtection {
   /** Built-ins can be switched off (permissions.yaml), so they are locked as rules but not as switches. */
   switchable: true;
   areas: PolicyArea[];
+  /** Your own Always rules that exempt one exact command from this rule (B55) */
+  exemptedBy?: string[];
 }
 
 export interface AreaReport {
@@ -440,6 +447,7 @@ function areaReport(
   rules: EffectiveRule[],
   input: RuleSourcesInput,
   levels: PolicyLevels,
+  exemptions: BuiltinExemption[] = [],
 ): AreaReport {
   const level = levels[area];
   const builtins: BuiltinProtection[] = BUILTIN_RULES.filter((b) =>
@@ -451,6 +459,7 @@ function areaReport(
     on: input.builtin?.[b.id] !== false,
     switchable: true,
     areas: BUILTIN_AREAS[b.id],
+    ...exemptedByOf(b.id, exemptions),
   }));
   const report: AreaReport = {
     area,
@@ -492,8 +501,15 @@ export function listEffectiveRules(
   const rules = gather(input).map((p, i) =>
     toRule(p, i, levels, assistantAllow),
   );
+  const exemptions = listExemptions({
+    "user-config": input.user,
+    "permissions-yaml": { allow: input.cliFile?.allow },
+  });
   const areas = Object.fromEntries(
-    POLICY_AREAS.map((a) => [a, areaReport(a, rules, input, levels)]),
+    POLICY_AREAS.map((a) => [
+      a,
+      areaReport(a, rules, input, levels, exemptions),
+    ]),
   ) as Record<PolicyArea, AreaReport>;
   const unscoped = rules.filter((r) => !r.area).sort(sortRules);
   return {

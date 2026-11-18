@@ -99,6 +99,11 @@ export interface AskProtectionInput {
   largeChangeLines?: number;
   /** The folder a command runs in; lets `npm install <name>` read the nearest package.json */
   cwd?: string;
+  /**
+   * Built-in rules this exact call is exempt from, because the person's own
+   * Always rule names it word for word (builtinExemptions.ts, ROADMAP B55).
+   */
+  exempt?: ReadonlySet<BuiltinRuleId>;
 }
 
 const str = (v: unknown) => (typeof v === "string" ? v : undefined);
@@ -170,7 +175,8 @@ export function askProtectionHit(
   input: AskProtectionInput,
 ): ProtectedHit | undefined {
   const { toolName, parsedArgs, approval } = input;
-  const on = (id: BuiltinRuleId) => builtinRuleOn(approval as never, id);
+  const on = (id: BuiltinRuleId) =>
+    builtinRuleOn(approval as never, id) && !input.exempt?.has(id);
   const command =
     toolName === "run_terminal_command" ? str(parsedArgs.command) : undefined;
 

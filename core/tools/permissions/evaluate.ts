@@ -24,6 +24,12 @@ import {
 import type { ShellKind } from "../../util/shell";
 import { isPrivateFetchTarget } from "../../util/networkAddress";
 import { askProtectionHit } from "./askProtections";
+import {
+  annotateExemptions,
+  exemptionsFor,
+  trustedFetchAllow,
+} from "./evaluateExtras";
+import type { ExemptableRule } from "./builtinExemptions";
 import { deputyCallHit, type DeputyCallInput } from "./deputyCall";
 import { outsideTargetReason } from "./outsideEdits";
 import { builtinRuleOn } from "./policy";
@@ -128,6 +134,8 @@ export interface ToolPolicyResult {
   reason?: string;
   /** What kind of protected call asked (source "protected-path") */
   protection?: ProtectedKind;
+  /** Built-in rules the person's own exact Always rule exempted this call from (source "allow-rule") */
+  exempts?: ExemptableRule[];
   /** A command the parser vouched as only reading: why it is Context use */
   readOnly?: string;
   /** The rule that decided, as written in config.yaml. */
@@ -227,14 +235,20 @@ export function evaluateToolPolicyWithRules(
         input,
         lockPolicyFiles(
           input,
-          refuseProfileWrites(input, evaluateRules(input)),
+          refuseProfileWrites(
+            input,
+            trustedFetchAllow(input, evaluateRules(input)),
+          ),
         ),
       ),
     ),
   );
   return applyShellHints(
     input,
-    applySecretEgressRule(input, result, () => callLevel(input) === "idgaf"),
+    annotateExemptions(
+      input,
+      applySecretEgressRule(input, result, () => callLevel(input) === "idgaf"),
+    ),
   );
 }
 
@@ -545,6 +559,7 @@ function firstProtectedHit(
           trustedDomains: input.trustedDomains,
           largeChangeLines: input.largeChangeLines,
           cwd: input.cwd,
+          exempt: exemptionsFor(input),
         }),
     input.approval?.safetyChecks === false
       ? undefined

@@ -58,6 +58,7 @@ export type DecisionSource =
   | "shell-hint"
   | "permissive"
   | "idgaf"
+  | "trusted-host"
   | "manual"
   | "tool-setting"
   | "default";

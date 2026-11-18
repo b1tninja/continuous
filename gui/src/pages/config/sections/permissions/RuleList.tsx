@@ -193,6 +193,15 @@ export function BuiltinList({
             <div className="text-2xs text-description-muted">
               {b.description}
             </div>
+            {b.exemptedBy?.map((rule) => (
+              <div
+                key={rule}
+                className="text-2xs text-warning"
+                data-testid={`exempt-${b.id}`}
+              >
+                Exempted by your Always rule {rule}
+              </div>
+            ))}
           </li>
         ))}
       </ul>
