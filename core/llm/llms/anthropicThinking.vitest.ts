@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   budgetTokensToEffort,
   getAnthropicThinkingParams,
+  maxTokensAboveThinkingBudget,
   supportsAdaptiveThinking,
   thinkingDisplayDefaultsToOmitted,
   thinksByDefault,
@@ -137,5 +138,33 @@ describe("thinking display", () => {
     expect(
       getAnthropicThinkingParams({ model: "claude-opus-4-8" } as any),
     ).toEqual({});
+  });
+});
+
+describe("maxTokensAboveThinkingBudget", () => {
+  test("raises a cap that is not above the thinking budget", () => {
+    expect(
+      maxTokensAboveThinkingBudget(300, {
+        thinking: { type: "enabled", budget_tokens: 1024 },
+      }),
+    ).toBe(5120);
+    expect(
+      maxTokensAboveThinkingBudget(2048, {
+        thinking: { type: "enabled", budget_tokens: 2048 },
+      }),
+    ).toBe(6144);
+  });
+
+  test("leaves a cap that already has room, and adaptive thinking", () => {
+    expect(
+      maxTokensAboveThinkingBudget(8192, {
+        thinking: { type: "enabled", budget_tokens: 1024 },
+      }),
+    ).toBe(8192);
+    expect(
+      maxTokensAboveThinkingBudget(300, {
+        thinking: { type: "adaptive", display: "summarized" },
+      }),
+    ).toBe(300);
   });
 });

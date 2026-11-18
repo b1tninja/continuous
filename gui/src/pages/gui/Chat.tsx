@@ -99,6 +99,8 @@ import {
 import { EmptyChatBody } from "./EmptyChatBody";
 import { ResumingSessionBody } from "./ResumingSessionBody";
 import { ExploreDialogWatcher } from "./ExploreDialogWatcher";
+import { ChatDebugLog } from "./ChatDebugLog";
+import { ChatTranscript, useScrollBox } from "./ChatTranscript";
 import { JumpToLatest } from "./JumpToLatest";
 import { TranscriptMessage } from "./TranscriptMessage";
 import { useAutoScroll } from "./useAutoScroll";
@@ -166,8 +168,13 @@ export function Chat() {
   const [stepsOpen] = useState<(boolean | undefined)[]>([]);
   const mainTextInputRef = useRef<HTMLInputElement>(null);
   const stepsDivRef = useRef<HTMLDivElement>(null);
+  const scrollElement = useScrollBox(stepsDivRef);
   const tabsRef = useRef<HTMLDivElement>(null);
   const history = useAppSelector((state) => state.session.history);
+  const transcriptItems = useMemo(
+    () => history.filter((item) => item.message.role !== "system"),
+    [history],
+  );
   const showChatScrollbar = useAppSelector(
     (state) => state.config.config.ui?.showChatScrollbar,
   );
@@ -207,11 +214,11 @@ export function Chat() {
     history,
   );
 
-  const { widget, highlights } = useFindWidget(
-    stepsDivRef,
-    tabsRef,
-    isStreaming,
-  );
+  const {
+    widget,
+    highlights,
+    open: findOpen,
+  } = useFindWidget(stepsDivRef, tabsRef, isStreaming);
 
   const sendInput = useCallback(
     (
@@ -601,11 +608,16 @@ export function Chat() {
         className={`pt-[8px] ${showScrollbar ? "thin-scrollbar" : "no-scrollbar"} ${history.length > 0 ? "min-h-0 flex-1 overflow-y-scroll" : "shrink-0"}`}
       >
         {highlights}
-        {history
-          .filter((item) => item.message.role !== "system")
-          .map((item, index: number) => (
+        <ChatTranscript
+          scrollElement={scrollElement}
+          items={transcriptItems}
+          stickToEnd={!autoScrollPaused && !findOpen}
+          suspend={findOpen}
+          itemKey={(item, index) =>
+            item.message.id ?? `${item.message.role}-${index}`
+          }
+          renderItem={(item, index) => (
             <TranscriptMessage
-              key={item.message.id}
               role={item.message.role}
               minHeight={index === history.length - 1 ? "200px" : 0}
             >
@@ -619,7 +631,8 @@ export function Chat() {
               </ErrorBoundary>
               {index === history.length - 1 && <InlineErrorMessage />}
             </TranscriptMessage>
-          ))}
+          )}
+        />
         <ResumeResponse />
         {/* Inside the scroll area, so it does not push the input down */}
         <ToolDialectNotice />
@@ -666,24 +679,24 @@ export function Chat() {
             pointerEvents: isStreaming ? "none" : "auto",
           }}
         >
-          <div className="flex flex-row items-center justify-between pr-2 pb-1 pl-0.5">
-            <div className="hidden xs:inline">
-              {history.length === 0 &&
-                canReopenLastSession &&
-                !isInEdit &&
-                !isResumingSession && (
-                  <NewSessionButton
-                    onClick={async () => {
-                      await dispatch(loadLastSession());
-                    }}
-                    className="flex items-center gap-2"
-                  >
-                    <ArrowLeftIcon className="h-3 w-3" />
-                    <span className="text-xs">Last Session</span>
-                  </NewSessionButton>
-                )}
-            </div>
-          </div>
+          <ChatDebugLog
+            leading={
+              history.length === 0 &&
+              canReopenLastSession &&
+              !isInEdit &&
+              !isResumingSession ? (
+                <NewSessionButton
+                  onClick={async () => {
+                    await dispatch(loadLastSession());
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <ArrowLeftIcon className="h-3 w-3" />
+                  <span className="text-xs">Last Session</span>
+                </NewSessionButton>
+              ) : null
+            }
+          />
           <FatalErrorIndicator />
           {!hasDismissedExploreDialog && <ExploreDialogWatcher />}
           {isResumingSession && loadingSessionId ? (

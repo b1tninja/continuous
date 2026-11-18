@@ -3,6 +3,7 @@ import { DEFAULT_CONTEXT_LENGTH } from "core/llm/constants";
 import type { CompactionPlan } from "core/util/compactionPlan";
 import { renderChatMessage } from "core/util/messageContent";
 import { v4 as uuidv4 } from "uuid";
+import { noteContextWindow } from "../../util/chatDebugLog";
 import type { CompactionPrefix } from "../../util/compactionPrefix";
 import { selectSelectedChatModel } from "../slices/configSlice";
 import {
@@ -235,12 +236,14 @@ export function explainCompactionBlocked(
   result: "failed" | "none",
   need: ToolRoundCompactionNeed,
 ): void {
+  const detail = compactionBlockedDetail(result, need.model, need.plan);
+  noteContextWindow(detail);
   dispatch(dropTrailingEmptyAssistant());
   dispatch(setInactive());
   dispatch(
     setInlineErrorMessage({
       kind: "out-of-context",
-      detail: compactionBlockedDetail(result, need.model, need.plan),
+      detail,
     }),
   );
 }

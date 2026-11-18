@@ -50,6 +50,7 @@ import {
 import {
   AnthropicThinkingParams,
   getAnthropicThinkingParams,
+  maxTokensAboveThinkingBudget,
   thinkingDisplayDefaultsToOmitted,
 } from "./anthropicThinking.js";
 
@@ -124,7 +125,10 @@ class Anthropic extends BaseLLM {
       top_k: noSampling ? undefined : options.topK,
       top_p: sampling.top_p,
       temperature: sampling.temperature,
-      max_tokens: options.maxTokens ?? 2048,
+      max_tokens: maxTokensAboveThinkingBudget(
+        options.maxTokens ?? 2048,
+        thinking,
+      ),
       model: options.model === "claude-2" ? "claude-2.1" : options.model,
       stop_sequences: options.stop?.filter((x) => x.trim() !== ""),
       stream: options.stream ?? true,

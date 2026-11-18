@@ -3,7 +3,10 @@ import { pathToFileURL } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { reasoningEffortFromOptions } from "../reasoningEffort";
-import { getAnthropicThinkingParams } from "./anthropicThinking";
+import {
+  getAnthropicThinkingParams,
+  maxTokensAboveThinkingBudget,
+} from "./anthropicThinking";
 
 // Loaded at run time from a path held in a variable, not with a static import,
 // for the reason given in bedrockOneHourCache.vitest.ts.
@@ -25,13 +28,18 @@ let claudeThinkingFields: (
   reasoning: boolean | undefined,
   budgetTokens: number,
 ) => unknown;
+let adapterMaxTokens: (
+  maxTokens: number,
+  fields: { thinking?: unknown },
+) => number;
 let reasoningSwitch: (effort: string | undefined) => {
   reasoning: boolean | undefined;
   budgetTokens: number;
 };
 
 beforeAll(async () => {
-  ({ claudeThinkingFields } = await import(/* @vite-ignore */ ADAPTER_HELPERS));
+  ({ claudeThinkingFields, maxTokensAboveThinkingBudget: adapterMaxTokens } =
+    await import(/* @vite-ignore */ ADAPTER_HELPERS));
   ({ reasoningSwitch } = await import(/* @vite-ignore */ ADAPTER_SWITCH));
 });
 
@@ -95,4 +103,16 @@ describe("Claude thinking: core and the adapter agree", () => {
       });
     }
   }
+});
+
+describe("Claude output cap: core and the adapter agree", () => {
+  it.each([
+    [300, { thinking: { type: "enabled", budget_tokens: 1024 } }, 5120],
+    [2048, { thinking: { type: "enabled", budget_tokens: 2048 } }, 6144],
+    [8192, { thinking: { type: "enabled", budget_tokens: 1024 } }, 8192],
+    [300, { thinking: { type: "adaptive", display: "summarized" } }, 300],
+  ] as const)("max %s", (maxTokens, thinking, expected) => {
+    expect(maxTokensAboveThinkingBudget(maxTokens, thinking)).toBe(expected);
+    expect(adapterMaxTokens(maxTokens, thinking)).toBe(expected);
+  });
 });

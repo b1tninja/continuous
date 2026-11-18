@@ -95,3 +95,25 @@ export function getAnthropicThinkingParams(
     thinking: { type: "enabled", budget_tokens: budgetTokens },
   };
 }
+
+/**
+ * Tokens kept for the answer when a thinking budget would meet or pass
+ * `max_tokens`. Claude refuses that request. Same room as
+ * `ANSWER_TOKENS_ABOVE_THINKING` in
+ * packages/openai-adapters/src/apis/bedrockHelpers.ts.
+ */
+export const ANSWER_TOKENS_ABOVE_THINKING = 4096;
+
+/** A cap Claude will accept when `thinking.budget_tokens` is set. */
+export function maxTokensAboveThinkingBudget(
+  maxTokens: number,
+  fields: { thinking?: unknown },
+): number {
+  const block = fields.thinking as
+    { type?: string; budget_tokens?: number } | undefined;
+  if (block?.type !== "enabled" || typeof block.budget_tokens !== "number") {
+    return maxTokens;
+  }
+  if (maxTokens > block.budget_tokens) return maxTokens;
+  return block.budget_tokens + ANSWER_TOKENS_ABOVE_THINKING;
+}
