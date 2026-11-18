@@ -83,6 +83,23 @@ describe("continuous permissions list", () => {
     expect(text).toMatch(/does not matter/);
   });
 
+  it("lists the built-in rules with their switch, what they ask about and exemptions", () => {
+    const { text } = run("list");
+    expect(text).toContain("Built-in rules (switch: builtin.<id>");
+    expect(text).toContain("ask-destructive-commands [on]");
+    expect(text).toContain("ask-dependency-change [on]");
+    expect(text).toContain("Turning this off is a loosening");
+    expect(text).not.toContain("exempts ask-dependency-change:");
+    fs.appendFileSync(
+      path.join(dir, "config.yaml"),
+      "    - runTerminalCommand(npm install lodash)\n",
+    );
+    const after = run("list").text;
+    expect(after).toContain(
+      "exempts ask-dependency-change: runTerminalCommand(npm install lodash)",
+    );
+  });
+
   it("defaults to list, and filters by area", () => {
     const { text } = run(undefined, [], { area: "context" });
     expect(text).toContain("Context use: Permissive");

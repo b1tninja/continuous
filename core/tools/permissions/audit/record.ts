@@ -135,6 +135,8 @@ export interface DecisionEvent extends AuditEnvelope {
   by: AuditBy;
   /** The `DecisionSource` that decided, when rules did */
   source?: string;
+  /** Built-in rules an exact Always rule exempted this call from (B55) */
+  exempts?: string[];
   /** Source kinds of untrusted content in the session when the call was decided; absent when none or the rule is off */
   tainted?: string[];
   /** The rule as written in config.yaml */
@@ -416,6 +418,7 @@ export interface DecisionInput {
   policy: AuditPolicy;
   by: AuditBy;
   source?: string;
+  exempts?: string[];
   rule?: string;
   area?: string;
   level?: string;

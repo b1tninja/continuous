@@ -14,6 +14,8 @@ import {
 } from "../../util/web/fetchOutcome";
 import type { BrowserTail } from "../../util/web/outcomes";
 import { getStringArg } from "../parseArgs";
+import { hostTrusted } from "../permissions/askProtections";
+import { readUserTrustedDomains } from "../permissions/userTrustedDomains";
 
 const DEFAULT_FETCH_URL_CHAR_LIMIT = 20000;
 
@@ -22,6 +24,17 @@ export const fetchUrlContentImpl: ToolImpl = async (args, extras) => {
 
   // TODO(WB42): the repeat guard answers a repeated call from the session's
   // record (and refuses the third with `repeat`) before anything is fetched.
+
+  // A host the person trusts may be fetched without a review (B56), so it
+  // cannot hand the request to a host they do not trust.
+  const trusted = readUserTrustedDomains();
+  let startHost = "";
+  try {
+    startHost = new URL(url).hostname;
+  } catch {
+    // the fetch below reports a bad URL
+  }
+  const confined = trusted.length > 0 && hostTrusted(startHost, trusted);
 
   // Scheme, userinfo and secret checks, the byte ceiling, the deadline and
   // the content-type rules are in getUrlContextItems
@@ -32,6 +45,9 @@ export const fetchUrlContentImpl: ToolImpl = async (args, extras) => {
       guardRedirects: true,
       callId: extras.toolCallId,
       browser: browserTail(extras.config?.tools),
+      ...(confined
+        ? { allowRedirectHost: (h: string) => hostTrusted(h, trusted) }
+        : {}),
     });
   } catch (e) {
     // A typed outcome is a normal result, never a thrown error, so the model

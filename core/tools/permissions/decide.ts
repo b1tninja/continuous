@@ -57,6 +57,7 @@ export type DecisionSource =
   | "secret-egress"
   | "permissive"
   | "idgaf"
+  | "trusted-host"
   | "manual"
   | "tool-setting"
   | "default";

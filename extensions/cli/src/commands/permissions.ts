@@ -31,6 +31,7 @@ import { readUserEnvNames } from "core/tools/permissions/userEnvNames.js";
 import { env } from "../env.js";
 import { PERMISSIONS_YAML_PATH } from "../permissions/permissionsYamlLoader.js";
 
+import { printBuiltins } from "./permissionsBuiltins.js";
 import {
   addCommand,
   adoptCommand,
@@ -140,6 +141,7 @@ function listCommand(
       }
     } else {
       printRules(r.rules, io.out);
+      printBuiltins(r.builtins, io.out);
     }
     io.out("");
   }
