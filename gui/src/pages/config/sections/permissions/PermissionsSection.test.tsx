@@ -13,7 +13,11 @@ const report = listEffectiveRules({
   user: {
     deny: ["runTerminalCommand(terraform apply*)"],
     ask: ["runTerminalCommand(git push*)"],
-    allow: ["runTerminalCommand(npm test*)", "readFile(src/**)"],
+    allow: [
+      "runTerminalCommand(npm test*)",
+      "readFile(src/**)",
+      "runTerminalCommand(npm install lodash)",
+    ],
   },
   assistant: { allow: ["mcp__github__*"] },
   folder: [
@@ -121,6 +125,12 @@ describe("PermissionsSection", () => {
   it("shows the built-in protections and the fixed decision order", async () => {
     await setup();
     expect(screen.getByTestId("builtin-row-no-fetch-and-run")).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByTestId("tab-tools")));
+    expect(
+      screen.getByTestId("exempt-ask-dependency-change").textContent,
+    ).toContain(
+      "Exempted by your Always rule runTerminalCommand(npm install lodash)",
+    );
     expect(screen.getByTestId("decision-order").textContent).toContain(
       "does not matter",
     );

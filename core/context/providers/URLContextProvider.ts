@@ -98,6 +98,8 @@ export interface UrlFetchOptions {
    * plans/research/web-fetch-large-pages-and-policy.md). Default: none.
    */
   browser?: BrowserTail;
+  /** With guardRedirects: a redirect to a host this refuses is not followed. */
+  allowRedirectHost?: (host: string) => boolean;
 }
 
 /**
@@ -138,7 +140,12 @@ export async function getUrlContextItems(
     fetchFn,
     maxBytes,
     deadlineMs,
-    guard: { classify: classifyFetchTarget },
+    guard: {
+      classify: classifyFetchTarget,
+      ...(options.allowRedirectHost
+        ? { allowRedirectHost: options.allowRedirectHost }
+        : {}),
+    },
     callId: options.callId,
     accept: ({ headers }) => {
       const type = headers.get("content-type");

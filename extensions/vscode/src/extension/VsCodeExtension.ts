@@ -22,10 +22,15 @@ import {
   setupStatusBar,
   StatusBarStatus,
 } from "../autocomplete/statusBar";
-import { registerAllCommands } from "../commands";
+import {
+  focusGUI,
+  registerAllCommands,
+  waitForSidebarReady,
+} from "../commands";
 import { ContinueConsoleWebviewViewProvider } from "../ContinueConsoleWebviewViewProvider";
 import { ContinueGUIWebviewViewProvider } from "../ContinueGUIWebviewViewProvider";
 import { VerticalDiffManager } from "../diff/vertical/manager";
+import { registerChatDropZone } from "../dropZone/ChatDropZone";
 import { registerAllCodeLensProviders } from "../lang-server/codeLens";
 import { registerAllPromptFilesCompletionProviders } from "../lang-server/promptFileCompletions";
 import EditDecorationManager from "../quickEdit/EditDecorationManager";
@@ -445,6 +450,27 @@ export class VsCodeExtension {
       this.core,
       this.editDecorationManager,
     );
+
+    // "Drop files here": a tree view beside the chat, because VS Code 1.140+
+    // no longer delivers Explorer drags to webviews (microsoft/vscode#339036).
+    const sidebar = this.sidebar;
+    registerChatDropZone(context, async (chips) => {
+      focusGUI();
+      if (
+        !sidebar.isReady &&
+        !(await waitForSidebarReady(sidebar, 5000, 100))
+      ) {
+        void vscode.window.showWarningMessage(
+          "The Continuous chat is not ready yet. Try the drop again in a moment.",
+        );
+        return;
+      }
+      await sidebar.webviewProtocol.request("addToChat", { data: chips });
+      void sidebar.webviewProtocol.request(
+        "focusContinueInputWithoutClear",
+        undefined,
+      );
+    });
 
     // Disabled due to performance issues
     // registerDebugTracker(this.sidebar.webviewProtocol, this.ide);
