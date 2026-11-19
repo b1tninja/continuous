@@ -68,14 +68,17 @@ export function requestBudgetForModel(input: {
   contextLength?: number;
   messages: ChatMessage[];
   tools?: Tool[];
+  /**
+   * Tokens already counted for this prompt, for example the figure compile
+   * just returned. When set, the message text is not tokenized again.
+   */
+  promptTokens?: number;
 }): RequestBudget & { asked: number; promptTokens: number } {
   const asked = input.configured ?? DEFAULT_MAX_TOKENS;
   const info = findLlmInfo(input.model, input.provider);
-  const promptTokens = estimatePromptTokens(
-    input.model,
-    input.messages,
-    input.tools,
-  );
+  const promptTokens =
+    input.promptTokens ??
+    estimatePromptTokens(input.model, input.messages, input.tools);
   const budget = fitRequestMaxTokens({
     configured: asked,
     modelMax: info?.maxCompletionTokens,

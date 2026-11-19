@@ -78,6 +78,7 @@ import { dumpPromptSegments } from "../util/promptSegmentDump";
 import { mainAuditAgent } from "core/tools/permissions/audit/identity";
 import { interceptSystemToolCalls } from "core/tools/systemMessageTools/interceptSystemToolCalls";
 
+import { countingSafetyBuffer } from "core/llm/contextThresholds";
 import { localOutputLimit } from "core/llm/outputLimit";
 import { requestBudgetForModel } from "core/llm/requestBudget";
 import { allowOutsideWorkspaceOf } from "../../util/outsideEdits";
@@ -291,6 +292,19 @@ export const streamNormalInput = createAsyncThunk<
     const askedMaxTokens =
       completionOptions.maxTokens ??
       selectedChatModel.completionOptions?.maxTokens;
+    // Compile just counted this prompt. Tokenizing it again here walks the
+    // whole transcript on the webview thread, which a long session cannot
+    // afford once per request.
+    const compiledPromptTokens =
+      typeof outputTokensAvailable === "number" &&
+      selectedChatModel.contextLength > 0
+        ? Math.max(
+            0,
+            selectedChatModel.contextLength -
+              countingSafetyBuffer(selectedChatModel.contextLength) -
+              outputTokensAvailable,
+          )
+        : undefined;
     const budget = requestBudgetForModel({
       model: completionOptions.model ?? selectedChatModel.model,
       provider: selectedChatModel.underlyingProviderName,
@@ -298,6 +312,9 @@ export const streamNormalInput = createAsyncThunk<
       contextLength: selectedChatModel.contextLength,
       messages: compiledChatMessages,
       tools: completionOptions.tools,
+      // 0 when compile did not report a size: do not tokenize the transcript
+      // on this thread. Core still fits the cap it sends.
+      promptTokens: compiledPromptTokens ?? 0,
     });
     noteRequestSent({
       model: selectedChatModel.model,

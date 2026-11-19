@@ -123,6 +123,20 @@ describe("fitRequestMaxTokens", () => {
     expect(budget.ceiling).toBe(64_000);
     expect(budget.promptTokens).toBeGreaterThan(0);
   });
+
+  it("uses a prompt size it was given and does not recount the text", () => {
+    const budget = requestBudgetForModel({
+      model: "claude-haiku-4-5",
+      provider: "anthropic",
+      configured: 128_000,
+      contextLength: 100_000,
+      messages: [{ role: "user", content: "word ".repeat(90_000) }],
+      promptTokens: 1_000,
+    });
+    expect(budget.promptTokens).toBe(1_000);
+    expect(budget.asked).toBe(128_000);
+    expect(budget.maxTokens).toBe(64_000);
+  });
 });
 
 class CaptureLLM extends BaseLLM {
