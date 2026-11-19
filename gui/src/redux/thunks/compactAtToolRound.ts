@@ -3,7 +3,7 @@ import { DEFAULT_CONTEXT_LENGTH } from "core/llm/constants";
 import type { CompactionPlan } from "core/util/compactionPlan";
 import { renderChatMessage } from "core/util/messageContent";
 import { v4 as uuidv4 } from "uuid";
-import { noteContextWindow } from "../../util/chatDebugLog";
+import { noteAgentCut, noteContextWindow } from "../../util/chatDebugLog";
 import type { CompactionPrefix } from "../../util/compactionPrefix";
 import { selectSelectedChatModel } from "../slices/configSlice";
 import {
@@ -225,9 +225,9 @@ export function compactionBlockedDetail(
   const where =
     "Change the context length under Models → Configure → Context & cost.";
   if (result === "none") {
-    return `Compaction was not run because this is a cloud model and no summary is prepared. Compaction did not free enough room. ${window} ${where}`;
+    return `The agent stopped after a tool result so the prompt would not be re-read from the start. Compaction was not run because this is a cloud model and no summary is prepared. Compaction did not free enough room. ${window} ${where}`;
   }
-  return `Compaction failed and did not free enough room. The summary could not be built. ${window} ${where}`;
+  return `The agent stopped after a tool result so the prompt would not be re-read from the start. Compaction failed and did not free enough room. The summary could not be built. ${window} ${where}`;
 }
 
 /** Stop the turn and say why, instead of pruning and sending anyway. */

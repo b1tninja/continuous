@@ -615,30 +615,39 @@ function compileChatMessages({
   const contextLength = knownContextLength ?? DEFAULT_PRUNING_LENGTH;
   const limits = contextLimits(contextLength, maxTokens, contextClass);
   const countingSafetyBuffer = limits.safety;
-  // The configured reply limit, up to 10% of the window (contextThresholds.ts)
-  const reservedOutputTokens = limits.reserve;
+  // The preferred reserve is 10% of the window. A latest turn that does not
+  // fit beside it is still sent when it fits beside the minimum reply: the
+  // reserve shrinks, and the request's maxTokens shrinks with it
+  // (requestBudget.ts). Refusing here is what stopped the agent after one
+  // large tool result on a window that still had room.
+  const minimumReserve = Math.min(MIN_RESPONSE_TOKENS, Math.max(0, maxTokens));
+  const protectedTokens = toolTokens + systemMsgTokens + lastMessagesTokens;
+  const roomFor = (promptTokens: number, reserve: number) =>
+    contextLength - countingSafetyBuffer - reserve - promptTokens;
 
-  // Leave space for output/safety
-  let inputTokensAvailable = limits.hardLimit;
-
-  // Non-negotiable messages
-  inputTokensAvailable -= toolTokens;
-  inputTokensAvailable -= systemMsgTokens;
-  inputTokensAvailable -= lastMessagesTokens;
-
-  // Make sure there's enough context for the non-excludable items
-  if (knownContextLength !== undefined && inputTokensAvailable < 0) {
+  if (
+    knownContextLength !== undefined &&
+    roomFor(protectedTokens, minimumReserve) < 0
+  ) {
     throw new Error(
       contextWindowError({
         window: knownContextLength,
-        promptTokens: toolTokens + systemMsgTokens + lastMessagesTokens,
+        promptTokens: protectedTokens,
         systemMsgTokens,
         toolTokens,
         lastMessagesTokens,
-        reservedOutputTokens,
+        reservedOutputTokens: minimumReserve,
         countingSafetyBuffer,
         unknown: contextLengthUnknown,
       }),
+    );
+  }
+
+  let reservedOutputTokens = limits.reserve;
+  if (roomFor(protectedTokens, reservedOutputTokens) < 0) {
+    reservedOutputTokens = Math.max(
+      minimumReserve,
+      contextLength - countingSafetyBuffer - protectedTokens,
     );
   }
 
@@ -711,7 +720,10 @@ function compileChatMessages({
   // History that cannot be dropped (the latest user turn, the system message,
   // the tools) can still be larger than the window. Say so, with the sizes,
   // instead of sending a prompt the model will refuse with no explanation.
-  if (knownContextLength !== undefined && inputTokens > knownContextLength) {
+  if (
+    knownContextLength !== undefined &&
+    roomFor(inputTokens, minimumReserve) < 0
+  ) {
     throw new Error(
       contextWindowError({
         window: knownContextLength,
@@ -719,7 +731,7 @@ function compileChatMessages({
         systemMsgTokens,
         toolTokens,
         lastMessagesTokens,
-        reservedOutputTokens,
+        reservedOutputTokens: minimumReserve,
         countingSafetyBuffer,
         unknown: contextLengthUnknown,
       }),

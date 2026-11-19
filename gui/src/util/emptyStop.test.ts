@@ -59,6 +59,20 @@ describe("emptyStopDetail", () => {
     );
   });
 
+  it("names the context window when the reply ran into it", () => {
+    expect(
+      emptyStopDetail({
+        history: [user, { message: { role: "assistant", content: "" } }],
+        stopReason: "model_context_window_exceeded",
+        maxTokens: 64000,
+        askedMaxTokens: 128000,
+        contextLength: 100000,
+      }),
+    ).toBe(
+      "The model stopped because the reply hit the context window (100000 tokens). The output cap sent with the request was 64000 tokens.",
+    );
+  });
+
   it("says the turn stopped, and that reasoning is not the reply", () => {
     expect(
       emptyStopDetail({
@@ -75,7 +89,7 @@ describe("emptyStopDetail", () => {
         stopReason: "end_turn",
       }),
     ).toBe(
-      "The model stopped without a reply and without a tool call. Reasoning from this turn is not a reply.",
+      "The model stopped without a reply and without a tool call. Reasoning from this turn is not a reply. Stop reason: end_turn.",
     );
   });
 

@@ -1549,6 +1549,7 @@ class Bedrock extends BaseLLM {
             reasoningRequest.additionalModelRequestFields as {
               thinking?: unknown;
             },
+            options.maxTokensCeiling,
           );
 
     return {

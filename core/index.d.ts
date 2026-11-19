@@ -2505,6 +2505,12 @@ export interface BaseCompletionOptions {
   mirostat?: number;
   stop?: string[];
   maxTokens?: number;
+  /**
+   * Request-only. A thinking budget may raise `maxTokens`, but not past this.
+   * Set from the model's published output cap and the room left in the window
+   * (core/llm/requestBudget.ts).
+   */
+  maxTokensCeiling?: number;
   numThreads?: number;
   useMmap?: boolean;
   keepAlive?: number;

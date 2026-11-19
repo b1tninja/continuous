@@ -2,9 +2,14 @@ import { createAsyncThunk, unwrapResult } from "@reduxjs/toolkit";
 import { JSONContent } from "@tiptap/core";
 import { InputModifiers } from "core";
 
+import { noteAgentCut } from "../../util/chatDebugLog";
 import { compactionHoldFor, draftTokens } from "../../util/compactionHold";
 import { selectSelectedChatModel } from "../slices/configSlice";
-import { setCompactionHold } from "../slices/sessionSlice";
+import {
+  setCompactionHold,
+  setInactive,
+  setInlineErrorMessage,
+} from "../slices/sessionSlice";
 import { ThunkApiType } from "../store";
 import { addUserInputToHistory } from "./addUserInputToHistory";
 import {
@@ -103,7 +108,22 @@ export const streamResponseThunk = createAsyncThunk<
             extra,
             signal: getState().session.streamAborter.signal,
           });
-          if (compacted === "aborted") return;
+          if (compacted === "aborted") {
+            noteAgentCut(
+              "Compaction was aborted before the next request, so the agent did not continue.",
+            );
+            if (getState().session.isStreaming) {
+              dispatch(setInactive());
+              dispatch(
+                setInlineErrorMessage({
+                  kind: "out-of-context",
+                  detail:
+                    "The agent stopped because compaction was aborted before the next request. Nothing was sent after that.",
+                }),
+              );
+            }
+            return;
+          }
           if (compacted === "failed" || compacted === "none") {
             explainCompactionBlocked(dispatch, compacted, need);
             return;

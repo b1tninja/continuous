@@ -685,18 +685,25 @@ export function claudeThinkingFields(
  */
 export const ANSWER_TOKENS_ABOVE_THINKING = 4096;
 
-/** A cap Claude will accept when `thinking.budget_tokens` is set. */
+/**
+ * A cap Claude will accept when `thinking.budget_tokens` is set.
+ * `ceiling` is the model's output cap and the room left in the window.
+ * Same rule as `maxTokensAboveThinkingBudget` in core/llm/llms/anthropicThinking.ts.
+ */
 export function maxTokensAboveThinkingBudget(
   maxTokens: number,
   fields: { thinking?: unknown },
+  ceiling?: number,
 ): number {
   const block = fields.thinking as
     { type?: string; budget_tokens?: number } | undefined;
-  if (block?.type !== "enabled" || typeof block.budget_tokens !== "number") {
-    return maxTokens;
-  }
-  if (maxTokens > block.budget_tokens) return maxTokens;
-  return block.budget_tokens + ANSWER_TOKENS_ABOVE_THINKING;
+  const raised =
+    block?.type !== "enabled" || typeof block.budget_tokens !== "number"
+      ? maxTokens
+      : maxTokens > block.budget_tokens
+        ? maxTokens
+        : block.budget_tokens + ANSWER_TOKENS_ABOVE_THINKING;
+  return ceiling === undefined ? raised : Math.min(raised, ceiling);
 }
 
 /**
