@@ -295,13 +295,15 @@ export const streamNormalInput = createAsyncThunk<
     // Compile just counted this prompt. Tokenizing it again here walks the
     // whole transcript on the webview thread, which a long session cannot
     // afford once per request.
+    const contextLength = selectedChatModel.contextLength;
     const compiledPromptTokens =
       typeof outputTokensAvailable === "number" &&
-      selectedChatModel.contextLength > 0
+      typeof contextLength === "number" &&
+      contextLength > 0
         ? Math.max(
             0,
-            selectedChatModel.contextLength -
-              countingSafetyBuffer(selectedChatModel.contextLength) -
+            contextLength -
+              countingSafetyBuffer(contextLength) -
               outputTokensAvailable,
           )
         : undefined;
