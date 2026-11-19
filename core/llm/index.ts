@@ -97,6 +97,7 @@ import {
   parseContextOverflow,
 } from "./contextOverflow.js";
 import { contextClassFor } from "./contextThresholds.js";
+import { fitRequestMaxTokens } from "./requestBudget.js";
 import {
   compileChatMessages,
   countTokens,
@@ -1544,6 +1545,35 @@ export abstract class BaseLLM implements ILLM {
       });
 
       messages = compiledChatMessages;
+    }
+
+    // The configured cap is what was asked for. The value that is sent has to
+    // fit the model's published output limit and the room left in the window,
+    // or the provider rejects the turn. A thinking raise may use the ceiling
+    // but not pass it (requestBudget.ts).
+    {
+      const info = findLlmInfo(
+        completionOptions.model,
+        this.underlyingProviderName,
+      );
+      const budget = fitRequestMaxTokens({
+        configured: completionOptions.maxTokens ?? DEFAULT_MAX_TOKENS,
+        modelMax: info?.maxCompletionTokens,
+        window: correctedContextLength(
+          this.contextLength,
+          completionOptions.model,
+        ),
+        promptTokens: estimatePromptTokens(
+          completionOptions.model,
+          messages,
+          optionsWithOverrides.tools,
+        ),
+      });
+      completionOptions = {
+        ...completionOptions,
+        maxTokens: budget.maxTokens,
+        maxTokensCeiling: budget.ceiling,
+      };
     }
 
     const messagesCopy = [...messages]; // templateMessages may modify messages.

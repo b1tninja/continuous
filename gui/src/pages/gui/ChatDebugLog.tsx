@@ -5,7 +5,26 @@ import {
   clearChatDebug,
   getChatDebugEvents,
   subscribeChatDebug,
+  type ChatDebugEvent,
 } from "../../util/chatDebugLog";
+
+function formatLog(events: readonly ChatDebugEvent[]): string {
+  return events
+    .map(
+      (event) =>
+        `${formatTime(event.at)} ${chatDebugKindLabel(event.kind)} ${event.summary}`,
+    )
+    .join("\n");
+}
+
+async function copyLog(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function formatTime(at: number): string {
   const date = new Date(at);
@@ -26,6 +45,7 @@ export function ChatDebugLog({ leading }: { leading?: ReactNode }) {
     getChatDebugEvents,
   );
   const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const count = events.length;
   return (
     <>
@@ -34,18 +54,35 @@ export function ChatDebugLog({ leading }: { leading?: ReactNode }) {
           id="chat-debug-log"
           data-testid="chat-debug-log"
           aria-label="Diagnostic log"
-          className="mx-2 mb-1 max-h-40 overflow-y-auto rounded border border-solid border-zinc-700 bg-vsc-background px-2 py-1 text-xs"
+          className="mx-2 mb-1 max-h-56 overflow-y-auto rounded border border-solid border-zinc-700 bg-vsc-background px-2 py-1 text-xs"
         >
           <div className="mb-1 flex items-center justify-between gap-2">
             <span>Diagnostic log</span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => clearChatDebug()}
-            >
-              Clear
-            </Button>
+            <span className="flex gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={count === 0}
+                onClick={() => {
+                  void copyLog(formatLog(events)).then((ok) => {
+                    if (!ok) return;
+                    setCopied(true);
+                    window.setTimeout(() => setCopied(false), 1500);
+                  });
+                }}
+              >
+                {copied ? "Copied" : "Copy"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => clearChatDebug()}
+              >
+                Clear
+              </Button>
+            </span>
           </div>
           {count === 0 ? (
             <p className="m-0 text-description-muted">Nothing recorded yet.</p>

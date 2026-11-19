@@ -1,4 +1,5 @@
 import { createAsyncThunk } from "@reduxjs/toolkit";
+import { noteStreamCancelled } from "../../util/chatDebugLog";
 import {
   abortStream,
   clearDanglingMessages,
@@ -26,6 +27,13 @@ export const cancelStream = createAsyncThunk<
   CancelStreamOptions | undefined,
   ThunkApiType
 >("chat/cancelStream", async (options, { dispatch, extra, getState }) => {
+  noteStreamCancelled(
+    options?.loop === "keep"
+      ? "retry"
+      : options?.loop === "error"
+        ? "error"
+        : "stopped",
+  );
   dispatch(setInactive());
   dispatch(abortStream());
   // Whoever stopped the agent decides what to send next
@@ -74,6 +82,7 @@ export const cancelStream = createAsyncThunk<
 export const interruptStream = createAsyncThunk<void, undefined, ThunkApiType>(
   "chat/interruptStream",
   async (_, { dispatch }) => {
+    noteStreamCancelled("steer");
     dispatch(setInactive());
     dispatch(abortStream());
     dispatch(clearDanglingMessages());

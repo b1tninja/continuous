@@ -2,12 +2,15 @@ import { createAsyncThunk, unwrapResult } from "@reduxjs/toolkit";
 import { ChatMessage } from "core";
 import { renderContextItems } from "core/util/messageContent";
 import { mergeQueuedMessages } from "../../components/mainInput/util/queuedMessages";
+import { noteAgentCut } from "../../util/chatDebugLog";
 import { selectCurrentToolCalls } from "../selectors/selectToolCalls";
 import {
   ChatHistoryItemWithMessageId,
   removeQueuedMessage,
   requestQueuedMessagesSend,
   resetNextCodeBlockToApplyIndex,
+  setInactive,
+  setInlineErrorMessage,
   streamUpdate,
 } from "../slices/sessionSlice";
 import { ThunkApiType } from "../store";
@@ -136,7 +139,22 @@ export const streamResponseAfterToolCall = createAsyncThunk<
               extra,
               signal: getState().session.streamAborter.signal,
             });
-            if (compacted === "aborted") return;
+            if (compacted === "aborted") {
+              noteAgentCut(
+                "Compaction was aborted before the next request, so the agent did not continue.",
+              );
+              if (getState().session.isStreaming) {
+                dispatch(setInactive());
+                dispatch(
+                  setInlineErrorMessage({
+                    kind: "out-of-context",
+                    detail:
+                      "The agent stopped because compaction was aborted before the next request. Nothing was sent after that.",
+                  }),
+                );
+              }
+              return;
+            }
             if (compacted === "failed" || compacted === "none") {
               explainCompactionBlocked(dispatch, compacted, need);
               return;

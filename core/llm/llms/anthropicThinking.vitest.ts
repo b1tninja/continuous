@@ -155,6 +155,23 @@ describe("maxTokensAboveThinkingBudget", () => {
     ).toBe(6144);
   });
 
+  test("a thinking raise stops at the model and window ceiling", () => {
+    expect(
+      maxTokensAboveThinkingBudget(
+        300,
+        { thinking: { type: "enabled", budget_tokens: 1024 } },
+        64_000,
+      ),
+    ).toBe(5120);
+    expect(
+      maxTokensAboveThinkingBudget(
+        300,
+        { thinking: { type: "enabled", budget_tokens: 1024 } },
+        4_000,
+      ),
+    ).toBe(4_000);
+  });
+
   test("leaves a cap that already has room, and adaptive thinking", () => {
     expect(
       maxTokensAboveThinkingBudget(8192, {

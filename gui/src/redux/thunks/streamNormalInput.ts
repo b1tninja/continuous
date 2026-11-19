@@ -14,6 +14,9 @@ import {
   noteCompiledRequest,
   noteCompileFailure,
   noteContextWindow,
+  noteAgentCut,
+  noteRequestSent,
+  noteTurnEnded,
 } from "../../util/chatDebugLog";
 import { emptyStopDetail } from "../../util/emptyStop";
 import {
@@ -75,7 +78,9 @@ import { dumpPromptSegments } from "../util/promptSegmentDump";
 import { mainAuditAgent } from "core/tools/permissions/audit/identity";
 import { interceptSystemToolCalls } from "core/tools/systemMessageTools/interceptSystemToolCalls";
 
+import { countingSafetyBuffer } from "core/llm/contextThresholds";
 import { localOutputLimit } from "core/llm/outputLimit";
+import { fitCompiledRequest } from "core/llm/requestFit";
 import { allowOutsideWorkspaceOf } from "../../util/outsideEdits";
 import {
   selectApprovalSettings,
@@ -224,6 +229,14 @@ export const streamNormalInput = createAsyncThunk<
 
     dispatch(setActive());
     dispatch(setInlineErrorMessage(undefined));
+    noteRequestSent({
+      model: selectedChatModel.model,
+      provider: selectedChatModel.provider,
+      maxTokens:
+        completionOptions.maxTokens ??
+        selectedChatModel.completionOptions?.maxTokens,
+      contextLength: selectedChatModel.contextLength,
+    });
 
     // The task list goes last, after the history and after the conversation's
     // cache point, so a change to it leaves the cached prefix untouched (see
@@ -276,6 +289,45 @@ export const streamNormalInput = createAsyncThunk<
     if (localMaxTokens) {
       completionOptions = { ...completionOptions, maxTokens: localMaxTokens };
     }
+    const askedMaxTokens =
+      completionOptions.maxTokens ??
+      selectedChatModel.completionOptions?.maxTokens;
+    // Compile just counted this prompt. Tokenizing it again here walks the
+    // whole transcript on the webview thread, which a long session cannot
+    // afford once per request.
+    const contextLength = selectedChatModel.contextLength;
+    const compiledPromptTokens =
+      typeof outputTokensAvailable === "number" &&
+      typeof contextLength === "number" &&
+      contextLength > 0
+        ? Math.max(
+            0,
+            contextLength -
+              countingSafetyBuffer(contextLength) -
+              outputTokensAvailable,
+          )
+        : undefined;
+    const promptTokens = compiledPromptTokens ?? 0;
+    // Does not tokenize. The tokenizer module does not load in the webview:
+    // importing it there left the chat with no input.
+    const budget = fitCompiledRequest({
+      model: completionOptions.model ?? selectedChatModel.model,
+      provider: selectedChatModel.underlyingProviderName,
+      configured: askedMaxTokens,
+      contextLength,
+      promptTokens,
+    });
+    noteRequestSent({
+      model: selectedChatModel.model,
+      provider: selectedChatModel.provider,
+      maxTokens: budget.maxTokens,
+      askedMaxTokens: budget.asked,
+      ceiling: budget.ceiling,
+      promptEstimate: budget.promptTokens,
+      contextLength: selectedChatModel.contextLength,
+      pruned: didPrune,
+      outputTokensAvailable,
+    });
 
     // What changed since the previous request of this conversation, so a
     // local server's cache miss can say which message it was (docs: local
@@ -301,6 +353,7 @@ export const streamNormalInput = createAsyncThunk<
     // The reply's stop reason, from the usage on its last chunk: it tells a
     // tool call cut off at the output limit from one that arrived incomplete
     let lastStopReason: string | undefined;
+    let lastUsage: { promptTokens?: number; completionTokens?: number } = {};
     try {
       let gen = extra.ideMessenger.llmStreamChat(
         {
@@ -321,7 +374,6 @@ export const streamNormalInput = createAsyncThunk<
       }
 
       // The last token counts the API sent, for the chatInteraction record
-      let lastUsage: { promptTokens?: number; completionTokens?: number } = {};
       let checkpointAt = Date.now();
       let checkpointChars = 0;
       /**
@@ -438,6 +490,11 @@ export const streamNormalInput = createAsyncThunk<
         // even when a newer one has set isStreaming again: its chunks would
         // otherwise land in the newer turn's history, attached to its calls
         if (!getState().session.isStreaming || streamAborter.signal.aborted) {
+          noteAgentCut(
+            streamAborter.signal.aborted
+              ? "The reply was cut off before it finished."
+              : "The reply ended early because streaming was already off.",
+          );
           dispatch(abortStream());
           break;
         }
@@ -626,6 +683,11 @@ export const streamNormalInput = createAsyncThunk<
     // 1. Mark generating tool calls as generated
     const state1 = getState();
     if (streamAborter.signal.aborted || !state1.session.isStreaming) {
+      noteAgentCut(
+        streamAborter.signal.aborted
+          ? "The reply was cut off before its tool calls ran."
+          : "Streaming was already off before the tool calls ran.",
+      );
       return;
     }
     const originalToolCalls = selectCurrentToolCalls(state1);
@@ -646,8 +708,7 @@ export const streamNormalInput = createAsyncThunk<
     refuseTruncatedToolCalls(
       dispatch,
       selectPendingToolCalls(getState()),
-      completionOptions.maxTokens ??
-        selectedChatModel.completionOptions?.maxTokens,
+      budget.maxTokens,
       lastStopReason,
     );
 
@@ -657,9 +718,8 @@ export const streamNormalInput = createAsyncThunk<
     const detail = emptyStopDetail({
       history: getState().session.history,
       stopReason: lastStopReason,
-      maxTokens:
-        completionOptions.maxTokens ??
-        selectedChatModel.completionOptions?.maxTokens,
+      maxTokens: budget.maxTokens,
+      askedMaxTokens: budget.asked,
       contextLength: selectedChatModel.contextLength,
     });
     if (detail) {
@@ -700,6 +760,9 @@ export const streamNormalInput = createAsyncThunk<
     // 2. Pre-process args to catch invalid args before checking policies
     const state2 = getState();
     if (streamAborter.signal.aborted || !state2.session.isStreaming) {
+      noteAgentCut(
+        "The reply was cut off while its tool calls were being checked.",
+      );
       return;
     }
     const generatedCalls2 = selectPendingToolCalls(state2);
@@ -713,6 +776,9 @@ export const streamNormalInput = createAsyncThunk<
     // 3. Security check: evaluate updated policies based on args
     const state3 = getState();
     if (streamAborter.signal.aborted || !state3.session.isStreaming) {
+      noteAgentCut(
+        "The reply was cut off while its tool calls were being checked.",
+      );
       return;
     }
     const generatedCalls3 = selectPendingToolCalls(state3);
@@ -772,6 +838,13 @@ export const streamNormalInput = createAsyncThunk<
         unwrapResult(await dispatch(streamNormalInput({ depth: depth + 1 })));
         return;
       }
+      noteTurnEnded({
+        history: getState().session.history,
+        stopReason: lastStopReason,
+        promptTokens: lastUsage.promptTokens,
+        completionTokens: lastUsage.completionTokens,
+        why: "no-tool-call",
+      });
       dispatch(setInactive());
       // A reply without tool calls ends the agent's turn: messages queued
       // while it worked can go now (waiting for approval is not an end)
@@ -781,6 +854,7 @@ export const streamNormalInput = createAsyncThunk<
       if (autoApprovedPolicies.length > 0) {
         const state4 = getState();
         if (streamAborter.signal.aborted || !state4.session.isStreaming) {
+          noteAgentCut("The reply was cut off before an approved tool ran.");
           return;
         }
         await Promise.all(
@@ -798,12 +872,20 @@ export const streamNormalInput = createAsyncThunk<
         );
       }
 
+      noteTurnEnded({
+        history: getState().session.history,
+        stopReason: lastStopReason,
+        promptTokens: lastUsage.promptTokens,
+        completionTokens: lastUsage.completionTokens,
+        why: "approval",
+      });
       dispatch(setInactive());
     } else {
       // auto stream cases increase thunk depth by 1 for debugging
       const state4 = getState();
       const generatedCalls4 = selectPendingToolCalls(state4);
       if (streamAborter.signal.aborted || !state4.session.isStreaming) {
+        noteAgentCut("The reply was cut off before its tool calls ran.");
         return;
       }
       if (generatedCalls4.length > 0) {

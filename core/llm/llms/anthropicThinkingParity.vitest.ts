@@ -31,6 +31,7 @@ let claudeThinkingFields: (
 let adapterMaxTokens: (
   maxTokens: number,
   fields: { thinking?: unknown },
+  ceiling?: number,
 ) => number;
 let reasoningSwitch: (effort: string | undefined) => {
   reasoning: boolean | undefined;
@@ -114,5 +115,11 @@ describe("Claude output cap: core and the adapter agree", () => {
   ] as const)("max %s", (maxTokens, thinking, expected) => {
     expect(maxTokensAboveThinkingBudget(maxTokens, thinking)).toBe(expected);
     expect(adapterMaxTokens(maxTokens, thinking)).toBe(expected);
+  });
+
+  it("a ceiling stops the raise in both copies", () => {
+    const thinking = { thinking: { type: "enabled", budget_tokens: 1024 } };
+    expect(maxTokensAboveThinkingBudget(300, thinking, 4_000)).toBe(4_000);
+    expect(adapterMaxTokens(300, thinking, 4_000)).toBe(4_000);
   });
 });

@@ -3,13 +3,17 @@ import {
   CHAT_DEBUG_LIMIT,
   clearChatDebug,
   getChatDebugEvents,
+  noteAgentCut,
   noteChatDebug,
   noteCompiledRequest,
   noteCompileFailure,
   noteContextWindow,
   noteProviderFailure,
+  noteRequestSent,
+  noteStreamCancelled,
   noteStreamStop,
   noteToolFailure,
+  noteTurnEnded,
   resetChatDebugForTests,
 } from "./chatDebugLog";
 
@@ -58,9 +62,10 @@ describe("chatDebugLog", () => {
         toolCallStates: [{}],
       },
     ]);
-    expect(getChatDebugEvents().map((event) => event.summary)).toEqual([
-      "Stream stopped with no reply text",
-    ]);
+    expect(getChatDebugEvents()[0].summary).toContain(
+      "Stopped with no reply and no tool call",
+    );
+    expect(getChatDebugEvents()[0].summary).toContain("stop=not reported");
   });
 
   it("notes a turn whose only text was reasoning", () => {
@@ -68,8 +73,119 @@ describe("chatDebugLog", () => {
       { message: { role: "user", content: "hi" } },
       { message: { role: "thinking", content: "The last word is Goodbye." } },
     ]);
+    const summary = getChatDebugEvents()[0].summary;
+    expect(summary).toContain("The only text was reasoning");
+    expect(summary).toContain("tool calls=0");
+  });
+
+  it("names the cap and window when a reply ends the agent", () => {
+    noteRequestSent({
+      model: "claude-sonnet-5-5",
+      provider: "anthropic",
+      maxTokens: 128000,
+      contextLength: 100000,
+      outputTokensAvailable: 89000,
+    });
+    noteTurnEnded({
+      history: [
+        { message: { role: "user", content: "implement the ledger" } },
+        { message: { role: "assistant", content: "Here is the first step." } },
+      ],
+      stopReason: "end_turn",
+      promptTokens: 842,
+      completionTokens: 40,
+      why: "no-tool-call",
+    });
+    const summary = getChatDebugEvents()[0].summary;
+    expect(getChatDebugEvents()[0].kind).toBe("turn");
+    expect(summary).toContain("did not continue");
+    expect(summary).toContain("stop=end_turn");
+    expect(summary).toContain("maxTokens=128000");
+    expect(summary).toContain("context=100000");
+    expect(summary).toContain("model=claude-sonnet-5-5");
+    expect(summary).toContain("promptTokens=842");
+    expect(summary).toContain("room=89000");
+  });
+
+  it("shows the cap that will be sent when the config asked for more", () => {
+    noteRequestSent({
+      model: "claude-haiku-4-5",
+      provider: "bedrock",
+      maxTokens: 64000,
+      askedMaxTokens: 128000,
+      ceiling: 64000,
+      contextLength: 200000,
+      promptEstimate: 1200,
+    });
+    noteTurnEnded({
+      history: [
+        { message: { role: "user", content: "hi" } },
+        { message: { role: "assistant", content: "done" } },
+      ],
+      stopReason: "end_turn",
+      why: "no-tool-call",
+    });
+    const summary = getChatDebugEvents()[0].summary;
+    expect(summary).toContain("maxTokens=64000, asked=128000");
+    expect(summary).toContain("promptEstimate=1200");
+    expect(summary).not.toContain("ceiling=");
+  });
+
+  it("says when the output cap was over the model limit", () => {
+    noteRequestSent({
+      model: "claude-sonnet-4-5",
+      provider: "bedrock",
+      maxTokens: 128000,
+      contextLength: 200000,
+    });
+    noteProviderFailure(
+      "The maximum tokens you requested exceeds the model limit of 64000",
+    );
+    const summary = getChatDebugEvents()[0].summary;
+    expect(summary).toContain("Output cap refused");
+    expect(summary).toContain("64000");
+    expect(summary).toContain("maxTokens=128000");
+  });
+
+  it("does not log an empty stop again after the turn was already recorded", () => {
+    noteTurnEnded({
+      history: [
+        { message: { role: "user", content: "hi" } },
+        { message: { role: "assistant", content: "" } },
+      ],
+      stopReason: "end_turn",
+      why: "no-tool-call",
+    });
+    noteStreamStop([
+      { message: { role: "user", content: "hi" } },
+      { message: { role: "assistant", content: "" } },
+    ]);
+    expect(getChatDebugEvents()).toHaveLength(1);
+  });
+
+  it("does not add a second line when the turn was just recorded", () => {
+    noteStreamCancelled("steer");
+    noteAgentCut("The reply was cut off before it finished.");
     expect(getChatDebugEvents().map((event) => event.summary)).toEqual([
-      "Stream stopped with no reply text",
+      "Interrupted to steer. The reply was cut off so a queued message could be sent.",
+    ]);
+  });
+
+  it("records a cut that nothing else explained", () => {
+    noteAgentCut(
+      "Compaction was aborted before the next request, so the agent did not continue.",
+    );
+    expect(getChatDebugEvents()[0].summary).toContain("Compaction was aborted");
+  });
+
+  it("records a stop by the person and skips the empty-stream note", () => {
+    noteStreamCancelled("stopped");
+    noteStreamStop([
+      { message: { role: "user", content: "hi" } },
+      { message: { role: "thinking", content: "still thinking" } },
+    ]);
+    expect(getChatDebugEvents().map((event) => event.summary)).toEqual([
+      "Stopped by you.",
     ]);
   });
 
