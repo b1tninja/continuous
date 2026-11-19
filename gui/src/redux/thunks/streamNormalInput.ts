@@ -80,7 +80,7 @@ import { interceptSystemToolCalls } from "core/tools/systemMessageTools/intercep
 
 import { countingSafetyBuffer } from "core/llm/contextThresholds";
 import { localOutputLimit } from "core/llm/outputLimit";
-import { requestBudgetForModel } from "core/llm/requestBudget";
+import { fitCompiledRequest } from "core/llm/requestFit";
 import { allowOutsideWorkspaceOf } from "../../util/outsideEdits";
 import {
   selectApprovalSettings,
@@ -307,16 +307,15 @@ export const streamNormalInput = createAsyncThunk<
               outputTokensAvailable,
           )
         : undefined;
-    const budget = requestBudgetForModel({
+    const promptTokens = compiledPromptTokens ?? 0;
+    // Does not tokenize. The tokenizer module does not load in the webview:
+    // importing it there left the chat with no input.
+    const budget = fitCompiledRequest({
       model: completionOptions.model ?? selectedChatModel.model,
       provider: selectedChatModel.underlyingProviderName,
       configured: askedMaxTokens,
-      contextLength: selectedChatModel.contextLength,
-      messages: compiledChatMessages,
-      tools: completionOptions.tools,
-      // 0 when compile did not report a size: do not tokenize the transcript
-      // on this thread. Core still fits the cap it sends.
-      promptTokens: compiledPromptTokens ?? 0,
+      contextLength,
+      promptTokens,
     });
     noteRequestSent({
       model: selectedChatModel.model,
