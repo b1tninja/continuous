@@ -2,10 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ChatMessage, CompletionOptions } from "../index.js";
 import { BaseLLM } from "./index.js";
-import {
-  fitRequestMaxTokens,
-  requestBudgetForModel,
-} from "./requestBudget.js";
+import { fitRequestMaxTokens, requestBudgetForModel } from "./requestBudget.js";
 
 /**
  * The output cap that is sent, at the windows Claude is actually run with.
@@ -146,12 +143,12 @@ describe("streamChat sends a cap the model will accept", () => {
     const llm = new CaptureLLM({
       model: "claude-haiku-4-5",
       contextLength: 200_000,
-      completionOptions: { maxTokens: 128_000 },
+      completionOptions: { model: "claude-haiku-4-5", maxTokens: 128_000 },
     });
     for await (const _ of llm.streamChat(
       [{ role: "user", content: "Implement the ledger. Read the spec first." }],
       new AbortController().signal,
-      { maxTokens: 128_000 },
+      { model: "claude-haiku-4-5", maxTokens: 128_000 },
     )) {
       // one chunk
     }
@@ -163,7 +160,7 @@ describe("streamChat sends a cap the model will accept", () => {
     const llm = new CaptureLLM({
       model: "claude-sonnet-5-5",
       contextLength: 100_000,
-      completionOptions: { maxTokens: 128_000 },
+      completionOptions: { model: "claude-sonnet-5-5", maxTokens: 128_000 },
     });
     const messages: ChatMessage[] = [
       { role: "user", content: "Implement the ledger and keep going." },
@@ -171,7 +168,7 @@ describe("streamChat sends a cap the model will accept", () => {
     for await (const _ of llm.streamChat(
       messages,
       new AbortController().signal,
-      { maxTokens: 128_000 },
+      { model: "claude-sonnet-5-5", maxTokens: 128_000 },
     )) {
       // one chunk
     }

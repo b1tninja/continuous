@@ -13,7 +13,11 @@ import {
   contextLimits,
   countingSafetyBuffer,
 } from "./contextThresholds.js";
-import { compileChatMessages, countTokens, estimatePromptTokens } from "./countTokens.js";
+import {
+  compileChatMessages,
+  countTokens,
+  estimatePromptTokens,
+} from "./countTokens.js";
 import { fitRequestMaxTokens } from "./requestBudget.js";
 
 /**
@@ -81,7 +85,10 @@ function reply(text: string): ChatHistoryItem {
   return { message: { role: "assistant", content: text }, contextItems: [] };
 }
 
-function historyOf(turnTokens: number, turns: number): {
+function historyOf(
+  turnTokens: number,
+  turns: number,
+): {
   history: ChatHistoryItem[];
   itemTokens: number[];
 } {
@@ -173,7 +180,11 @@ describe("compileChatMessages at a 200k Claude window", () => {
     role: "assistant",
     content: "",
     toolCalls: [
-      { id, type: "function", function: { name: "read_file", arguments: "{}" } },
+      {
+        id,
+        type: "function",
+        function: { name: "read_file", arguments: "{}" },
+      },
     ],
   });
   const result = (id: string, text: string): ChatMessage => ({
@@ -197,7 +208,10 @@ describe("compileChatMessages at a 200k Claude window", () => {
     const old = filler(30_000);
     const msgs: ChatMessage[] = [
       { role: "system", content: "You are a coding agent." },
-      { role: "user", content: summaryMessageText("The ledger spec was read.") },
+      {
+        role: "user",
+        content: summaryMessageText("The ledger spec was read."),
+      },
     ];
     for (let i = 0; i < 6; i++) {
       msgs.push(

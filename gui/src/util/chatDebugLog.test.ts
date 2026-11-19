@@ -175,9 +175,7 @@ describe("chatDebugLog", () => {
     noteAgentCut(
       "Compaction was aborted before the next request, so the agent did not continue.",
     );
-    expect(getChatDebugEvents()[0].summary).toContain(
-      "Compaction was aborted",
-    );
+    expect(getChatDebugEvents()[0].summary).toContain("Compaction was aborted");
   });
 
   it("records a stop by the person and skips the empty-stream note", () => {

@@ -231,7 +231,10 @@ function log(line: string) {
   process.stderr.write(`${line}\n`);
 }
 
-function textWithTokens(target: number, model: string): { text: string; tokens: number } {
+function textWithTokens(
+  target: number,
+  model: string,
+): { text: string; tokens: number } {
   const unit = "2024-06-15,office,standup coffee,-125\n";
   const sample = unit.repeat(400);
   const perLine = Math.max(1, countTokens(sample, model) / 400);
@@ -247,7 +250,12 @@ function textWithTokens(target: number, model: string): { text: string; tokens: 
   return { text, tokens };
 }
 
-function writeProject(root: string, journal: string | undefined, expectedSum: number, lineCount: number) {
+function writeProject(
+  root: string,
+  journal: string | undefined,
+  expectedSum: number,
+  lineCount: number,
+) {
   fs.mkdirSync(path.join(root, "docs"), { recursive: true });
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   fs.mkdirSync(path.join(root, "test"), { recursive: true });
@@ -348,7 +356,7 @@ function writeProject(root: string, journal: string | undefined, expectedSum: nu
       '  ledger.add({ id: "b", category: "office", memo: "Pens", cents: -125 });',
       '  ledger.add({ id: "c", category: "sales", memo: "Invoice", cents: 2000 });',
       "  assert.equal(ledger.balance(), 1425);",
-      "  assert.deepEqual(ledger.byCategory(\"office\"), [",
+      '  assert.deepEqual(ledger.byCategory("office"), [',
       '    { id: "a", category: "office", memo: "Coffee", cents: -450 },',
       '    { id: "b", category: "office", memo: "Pens", cents: -125 },',
       "  ]);",
@@ -382,7 +390,11 @@ function listFiles(root: string): string {
   return out.sort().join("\n");
 }
 
-function runTool(root: string, name: string, args: Record<string, unknown>): string {
+function runTool(
+  root: string,
+  name: string,
+  args: Record<string, unknown>,
+): string {
   if (name === "list_files") return listFiles(root);
   if (name === "read_file") {
     const rel = String(args.path ?? "");
@@ -402,7 +414,9 @@ function runTool(root: string, name: string, args: Record<string, unknown>): str
       ["--test", path.join(root, "test", "ledger.test.mjs")],
       { cwd: root, encoding: "utf8", timeout: 30_000 },
     );
-    const text = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.slice(-12_000);
+    const text = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.slice(
+      -12_000,
+    );
     return `exit ${result.status}\n${text}`;
   }
   return `unknown tool ${name}`;
@@ -412,7 +426,9 @@ function argsOf(raw: string | undefined): Record<string, unknown> {
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw) as unknown;
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+    return parsed && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : {};
   } catch {
     return {};
   }
@@ -435,15 +451,10 @@ function collapse(chunks: ChatMessage[]): {
   let promptTokens: number | undefined;
   let completionTokens: number | undefined;
   for (const chunk of chunks) {
-    const usage = chunk.usage as
-      | {
-          promptTokens?: number;
-          completionTokens?: number;
-          response?: { stopReason?: string };
-        }
-      | undefined;
+    const usage = chunk.role === "assistant" ? chunk.usage : undefined;
     if (usage?.response?.stopReason) stopReason = usage.response.stopReason;
-    if (typeof usage?.promptTokens === "number") promptTokens = usage.promptTokens;
+    if (typeof usage?.promptTokens === "number")
+      promptTokens = usage.promptTokens;
     if (typeof usage?.completionTokens === "number") {
       completionTokens = usage.completionTokens;
     }
@@ -457,7 +468,8 @@ function collapse(chunks: ChatMessage[]): {
         const id = delta.id || `idx-${delta.index ?? calls.size}`;
         const prev = calls.get(id) ?? { name: "", arguments: "" };
         if (delta.function?.name) prev.name += delta.function.name;
-        if (delta.function?.arguments) prev.arguments += delta.function.arguments;
+        if (delta.function?.arguments)
+          prev.arguments += delta.function.arguments;
         calls.set(id, prev);
       }
     }
@@ -690,7 +702,10 @@ live("Claude implements a ledger across turns (live)", () => {
         report.error,
         `${spec.id} stopped: ${report.error ?? ""}`,
       ).toBeUndefined();
-      expect(successful.length, `${spec.id} model turns`).toBeGreaterThanOrEqual(2);
+      expect(
+        successful.length,
+        `${spec.id} model turns`,
+      ).toBeGreaterThanOrEqual(2);
       expect(
         successful.some((turn) => (turn.tools ?? []).length > 0),
         `${spec.id} never called a tool`,

@@ -45,9 +45,7 @@ export function fitRequestMaxTokens(input: {
     input.promptTokens !== undefined
   ) {
     const room =
-      input.window -
-      input.promptTokens -
-      countingSafetyBuffer(input.window);
+      input.window - input.promptTokens - countingSafetyBuffer(input.window);
     ceiling = Math.min(ceiling, Math.max(0, room));
   }
   if (!Number.isFinite(ceiling)) {
