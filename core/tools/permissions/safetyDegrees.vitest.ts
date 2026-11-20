@@ -168,6 +168,21 @@ describe("switchesInForce", () => {
     }
   });
 
+  it("a check the file names as on stays on under IDGAF", () => {
+    const s = switchesInForce(POLICY_PRESETS.idgaf.levels, {
+      "protect-secrets": true,
+      "ask-large-change": false,
+    });
+    expect(s?.["protect-secrets"]).toBeUndefined();
+    expect(s?.["ask-large-change"]).toBe(false);
+    expect(safetyStateOf(s).on).toBe(1);
+  });
+
+  it("a check merely absent from the file does not come back under IDGAF", () => {
+    const s = switchesInForce(POLICY_PRESETS.idgaf.levels, {});
+    expect(noChecksOn(s)).toBe(true);
+  });
+
   it("does not let Plan edits or Questions alone turn the checks off", () => {
     expect(
       switchesInForce(lv({ plan: "idgaf", questions: "idgaf" }), fileSays),

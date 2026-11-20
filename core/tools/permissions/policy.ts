@@ -203,11 +203,6 @@ export interface PolicySettings {
   };
   /** Built-in rules by id. Absent means on. */
   builtin?: Partial<Record<BuiltinRuleId, boolean>>;
-  /**
-   * The safety-check shield. Absent follows the mode: on below IDGAF, off at
-   * IDGAF. `true` or `false` is the person's choice at every level.
-   */
-  safetyChecks?: boolean;
 }
 
 export const DEFAULT_MAX_NEW_PLAN_ITEMS = 5;
@@ -448,20 +443,6 @@ export function builtinRuleOn(
   id: BuiltinRuleId,
 ): boolean {
   return policy?.builtin?.[id] !== false;
-}
-
-/**
- * Whether the safety checks apply to this call. Absent follows the mode: on
- * below IDGAF, off at IDGAF. An explicit true or false is the person's choice
- * at every level, IDGAF included.
- */
-export function safetyChecksApply(
-  policy: { safetyChecks?: boolean } | undefined,
-  atIdgaf: boolean,
-): boolean {
-  if (policy?.safetyChecks === true) return true;
-  if (policy?.safetyChecks === false) return false;
-  return !atIdgaf;
 }
 
 /** Automatic needs a reviewer: without one, Cautious, so nothing loosens. */

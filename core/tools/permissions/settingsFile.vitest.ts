@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_POLICY_LEVELS } from "./policy";
+import { builtinForDegree, noChecksOn, safetyStateOf } from "./safetyDegrees";
 import {
   applyPolicyUpdate,
   parsePolicyFile,
@@ -10,39 +11,60 @@ import {
   writePolicyFile,
 } from "./settingsFile";
 
-describe("safetyChecks", () => {
-  it("reads and writes on and off, and ignores anything else", () => {
-    expect(parsePolicyFile("safetyChecks: on").settings.safetyChecks).toBe(
-      true,
-    );
-    expect(parsePolicyFile("safetyChecks: off").settings.safetyChecks).toBe(
-      false,
-    );
+describe("the old safetyChecks line", () => {
+  it("off reads as every check off", () => {
+    const { settings } = parsePolicyFile("safetyChecks: off");
+    expect(noChecksOn(settings.builtin)).toBe(true);
+  });
+
+  it("on says nothing: the checks are the default", () => {
+    const { settings, notices } = parsePolicyFile("safetyChecks: on");
+    expect(settings.builtin).toBeUndefined();
+    expect(notices).toEqual([]);
+  });
+
+  it("anything else is reported", () => {
     expect(parsePolicyFile("safetyChecks: maybe").notices[0]).toMatch(
       /safetyChecks/,
     );
-    const on = applyPolicyUpdate(undefined, { safetyChecks: true });
-    expect(on).toMatch(/safetyChecks: on/);
-    const off = applyPolicyUpdate(on, { safetyChecks: false });
-    expect(off).toMatch(/safetyChecks: off/);
   });
 
-  it("removes the line on null, so the shield follows the mode again", () => {
-    const off = applyPolicyUpdate(
-      "# mine\nlevels:\n  tools: manual\nsafetyChecks: on\n",
-      { safetyChecks: null },
+  it("a check named under builtin keeps its own value over an old off", () => {
+    const { settings } = parsePolicyFile(
+      "safetyChecks: off\nbuiltin:\n  protect-secrets: on\n",
     );
-    expect(off).not.toMatch(/safetyChecks/);
-    expect(off).toContain("# mine");
-    expect(parsePolicyFile(off).settings.safetyChecks).toBeUndefined();
-    expect(parsePolicyFile(off).settings.levels.tools).toBe("manual");
+    expect(settings.builtin?.["protect-secrets"]).toBe(true);
+    expect(settings.builtin?.["ask-large-change"]).toBe(false);
   });
 
-  it("leaves the line alone when the update does not mention it", () => {
+  it("is removed when the checks are written, and the rest of the file is kept", () => {
+    const written = applyPolicyUpdate(
+      "# mine\nlevels:\n  tools: manual\nsafetyChecks: off\n",
+      { builtin: { "ask-large-change": false } },
+    );
+    expect(written).not.toMatch(/safetyChecks/);
+    expect(written).toContain("# mine");
+    expect(parsePolicyFile(written).settings.levels.tools).toBe("manual");
+  });
+
+  it("is left alone when only the levels are written", () => {
     const text = applyPolicyUpdate("safetyChecks: off\n", {
       levels: { ...DEFAULT_POLICY_LEVELS, tools: "permissive" },
     });
-    expect(parsePolicyFile(text).settings.safetyChecks).toBe(false);
+    expect(text).toMatch(/safetyChecks: off/);
+  });
+});
+
+describe("a preset's checks round-trip through the file", () => {
+  it("writes only the checks that are off, and reads them back", () => {
+    for (const degree of ["all", "some", "few", "none"] as const) {
+      const text = applyPolicyUpdate(undefined, {
+        builtin: builtinForDegree(degree),
+      });
+      expect(safetyStateOf(parsePolicyFile(text).settings.builtin).degree).toBe(
+        degree,
+      );
+    }
   });
 });
 

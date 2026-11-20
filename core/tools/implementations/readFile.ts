@@ -20,7 +20,9 @@ export const readFileImpl: ToolImpl = async (args, extras) => {
   }
 
   // Security check on the resolved display path
-  throwIfFileIsSecurityConcern(resolvedPath.displayPath);
+  if (!extras.allowSecretFiles) {
+    throwIfFileIsSecurityConcern(resolvedPath.displayPath);
+  }
 
   const content = await extras.ide.readFile(resolvedPath.uri);
 

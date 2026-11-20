@@ -374,7 +374,7 @@ async function coreRulesVerdict(
     // A refusal, a floor rule or a protected path still tightens, including
     // in headless runs whose own policy would allow the call.
     const levels = effectiveLevels(currentPermissionMode());
-    const approval = { levels, ...approvalExtras() };
+    const approval = { levels, ...approvalExtras(levels) };
     const defaultsOnly = policyIsDefault(levels);
     const mcpServer = toolCall.tool?.mcpServer;
     const verdict = await evaluateWithCoreRules({

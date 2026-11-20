@@ -2377,12 +2377,18 @@ export interface ToolExtras {
    */
   workspaceDirs?: string[];
   /**
-   * Set when File edits is IDGAF, which says nothing asks: the file
-   * tools may then name a path outside the workspace folders. The permission
-   * layer has already decided the call; this only lets the tool resolve the
-   * path instead of treating it as not a target.
+   * Set when the outside-paths check is off (the IDGAF preset leaves no check
+   * on): the file tools may then name a path outside the workspace folders.
+   * The permission layer has already decided the call; this only lets the tool
+   * resolve the path instead of treating it as not a target.
    */
   allowOutsideWorkspace?: boolean;
+  /**
+   * Set when the protect-secrets check is off: the file tools may then read
+   * and write a file that looks like a secret (a key, a token, a .env file).
+   * Absent keeps the tool's own refusal.
+   */
+  allowSecretFiles?: boolean;
   /**
    * What run_terminal_command does when a command's output looks like a
    * runaway, from the Tools policy level ("stop" or "keep-running").
@@ -2439,7 +2445,7 @@ export interface Tool {
     args: Record<string, unknown>,
     extras: {
       ide: IDE;
-      /** As for ToolExtras: File edits is IDGAF */
+      /** As for ToolExtras: the outside-paths check is off */
       allowOutsideWorkspace?: boolean;
     },
   ) => Promise<Record<string, unknown>>;

@@ -4,6 +4,7 @@ import * as path from "node:path";
 
 import type { ApprovalSettings } from "core/tools/permissions/approval.js";
 import type { PolicyLevel } from "core/tools/permissions/policy.js";
+import { builtinForPreset } from "core/tools/permissions/safetyDegrees.js";
 import { needsLink, tryLink } from "core/tools/permissions/testLinks.js";
 import { removeTestTempDir, testTempDir } from "core/util/testTempDir.js";
 import { afterAll, describe, expect, it } from "vitest";
@@ -50,7 +51,12 @@ const decide = (
     assistantPermissions: undefined,
     approval: {
       levels: levels(over.level ?? "permissive"),
-      ...(over.builtin ? { builtin: over.builtin } : {}),
+      // The IDGAF preset leaves no safety check on
+      ...(over.level === "idgaf"
+        ? { builtin: over.builtin ?? builtinForPreset("idgaf") }
+        : over.builtin
+          ? { builtin: over.builtin }
+          : {}),
     },
     mcp: over.mcp,
     mcpSchema: over.mcpSchema,
@@ -238,6 +244,8 @@ describe("an MCP tool's path argument, from its schema, through the CLI", () => 
 describe("File edits outside the working folder, by level, through the CLI", () => {
   const editLevels = (edits: PolicyLevel): ApprovalSettings => ({
     levels: { ...levels("cautious"), edits },
+    // The IDGAF preset leaves no safety check on
+    ...(edits === "idgaf" ? { builtin: builtinForPreset("idgaf") } : {}),
   });
   const run = (
     tool: string,

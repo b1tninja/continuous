@@ -4,7 +4,7 @@ import { createNewFileTool, editFileTool } from "../definitions";
 import { evaluateToolPolicyWithRules, type EvaluateInput } from "./evaluate";
 import { editsAllowOutsideWorkspace, wroteOutsideNote } from "./outsideEdits";
 import type { PolicyLevel } from "./policy";
-import { builtinForPreset } from "./safetyDegrees";
+import { builtinForDegree, builtinForPreset } from "./safetyDegrees";
 
 // The IDGAF preset leaves no safety check on. These tests use it for "IDGAF";
 // IDGAF levels alone (checks left on) have their own cases below.
@@ -198,27 +198,35 @@ describe("File edits outside the workspace, by level", () => {
 });
 
 describe("outsideEdits helpers", () => {
-  it("only the File edits level decides", () => {
-    const levels = (edits: PolicyLevel, tools: PolicyLevel = "cautious") =>
-      ({
-        levels: {
-          context: "cautious",
-          tools,
-          edits,
-          plan: "cautious",
-          questions: "cautious",
-        },
-      }) as never;
-    expect(editsAllowOutsideWorkspace(levels("idgaf"))).toBe(true);
-    for (const l of [
-      "manual",
-      "cautious",
-      "automatic",
-      "permissive",
-    ] as const) {
-      expect(editsAllowOutsideWorkspace(levels(l, "idgaf"))).toBe(false);
-    }
+  it("only the outside-paths check decides, whatever the levels", () => {
+    const checks = (builtin?: Record<string, boolean>) =>
+      ({ ...(builtin ? { builtin } : {}) }) as never;
+    // The IDGAF preset leaves no check on
+    expect(
+      editsAllowOutsideWorkspace({ builtin: builtinForPreset("idgaf") }),
+    ).toBe(true);
+    // Turning only that check off is enough
+    expect(
+      editsAllowOutsideWorkspace(checks({ "ask-outside-paths": false })),
+    ).toBe(true);
+    // On, or not mentioned, it is not allowed
+    expect(editsAllowOutsideWorkspace(checks())).toBe(false);
+    expect(
+      editsAllowOutsideWorkspace(checks({ "ask-outside-paths": true })),
+    ).toBe(false);
+    // Another check off does not free a path
+    expect(
+      editsAllowOutsideWorkspace(checks({ "ask-large-change": false })),
+    ).toBe(false);
+    // A host without settings allows nothing extra
     expect(editsAllowOutsideWorkspace(undefined)).toBe(false);
+    // 'A few on' leaves the outside-paths check off; 'All on' keeps it
+    expect(
+      editsAllowOutsideWorkspace({ builtin: builtinForDegree("few") }),
+    ).toBe(true);
+    expect(
+      editsAllowOutsideWorkspace({ builtin: builtinForDegree("all") }),
+    ).toBe(false);
   });
 
   it("names the path in the transcript note", () => {

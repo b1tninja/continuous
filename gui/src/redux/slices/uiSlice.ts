@@ -95,10 +95,11 @@ export interface PolicyExtras {
   /** Built-in rules by id; absent means on */
   builtin?: Partial<Record<BuiltinRuleId, boolean>>;
   /**
-   * The safety-check shield. Absent follows the mode (off at IDGAF).
-   * True or false is the person's choice at every level.
+   * What `builtin` was before the IDGAF preset turned every check off: the
+   * switches the file keeps while IDGAF is in force, because IDGAF lasts for
+   * the session only. Absent outside the IDGAF preset.
    */
-  safetyChecks?: boolean;
+  savedBuiltin?: Partial<Record<BuiltinRuleId, boolean>>;
   /** Deny rules that bind at every level; read from the file, never written here */
   floor?: string[];
   /** MCP tools Plan mode may use ("server/tool", "server/*"); read from the file, never written here */

@@ -17,6 +17,7 @@ import {
 } from "../telemetry/utils.js";
 
 import { EditOperation } from "./multiEdit.js";
+import { secretFilesAllowed } from "./workspaceBoundary.js";
 import { readFilesSet, readFileTool } from "./readFile.js";
 import { Tool, ToolCallPreview } from "./types.js";
 import {
@@ -56,7 +57,7 @@ export function validateAndResolveFilePath(
 
   const resolvedPath = fs.realpathSync(absolutePath);
 
-  throwIfFileIsSecurityConcern(resolvedPath);
+  if (!secretFilesAllowed()) throwIfFileIsSecurityConcern(resolvedPath);
 
   // Check if file exists
   if (!fs.existsSync(resolvedPath)) {

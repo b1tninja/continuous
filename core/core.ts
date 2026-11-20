@@ -2624,6 +2624,7 @@ export class Core {
           toolCall,
           workspaceDirs,
           allowOutsideWorkspace,
+          allowSecretFiles,
           runawayAction,
           sessionId,
         },
@@ -2634,6 +2635,7 @@ export class Core {
           allowOutsideWorkspace,
           runawayAction,
           sessionId,
+          allowSecretFiles,
         ),
     );
 
@@ -2837,6 +2839,7 @@ export class Core {
     allowOutsideWorkspace?: boolean,
     runawayAction?: "stop" | "keep-running",
     sessionId?: string,
+    allowSecretFiles?: boolean,
   ) {
     const { config } = await this.configHandler.loadConfig();
     if (!config) {
@@ -2876,6 +2879,7 @@ export class Core {
         ide: inWorkspace ? ideInWorkspace(this.ide, inWorkspace) : this.ide,
         workspaceDirs: inWorkspace,
         ...(allowOutsideWorkspace ? { allowOutsideWorkspace } : {}),
+        ...(allowSecretFiles ? { allowSecretFiles } : {}),
         llm: config.selectedModelByRole.chat,
         // The model picks the URL of fetch_url_content, and the search
         // endpoint is a third-party site: the global request headers go only

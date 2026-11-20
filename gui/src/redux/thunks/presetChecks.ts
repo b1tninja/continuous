@@ -44,15 +44,57 @@ export function isIdgafPreset(levels: PolicyLevels): boolean {
 }
 
 /**
- * The switches to write to the file. While no check is on (the IDGAF preset),
- * the file keeps what it had: that state lasts for the session only.
- * `saved` is what the switches were before IDGAF was picked.
+ * The switches to write to the file. While the IDGAF preset is in force,
+ * `saved` holds what the switches were before it was picked, and that is what
+ * the file keeps: IDGAF lasts for the session only. Otherwise the current ones.
  */
 export function builtinToSave(
   current: Builtin | undefined,
   saved: Builtin | undefined,
 ): Builtin | undefined {
-  return noChecksOn(current) ? saved : current;
+  return saved !== undefined ? saved : current;
+}
+
+export interface CheckState {
+  builtin: Builtin | undefined;
+  /** What the file has while the IDGAF preset is in force; undefined otherwise */
+  savedBuiltin: Builtin | undefined;
+}
+
+/**
+ * The switches and the stash after applying `levels`. A preset sets its own
+ * checks; entering the IDGAF preset stashes what the switches were (what the
+ * file has), leaving it drops the stash; levels that are no preset change
+ * nothing.
+ */
+export function afterApplying(
+  levels: PolicyLevels,
+  now: CheckState,
+): CheckState {
+  const preset = presetOf(levels);
+  if (!preset) return now;
+  if (preset === "idgaf") {
+    return {
+      builtin: builtinForPreset("idgaf"),
+      // already inside the IDGAF preset: keep the original stash
+      savedBuiltin: now.savedBuiltin ?? now.builtin ?? {},
+    };
+  }
+  return { builtin: builtinForPreset(preset), savedBuiltin: undefined };
+}
+
+/**
+ * The state after the file is read. Levels restored as the IDGAF preset (a
+ * webview reload in the middle of a run) bring its checks back off, with the
+ * file's switches stashed.
+ */
+export function afterLoading(
+  levels: PolicyLevels,
+  fromFile: Builtin | undefined,
+): CheckState {
+  return isIdgafPreset(levels)
+    ? { builtin: builtinForPreset("idgaf"), savedBuiltin: fromFile ?? {} }
+    : { builtin: fromFile ?? {}, savedBuiltin: undefined };
 }
 
 /** The preset name in plain words for a message; empty when the levels are not a preset. */

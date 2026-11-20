@@ -137,8 +137,10 @@ describe("IDGAF never asks and never refuses a call", () => {
       expect(onToolPermissionRequest).not.toHaveBeenCalled();
     }
     expect(state.trail.answer).not.toHaveBeenCalled();
+    // No safety check is on, so none ran and none has anything to record
     const reason = state.trail.decision.mock.calls[0][0].reason;
-    expect(reason).toContain("would have been");
+    expect(reason).toContain("IDGAF");
+    expect(reason).not.toContain("would have been");
   });
 
   it("runs when the rule engine fails, as there is nothing for it to decide", async () => {
