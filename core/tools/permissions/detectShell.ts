@@ -35,6 +35,39 @@ interface Signal {
   says: string;
   weight: number;
   shells: Shell[];
+  /**
+   * Look only at text outside quotes. Quoted text is data for another program
+   * (`node -e "x=>{a,b}"`), not shell syntax.
+   */
+  unquoted?: boolean;
+}
+
+/**
+ * The text with the inside of '...' and "..." blanked out (same length), so a
+ * signal that only means something in shell syntax is not set off by a script
+ * or message passed as an argument. A backslash or backtick escapes a quote.
+ */
+export function maskQuoted(text: string): string {
+  let out = "";
+  let quote: string | undefined;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quote) {
+      if ((c === "\\" || c === "`") && quote === '"' && i + 1 < text.length) {
+        out += "  ";
+        i++;
+      } else if (c === quote) {
+        quote = undefined;
+        out += c;
+      } else {
+        out += c === "\n" ? c : " ";
+      }
+    } else {
+      if (c === '"' || c === "'") quote = c;
+      out += c;
+    }
+  }
+  return out;
 }
 
 const POSIX_ALL: Shell[] = ["bash", "zsh", "sh"];
@@ -171,7 +204,7 @@ const SIGNALS: Signal[] = [
     shells: POSIX_ALL,
   },
   {
-    re: /(?:^|[\s"'=])(?:~\/|\/(?:usr|etc|tmp|var|home|opt|bin|dev)\/)/,
+    re: /(?:^|[\s"'=])(?:\/(?:usr|etc|tmp|var|home|opt|bin|dev)\/)/,
     says: "a Unix path",
     weight: 1,
     shells: POSIX_ALL,
@@ -209,10 +242,12 @@ const SIGNALS: Signal[] = [
     shells: BASH_ZSH,
   },
   {
-    re: /(?:^|[\s=,])\S*\{[^{}\s,$]+,[^{}\s]+\}/,
+    // A word that starts with or contains {a,b} or {1..3}; not `=>{a,b}` or `({a,b})`
+    re: /(?:^|[\s=])[^\s{}()>;]*\{(?:[^{}\s,$]+,[^{}\s]+|\d+\.\.\d+)\}/,
     says: "a {a,b} brace expansion",
     weight: 2,
     shells: BASH_ZSH,
+    unquoted: true,
   },
   {
     re: /<\(|[^$(]>\(/,
@@ -297,8 +332,11 @@ export function detectCommandShell(command: string): ShellDetection {
     for (const s of shells) score[s] = (score[s] ?? 0) + weight;
     evidence.push(`${says} (${shells.join("/")})`);
   };
+  const outside = maskQuoted(text);
   for (const sig of SIGNALS) {
-    if (sig.re.test(text)) add(sig.shells, sig.weight, sig.says);
+    if (sig.re.test(sig.unquoted ? outside : text)) {
+      add(sig.shells, sig.weight, sig.says);
+    }
   }
   const withoutTests = text.replace(/\[\[?\s[^\]]*\]\]?/g, " ");
   if (PS_OPERATOR.test(withoutTests)) {
