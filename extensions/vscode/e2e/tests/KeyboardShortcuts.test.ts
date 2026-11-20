@@ -246,19 +246,10 @@ describe("Keyboard Shortcuts", () => {
   it("Should create a code block when Cmd+L is pressed with text highlighted", async () => {
     const text = "Hello, world!";
 
-    await driver.switchTo().defaultContent();
-    await editor.click();
     await editor.setText(text);
-    await TestUtils.waitForSuccess(async () => {
-      if ((await editor.getText()).trim() !== text) {
-        throw new Error("Editor text is not ready");
-      }
-    });
-    // getText() collapses the selection. Click the editor so it is the
-    // active one, then select everything with a command.
-    await editor.click();
-    await new Workbench().executeCommand("editor.action.selectAll");
-    await new Workbench().executeCommand("continuous.focusContinuousInput");
+    await editor.selectText(text);
+
+    await GUIActions.executeFocusContinueInputShortcut(driver);
 
     ({ view } = await GUIActions.switchToReactIframe());
 
