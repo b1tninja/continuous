@@ -27,6 +27,13 @@ import {
 } from "../audit/cliAudit.js";
 import { takeBashEnd } from "../audit/bashExit.js";
 import { startShadowReview } from "../audit/shadowHook.js";
+import {
+  modelNote,
+  type Proposal,
+  type Resolved,
+} from "core/tools/permissions/decisionTimer.js";
+import { holdProposal } from "core/tools/permissions/holdProposal.js";
+
 import { firePermissionRequest } from "../hooks/fireHook.js";
 import { notifyAttention } from "../hooks/lifecycleHooks.js";
 import { itemBudgetNoteNow } from "../loop/loopBudget.js";
@@ -50,6 +57,13 @@ import {
 } from "../permissions/headlessPolicy.js";
 import { announceIdgaf } from "../permissions/idgafNotices.js";
 import { checkToolPermission } from "../permissions/permissionChecker.js";
+import {
+  clearCountdown,
+  forgetRequest,
+  onKeepWaiting,
+  proposalForAsk,
+  publishCountdown,
+} from "../permissions/askCountdown.js";
 import { toolPermissionManager } from "../permissions/permissionManager.js";
 import {
   effectiveLevels,
@@ -160,6 +174,64 @@ export function handlePermissionDenied(
 
 let permissionPrompts: Promise<unknown> = Promise.resolve();
 
+/** How a held ask ended, for the model's note and the audit trail. */
+export interface TimedAsk {
+  approved: boolean;
+  /** Set when a decision timer ran for this ask */
+  timer?: {
+    resolved: Resolved;
+    held: { proposed: "allow" | "refuse"; seconds: number };
+  };
+}
+
+/**
+ * Like requestUserPermission, with the decision timer: when a window is set for
+ * the call's level, the prompt shows a countdown and the ask is refused if it
+ * runs out, as the policy does when nobody can answer. The window starts when
+ * the prompt is shown, not when the ask is queued behind another.
+ */
+export function requestUserPermissionTimed(
+  toolCall: PreprocessedToolCall,
+  callbacks: StreamCallbacks | undefined,
+  options: {
+    note?: string;
+    mode?: "normal" | "plan" | "auto";
+    verdictSource?: string;
+  } = {},
+): Promise<TimedAsk> {
+  if (!callbacks?.onToolPermissionRequest) {
+    return Promise.resolve({ approved: false });
+  }
+  const prompt = permissionPrompts.then(() =>
+    askTimed(toolCall, callbacks, options),
+  );
+  permissionPrompts = prompt.catch(() => undefined);
+  return prompt;
+}
+
+async function askTimed(
+  toolCall: PreprocessedToolCall,
+  callbacks: StreamCallbacks,
+  options: {
+    note?: string;
+    mode?: "normal" | "plan" | "auto";
+    verdictSource?: string;
+  },
+): Promise<TimedAsk> {
+  const hooked = await firePermissionRequest(
+    toolCall.name,
+    toolCall.preprocessResult?.args ?? toolCall.arguments,
+    toolCall.tool?.mcpServer,
+  );
+  if (hooked.blocked) return { approved: false };
+  notifyAttention(
+    `Approval needed for ${toolCall.name}`,
+    "permission_prompt",
+    "Permission needed",
+  );
+  return promptTimed(toolCall, callbacks, options);
+}
+
 /**
  * Ask the person about a tool call. Prompts are shown one at a time: a
  * subagent's call can ask while the parent's permission loop is asking about
@@ -205,6 +277,119 @@ async function askWithHooks(
     "Permission needed",
   );
   return promptForPermission(toolCall, callbacks, note);
+}
+
+/**
+ * The prompt with a decision timer. The window starts when the prompt is shown
+ * (the permissionRequested event). The person's answer, a keep-waiting key, or
+ * the end of the window decides, whichever comes first; at the end the ask is
+ * refused through the same manager call a "no" uses, which also clears the
+ * prompt from the screen.
+ */
+async function promptTimed(
+  toolCall: PreprocessedToolCall,
+  callbacks: StreamCallbacks,
+  options: {
+    note?: string;
+    mode?: "normal" | "plan" | "auto";
+    verdictSource?: string;
+  },
+): Promise<TimedAsk> {
+  const preview = toolCall.preprocessResult?.preview;
+  const request: ToolCallRequest = {
+    name: toolCall.name,
+    arguments: toolCall.preprocessResult?.args ?? toolCall.arguments,
+    preview: options.note
+      ? [
+          ...(preview ?? []),
+          { type: "text", content: options.note, color: "yellow" },
+        ]
+      : preview,
+  };
+
+  let held: Promise<Resolved | undefined> | undefined;
+  let proposal: Proposal | undefined;
+  let requestId: string | undefined;
+  const stop = new AbortController();
+  let release: (() => void) | undefined;
+  let unlisten: (() => void) | undefined;
+
+  const onRequested = (event: {
+    requestId: string;
+    toolCall: ToolCallRequest;
+  }) => {
+    if (event.toolCall.name !== toolCall.name) return;
+    toolPermissionManager.off("permissionRequested", onRequested);
+    requestId = event.requestId;
+    callbacks.onToolPermissionRequest!(
+      event.toolCall.name,
+      event.toolCall.arguments,
+      event.requestId,
+      event.toolCall.preview,
+      toolCall.id,
+    );
+    proposal = proposalForAsk(
+      {
+        name: toolCall.name,
+        arguments: toolCall.arguments,
+        readonly: toolCall.tool?.readonly,
+      },
+      options.mode,
+      options.verdictSource,
+    );
+    if (!proposal) return;
+    const id = event.requestId;
+    const p = proposal;
+    const answered = new Promise<"allow" | "deny">((resolve) => {
+      const onResponse = (e: { requestId: string; approved: boolean }) => {
+        if (e.requestId !== id) return;
+        toolPermissionManager.off("permissionResponse", onResponse);
+        resolve(e.approved ? "allow" : "deny");
+      };
+      toolPermissionManager.on("permissionResponse", onResponse);
+      unlisten = () =>
+        toolPermissionManager.off("permissionResponse", onResponse);
+    });
+    release = onKeepWaiting(id, () => stop.abort());
+    held = holdProposal(p, {
+      answered,
+      signal: stop.signal,
+      onTick: (secondsLeft) =>
+        publishCountdown({
+          requestId: id,
+          secondsLeft,
+          seconds: p.seconds,
+          proposed: p.proposed,
+        }),
+    }).then((r) => {
+      if (r?.outcome === "default-applied" && r.final === "refuse") {
+        toolPermissionManager.rejectRequest(id);
+      }
+      return r;
+    });
+  };
+  toolPermissionManager.on("permissionRequested", onRequested);
+
+  try {
+    const result = await toolPermissionManager.requestPermission(request);
+    const resolved = held ? await held : undefined;
+    return {
+      approved: result.approved,
+      ...(resolved && proposal
+        ? {
+            timer: {
+              resolved,
+              held: { proposed: proposal.proposed, seconds: proposal.seconds },
+            },
+          }
+        : {}),
+    };
+  } finally {
+    toolPermissionManager.off("permissionRequested", onRequested);
+    unlisten?.();
+    release?.();
+    if (requestId) forgetRequest(requestId);
+  }
 }
 
 async function promptForPermission(
@@ -458,6 +643,37 @@ function callRunsAtIdgaf(
   }
 }
 
+/**
+ * The approval result for an ask. Without a timer it is what it always was:
+ * allowed, or refused by the person. With one, a refusal carries the note that
+ * says who decided: nobody answered, or the person declined. It is given to the
+ * model as it is, not wrapped as a security-policy refusal.
+ */
+export function askResult(
+  toolCall: PreprocessedToolCall,
+  timed: TimedAsk,
+  trace: ApprovalTrace,
+): {
+  approved: boolean;
+  denialReason?: "user" | "timer";
+  denialMessage?: string;
+} {
+  if (timed.timer) trace.timer = timed.timer;
+  if (timed.approved) return { approved: true };
+  if (timed.timer) {
+    return {
+      approved: false,
+      denialReason: "timer",
+      denialMessage: modelNote(
+        timed.timer.resolved,
+        toolCall.name,
+        timed.timer.held.seconds,
+      ),
+    };
+  }
+  return { approved: false, denialReason: "user" };
+}
+
 /** What the person, the model and the audit trail are told when the rule check itself failed. */
 export const ENGINE_ERROR_REASON =
   "The permission rules could not be checked (internal error), so this call was not allowed automatically.";
@@ -508,7 +724,7 @@ async function decideToolApproval(
 ): Promise<{
   approved: boolean;
   /** "loop": Loop mode held the call as a question instead of asking */
-  denialReason?: "user" | "policy" | "loop";
+  denialReason?: "user" | "policy" | "loop" | "timer";
   /** Why a rule, protected path or the reviewer refused it, to tell the model. */
   denialMessage?: string;
   /** Set when the refusal is a shell-hint parse failure. */
@@ -604,17 +820,19 @@ async function decideToolApproval(
         };
       }
       trace.askedPerson = true;
-      const userApproved = await requestUserPermission(
+      return askResult(
         toolCall,
-        callbacks,
-        verdict.source === "shell-hint" ||
-          verdict.reason?.includes("This looks like")
-          ? verdict.reason
-          : undefined,
+        await requestUserPermissionTimed(toolCall, callbacks, {
+          note:
+            verdict.source === "shell-hint" ||
+            verdict.reason?.includes("This looks like")
+              ? verdict.reason
+              : undefined,
+          mode,
+          verdictSource: verdict.source,
+        }),
+        trace,
       );
-      return userApproved
-        ? { approved: true }
-        : { approved: false, denialReason: "user" };
     }
   }
 
@@ -636,10 +854,11 @@ async function decideToolApproval(
       };
     }
     trace.askedPerson = true;
-    const userApproved = await requestUserPermission(toolCall, callbacks);
-    return userApproved
-      ? { approved: true }
-      : { approved: false, denialReason: "user" };
+    return askResult(
+      toolCall,
+      await requestUserPermissionTimed(toolCall, callbacks, { mode }),
+      trace,
+    );
   } else if (permission === "exclude") {
     // Tool blocked by security policy
     return { approved: false, denialReason: "policy" };
@@ -1219,12 +1438,15 @@ export async function executeStreamedToolCalls(
         const deniedMessage =
           denialReason === "loop"
             ? (permissionResult.denialMessage ?? "Held for the person.")
-            : denialReason === "policy"
-              ? policyDenialContent(
-                  permissionResult.denialMessage,
-                  permissionResult.denialSource,
-                )
-              : `Permission denied by user`;
+            : denialReason === "timer"
+              ? (permissionResult.denialMessage ??
+                "No answer within the time allowed, so the call was refused.")
+              : denialReason === "policy"
+                ? policyDenialContent(
+                    permissionResult.denialMessage,
+                    permissionResult.denialSource,
+                  )
+                : `Permission denied by user`;
 
         const deniedEntry: ToolResultWithStatus = {
           role: "tool",

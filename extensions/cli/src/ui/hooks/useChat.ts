@@ -1062,6 +1062,19 @@ export function useChat({
     await processMessage(newContent, undefined, false, rewindedHistory);
   };
 
+  // A decision timer that ends an ask answers through the manager, not
+  // through a key, so the prompt has to be cleared from here as well
+  useEffect(() => {
+    const onResponse = (e: { requestId: string }) =>
+      setActivePermissionRequest((prev: ActivePermissionRequest | null) =>
+        prev?.requestId === e.requestId ? null : prev,
+      );
+    toolPermissionManager.on("permissionResponse", onResponse);
+    return () => {
+      toolPermissionManager.off("permissionResponse", onResponse);
+    };
+  }, []);
+
   const handleToolPermissionResponse = async (
     requestId: string,
     approved: boolean,

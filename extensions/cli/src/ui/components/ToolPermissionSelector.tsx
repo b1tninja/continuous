@@ -1,10 +1,15 @@
 import { maskCommandForDisplay } from "core/tools/permissions/displayMask.js";
 import { hostAllowRuleFor } from "core/tools/permissions/webHostRules.js";
 import { Box, Text, useInput } from "ink";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import { ToolCallTitle } from "src/tools/ToolCallTitle.js";
 
+import {
+  getCountdown,
+  keepWaitingFor,
+  onCountdown,
+} from "../../permissions/askCountdown.js";
 import { generatePolicyRule } from "../../permissions/policyWriter.js";
 import { grantWebHostForSession } from "../../permissions/webSession.js";
 import { ToolCallPreview } from "../../tools/types.js";
@@ -113,6 +118,13 @@ const getPermissionOptions = (rule: string): PermissionOption[] => {
   ];
 };
 
+/** "7 s", and "1:05" from a minute up. */
+function countdownText(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  if (s < 60) return `${s} s`;
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
 export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
   toolName,
   toolArgs,
@@ -140,6 +152,15 @@ export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
     );
   };
   const [selectedIndex, setSelectedIndex] = useState(0);
+  // The decision timer (askCountdown.ts): seconds until the ask is refused
+  const [countdown, setCountdown] = useState(() => getCountdown(requestId));
+  useEffect(
+    () =>
+      onCountdown((id) => {
+        if (id === requestId) setCountdown(getCountdown(requestId));
+      }),
+    [requestId],
+  );
   const [initialHasShownDangerousCommand] = useState(
     hasShownDangerousCommandWarning,
   );
@@ -175,6 +196,13 @@ export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
 
     if (key.return) {
       respond(permissionOptions[selectedIndex]);
+      return;
+    }
+
+    // w stops the countdown: the call waits for an answer, as it does with no timer
+    if (input === "w" && !key.ctrl && !key.meta && countdown) {
+      keepWaitingFor(requestId);
+      setCountdown(undefined);
       return;
     }
 
@@ -236,6 +264,13 @@ export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
           <Text color="yellow">{CONFIRM_TEXT[confirm.pending]}</Text>
         ) : (
           <Text color="dim">Would you like to continue?</Text>
+        )}
+        {countdown && (
+          <Text color="yellow">
+            {countdown.proposed === "refuse" ? "Refused in " : "Runs in "}
+            {countdownText(countdown.secondsLeft)} unless you answer. Press w to
+            keep waiting.
+          </Text>
         )}
         {showDynamicWarning && (
           <Box marginTop={1}>

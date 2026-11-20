@@ -63,6 +63,14 @@ export interface ApprovalTrace {
   };
   /** A person was asked (a prompt was shown) */
   askedPerson?: boolean;
+  /** A decision timer ran for the ask: how it ended (core decisionTimer.ts) */
+  timer?: {
+    resolved: {
+      outcome: "default-applied" | "overridden" | "confirmed";
+      final: "allow" | "refuse";
+    };
+    held: { proposed: "allow" | "refuse"; seconds: number };
+  };
   /** Loop mode held the call as a question */
   held?: boolean;
   /** The role the tool table applied (core/tools/roleTools.ts) */
@@ -153,7 +161,10 @@ export function recordCliDecision(
         policy: "ask",
         reason: v?.reason ?? "The call needs approval.",
       });
-      if (trace.askedPerson) {
+      if (trace.askedPerson && trace.timer) {
+        // The timer's own row says who decided, so a default is never the person's
+        trail.timerResolved(call.id, trace.timer.resolved, trace.timer.held);
+      } else if (trace.askedPerson) {
         trail.answer(
           call.id,
           result.approved,
