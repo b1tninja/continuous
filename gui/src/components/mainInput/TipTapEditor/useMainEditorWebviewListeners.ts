@@ -128,7 +128,15 @@ export function useMainEditorWebviewListeners({
   useWebviewListener(
     "highlightedCode",
     async (data) => {
-      if (!editor) return;
+      document.body.dataset.editor = !editor
+        ? "no"
+        : editor.isDestroyed
+          ? "destroyed"
+          : "yes";
+      document.body.dataset.highlighted = String(
+        data.rangeInFileWithContents?.contents ?? "",
+      ).slice(0, 40);
+      if (!editor || editor.isDestroyed) return;
 
       const contextItem = rifWithContentsToContextItem(
         data.rangeInFileWithContents,

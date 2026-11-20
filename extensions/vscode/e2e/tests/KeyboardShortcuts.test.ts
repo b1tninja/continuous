@@ -253,9 +253,19 @@ describe("Keyboard Shortcuts", () => {
 
     ({ view } = await GUIActions.switchToReactIframe());
 
-    const codeBlock = await TestUtils.waitForSuccess(() =>
-      GUISelectors.getInputBoxCodeBlockAtIndex(view, 0),
-    );
+    const codeBlock = await TestUtils.waitForSuccess(
+      () => GUISelectors.getInputBoxCodeBlockAtIndex(view, 0),
+      5000,
+    ).catch(async (err) => {
+      const info = await driver.executeScript(`
+        return JSON.stringify({
+          editor: document.body.dataset.editor || "",
+          highlighted: document.body.dataset.highlighted || "",
+          text: (document.body.innerText || "").slice(0, 240)
+        });
+      `);
+      throw new Error(`No code chip. ${info}. ${err}`);
+    });
     const codeblockContent = await codeBlock.getAttribute(
       "data-codeblockcontent",
     );
