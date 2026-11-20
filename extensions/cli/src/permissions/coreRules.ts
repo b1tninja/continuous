@@ -3,6 +3,10 @@ import type { ToolPolicy } from "@continuedev/terminal-security";
 import type { ChatHistoryItem } from "core/index.js";
 import { effectiveCwdForPolicy } from "core/tools/implementations/terminalCwd.js";
 import {
+  readUserAdditionalFolders,
+  withAdditionalFolders,
+} from "core/tools/permissions/additionalFolders.js";
+import {
   levelOfCall,
   type ApprovalSettings,
 } from "core/tools/permissions/approval.js";
@@ -422,7 +426,10 @@ export async function evaluateWithCoreRules(
         trustedDomains: readUserTrustedDomains(),
         envNames: readUserEnvNames(),
         environment: {
-          workspaceDirs: [input.cwd ?? process.cwd()],
+          workspaceDirs: withAdditionalFolders(
+            [input.cwd ?? process.cwd()],
+            readUserAdditionalFolders(),
+          ),
           os: process.platform,
         },
         sessions,
@@ -475,7 +482,12 @@ export async function evaluateWithCoreRules(
     trustedDomains: readUserTrustedDomains(),
     envNames: readUserEnvNames(),
     cwd: policyCwd(input, parsedArgs),
-    ...deputyWorkspace([input.cwd ?? process.cwd()]),
+    ...deputyWorkspace(
+      withAdditionalFolders(
+        [input.cwd ?? process.cwd()],
+        readUserAdditionalFolders(),
+      ),
+    ),
     // The shell the CLI runs commands in: its login shell, PowerShell on Windows
     shell: resolveShell().kind,
     ...taint,

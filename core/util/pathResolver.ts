@@ -3,6 +3,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import * as path from "path";
 import untildify from "untildify";
 import { IDE } from "..";
+import {
+  readUserAdditionalFolders,
+  withAdditionalFolders,
+} from "../tools/permissions/additionalFolders";
 import { resolveRelativePathInDir, staysInDir } from "./ideUtils";
 import { joinPathsToUri } from "./uri";
 
@@ -56,7 +60,11 @@ async function isUriWithinWorkspace(ide: IDE, uri: string): Promise<boolean> {
   // Partial IDE stubs used by some tests do not implement this. A path that
   // already resolved against a workspace directory stays inside.
   if (typeof ide.getWorkspaceDirs !== "function") return true;
-  const workspaceDirs = await ide.getWorkspaceDirs();
+  // The folders the person added count as the workspace for this question
+  const workspaceDirs = withAdditionalFolders(
+    await ide.getWorkspaceDirs(),
+    readUserAdditionalFolders(),
+  );
   const realUri = uri.startsWith("file:") ? followLocalSymlink(uri) : uri;
   const realDirs = workspaceDirs.map((dir) =>
     dir.startsWith("file:") ? followLocalSymlink(dir) : dir,

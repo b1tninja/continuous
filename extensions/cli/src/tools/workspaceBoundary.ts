@@ -4,6 +4,7 @@ import {
   editsAllowOutsideWorkspace,
   wroteOutsideNote,
 } from "core/tools/permissions/outsideEdits.js";
+import { readUserAdditionalFolders } from "core/tools/permissions/additionalFolders.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
 
 import { env } from "../env.js";
@@ -96,6 +97,10 @@ export function outsideWorkspaceNote(
 ): string | undefined {
   if (isInside(cwd, resolvedPath)) return undefined;
   if (home && isInside(home, resolvedPath)) return undefined;
+  // Folders the person added to the workspace in their own config.yaml
+  if (readUserAdditionalFolders().some((f) => isInside(f, resolvedPath))) {
+    return undefined;
+  }
   return `Outside the working directory: ${resolvedPath} is not under ${cwd}.`;
 }
 
