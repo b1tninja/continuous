@@ -17,13 +17,13 @@ import {
 } from "../telemetry/utils.js";
 
 import { EditOperation } from "./multiEdit.js";
-import { secretFilesAllowed } from "./workspaceBoundary.js";
 import { readFilesSet, readFileTool } from "./readFile.js";
 import { Tool, ToolCallPreview } from "./types.js";
 import {
   checkWorkspaceWrite,
   outsideWorkspacePreview,
   resolveWorkspacePath,
+  secretFilesAllowed,
   wroteOutsideResult,
 } from "./workspaceBoundary.js";
 import { generateDiff } from "./writeFile.js";
