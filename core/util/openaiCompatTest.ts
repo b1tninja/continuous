@@ -11,30 +11,37 @@
  * The sender is `fetchFn`, so tests record bodies and nothing leaves the
  * machine. The key is only ever sent as a bearer header and never returned.
  */
+import { readModelCatalogSettings } from "../llm/modelCatalogStore.js";
+import { writeCachedModelFacts } from "../llm/providerModelInfoStore.js";
+import { testAnthropicConnection } from "./anthropicSurfaceTest.js";
+import {
+  describeListedLimits,
+  limitsFromModelsBody,
+  limitsFromOllamaShow,
+  limitsOfEntry,
+  type ListedLimits,
+} from "./listedModelLimits.js";
+import {
+  findMeasured,
+  fingerprintOf,
+  type MeasuredEntry,
+  measuredFactsOf,
+  recordingEnabled,
+  recordProbe,
+} from "./measuredFacts.js";
+import type { RetirementNotice } from "./modelRetirement.js";
+import { getOllamaShowHint, ollamaBaseFor } from "./ollamaShowHint.js";
 import {
   hasOpenAICompatDefault,
   openAICompatBase,
   openAICompatDefaultBase,
 } from "./openaiCompatBases.js";
 import {
-  fingerprintOf,
-  findMeasured,
-  measuredFactsOf,
-  type MeasuredEntry,
-  recordingEnabled,
-  recordProbe,
-} from "./measuredFacts.js";
-import { testAnthropicConnection } from "./anthropicSurfaceTest.js";
-import {
   lookupProviderModel,
   type ModelCheck,
   toModelCheck,
 } from "./providerModelLookup.js";
-import { readModelCatalogSettings } from "../llm/modelCatalogStore.js";
-import { writeCachedModelFacts } from "../llm/providerModelInfoStore.js";
-import type { RetirementNotice } from "./modelRetirement.js";
 import { recordLive } from "./retirementNoticeState.js";
-import { getOllamaShowHint } from "./ollamaShowHint.js";
 import { surfaceForProvider } from "./surfaceFacts.js";
 import { recoverableDialect } from "./toolDialectLeak.js";
 import { hintFromLlamaCppProps } from "./toolDialectMetadata.js";
@@ -108,6 +115,11 @@ export type OpenAICompatTestResult =
       retirement?: RetirementNotice[];
       /** Whether the configured model id exists for this key, and what the provider reports for it. */
       modelCheck?: ModelCheck;
+      /**
+       * The window and output cap the server reports for the model, when its
+       * listing or properties say (vLLM, LM Studio, OpenRouter, llama.cpp).
+       */
+      listedLimits?: ListedLimits & { note?: string };
     }
   | { ok: false; error: string };
 
@@ -205,6 +217,44 @@ async function llamaCppTemplate(
   return hint.signal
     ? `Server template looks like ${hint.signal.dialect} (llama.cpp /props).`
     : undefined;
+}
+
+/**
+ * What the server says about the model's window: its `/models` entry first,
+ * then llama.cpp's `/props` (the window it runs with, which wins). Never
+ * throws; undefined when nothing is reported.
+ */
+async function serverLimits(
+  input: OpenAICompatTestInput,
+  base: string,
+  listedBody: unknown,
+  model: string | undefined,
+): Promise<(ListedLimits & { note?: string }) | undefined> {
+  let limits: ListedLimits | undefined = model
+    ? limitsFromModelsBody(listedBody, model)
+    : undefined;
+  if (input.provider === "llama.cpp" || input.provider === "llamafile") {
+    const props = await call(
+      input,
+      `${base.replace(/\/v1$/, "")}/props`,
+      "GET",
+    );
+    if (props.ok) {
+      const runtime = limitsOfEntry(props.data);
+      if (runtime.contextLength !== undefined) limits = runtime;
+    }
+  }
+  const ollama = model ? ollamaBaseFor(input.provider, base) : undefined;
+  if (ollama && model) {
+    const show = await call(input, `${ollama}/api/show`, "POST", { model });
+    if (show.ok) {
+      const fromShow = limitsFromOllamaShow(show.data);
+      if (fromShow.contextLength !== undefined) limits = fromShow;
+    }
+  }
+  if (!limits) return undefined;
+  const note = describeListedLimits(limits);
+  return { ...limits, ...(note ? { note } : {}) };
 }
 
 function templateNoteFor(
@@ -342,8 +392,20 @@ export async function testOpenAICompatConnection(
     ? await checkOpenAICompatModel(input, base, models, checked)
     : undefined;
   if (input.provider === "openai") keepFacts(input, "openai", modelCheck);
+  const listedLimits = await serverLimits(
+    input,
+    base,
+    listed.data,
+    input.model ?? input.checkModel,
+  );
+  const limitsPart = listedLimits ? { listedLimits } : {};
   if (!input.model) {
-    return { ok: true, models, ...(modelCheck ? { modelCheck } : {}) };
+    return {
+      ok: true,
+      models,
+      ...(modelCheck ? { modelCheck } : {}),
+      ...limitsPart,
+    };
   }
 
   const show = await getOllamaShowHint({
@@ -421,6 +483,7 @@ export async function testOpenAICompatConnection(
     ok: true,
     models,
     ...(modelCheck ? { modelCheck } : {}),
+    ...limitsPart,
     ...(note ? { template: note } : {}),
     probe: {
       ok: true,

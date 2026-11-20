@@ -1,3 +1,4 @@
+import { DEFAULT_CONTEXT_LENGTH } from "core/llm/constants";
 import {
   type ContextBreakdown,
   type ContextCategoryKey,
@@ -35,6 +36,7 @@ import {
   promptCacheStatus,
   promptCacheTooltip,
 } from "../../util/promptCache";
+import { useModelConfigDialog } from "../ModelConfig/useModelConfigDialog";
 import { Popover, PopoverButton, PopoverPanel } from "../ui";
 import { HoverButton } from "./InputToolbar/HoverItem";
 import { useToolbarWidthTier } from "./InputToolbar/widthTier";
@@ -260,6 +262,7 @@ function ContextPanel({
 }) {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
+  const openModelConfig = useModelConfigDialog();
   const history = useAppSelector((s) => s.session.history);
   const isStreaming = useAppSelector((s) => s.session.isStreaming);
   const isPruned = useAppSelector((s) => s.session.isPruned);
@@ -327,6 +330,23 @@ function ContextPanel({
 
       <StackedBar breakdown={breakdown} />
       <LegendTable breakdown={breakdown} />
+
+      {model?.contextLengthSource === "unknown" && (
+        <span className="text-warning" data-testid="context-window-unknown">
+          {`No context window is known for ${model.title}, so ${DEFAULT_CONTEXT_LENGTH.toLocaleString()} tokens is assumed and older messages can be left out much earlier than the model needs. `}
+          <button
+            type="button"
+            data-testid="context-set-window"
+            className={LINK_CLASS}
+            onClick={() => {
+              close();
+              openModelConfig({ title: model.title });
+            }}
+          >
+            Set the window
+          </button>
+        </span>
+      )}
 
       {breakdown.pruneAtTokens !== undefined && (
         <span className="text-description-muted">

@@ -1,13 +1,14 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
+import strataMetrics from "core/llm/__fixtures__/strata/metrics-2026-11-15-live.trimmed.json";
 import { describe, expect, it, vi } from "vitest";
 import { MockIdeMessenger } from "../../context/MockIdeMessenger";
 import { EMPTY_CONFIG, updateConfig } from "../../redux/slices/configSlice";
 import {
   addRequestUsageToSession,
   newSession,
+  setAllSessionMetadata,
   setContextPercentage,
   setIsPruned,
-  setAllSessionMetadata,
   setPromptCacheState,
 } from "../../redux/slices/sessionSlice";
 import { setPromptCacheSetting } from "../../redux/slices/uiSlice";
@@ -15,7 +16,6 @@ import { setupStore } from "../../redux/store";
 import { renderWithProviders } from "../../util/test/render";
 import { ContextMeter, HOVER_OPEN_MS } from "./ContextMeter";
 import { ToolbarWidthContext, type WidthTier } from "./InputToolbar/widthTier";
-import strataMetrics from "core/llm/__fixtures__/strata/metrics-2026-11-15-live.trimmed.json";
 
 const sonnet = {
   title: "Sonnet",
@@ -216,6 +216,28 @@ describe("ContextMeter glyph", () => {
 });
 
 describe("ContextMeter details", () => {
+  it("warns when no window is known for the model, and offers to set it", async () => {
+    const { user } = await setup({
+      model: { ...sonnet, contextLengthSource: "unknown" },
+      reported: 20_000,
+    });
+    await user.click(screen.getByTestId("context-meter"));
+    const warning = await screen.findByTestId("context-window-unknown");
+    expect(warning.textContent).toContain("No context window is known");
+    expect(warning.textContent).toContain("32,768");
+    expect(screen.getByTestId("context-set-window")).toBeInTheDocument();
+  });
+
+  it("does not warn when the window is known", async () => {
+    const { user } = await setup({
+      model: { ...sonnet, contextLengthSource: "published" },
+      reported: 20_000,
+    });
+    await user.click(screen.getByTestId("context-meter"));
+    await screen.findByTestId("context-panel");
+    expect(screen.queryByTestId("context-window-unknown")).toBeNull();
+  });
+
   it("open with a click and close with Escape", async () => {
     const { user } = await setup({ reported: 86_000 });
     await user.click(screen.getByTestId("context-meter"));

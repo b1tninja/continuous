@@ -242,6 +242,19 @@ export function findConnection(
   );
 }
 
+/**
+ * The configured connection that serves the model with this picker title
+ * (the `name` in config.yaml), for opening the setup flow where that model
+ * lives. Undefined when no connection lists it.
+ */
+export function connectionForModel(
+  connections: ProviderSetupConnection[],
+  title: string | undefined,
+): ProviderSetupConnection | undefined {
+  if (!title) return undefined;
+  return connections.find((c) => c.models.some((m) => m.name === title));
+}
+
 /** "http://localhost:1234/v1", "us-east-1 (work)" or "default endpoint". */
 export function describeConnection(c: ProviderConnectionKey): string {
   const parts = [c.apiBase, c.region, c.profile ? `(${c.profile})` : undefined];

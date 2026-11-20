@@ -1,4 +1,3 @@
-import { useContext, useState } from "react";
 import type { ToolDialectSetting } from "@continuedev/config-yaml";
 import { connectionTestDefaultBase } from "core/util/anthropicSurfaceTest";
 import type { OpenAICompatTestResult } from "core/util/openaiCompatTest";
@@ -7,8 +6,14 @@ import {
   recoveryOffer,
   recoverySnippet,
 } from "core/util/recoveryOffer";
-import { Button } from "../components/ui/Button";
+import {
+  suggestSettings,
+  type CurrentSettings,
+  type Suggestion,
+} from "core/util/suggestedSettings";
+import { useContext, useState } from "react";
 import Alert from "../components/gui/Alert";
+import { Button } from "../components/ui/Button";
 import { IdeMessengerContext } from "../context/IdeMessenger";
 
 const LINE = String.fromCharCode(10);
@@ -24,6 +29,12 @@ interface Props {
   modelTitle?: string;
   /** Required fields are filled in. */
   canTest: boolean;
+  /** Puts the window the server reported into the model's context length. */
+  onUseContextLength?: (tokens: number) => void;
+  /** What the model has now, to suggest only what would change it. */
+  current?: CurrentSettings;
+  /** Puts the suggested settings into the Configure form (reviewed and saved there). */
+  onApplySuggestions?: (suggestions: Suggestion[]) => void;
 }
 
 /**
@@ -38,11 +49,15 @@ export function OpenAICompatConnectionTester({
   model,
   modelTitle,
   canTest,
+  onUseContextLength,
+  current,
+  onApplySuggestions,
 }: Props) {
   const ideMessenger = useContext(IdeMessengerContext);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<OpenAICompatTestResult>();
   const [probedModel, setProbedModel] = useState<string>();
+  const [applied, setApplied] = useState(false);
   const [recovery, setRecovery] = useState<
     "on" | "declined" | { snippet: string[] }
   >();
@@ -66,6 +81,7 @@ export function OpenAICompatConnectionTester({
   async function testConnection() {
     setBusy(true);
     setResult(undefined);
+    setApplied(false);
     setProbedModel(undefined);
     setRecovery(undefined);
     try {
@@ -81,8 +97,15 @@ export function OpenAICompatConnectionTester({
       setProbedModel(pick);
       const probed = await run(pick);
       setResult(
-        probed.ok && listed.ok && listed.modelCheck
-          ? { ...probed, modelCheck: listed.modelCheck }
+        probed.ok && listed.ok
+          ? {
+              ...probed,
+              ...(listed.modelCheck ? { modelCheck: listed.modelCheck } : {}),
+              // From the listing of the configured id, not of the probed pick
+              ...(listed.listedLimits
+                ? { listedLimits: listed.listedLimits }
+                : { listedLimits: undefined }),
+            }
           : probed,
       );
     } catch (e) {
@@ -96,6 +119,18 @@ export function OpenAICompatConnectionTester({
   }
 
   const probe = result?.ok ? result.probe : undefined;
+  const suggestions: Suggestion[] =
+    result?.ok && current && onApplySuggestions
+      ? suggestSettings(
+          {
+            listedLimits: result.listedLimits,
+            probe: probe?.ok
+              ? { kind: probe.kind, recoveryDialect: probe.recoveryDialect }
+              : undefined,
+          },
+          current,
+        )
+      : [];
   const offer = recoveryOffer(probe?.ok ? probe : undefined, provider, "ide");
   const target = modelTitle ?? probedModel;
 
@@ -174,6 +209,61 @@ export function OpenAICompatConnectionTester({
             <span className="block text-xs opacity-80">
               Chat requests are not affected.
             </span>
+          )}
+        </Alert>
+      )}
+
+      {result?.ok && result.listedLimits?.note && (
+        <Alert type="info" size="sm" role="status" data-testid="listed-limits">
+          <span className="block text-xs">{result.listedLimits.note}</span>
+          {onUseContextLength &&
+            result.listedLimits.contextLength !== undefined && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-1"
+                data-testid="use-listed-context"
+                onClick={() =>
+                  onUseContextLength(result.listedLimits!.contextLength!)
+                }
+              >
+                Use {result.listedLimits.contextLength.toLocaleString()} tokens
+              </Button>
+            )}
+        </Alert>
+      )}
+
+      {suggestions.length > 0 && onApplySuggestions && (
+        <Alert type="info" size="sm" role="status" data-testid="suggestions">
+          <span className="block text-xs font-medium">
+            This test suggests{" "}
+            {suggestions.length === 1 ? "a setting" : "settings"}:
+          </span>
+          <ul className="m-0 my-1 list-disc pl-4 text-xs">
+            {suggestions.map((s) => (
+              <li key={s.key}>
+                {s.label}. <span className="opacity-80">{s.reason}</span>
+              </li>
+            ))}
+          </ul>
+          {applied ? (
+            <span className="block text-xs" data-testid="suggestions-applied">
+              Put in the form. Review the change and save it there.
+            </span>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="apply-all-suggestions"
+              onClick={() => {
+                onApplySuggestions(suggestions);
+                setApplied(true);
+              }}
+            >
+              Apply all
+            </Button>
           )}
         </Alert>
       )}

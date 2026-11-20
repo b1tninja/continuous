@@ -56,6 +56,7 @@ import {
   unresolvedSecretNamesOfLlm,
 } from "../util/unresolvedSecrets.js";
 import { withExponentialBackoff } from "../util/withExponentialBackoff.js";
+import { learnedFactsFor, learnedKey } from "./learnedLimits.js";
 import {
   promptProgressOf,
   reportsFullPromptTokens,
@@ -97,7 +98,6 @@ import {
   parseContextOverflow,
 } from "./contextOverflow.js";
 import { contextClassFor } from "./contextThresholds.js";
-import { fitRequestMaxTokens } from "./requestBudget.js";
 import {
   compileChatMessages,
   countTokens,
@@ -113,6 +113,7 @@ import {
   toCompleteBody,
   toFimBody,
 } from "./openaiTypeConverters.js";
+import { fitRequestMaxTokens } from "./requestBudget.js";
 import {
   firstRouteToTry,
   isContextLengthError,
@@ -244,6 +245,12 @@ export abstract class BaseLLM implements ILLM {
    * is a stand-in, not a published window.
    */
   contextLengthSource: ContextLengthSource = "unknown";
+  /**
+   * Names this model on the endpoint as configured, for what its server said
+   * about it (core/llm/learnedLimits.ts). Fixed at construction, before a
+   * subclass derives an address.
+   */
+  readonly limitsKey: string;
   maxStopWords?: number | undefined;
   completionOptions: CompletionOptions;
   requestOptions?: RequestOptions;
@@ -346,11 +353,20 @@ export abstract class BaseLLM implements ILLM {
       defaultContextLength: DEFAULT_CONTEXT_LENGTH,
       defaultMaxTokens: DEFAULT_MAX_TOKENS,
     };
-    const providerFacts = providerModelFactsFor(this.providerName, {
-      apiBase: options.apiBase,
-      apiKey: options.apiKey,
-      model: options.model,
-    });
+    this.limitsKey = learnedKey(
+      this.providerName,
+      options.apiBase,
+      options.model,
+    );
+    const providerFacts =
+      providerModelFactsFor(this.providerName, {
+        apiBase: options.apiBase,
+        apiKey: options.apiKey,
+        model: options.model,
+      }) ??
+      // What the model's own server said this session, for a model nobody
+      // published a window for (core/llm/learnedLimits.ts)
+      learnedFactsFor(this.limitsKey);
     const limits = resolveModelLimits({
       ...this.limitInputs,
       ...(providerFacts ? { provider: providerFacts } : {}),

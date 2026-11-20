@@ -429,6 +429,35 @@ export const MODEL_EDIT_FIELDS: readonly ModelEditField[] = [
     min: 1,
     help: "The prompt and the reply share this many tokens. The slider starts at the published window for the model. 32,768 is used only when no window is known.",
   },
+  // Expert: how much of the window is held back before the history is compacted
+  {
+    path: ["contextManagement", "autoCompactRatio"],
+    section: "context",
+    label: "Expert: compact at this share of the window (0 to 1)",
+    kind: "number",
+    min: 0,
+    minExclusive: true,
+    max: 1,
+    help: "The share of (context length minus max output tokens) at which the continuous CLI compacts. The rest is the reserve kept free for the reply. Empty: the CLI keeps the larger of 20% of the input space and the output limit (up to 15,000 tokens) free.",
+  },
+  {
+    path: ["contextManagement", "autoCompactTokens"],
+    section: "context",
+    label: "Expert: compact at this many tokens",
+    kind: "number",
+    integer: true,
+    min: 1,
+    help: "The continuous CLI compacts once the prompt reaches this many tokens.",
+  },
+  {
+    path: ["contextManagement", "plannedCompaction"],
+    section: "context",
+    label: "Expert: prepare the compaction summary in the background (IDE)",
+    kind: "boolean",
+    defaultText:
+      "on for a server on this machine or network, off for cloud providers",
+    help: "Once the conversation passes 70% of the window (75% on a cloud provider), the summary is made while you pause, so Compact now applies it at once.",
+  },
   {
     path: ["defaultCompletionOptions", "promptCaching"],
     section: "context",
