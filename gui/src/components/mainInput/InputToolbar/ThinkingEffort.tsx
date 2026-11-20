@@ -40,8 +40,10 @@ export function ThinkingEffort() {
   const requestSeq = useRef(0);
 
   if (!modelUse || !modelSupportsReasoning(model)) return null;
+  // The nested save handler does not keep the narrowing above.
+  const use = modelUse;
 
-  const value = config.modeModels?.[modelUse]?.reasoningEffort ?? "";
+  const value = config.modeModels?.[use]?.reasoningEffort ?? "";
   const tip =
     "Thinking effort for this mode" +
     (warmCacheNote ? `. ${warmCacheNote}` : "");
@@ -50,7 +52,7 @@ export function ThinkingEffort() {
     const effort = parseThinkingEffort(raw);
     const applied = applyThinkingEffort(
       config.modeModels,
-      modelUse,
+      use,
       effort,
       model?.title,
     );
