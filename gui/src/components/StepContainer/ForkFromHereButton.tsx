@@ -32,6 +32,7 @@ export function ForkFromHereButton({ index }: { index: number }) {
         <button
           type="button"
           data-testid={`fork-from-here-button-${index}`}
+          data-roving=""
           aria-label="Fork from here"
           aria-describedby={line ? descriptionId : undefined}
           disabled={isStreaming}

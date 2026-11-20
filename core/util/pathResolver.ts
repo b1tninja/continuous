@@ -49,8 +49,9 @@ function realpathOrParent(fsPath: string): string | undefined {
 
 /**
  * Checks if a URI is within any of the workspace directories.
- * Also verifies the file actually exists, matching resolveRelativePathInDir.
  * Both the file and the workspace roots are followed through symlinks first.
+ * A file that does not exist yet is still inside the folder it would be
+ * created in: existence is not the boundary.
  */
 async function isUriWithinWorkspace(ide: IDE, uri: string): Promise<boolean> {
   // Partial IDE stubs used by some tests do not implement this. A path that
@@ -61,9 +62,7 @@ async function isUriWithinWorkspace(ide: IDE, uri: string): Promise<boolean> {
   const realDirs = workspaceDirs.map((dir) =>
     dir.startsWith("file:") ? followLocalSymlink(dir) : dir,
   );
-  if (!realDirs.some((dir) => staysInDir(realUri, dir))) return false;
-  if (typeof ide.fileExists !== "function") return true;
-  return ide.fileExists(realUri);
+  return realDirs.some((dir) => staysInDir(realUri, dir));
 }
 
 async function asResolved(
