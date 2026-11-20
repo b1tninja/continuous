@@ -214,6 +214,16 @@ export function applyAccountSetup(
       (m) => m?.connection === account && m.model === description.model,
     );
     if (existing) {
+      const override = req.contextWindows?.find(
+        (w) => w.model === description.model,
+      );
+      if (override) {
+        const index = catalog.indexOf(existing);
+        catalog[index] = {
+          ...existing,
+          contextLength: override.contextLength,
+        };
+      }
       addedNames.push(existing.name);
       continue;
     }
@@ -224,6 +234,18 @@ export function applyAccountSetup(
     taken.add(name);
     catalog.push(entry);
     addedNames.push(name);
+  }
+
+  for (const window of req.contextWindows ?? []) {
+    const index = catalog.findIndex(
+      (m) => m?.connection === account && m.model === window.model,
+    );
+    if (index >= 0) {
+      catalog[index] = {
+        ...catalog[index],
+        contextLength: window.contextLength,
+      };
+    }
   }
 
   const removeNames = new Set(req.remove ?? []);
