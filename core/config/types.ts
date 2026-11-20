@@ -694,7 +694,7 @@ declare global {
     writeFile(path: string, contents: string): Promise<void>;
   
     showVirtualFile(title: string, contents: string): Promise<void>;
-    openFile(path: string): Promise<void>;
+    openFile(path: string, options?: { preserveFocus?: boolean }): Promise<void>;
   
     openUrl(url: string): Promise<void>;
   

@@ -34,7 +34,8 @@ export const createRuleBlockImpl: ToolImpl = async (args, extras) => {
   const ruleFilePath = createRuleFilePath(localContinueDir, name);
 
   await extras.ide.writeFile(ruleFilePath, fileContent);
-  await extras.ide.openFile(ruleFilePath);
+  // The agent made it: show it without taking the keyboard
+  await extras.ide.openFile(ruleFilePath, { preserveFocus: true });
 
   return [
     {

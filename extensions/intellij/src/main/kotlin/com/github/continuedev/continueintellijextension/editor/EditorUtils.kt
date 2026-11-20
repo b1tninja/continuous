@@ -162,12 +162,12 @@ class EditorUtils(val editor: Editor) {
         /**
          * Gets or opens an editor for the specified filepath and returns an EditorUtils instance
          */
-        fun getOrOpenEditor(project: Project, filepath: String?): EditorUtils? {
+        fun getOrOpenEditor(project: Project, filepath: String?, focus: Boolean = true): EditorUtils? {
             if (!filepath.isNullOrEmpty()) {
                 val virtualFile = VirtualFileManager.getInstance().findFileByUrl(filepath)
                 if (virtualFile != null) {
                     ApplicationManager.getApplication().invokeAndWait {
-                        FileEditorManager.getInstance(project).openFile(virtualFile, true).first()
+                        FileEditorManager.getInstance(project).openFile(virtualFile, focus).first()
                     }
                 }
             }
@@ -185,7 +185,7 @@ class EditorUtils(val editor: Editor) {
         /**
          * Gets editor for the no exist filepath and returns an EditorUtils instance
          */
-        fun getEditorByCreateFile(project: Project, filepath: String?): EditorUtils? {
+        fun getEditorByCreateFile(project: Project, filepath: String?, focus: Boolean = true): EditorUtils? {
             if (!filepath.isNullOrEmpty()) {
                 // file not exists and create
                 val ioFile = File(filepath.replace("file:///", ""))
@@ -198,7 +198,7 @@ class EditorUtils(val editor: Editor) {
                 if (virtualFile != null) {
                     ApplicationManager.getApplication().invokeAndWait {
                         runWriteAction {
-                            FileEditorManager.getInstance(project).openFile(virtualFile, true)
+                            FileEditorManager.getInstance(project).openFile(virtualFile, focus)
                         }
                     }
                 }

@@ -324,7 +324,7 @@ class IdeProtocolClient(
                             dataElement.toString(),
                             OpenFileParams::class.java
                         )
-                        ide.openFile(params.path)
+                        ide.openFile(params.path, params.preserveFocus == true)
                         respond(null)
                     }
 

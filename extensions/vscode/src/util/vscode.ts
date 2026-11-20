@@ -74,6 +74,8 @@ export function openEditorAndRevealRange(
   range?: vscode.Range,
   viewColumn?: vscode.ViewColumn,
   preview?: boolean,
+  /** Show the file without moving the keyboard focus to it */
+  preserveFocus?: boolean,
 ): Promise<vscode.TextEditor> {
   return new Promise((resolve, _) => {
     vscode.workspace.openTextDocument(uri).then(async (doc) => {
@@ -90,6 +92,7 @@ export function openEditorAndRevealRange(
           .showTextDocument(doc, {
             viewColumn: getViewColumnOfFile(uri) || viewColumn,
             preview,
+            ...(preserveFocus ? { preserveFocus: true } : {}),
           })
           .then((editor) => {
             if (range) {

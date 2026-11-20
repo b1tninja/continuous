@@ -2089,7 +2089,12 @@ export interface IDE {
 
   showVirtualFile(title: string, contents: string): Promise<void>;
 
-  openFile(path: string): Promise<void>;
+  /**
+   * Shows a file in the editor. `preserveFocus` keeps the cursor where it was:
+   * what the agent does on its own (a file it created, an edit it applied)
+   * must never take the keyboard from whatever the person is typing into.
+   */
+  openFile(path: string, options?: { preserveFocus?: boolean }): Promise<void>;
 
   openUrl(url: string): Promise<void>;
 

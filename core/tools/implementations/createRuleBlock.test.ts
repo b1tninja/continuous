@@ -8,7 +8,9 @@ const mockIde = {
     .fn<(path: string, content: string) => Promise<void>>()
     .mockResolvedValue(undefined),
   openFile: jest
-    .fn<(path: string) => Promise<void>>()
+    .fn<
+      (path: string, options?: { preserveFocus?: boolean }) => Promise<void>
+    >()
     .mockResolvedValue(undefined),
 };
 
@@ -18,6 +20,15 @@ const mockExtras = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+});
+
+test("createRuleBlockImpl shows the rule it wrote without taking the keyboard", async () => {
+  await createRuleBlockImpl(
+    { name: "Focus Rule", rule: "Keep the cursor where it is" },
+    mockExtras as any,
+  );
+  expect(mockIde.openFile).toHaveBeenCalledTimes(1);
+  expect(mockIde.openFile.mock.calls[0][1]).toEqual({ preserveFocus: true });
 });
 
 test("createRuleBlockImpl should create a rule with glob pattern", async () => {

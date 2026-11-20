@@ -68,10 +68,11 @@ class FileUtils(
         return normalizeLineEndings(text)
     }
 
-    fun openFile(fileUri: String) {
+    fun openFile(fileUri: String, preserveFocus: Boolean = false) {
         val found = findFile(fileUri)
             ?: return
-        FileEditorManager.getInstance(project).openFile(found, true)
+        // focusEditor = false shows and selects the tab without taking the keyboard
+        FileEditorManager.getInstance(project).openFile(found, !preserveFocus)
     }
 
     fun saveFile(fileUri: String) {

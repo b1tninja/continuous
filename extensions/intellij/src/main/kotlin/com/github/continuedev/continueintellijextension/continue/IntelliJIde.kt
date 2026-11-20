@@ -281,9 +281,9 @@ class IntelliJIDE(
         return getContinueGlobalPath()
     }
 
-    override suspend fun openFile(path: String) =
+    override suspend fun openFile(path: String, preserveFocus: Boolean) =
         withContext(Dispatchers.EDT) {
-            fileUtils.openFile(path)
+            fileUtils.openFile(path, preserveFocus)
         }
 
     override suspend fun openUrl(url: String) {

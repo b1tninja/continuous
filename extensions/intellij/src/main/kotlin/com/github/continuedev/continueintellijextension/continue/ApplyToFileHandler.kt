@@ -166,9 +166,10 @@ class ApplyToFileHandler(
         suspend fun apply(
             project: Project, continuePluginService: ContinuePluginService, ide: IDE, params: ApplyToFileParams
         ) {
+            // The agent is applying an edit: show the file, never take the keyboard
             val editorUtils =
-                if (EditorUtils.editorFileExist(params.filepath)) EditorUtils.getOrOpenEditor(project, params.filepath)
-                else EditorUtils.getEditorByCreateFile(project, params.filepath)
+                if (EditorUtils.editorFileExist(params.filepath)) EditorUtils.getOrOpenEditor(project, params.filepath, focus = false)
+                else EditorUtils.getEditorByCreateFile(project, params.filepath, focus = false)
 
             val diffStreamService = project.service<DiffStreamService>()
 
