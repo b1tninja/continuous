@@ -185,6 +185,7 @@ export function ProviderSetupFlow({
   providerRef.current = provider.provider;
 
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [windows, setWindows] = useState<Record<string, string>>({});
   const [confirmedRemoval, setConfirmedRemoval] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
@@ -532,6 +533,7 @@ export function ProviderSetupFlow({
         key: keyForRequest,
         useLiveTitles: isBedrock && modelLists.isLive,
         account: accountForSave,
+        windows,
       });
       const res = await ideMessenger.request(
         "config/saveProviderModels",
@@ -994,6 +996,10 @@ export function ProviderSetupFlow({
             checked={checked}
             onToggle={toggle}
             isLive={modelLists.isLive}
+            windows={windows}
+            onWindow={(model, value) =>
+              setWindows((current) => ({ ...current, [model]: value }))
+            }
           />
           <div className="flex gap-2">
             <Button

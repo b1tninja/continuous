@@ -1,6 +1,9 @@
+import { useContext, useEffect } from "react";
 import { useStore } from "react-redux";
 import { useNavigate } from "react-router-dom";
+import { announce } from "../components/a11y/announcer";
 import { useModelConfigDialog } from "../components/ModelConfig/useModelConfigDialog";
+import { IdeMessengerContext } from "../context/IdeMessenger";
 import { useAppDispatch } from "../redux/hooks";
 import { selectAgentsSnapshot } from "../redux/selectors/selectAgents";
 import { selectSelectedChatModel } from "../redux/slices/configSlice";
@@ -15,6 +18,16 @@ import {
   askToStopResponse,
   selectCanStop,
 } from "../redux/thunks/interruptConfirm";
+import { isJetBrains } from "../util";
+import {
+  beginCopy,
+  findMessageToCopy,
+  finishCopy,
+  messageAsMarkdown,
+  messageKeyForCommand,
+  messageKeyFromFocus,
+  writeClipboardText,
+} from "../util/copyAsMarkdown";
 import { ROUTES } from "../util/navigation";
 import { useWebviewListener } from "./useWebviewListener";
 
@@ -29,6 +42,54 @@ export function usePaletteCommandListeners() {
   const store = useStore<RootState>();
   const navigate = useNavigate();
   const openModelConfig = useModelConfigDialog();
+  const ideMessenger = useContext(IdeMessengerContext);
+
+  const copyByKey = async (key: string | undefined): Promise<boolean> => {
+    if (!key) return false;
+    const item = findMessageToCopy(store.getState().session.history, key);
+    if (!item) return false;
+    const markdown = messageAsMarkdown(item, {
+      title: store.getState().session.title,
+      date: new Date(),
+    });
+    if (!markdown.includes("\n## ")) return false;
+    if (beginCopy() === "recent") return true;
+    let wrote = false;
+    try {
+      wrote = await writeClipboardText(markdown, {
+        jetBrains: isJetBrains(),
+        post: (text) => ideMessenger.post("copyText", { text }),
+      });
+      announce(
+        wrote
+          ? "Copied as Markdown"
+          : "Could not copy. The clipboard is blocked.",
+      );
+      return wrote;
+    } finally {
+      finishCopy(wrote);
+    }
+  };
+
+  useWebviewListener(
+    "copyMessageAsMarkdown",
+    async () => copyByKey(messageKeyForCommand()),
+    [store, ideMessenger],
+  );
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.repeat || event.shiftKey || !event.altKey) return;
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (event.key.toLowerCase() !== "c") return;
+      const key = messageKeyFromFocus();
+      if (!key) return;
+      event.preventDefault();
+      void copyByKey(key);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [store, ideMessenger]);
 
   // A command can be bound to one key, so it asks first, as Esc does (NI8).
   // The answer is whether there was anything to stop, at once: the question

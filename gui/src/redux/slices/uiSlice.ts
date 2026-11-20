@@ -100,6 +100,12 @@ export interface PolicyExtras {
    * the session only. Absent outside the IDGAF preset.
    */
   savedBuiltin?: Partial<Record<BuiltinRuleId, boolean>>;
+  /**
+   * Skip the editor dialog that asks before a permission change is saved.
+   * Absent or false: the dialog appears. Does not change an ask before a
+   * command runs.
+   */
+  skipPermissionConfirm?: boolean;
   /** Deny rules that bind at every level; read from the file, never written here */
   floor?: string[];
   /** MCP tools Plan mode may use ("server/tool", "server/*"); read from the file, never written here */
@@ -294,10 +300,18 @@ export const uiSlice = createSlice({
     },
     setReasoningSetting: (
       state,
-      action: PayloadAction<{ modelTitle: string; enabled: boolean }>,
+      action: PayloadAction<{
+        modelTitle: string;
+        /** Undefined clears the stored bulb choice so a mode effort applies. */
+        enabled: boolean | undefined;
+      }>,
     ) => {
-      state.reasoningSettings[action.payload.modelTitle] =
-        action.payload.enabled;
+      if (action.payload.enabled === undefined) {
+        delete state.reasoningSettings[action.payload.modelTitle];
+      } else {
+        state.reasoningSettings[action.payload.modelTitle] =
+          action.payload.enabled;
+      }
     },
     setPromptCacheSetting: (
       state,

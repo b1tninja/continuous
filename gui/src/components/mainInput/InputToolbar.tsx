@@ -15,6 +15,7 @@ import { ModelRetirementChip } from "./ModelRetirementChip";
 import { ModelToolChip } from "./ModelToolChip";
 import HoverItem, { HoverButton } from "./InputToolbar/HoverItem";
 import { ReasoningToggle } from "./InputToolbar/ReasoningToggle";
+import { ThinkingEffort } from "./InputToolbar/ThinkingEffort";
 import { ToolbarWidthContext, useWidthTier } from "./InputToolbar/widthTier";
 import { PromptCacheButton } from "./PromptCacheButton";
 import { UsageIndicator } from "./UsageIndicator";
@@ -78,6 +79,7 @@ function InputToolbar(props: InputToolbarProps) {
               <ModelSelect />
             </HoverItem>
           </ToolTip>
+          <ThinkingEffort />
           {!isInEdit && <ModelToolChip />}
           {!isInEdit && <ModelRetirementChip />}
         </div>

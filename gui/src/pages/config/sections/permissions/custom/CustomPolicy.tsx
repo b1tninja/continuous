@@ -574,6 +574,9 @@ function ReviewStep({
   onSave: (confirm: string | undefined) => Promise<string | undefined>;
 }) {
   const ideMessenger = useContext(IdeMessengerContext);
+  const skipConfirm = useAppSelector(
+    (s) => s.ui.policyExtras.skipPermissionConfirm === true,
+  );
   const settings = settingChanges(saved, draft);
   const changes = ruleChanges(saved, draft);
   const [checks, setChecks] = useState<DryRun[] | undefined>();
@@ -726,8 +729,9 @@ function ReviewStep({
           className="m-0 text-2xs text-description"
           data-testid="custom-native-settings"
         >
-          When you save, your editor will ask you to confirm these in its own
-          dialog, which the page cannot answer. No means nothing is saved.
+          {skipConfirm
+            ? "These will be saved without the confirmation dialog."
+            : "When you save, your editor will ask you to confirm these in its own dialog, which the page cannot answer. No means nothing is saved."}
           <ul className="m-0 pl-4" data-testid="custom-native-list">
             {nativeAsks.map((l) => (
               <li key={`${l.key}:${l.text}`}>{l.text}</li>

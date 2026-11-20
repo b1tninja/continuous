@@ -56,6 +56,9 @@ export const loadPolicySettings = createAsyncThunk<void, void, ThunkApiType>(
           questionDelivery: settings.questions?.delivery,
           planAllowTerminal: settings.planAllowTerminal,
           customSet: settings.custom,
+          ...(typeof settings.skipPermissionConfirm === "boolean"
+            ? { skipPermissionConfirm: settings.skipPermissionConfirm }
+            : {}),
         }),
       );
       for (const notice of notices) console.warn(notice);
@@ -120,6 +123,9 @@ export const savePolicySettings = createAsyncThunk<void, void, ThunkApiType>(
       // While the IDGAF preset is in force the file keeps what it had: IDGAF
       // and the checks it turned off last for this session only
       builtin: builtinToSave(policyExtras.builtin, policyExtras.savedBuiltin),
+      // Absent means the dialog still appears: remove the line
+      skipPermissionConfirm:
+        policyExtras.skipPermissionConfirm === true ? true : null,
     };
     const res = await extra.ideMessenger.request("policy/save", update);
     if (res.status !== "success") {
