@@ -92,14 +92,8 @@ describe("terminal agent parity: the shared setting", () => {
     return urls.length;
   };
 
-  it("no modelCatalog line: a fresh config fetches nothing", async () => {
-    expect(await run("name: x\nversion: 1\n")).toBe(0);
-  });
-
-  it("a stored automatic loosens that and fetches a missing list", async () => {
-    expect(
-      await run("name: x\nversion: 1\nmodelCatalog: automatic\n"),
-    ).toBeGreaterThanOrEqual(1);
+  it("automatic (default, no line in config.yaml): fetches a missing list", async () => {
+    expect(await run("name: x\nversion: 1\n")).toBeGreaterThanOrEqual(1);
     expect(urls.every((u) => new URL(u).host === "openrouter.ai")).toBe(true);
   });
 
@@ -162,17 +156,10 @@ describe("terminal agent: the community catalogue follows the same setting", () 
   const unpriced = { provider: "mistral", model: "mistral-large-latest" };
   const priced = { provider: "anthropic", model: "claude-sonnet-4-5" };
 
-  it("fresh config: does not fetch models.dev", async () => {
-    expect(await run("name: x\nversion: 1\n", unpriced)).toBe(0);
-  });
-
-  it("opt-in and a stored automatic, unpriced model: fetches models.dev only", async () => {
-    expect(
-      await run(
-        "name: x\nversion: 1\nmodelCatalog: automatic\nmodelCatalogCommunity: true\n",
-        unpriced,
-      ),
-    ).toBeGreaterThanOrEqual(1);
+  it("automatic and an unpriced model: fetches models.dev only", async () => {
+    expect(await run("name: x\nversion: 1\n", unpriced)).toBeGreaterThanOrEqual(
+      1,
+    );
     expect(urls.every((u) => u === "https://models.dev/api.json")).toBe(true);
   });
 

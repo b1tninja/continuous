@@ -135,18 +135,18 @@
       "hosts": ["ollama.com"]
     },
     {
-      "class": "O",
-      "reason": "OpenRouter's public model list (openrouter.ai/api/v1/models), a plain GET with no key and a fixed user-agent. Opt-in: a fresh config does not contact it at start-up. Refresh now, Pull now and `continuous models refresh` make one request. A stored modelCatalog: automatic loosens that and refreshes in the background when the local copy is older than modelCatalogRefreshHours. modelCatalog: off stops every request.",
+      "class": "D",
+      "reason": "OpenRouter's public model list (openrouter.ai/api/v1/models), a plain GET with no key and a fixed user-agent: refreshed in the background when the local copy is older than modelCatalogRefreshHours (model information updates `automatic`, the default), and on Pull now, Refresh now or `continuous models refresh`. `modelCatalog: manual` stops the background refresh; `off` stops every request.",
       "hosts": ["openrouter.ai"]
     },
     {
-      "class": "O",
-      "reason": "The community model catalogue (models.dev/api.json), a plain GET with no key and the same fixed user-agent. Opt-in, labelled community (modelCatalogCommunity: true), off unless that setting is on, and only while a selected model has no price from a price the person entered, a provider list or the curated tables. Not contacted at start-up. Not used for --max-budget-usd without --budget-allow-unpriced. modelCatalog: off stops every request.",
+      "class": "D",
+      "reason": "The community model catalogue (models.dev/api.json), a plain GET with no key and the same fixed user-agent: only while a selected model (the IDE's chat or reviewer model, the terminal agent's model) has no price from a price the person entered, a provider list or the curated tables. With model information updates `automatic` (the default) the background refresher fetches it when the local copy is missing or older than modelCatalogRefreshHours; with `manual` only on Refresh now in the IDE; `off` stops every request. Reachable without opting in, so class D.",
       "hosts": ["models.dev"]
     },
     {
-      "class": "O",
-      "reason": "The AWS Price List bulk file for Amazon Bedrock (pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonBedrock/current/<region>/index.json), a public GET with no credentials and the same fixed user-agent as the OpenRouter list. Opt-in (bedrockPriceList: true), off by default. Downloaded when a Bedrock model is selected or on Test connection, then cached for 7 days. Not contacted at start-up with a fresh config. The background timer does not download it.",
+      "class": "R",
+      "reason": "The AWS Price List bulk file for Amazon Bedrock (pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonBedrock/current/<region>/index.json), a public GET with no credentials and the same fixed user-agent as the OpenRouter list: only when a Bedrock model is configured, for the selected model's region. Under model information updates `automatic`, on selecting a Bedrock model and in the background when the local copy is older than modelCatalogRefreshHours; under `manual`, only on Bedrock Test connection; `off` stops every request.",
       "hosts": ["pricing.us-east-1.amazonaws.com"]
     },
     {

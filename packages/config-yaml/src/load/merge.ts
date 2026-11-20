@@ -39,18 +39,6 @@ export function mergePackages(
             current.modelCatalogRefreshHours,
         }
       : {}),
-    ...((incoming.modelCatalogCommunity ?? current.modelCatalogCommunity)
-      ? {
-          modelCatalogCommunity:
-            incoming.modelCatalogCommunity ?? current.modelCatalogCommunity,
-        }
-      : {}),
-    ...((incoming.bedrockPriceList ?? current.bedrockPriceList)
-      ? {
-          bedrockPriceList:
-            incoming.bedrockPriceList ?? current.bedrockPriceList,
-        }
-      : {}),
     requestOptions: mergeConfigYamlRequestOptions(
       current.requestOptions,
       incoming.requestOptions,
@@ -179,18 +167,6 @@ export function mergeUnrolledAssistants(
           modelCatalogRefreshHours:
             incoming.modelCatalogRefreshHours ??
             current.modelCatalogRefreshHours,
-        }
-      : {}),
-    ...((incoming.modelCatalogCommunity ?? current.modelCatalogCommunity)
-      ? {
-          modelCatalogCommunity:
-            incoming.modelCatalogCommunity ?? current.modelCatalogCommunity,
-        }
-      : {}),
-    ...((incoming.bedrockPriceList ?? current.bedrockPriceList)
-      ? {
-          bedrockPriceList:
-            incoming.bedrockPriceList ?? current.bedrockPriceList,
         }
       : {}),
     requestOptions: mergeConfigYamlRequestOptions(

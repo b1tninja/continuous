@@ -31,16 +31,13 @@ import { setCommunityCatalog } from "./utils/communityPricing.js";
  * When models.dev is contacted (one GET to `https://models.dev/api.json`, no
  * key, no body, the same two headers as the OpenRouter request):
  *
- * - never unless the person has opted in (`modelCatalogCommunity: true`),
- *   labelled community;
  * - never when model information updates are `off`;
  * - only while a selected model has no price from a price the person entered,
  *   a provider list or the curated tables (`needsCommunityPrice`);
- * - on Refresh now, not at start-up. A stored `automatic` may also refresh it
- *   in the background, and only with the opt-in on.
- *
- * A price from this catalogue is not used for `--max-budget-usd` without
- * `--budget-allow-unpriced`.
+ * - `automatic`: by the background refresher, when the copy is missing or
+ *   older than the refresh interval (`createCommunityRefresher`);
+ * - `manual`: only when the person asks (Refresh now,
+ *   `continuous models refresh`).
  */
 
 export function communityCatalogPath(): string {
@@ -85,18 +82,15 @@ export function writeCommunityCatalog(
 
 /**
  * Put the copy on disk (if any) in front of the cost functions of this
- * process, as the last price source. A local read; never fetches. The copy
- * is used only with the community opt-in on, and not at all when model
- * information updates are `off`.
+ * process, as the last price source. A local read; never fetches. With model
+ * information updates `off` the copy is not used.
  */
 export function loadCommunityPrices(
   opts: { file?: string; settings?: ModelCatalogSettings } = {},
 ): CommunityCatalog | undefined {
   const settings = opts.settings ?? readModelCatalogSettings();
   const catalog =
-    settings.policy === "off" || settings.community !== true
-      ? undefined
-      : readCommunityCatalog(opts.file);
+    settings.policy === "off" ? undefined : readCommunityCatalog(opts.file);
   setCommunityCatalog(catalog);
   return catalog;
 }
@@ -105,13 +99,9 @@ export function loadCommunityPrices(
 export function communityFetchBlocked(
   settings: ModelCatalogSettings = readModelCatalogSettings(),
 ): string | undefined {
-  if (settings.policy === "off") {
-    return "Model information updates are off (modelCatalog: off), so models.dev is not contacted";
-  }
-  if (settings.community !== true) {
-    return "The community catalogue (models.dev) is opt-in and off (modelCatalogCommunity). models.dev is not contacted";
-  }
-  return undefined;
+  return settings.policy === "off"
+    ? "Model information updates are off (modelCatalog: off), so models.dev is not contacted"
+    : undefined;
 }
 
 /** A request large enough to have a price, small enough to hit no tier. */
@@ -183,14 +173,12 @@ export async function pullCommunityCatalog(
 }
 
 /**
- * The background refresh of the community catalogue. It runs only when model
- * information updates are a stored `automatic` and the community opt-in is
- * on. It checks on the same timer rules as OpenRouter's (first check 15 to
- * 60 seconds after start-up, then at most every 6 hours, every hour while
- * nothing needs it), and downloads only when `unpriced` says a selected model
- * has no better price and the copy is missing or older than the refresh
- * interval. The IDE does not start it: models.dev is an explicit refresh.
- * Not started under a test runner by its callers.
+ * The background refresh of the community catalogue, for model information
+ * updates `automatic`. It checks on the same timer rules as OpenRouter's
+ * (first check 15 to 60 seconds after start-up, then at most every 6 hours,
+ * every hour while nothing needs it), and downloads only when `unpriced`
+ * says a selected model has no better price and the copy is missing or older
+ * than the refresh interval. Not started under a test runner by its callers.
  */
 export function createCommunityRefresher(opts: {
   /** Whether a selected model has no price from a better source now. */
@@ -206,10 +194,7 @@ export function createCommunityRefresher(opts: {
   const settings = opts.settings ?? (() => readModelCatalogSettings());
   return new ModelCatalogRefresher<CommunityCatalog>({
     settings,
-    wanted: async () => {
-      if (settings().community !== true) return false;
-      return opts.unpriced();
-    },
+    wanted: opts.unpriced,
     fetchedAt: () => readCommunityCatalog(opts.file)?.fetchedAt,
     pull: async () => {
       // Read again at the moment of the request: the setting may have

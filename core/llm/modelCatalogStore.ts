@@ -19,12 +19,11 @@ import {
 /**
  * The downloaded OpenRouter list, kept as a dated file in the global folder
  * (`model-catalog/openrouter.json`). Written when the person asks for it
- * (Pull now, Refresh, `continuous models refresh`) and, when they have stored
- * `modelCatalog: automatic`, by the background refresh in
- * `modelCatalogRefresh.ts` when the copy is older than the refresh interval.
- * Nothing is stored as automatic: a fresh config does not refresh on its own.
- * The file is read, never fetched, everywhere else, including when updates
- * are manual. Holds public catalogue data and nothing else.
+ * (Pull now, Refresh, `continuous models refresh`) and, with model
+ * information updates set to `automatic` (the default), by the background
+ * refresh in `modelCatalogRefresh.ts` when the copy is older than the refresh
+ * interval. Read, never fetched, everywhere else. Holds public catalogue
+ * data and nothing else.
  */
 
 export function modelCatalogDir(): string {
@@ -152,26 +151,20 @@ export async function pullOpenRouterCatalog(
 /**
  * "Model information updates", the one setting for the OpenRouter list:
  *
- * - `ask` (default when nothing is stored): only when the person asks (Pull
- *   now, Refresh, `continuous models refresh`); provider setup offers the
- *   download. Written to config.yaml as `manual`.
- * - `automatic`: a stored loosening. Refreshed in the background when the
- *   copy on this computer is older than `refreshHours`
- *   (`modelCatalogRefresh.ts`). Written as `automatic`, never by deleting
- *   the line, so it stays distinct from the default.
+ * - `automatic` (default): refreshed in the background when the copy on this
+ *   computer is older than `refreshHours`, at start-up and while running
+ *   (`modelCatalogRefresh.ts`). Provider setup does not ask first.
+ * - `ask`: only when the person asks (Pull now, Refresh,
+ *   `continuous models refresh`); provider setup offers the download. Written
+ *   to config.yaml as `manual`.
  * - `never`: as `ask`, but provider setup does not offer it ("Don't ask
  *   again" in builds 2.16.0 and 2.16.1, which is how it got there).
  * - `off`: nothing is ever requested from openrouter.ai; the bundled model
- *   data is used instead of a downloaded list.
+ *   data (and a copy downloaded earlier, if any) is used.
  *
  * Ollama's list is not covered: it is fetched only from Ollama's own setup.
- * models.dev and the AWS Price List are separate opt-ins (`community`,
- * `priceList`), both off unless stored.
  */
 export type ModelCatalogPolicy = "automatic" | "ask" | "never" | "off";
-
-/** When `modelCatalog` is absent. Explicit refresh only. */
-export const DEFAULT_MODEL_CATALOG_POLICY: ModelCatalogPolicy = "ask";
 
 /** The values of the setting as a person writes them. */
 export type ModelInfoUpdates = "automatic" | "manual" | "off";
@@ -184,26 +177,12 @@ export interface ModelCatalogSettings {
   policy: ModelCatalogPolicy;
   /** How old the copy may get before an automatic refresh replaces it. */
   refreshHours: number;
-  /**
-   * models.dev, labelled community. Absent or false: off. A price from it is
-   * never a `--max-budget-usd` price without `--budget-allow-unpriced`.
-   */
-  community?: boolean;
-  /**
-   * The bulk AWS Price List for a Bedrock region. Absent or false: off. A
-   * download is kept for days (`PRICE_LIST_CACHE_DAYS`).
-   */
-  priceList?: boolean;
 }
 
 /** Environment overrides, for the terminal agent and CI. */
 export const MODEL_INFO_UPDATES_ENV = "CONTINUOUS_MODEL_INFO_UPDATES";
 export const MODEL_INFO_REFRESH_HOURS_ENV =
   "CONTINUOUS_MODEL_INFO_REFRESH_HOURS";
-/** `on` or `true` opts in to the community catalogue (models.dev). */
-export const MODEL_INFO_COMMUNITY_ENV = "CONTINUOUS_MODEL_INFO_COMMUNITY";
-/** `on` or `true` opts in to the bulk AWS Price List download. */
-export const BEDROCK_PRICE_LIST_ENV = "CONTINUOUS_BEDROCK_PRICE_LIST";
 
 /** A stored or typed value as a policy; undefined when it is not one. */
 export function parseModelCatalogPolicy(
@@ -235,26 +214,6 @@ export function modelInfoUpdatesOf(
     : policy === "off"
       ? "off"
       : "manual";
-}
-
-/** A stored opt-in. Absent is off, which is the default. */
-export function parseModelInfoOptIn(value: unknown): boolean | undefined {
-  if (typeof value === "boolean") return value;
-  if (typeof value !== "string") return undefined;
-  switch (value.trim().toLowerCase()) {
-    case "1":
-    case "true":
-    case "on":
-    case "yes":
-      return true;
-    case "0":
-    case "false":
-    case "off":
-    case "no":
-      return false;
-    default:
-      return undefined;
-  }
 }
 
 function parseRefreshHours(value: unknown): number | undefined {
@@ -293,13 +252,11 @@ function readStandIn(file: string): Record<string, unknown> {
 
 /**
  * The setting, from (first that has it): the environment
- * (`CONTINUOUS_MODEL_INFO_UPDATES`, `CONTINUOUS_MODEL_INFO_REFRESH_HOURS`,
- * `CONTINUOUS_MODEL_INFO_COMMUNITY`, `CONTINUOUS_BEDROCK_PRICE_LIST`),
- * `modelCatalog:`, `modelCatalogRefreshHours:`, `modelCatalogCommunity:` and
- * `bedrockPriceList:` in the user-level config.yaml (the file the settings
- * page and the VS Code setting write), and the stand-in file kept beside the
- * cache when there is no config.yaml. An absent policy is `ask`, not
- * `automatic`: a stored `automatic` is kept. A local read; nothing here fetches.
+ * (`CONTINUOUS_MODEL_INFO_UPDATES`, `CONTINUOUS_MODEL_INFO_REFRESH_HOURS`),
+ * `modelCatalog:` and `modelCatalogRefreshHours:` in the user-level
+ * config.yaml (the file the settings page and the VS Code setting write),
+ * and the stand-in file kept beside the cache when there is no config.yaml.
+ * A local read; nothing here fetches.
  */
 export function readModelCatalogSettings(
   file = path.join(getContinueGlobalPath(), "config.yaml"),
@@ -312,33 +269,13 @@ export function readModelCatalogSettings(
     parseModelCatalogPolicy(env[MODEL_INFO_UPDATES_ENV]) ??
     parseModelCatalogPolicy(yaml.modelCatalog) ??
     parseModelCatalogPolicy(stored.modelCatalog) ??
-    DEFAULT_MODEL_CATALOG_POLICY;
+    "automatic";
   const refreshHours =
     parseRefreshHours(env[MODEL_INFO_REFRESH_HOURS_ENV]) ??
     parseRefreshHours(yaml.modelCatalogRefreshHours) ??
     parseRefreshHours(stored.modelCatalogRefreshHours) ??
     DEFAULT_REFRESH_HOURS;
-  const community =
-    parseModelInfoOptIn(env[MODEL_INFO_COMMUNITY_ENV]) ??
-    parseModelInfoOptIn(yaml.modelCatalogCommunity) ??
-    parseModelInfoOptIn(stored.modelCatalogCommunity) ??
-    false;
-  const priceList =
-    parseModelInfoOptIn(env[BEDROCK_PRICE_LIST_ENV]) ??
-    parseModelInfoOptIn(yaml.bedrockPriceList) ??
-    parseModelInfoOptIn(stored.bedrockPriceList) ??
-    false;
-  return { policy, refreshHours, community, priceList };
-}
-
-/**
- * Start-up arms the background refreshers only for a stored `automatic`.
- * A fresh config is explicit refresh only.
- */
-export function modelInfoRefreshesInBackground(
-  settings: ModelCatalogSettings = readModelCatalogSettings(),
-): boolean {
-  return settings.policy === "automatic";
+  return { policy, refreshHours };
 }
 
 export function readModelCatalogPolicy(
@@ -361,59 +298,11 @@ export function modelInfoFetchBlocked(
     : undefined;
 }
 
-/**
- * Refresh now / Pull now: one request to openrouter.ai. models.dev is
- * contacted only when the community opt-in is on, and only through
- * `pullCommunity`, whose failure does not fail this refresh.
- */
-export async function pullRequestedModelInfo(
-  opts: {
-    requestOptions?: RequestOptions;
-    file?: string;
-    settings?: ModelCatalogSettings;
-    pullCommunity?: () => Promise<void>;
-    log?: (message: string) => void;
-  } = {},
-): Promise<
-  | { ok: true; fetchedAt: string; models: ModelCatalog["models"] }
-  | { ok: false; error: string }
-> {
-  const settings = opts.settings ?? readModelCatalogSettings();
-  const blocked = modelInfoFetchBlocked(settings);
-  if (blocked) return { ok: false, error: blocked };
-  try {
-    const catalog = await pullOpenRouterCatalog(opts.requestOptions, {
-      file: opts.file,
-    });
-    if (settings.community === true && opts.pullCommunity) {
-      try {
-        await opts.pullCommunity();
-      } catch (e) {
-        opts.log?.(
-          `Community catalogue refresh failed: ${e instanceof Error ? e.message : String(e)}`,
-        );
-      }
-    }
-    return {
-      ok: true,
-      fetchedAt: catalog.fetchedAt,
-      models: catalog.models,
-    };
-  } catch (e) {
-    return {
-      ok: false,
-      error: e instanceof Error ? e.message : String(e),
-    };
-  }
-}
-
-/**
- * How a policy is written to config.yaml. `automatic` is written, not
- * removed: an absent line is the default (`ask`), and a stored `automatic`
- * has to stay visible as a loosening.
- */
+/** How a policy is written to config.yaml; undefined removes the line. */
 function storedValue(policy: ModelCatalogPolicy): string | undefined {
   switch (policy) {
+    case "automatic":
+      return undefined;
     case "ask":
       return "manual";
     default:
@@ -422,16 +311,12 @@ function storedValue(policy: ModelCatalogPolicy): string | undefined {
 }
 
 /**
- * Save the setting where `readModelCatalogSettings` finds it. The default
- * refresh interval is saved by removing the line. `automatic` is saved as
- * the word `automatic`. An opt-in is saved as `true` and cleared by removing
- * the line.
+ * Save the setting where `readModelCatalogSettings` finds it. `automatic`
+ * and the default refresh interval are saved by removing the line.
  */
 export function saveModelCatalogSettings(change: {
   policy?: ModelCatalogPolicy;
   refreshHours?: number;
-  community?: boolean;
-  priceList?: boolean;
 }): boolean {
   const policy =
     change.policy === undefined
@@ -453,14 +338,6 @@ export function saveModelCatalogSettings(change: {
       if (hours === DEFAULT_REFRESH_HOURS) {
         delete target.modelCatalogRefreshHours;
       } else target.modelCatalogRefreshHours = hours;
-    }
-    if (change.community !== undefined) {
-      if (change.community) target.modelCatalogCommunity = true;
-      else delete target.modelCatalogCommunity;
-    }
-    if (change.priceList !== undefined) {
-      if (change.priceList) target.bedrockPriceList = true;
-      else delete target.bedrockPriceList;
     }
   };
   let saved = false;
