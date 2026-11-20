@@ -42,6 +42,7 @@ import { QuickEdit, QuickEditShowParams } from "./quickEdit/QuickEditQuickPick";
 import {
   addCodeToContextFromRange,
   addHighlightedCodeToContext,
+  getRangeInFileWithContents,
 } from "./util/addCode";
 import {
   AddToChatHost,
@@ -327,13 +328,21 @@ const getCommandsMap: (
           );
         }
       } else {
+        // Read the selection before the new session focuses the chat
+        // input. The session reset clears the input, so the code is
+        // added after that reset, into the session that stays on screen.
+        const rangeInFileWithContents = getRangeInFileWithContents(false);
         focusGUI();
-        sidebar.webviewProtocol?.request(
+        await sidebar.webviewProtocol?.request(
           "focusContinueInputWithNewSession",
           undefined,
           false,
         );
-        void addHighlightedCodeToContext(sidebar.webviewProtocol);
+        if (rangeInFileWithContents) {
+          void sidebar.webviewProtocol?.request("highlightedCode", {
+            rangeInFileWithContents,
+          });
+        }
       }
     },
     "continuous.focusContinuousInputWithoutClear": async () => {

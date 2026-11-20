@@ -246,9 +246,6 @@ describe("Keyboard Shortcuts", () => {
   it("Should create a code block when Cmd+L is pressed with text highlighted", async () => {
     const text = "Hello, world!";
 
-    // selectText drives the find widget, which does nothing while the
-    // sidebar still has focus after the previous test. Select All is a
-    // command, so that focus does not eat the keypress.
     await driver.switchTo().defaultContent();
     await editor.setText(text);
     await TestUtils.waitForSuccess(async () => {
@@ -256,12 +253,17 @@ describe("Keyboard Shortcuts", () => {
         throw new Error("Editor text is not ready");
       }
     });
-    // getText() collapses the selection. Select All goes through the
-    // command, so a focused sidebar does not eat the keypress.
+
+    // The previous test leaves the chat input focused. Ctrl+L then starts
+    // a new session and does not add the selection. selectText also drives
+    // the find widget, which does nothing while that input has focus.
+    ({ view } = await GUIActions.switchToReactIframe());
+    const input = await GUISelectors.getMessageInputFieldAtIndex(view, 0);
+    await driver.executeScript("arguments[0].blur()", input);
+    await view.switchBack();
     await editor.focus();
     await new Workbench().executeCommand("editor.action.selectAll");
-
-    await GUIActions.executeFocusContinueInputShortcut(driver);
+    await new Workbench().executeCommand("continuous.focusContinuousInput");
 
     ({ view } = await GUIActions.switchToReactIframe());
 
