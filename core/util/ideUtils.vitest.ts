@@ -49,8 +49,16 @@ describe("Windows paths that spell one place stay inside the workspace", () => {
     expect(isOutsideDirs(child, [parent])).toBe(false);
   });
 
-  it("folds the rest of a Windows path, and still resolves ..", () => {
+  it("matches a Windows drive letter without case, and still resolves ..", () => {
     expect(findUriInDirs(FILE_URI, [VSCODE]).foundInDir).toBe(VSCODE);
+    expect(
+      findUriInDirs("file:///D%3A/Code/App/a.ts", ["file:///d%3A/code/app"])
+        .foundInDir,
+    ).toBeNull();
+    expect(
+      findUriInDirs("file:///D%3A/Code/App/a.ts", ["file:///d%3A/Code/App"])
+        .foundInDir,
+    ).toBe("file:///d%3A/Code/App");
     expect(
       staysInDir(
         "file:///D:/Qsync/VBNETProjects/Kuid%20Lister/src/%2E%2E/.gitignore-python",
