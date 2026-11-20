@@ -247,8 +247,11 @@ export interface PolicyFileUpdate {
     agentDecides?: string[];
   };
   builtin?: Partial<Record<BuiltinRuleId, boolean>>;
-  /** The safety-check shield. Absent follows the mode. */
-  safetyChecks?: boolean;
+  /**
+   * The safety-check shield. Absent follows the mode. `null` removes the
+   * line, so the shield follows the mode again.
+   */
+  safetyChecks?: boolean | null;
   /** The whole `floor:` list as it should be; each entry a valid rule */
   floor?: string[];
   /** The servers whose read-only hints are trusted; every other entry is removed */
@@ -379,7 +382,9 @@ export function applyPolicyUpdate(
   if (update.questions?.agentDecides) {
     doc.setIn(["questions", "agentDecides"], update.questions.agentDecides);
   }
-  if (update.safetyChecks !== undefined) {
+  if (update.safetyChecks === null) {
+    doc.delete("safetyChecks");
+  } else if (update.safetyChecks !== undefined) {
     doc.set("safetyChecks", update.safetyChecks ? "on" : "off");
   }
   if (update.builtin) {

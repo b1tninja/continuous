@@ -26,6 +26,24 @@ describe("safetyChecks", () => {
     const off = applyPolicyUpdate(on, { safetyChecks: false });
     expect(off).toMatch(/safetyChecks: off/);
   });
+
+  it("removes the line on null, so the shield follows the mode again", () => {
+    const off = applyPolicyUpdate(
+      "# mine\nlevels:\n  tools: manual\nsafetyChecks: on\n",
+      { safetyChecks: null },
+    );
+    expect(off).not.toMatch(/safetyChecks/);
+    expect(off).toContain("# mine");
+    expect(parsePolicyFile(off).settings.safetyChecks).toBeUndefined();
+    expect(parsePolicyFile(off).settings.levels.tools).toBe("manual");
+  });
+
+  it("leaves the line alone when the update does not mention it", () => {
+    const text = applyPolicyUpdate("safetyChecks: off\n", {
+      levels: { ...DEFAULT_POLICY_LEVELS, tools: "permissive" },
+    });
+    expect(parsePolicyFile(text).settings.safetyChecks).toBe(false);
+  });
 });
 
 describe("parsePolicyFile", () => {

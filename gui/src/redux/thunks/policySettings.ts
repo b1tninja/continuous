@@ -116,9 +116,12 @@ export const savePolicySettings = createAsyncThunk<void, void, ThunkApiType>(
           : {}),
       },
       builtin: policyExtras.builtin,
-      ...(typeof policyExtras.safetyChecks === "boolean"
-        ? { safetyChecks: policyExtras.safetyChecks }
-        : {}),
+      // Absent in the state means the file has no line: remove it, so the
+      // shield follows the mode (switching to IDGAF clears the choice)
+      safetyChecks:
+        typeof policyExtras.safetyChecks === "boolean"
+          ? policyExtras.safetyChecks
+          : null,
     };
     const res = await extra.ideMessenger.request("policy/save", update);
     if (res.status !== "success") {
@@ -211,6 +214,39 @@ export function customPolicyUpdate({
   };
 }
 
+/** True when `next` has an IDGAF area and `previous` had none. */
+export function enteredIdgaf(
+  previous: PolicyLevels,
+  next: PolicyLevels,
+): boolean {
+  const any = (levels: PolicyLevels) =>
+    (Object.keys(levels) as PolicyArea[]).some(
+      (a) => parsePolicyLevel(levels[a]) === "idgaf",
+    );
+  return any(next) && !any(previous);
+}
+
+/**
+ * Switching to IDGAF switches the safety checks off: a choice made at a lower
+ * level (shield on) is cleared, so the shield follows the mode. The person can
+ * turn it back on afterwards.
+ */
+function clearSafetyChoiceOnIdgaf(
+  previous: PolicyLevels,
+  getState: () => {
+    ui: { policyLevels: PolicyLevels; policyExtras: PolicyExtras };
+  },
+  dispatch: (action: ReturnType<typeof setPolicyExtras>) => unknown,
+) {
+  const { policyLevels, policyExtras } = getState().ui;
+  if (
+    enteredIdgaf(previous, policyLevels) &&
+    policyExtras.safetyChecks !== undefined
+  ) {
+    dispatch(setPolicyExtras({ safetyChecks: undefined }));
+  }
+}
+
 export const changePolicyLevel = createAsyncThunk<
   void,
   { area: PolicyArea; level: PolicyLevel },
@@ -218,6 +254,7 @@ export const changePolicyLevel = createAsyncThunk<
 >("policy/changeLevel", async (change, { dispatch, getState, extra }) => {
   const previous = getState().ui.policyLevels;
   dispatch(setPolicyLevel(change));
+  clearSafetyChoiceOnIdgaf(previous, getState, dispatch);
   const saved = await dispatch(savePolicySettings());
   if (savePolicySettings.rejected.match(saved)) {
     dispatch(setPolicyLevels(previous));
@@ -232,6 +269,7 @@ export const applyPolicyPreset = createAsyncThunk<
 >("policy/applyPreset", async (levels, { dispatch, getState, extra }) => {
   const previous = getState().ui.policyLevels;
   dispatch(setPolicyLevels(levels));
+  clearSafetyChoiceOnIdgaf(previous, getState, dispatch);
   const saved = await dispatch(savePolicySettings());
   if (savePolicySettings.rejected.match(saved)) {
     dispatch(setPolicyLevels(previous));

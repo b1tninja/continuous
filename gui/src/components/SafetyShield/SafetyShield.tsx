@@ -95,12 +95,15 @@ export function SafetyShield() {
             Individual checks
           </div>
           <p className="mt-0 mb-1 text-description-muted">
-            These apply when safety checks are on.
+            {on
+              ? "These apply when safety checks are on."
+              : "Safety checks are off, so none of these apply. Turn them on to choose one at a time."}
           </p>
           {BUILTIN_RULES.map((rule) => (
             <div key={rule.id} data-testid={`shield-${rule.id}`}>
               <ToggleSwitch
-                isToggled={extras.builtin?.[rule.id] !== false}
+                isToggled={on && extras.builtin?.[rule.id] !== false}
+                disabled={!on}
                 text={rule.label}
                 tooltip={rule.description}
                 onToggle={() =>
