@@ -63,6 +63,7 @@ import {
   onKeepWaiting,
   proposalForAsk,
   publishCountdown,
+  spendTurnBudget,
 } from "../permissions/askCountdown.js";
 import { toolPermissionManager } from "../permissions/permissionManager.js";
 import {
@@ -373,6 +374,12 @@ async function promptTimed(
   try {
     const result = await toolPermissionManager.requestPermission(request);
     const resolved = held ? await held : undefined;
+    // Only the time actually held counts against this turn's budget
+    if (resolved && proposal) {
+      spendTurnBudget(
+        Math.min(proposal.seconds, (Date.now() - proposal.startedAt) / 1000),
+      );
+    }
     return {
       approved: result.approved,
       ...(resolved && proposal

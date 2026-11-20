@@ -7,8 +7,20 @@ import { POLICY_LEVELS, type PolicyLevel } from "./levelText";
  * proposal takes effect. Nothing here changes what the policy decides.
  */
 
-/** The windows a person can choose, in seconds. 0 is off: no timer. */
-export const TIMER_SECONDS = [0, 5, 10, 15, 30, 60] as const;
+/**
+ * The windows a person can choose, in seconds. 0 is off: no timer. None is
+ * longer than 30: a hold adds to the gap between two requests to the model, a
+ * prompt cache entry lasts 5 minutes by default, and the asks of one turn are
+ * shown one after another (turnBudget.ts).
+ */
+export const TIMER_SECONDS = [0, 5, 10, 15, 30] as const;
+
+/**
+ * The longest a proposal to run an allowed call may be held. An ask waits for
+ * the person anyway, so its window only caps the wait. An allow does not wait:
+ * every call would be delayed, and delays add up over a session.
+ */
+export const ALLOW_PROPOSAL_MAX_SECONDS = 10;
 export type TimerSeconds = (typeof TIMER_SECONDS)[number];
 
 /** A window per level, the level in force for the call's area. Absent is off. */
@@ -67,7 +79,8 @@ export interface Proposal {
   proposed: Proposed;
   /** The policy's own decision, kept for the audit */
   decision: PolicyFact;
-  seconds: Exclude<TimerSeconds, 0>;
+  /** The window actually held: the level's, capped for an allow, or what a turn budget leaves */
+  seconds: number;
   /** Milliseconds since the epoch when the window started */
   startedAt: number;
 }
@@ -101,7 +114,12 @@ export function propose(
     }
     return { proposed: "refuse", decision: fact, seconds, startedAt: ctx.now };
   }
-  return { proposed: "allow", decision: fact, seconds, startedAt: ctx.now };
+  return {
+    proposed: "allow",
+    decision: fact,
+    seconds: Math.min(seconds, ALLOW_PROPOSAL_MAX_SECONDS),
+    startedAt: ctx.now,
+  };
 }
 
 /**

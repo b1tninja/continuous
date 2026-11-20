@@ -225,7 +225,7 @@ export function parsePolicyFile(text: string | undefined): PolicyFileRead {
     if (Object.keys(timer).length > 0) settings.timer = timer;
     else if (JSON.stringify(rawTimer) !== "{}") {
       notices.push(
-        "levels.timer: no level has a window of 5, 10, 15, 30 or 60 seconds, so there is no timer.",
+        "levels.timer: no level has a window of 5, 10, 15 or 30 seconds, so there is no timer.",
       );
     }
   }
@@ -314,7 +314,7 @@ export function policyUpdateProblem(
     const kept = Object.keys(parseTimerSettings(update.timer));
     const bad = given.filter((k) => !kept.includes(k));
     if (bad.length > 0) {
-      return `levels.timer: ${bad.join(", ")} cannot be set. Use manual, cautious, automatic or permissive, with 5, 10, 15, 30 or 60 seconds (IDGAF has no timer).`;
+      return `levels.timer: ${bad.join(", ")} cannot be set. Use manual, cautious, automatic or permissive, with 5, 10, 15 or 30 seconds (IDGAF has no timer).`;
     }
   }
   return undefined;

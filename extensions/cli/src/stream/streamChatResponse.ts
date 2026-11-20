@@ -31,6 +31,7 @@ import { getCurrentSession } from "../session.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
 import { applyChatCompletionToolOverrides } from "../tools/applyToolOverrides.js";
 import { ToolCall } from "../tools/index.js";
+import { resetTurnBudget } from "../permissions/askCountdown.js";
 import { logCliDebugPrompt } from "../util/debugPromptLog.js";
 import {
   chatCompletionStreamWithBackoff,
@@ -476,6 +477,8 @@ export async function processStreamingResponse(
     turnTail,
     isCompacting,
   });
+  // A new request to the model starts a new turn for the decision timer's budget
+  resetTurnBudget();
   const requestStartTime = Date.now();
 
   const streamFactory = async (retryAbortSignal: AbortSignal) => {

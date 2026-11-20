@@ -9,6 +9,7 @@ import {
   getCountdown,
   keepWaitingFor,
   proposalForAsk,
+  resetTurnBudget,
   setCountdownAvailable,
 } from "../permissions/askCountdown.js";
 import { toolPermissionManager } from "../permissions/permissionManager.js";
@@ -47,6 +48,7 @@ function setTimer(yaml: string) {
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "cn-timer-"));
   resetPolicyLevels();
+  resetTurnBudget();
   setCountdownAvailable(true);
   vi.useFakeTimers();
 });
@@ -196,7 +198,7 @@ describe("requestUserPermissionTimed", () => {
 
   it("the window is the one set for the call's level", async () => {
     setTimer(
-      "levels:\n  tools: permissive\n  timer:\n    cautious: 60\n    permissive: 5\n",
+      "levels:\n  tools: permissive\n  timer:\n    cautious: 30\n    permissive: 5\n",
     );
     expect(
       proposalForAsk(
@@ -235,6 +237,90 @@ describe("requestUserPermissionTimed", () => {
     expect(getCountdown(shown[1])?.secondsLeft).toBe(10);
     await vi.advanceTimersByTimeAsync(10_000);
     expect((await second).timer?.resolved.outcome).toBe("default-applied");
+  });
+});
+
+describe("the turn budget on asks", () => {
+  const TIMER_30 = "levels:\n  tools: cautious\n  timer:\n    cautious: 30\n";
+  const probe = () =>
+    proposalForAsk(
+      { name: "Bash", arguments: { command: "x" } },
+      "normal",
+      undefined,
+    );
+
+  /** Shows an ask and lets its window run out; returns the window it had. */
+  async function lapse(id: string) {
+    const { callbacks, shown } = show();
+    const asked = requestUserPermissionTimed({ ...bash(), id }, callbacks);
+    await vi.waitFor(() => expect(shown).toHaveLength(1));
+    const window = getCountdown(shown[0])?.seconds;
+    await vi.advanceTimersByTimeAsync((window ?? 0) * 1000);
+    await asked;
+    return window;
+  }
+
+  it("asks in one turn use two windows of 30 s and the rest wait", async () => {
+    setTimer(TIMER_30);
+    expect(await lapse("a1")).toBe(30);
+    expect(await lapse("a2")).toBe(30);
+    // the 60 s of this turn are spent: later asks wait for an answer, as with no timer
+    expect(probe()).toBeUndefined();
+  });
+
+  it("an ask answered at once costs the turn almost nothing", async () => {
+    setTimer(TIMER_30);
+    const { callbacks, shown } = show();
+    const asked = requestUserPermissionTimed(bash(), callbacks);
+    await vi.waitFor(() => expect(shown).toHaveLength(1));
+    await vi.advanceTimersByTimeAsync(2_000);
+    toolPermissionManager.approveRequest(shown[0]);
+    await asked;
+    expect(probe()?.seconds).toBe(30);
+  });
+
+  it("a later ask gets only what the turn has left", async () => {
+    setTimer(TIMER_30);
+    const { callbacks, shown } = show();
+    const first = requestUserPermissionTimed(bash(), callbacks);
+    await vi.waitFor(() => expect(shown).toHaveLength(1));
+    await vi.advanceTimersByTimeAsync(30_000);
+    await first;
+    // 30 s spent; the next is answered at 20 s, leaving 10 s of the 60
+    const second = requestUserPermissionTimed(
+      { ...bash(), id: "b" },
+      callbacks,
+    );
+    await vi.waitFor(() => expect(shown).toHaveLength(2));
+    await vi.advanceTimersByTimeAsync(20_000);
+    toolPermissionManager.approveRequest(shown[1]);
+    await second;
+    // 10 s left, less the few polls vi.waitFor adds to the fake clock; rounded down
+    const left = probe()?.seconds ?? 0;
+    expect(left).toBeGreaterThanOrEqual(9);
+    expect(left).toBeLessThanOrEqual(10);
+  });
+
+  it("a new request to the model starts a new turn", async () => {
+    setTimer(TIMER_30);
+    await lapse("c1");
+    await lapse("c2");
+    expect(probe()).toBeUndefined();
+    resetTurnBudget();
+    expect(probe()?.seconds).toBe(30);
+  });
+
+  it("an ask that is not held does not spend the budget", async () => {
+    setTimer(TIMER_30);
+    const { callbacks, shown } = show();
+    const asked = requestUserPermissionTimed(bash(), callbacks, {
+      verdictSource: "ask-rule",
+    });
+    await vi.waitFor(() => expect(shown).toHaveLength(1));
+    await vi.advanceTimersByTimeAsync(200_000);
+    toolPermissionManager.approveRequest(shown[0]);
+    await asked;
+    expect(probe()?.seconds).toBe(30);
   });
 });
 

@@ -97,8 +97,8 @@ describe("writing the timer", () => {
     const start = applyPolicyUpdate(undefined, {
       timer: { cautious: 10, manual: 5 },
     });
-    expect(written(start, { timer: { permissive: 60 } }).levels.timer).toEqual({
-      permissive: 60,
+    expect(written(start, { timer: { permissive: 30 } }).levels.timer).toEqual({
+      permissive: 30,
     });
   });
 
@@ -139,7 +139,7 @@ describe("policyUpdateProblem for the timer", () => {
   it("accepts the offered windows", () => {
     expect(
       policyUpdateProblem({
-        timer: { manual: 5, cautious: 10, automatic: 15, permissive: 60 },
+        timer: { manual: 5, cautious: 10, automatic: 15, permissive: 30 },
       }),
     ).toBeUndefined();
     expect(policyUpdateProblem({ timer: null })).toBeUndefined();
@@ -149,7 +149,7 @@ describe("policyUpdateProblem for the timer", () => {
   it("refuses a window that is not offered, naming the level", () => {
     const why = policyUpdateProblem({ timer: { cautious: 7 } as never });
     expect(why).toContain("cautious");
-    expect(why).toContain("5, 10, 15, 30 or 60");
+    expect(why).toContain("5, 10, 15 or 30");
   });
 
   it("refuses IDGAF and an unknown level", () => {

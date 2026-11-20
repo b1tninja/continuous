@@ -32,21 +32,27 @@ const ctx = (over: Partial<TimerContext> = {}): TimerContext => ({
 });
 
 describe("TIMER_SECONDS", () => {
-  it("is off, then 5, 10, 15, 30 and 60 seconds", () => {
-    expect([...TIMER_SECONDS]).toEqual([0, 5, 10, 15, 30, 60]);
+  it("is off, then 5, 10, 15 and 30 seconds, and never longer", () => {
+    expect([...TIMER_SECONDS]).toEqual([0, 5, 10, 15, 30]);
+    expect(Math.max(...TIMER_SECONDS)).toBeLessThan(60);
   });
 });
 
 describe("parseTimerSettings", () => {
   it("reads a window per level", () => {
     expect(
-      parseTimerSettings({ manual: 5, cautious: "15", permissive: 60 }),
-    ).toEqual({ manual: 5, cautious: 15, permissive: 60 });
+      parseTimerSettings({ manual: 5, cautious: "15", permissive: 30 }),
+    ).toEqual({ manual: 5, cautious: 15, permissive: 30 });
   });
 
   it("treats a window that is not offered as off", () => {
     expect(
-      parseTimerSettings({ cautious: 7, manual: -5, permissive: 600 }),
+      parseTimerSettings({
+        cautious: 7,
+        manual: -5,
+        permissive: 60,
+        automatic: 600,
+      }),
     ).toEqual({});
     expect(parseTimerSettings({ cautious: "soon", manual: null })).toEqual({});
   });

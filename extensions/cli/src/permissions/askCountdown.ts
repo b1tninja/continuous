@@ -4,8 +4,11 @@ import { levelOfCall } from "core/tools/permissions/approval.js";
 import {
   propose,
   type Proposal,
-  type TimerSeconds,
 } from "core/tools/permissions/decisionTimer.js";
+import {
+  createTurnBudget,
+  TURN_BUDGET_SECONDS,
+} from "core/tools/permissions/turnBudget.js";
 import { resolveShell } from "core/util/shell.js";
 
 import { toCoreCall } from "./coreRules.js";
@@ -32,9 +35,27 @@ export interface CountdownState {
   requestId: string;
   /** Whole seconds left in the window */
   secondsLeft: number;
-  seconds: Exclude<TimerSeconds, 0>;
+  seconds: number;
   /** What happens when it reaches zero */
   proposed: "allow" | "refuse";
+}
+
+/**
+ * Holding adds to the gap between two requests to the model, and a prompt
+ * cache entry lasts 5 minutes by default, so one turn may spend only so long
+ * holding decisions (turnBudget.ts). A new request to the model starts a new
+ * turn. The 5 minute figure is used whatever the configured cache lifetime,
+ * which is the safe side of both.
+ */
+const budget = createTurnBudget(TURN_BUDGET_SECONDS["5m"]);
+
+export function resetTurnBudget(): void {
+  budget.reset();
+}
+
+/** Takes the time actually held from this turn's budget. */
+export function spendTurnBudget(seconds: number): void {
+  budget.spend(seconds);
 }
 
 const events = new EventEmitter();
@@ -128,7 +149,7 @@ export function proposalForAsk(
     const level = found.level as keyof NonNullable<
       ReturnType<typeof getPolicyExtras>["timer"]
     >;
-    return propose(
+    const proposal = propose(
       {
         policy: "allowedWithPermission",
         // A call the CLI's own policy asks about has no engine source: it is
@@ -142,6 +163,10 @@ export function proposalForAsk(
         now,
       },
     );
+    if (!proposal) return undefined;
+    // What this turn has left: a smaller window, or none (the ask waits)
+    const seconds = budget.grant(proposal.seconds);
+    return seconds > 0 ? { ...proposal, seconds } : undefined;
   } catch {
     return undefined;
   }

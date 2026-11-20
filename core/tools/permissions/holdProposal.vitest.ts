@@ -39,7 +39,7 @@ function fakeClock(start = 0) {
 
 const proposal = (
   proposed: "allow" | "ask",
-  seconds: 5 | 10 | 15 | 30 | 60 = 10,
+  seconds: 5 | 10 | 15 | 30 = 10,
 ): Proposal =>
   propose(
     proposed === "allow"
