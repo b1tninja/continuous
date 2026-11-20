@@ -56,6 +56,7 @@ export const loadPolicySettings = createAsyncThunk<void, void, ThunkApiType>(
           questionDelivery: settings.questions?.delivery,
           planAllowTerminal: settings.planAllowTerminal,
           customSet: settings.custom,
+          timer: settings.timer,
         }),
       );
       for (const notice of notices) console.warn(notice);

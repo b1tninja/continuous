@@ -1,3 +1,4 @@
+import type { TimerSettings } from "core/tools/permissions/decisionTimer";
 import type { StoredCustomSet } from "core/tools/permissions/settingsFile";
 import type { JSX } from "react";
 import { cacheTipKey } from "../../util/cacheTips";
@@ -89,6 +90,8 @@ type UIState = {
 
 /** The settings beside the levels (plans/policy-areas.md, "Settings"). */
 export interface PolicyExtras {
+  /** The decision timer: a window per level, from `levels.timer` in the file */
+  timer?: TimerSettings;
   /** Permissive on Plan edits: new to-dos a re-plan may add by itself */
   maxNewPlanItems?: number;
   questions?: { youDecide?: QuestionType[]; agentDecides?: QuestionType[] };

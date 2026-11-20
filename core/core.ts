@@ -1337,6 +1337,14 @@ export class Core {
       void this.shadowIde.answered(data.callId, data.approved);
     });
 
+    on("audit/timer", async ({ data }) => {
+      getAuditTrail().timerResolved(data.callId, data.resolved, data.held);
+      void this.shadowIde.answered(
+        data.callId,
+        data.resolved.final === "allow",
+      );
+    });
+
     on("web/fetchLog", async ({ data }) => getFetchLog().list(data?.session));
     on("web/endTurn", ({ data }) => {
       webContentStore.endTurn(data.sessionId);

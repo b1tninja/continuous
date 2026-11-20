@@ -974,6 +974,22 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
   "tools/autoReview": [AutoReviewRequest, AutoReviewReply];
   /** The person's answer to a call that asked, for the audit trail */
   "audit/answer": [{ callId: string; approved: boolean }, void];
+  /**
+   * How a call the decision timer held ended (tools/permissions/decisionTimer.ts):
+   * the person's choice, or a window that ran out. Written as one more decision
+   * row, by the person or by the system, so a default is never their choice.
+   */
+  "audit/timer": [
+    {
+      callId: string;
+      resolved: {
+        outcome: "default-applied" | "overridden" | "confirmed";
+        final: "allow" | "refuse";
+      };
+      held: { proposed: "allow" | "refuse"; seconds: number };
+    },
+    void,
+  ];
   /** A question answered for the person, where Questions is IDGAF (core/util/autoAnswer.ts) */
   "audit/autoAnswer": [
     { callId: string; question: string; answer: string; source: string },

@@ -1720,6 +1720,19 @@ export const sessionSlice = createSlice({
         }
       }
     },
+    setToolCallTimer: (
+      state,
+      action: PayloadAction<{
+        toolCallId: string;
+        timer: ToolCallState["askTimer"];
+      }>,
+    ) => {
+      const toolCallState = findToolCallById(
+        state.history,
+        action.payload.toolCallId,
+      );
+      if (toolCallState) toolCallState.askTimer = action.payload.timer;
+    },
     setToolCallDecision: (
       state,
       action: PayloadAction<{
@@ -2050,6 +2063,7 @@ export const {
   updateSubagentRun,
   setToolCallPolicyNote,
   setToolCallDecision,
+  setToolCallTimer,
   cancelToolCall,
   errorToolCall,
   acceptToolCall,
