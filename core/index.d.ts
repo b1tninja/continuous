@@ -2447,6 +2447,8 @@ export interface Tool {
     basePolicy: ToolPolicy,
     parsedArgs: Record<string, unknown>,
     processedArgs?: Record<string, unknown>,
+    /** What the safety checks say (core/tools/policies/fileAccess.ts) */
+    context?: { outsideCheckOff?: boolean },
   ) => ToolPolicy;
   mcpMeta?: McpToolMeta;
   /**

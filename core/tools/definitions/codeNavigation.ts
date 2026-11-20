@@ -3,7 +3,10 @@ import { Tool } from "../..";
 import { ResolvedPath, resolveInputPath } from "../../util/pathResolver";
 import { BUILT_IN_GROUP_NAME, BuiltInToolNames } from "../builtIn";
 import { CODE_NAVIGATION_OPERATIONS } from "../implementations/codeNavigation";
-import { evaluateFileAccessPolicy } from "../policies/fileAccess";
+import {
+  evaluateFileAccessPolicy,
+  type ToolPolicyContext,
+} from "../policies/fileAccess";
 
 /**
  * Semantic navigation through the IDE's language servers: what grep cannot
@@ -76,10 +79,15 @@ Results depend on the language's extension being installed; if one comes back em
     basePolicy: ToolPolicy,
     _: Record<string, unknown>,
     processedArgs?: Record<string, unknown>,
+    context?: ToolPolicyContext,
   ): ToolPolicy => {
     const resolvedPath = processedArgs?.resolvedPath as
       ResolvedPath | null | undefined;
     if (!resolvedPath) return basePolicy;
-    return evaluateFileAccessPolicy(basePolicy, resolvedPath.isWithinWorkspace);
+    return evaluateFileAccessPolicy(
+      basePolicy,
+      resolvedPath.isWithinWorkspace,
+      context,
+    );
   },
 };

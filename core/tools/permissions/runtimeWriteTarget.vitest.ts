@@ -1,14 +1,14 @@
+import { evaluateTerminalCommandSecurity } from "@continuedev/terminal-security";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterAll, beforeAll } from "vitest";
-import { evaluateTerminalCommandSecurity } from "@continuedev/terminal-security";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ShellKind } from "../../util/shell";
 import { evaluateToolPolicyWithRules as evaluateAndRun } from "./evaluate";
 import { wouldDecide } from "./idgafView.testutil";
 import { DEFAULT_POLICY_LEVELS } from "./policy";
 import { runtimeWriteTarget } from "./runtimeWriteTarget";
+import { builtinForPreset } from "./safetyDegrees";
 import { tryLink } from "./testLinks";
 
 // At IDGAF every call runs; these tests read what the guard would have
@@ -176,7 +176,11 @@ describe("at IDGAF such a command asks, and nothing loosens it", () => {
       parsedArgs: { command },
       permissions: undefined,
       shell,
-      approval: { levels: { ...DEFAULT_POLICY_LEVELS, tools } },
+      approval: {
+        levels: { ...DEFAULT_POLICY_LEVELS, tools },
+        // The IDGAF preset leaves no safety check on
+        ...(tools === "idgaf" ? { builtin: builtinForPreset("idgaf") } : {}),
+      },
       ...extra,
     });
 
@@ -220,6 +224,7 @@ describe("at IDGAF such a command asks, and nothing loosens it", () => {
     const r = run("rm $x; git push origin main", "bash", "idgaf", {
       approval: {
         levels: { ...DEFAULT_POLICY_LEVELS, tools: "idgaf" },
+        builtin: builtinForPreset("idgaf"),
         floor: ["runTerminalCommand(git push*)"],
       },
     });

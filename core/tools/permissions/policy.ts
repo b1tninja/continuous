@@ -232,22 +232,31 @@ export type PolicyPresetName =
 
 export const POLICY_PRESETS: Record<
   PolicyPresetName,
-  { label: string; description: string; levels: PolicyLevels }
+  {
+    label: string;
+    description: string;
+    levels: PolicyLevels;
+    /** How many safety checks the preset leaves on (core/tools/permissions/safetyDegrees.ts) */
+    safety: "all" | "some" | "few" | "none";
+  }
 > = {
   careful: {
     label: "Careful",
     description: "Reads freely, asks for commands, you review edits.",
+    safety: "all",
     levels: DEFAULT_POLICY_LEVELS,
   },
   acceptEdits: {
     label: "Accept edits",
     description: "Like Careful, and edits are accepted unless denied.",
+    safety: "all",
     levels: { ...DEFAULT_POLICY_LEVELS, edits: "permissive" },
   },
   handsOff: {
     label: "Hands off",
     description:
       "Runs everything your rules do not stop. The agent makes the small calls.",
+    safety: "few",
     levels: {
       context: "permissive",
       tools: "permissive",
@@ -259,6 +268,7 @@ export const POLICY_PRESETS: Record<
   reviewer: {
     label: "Reviewer",
     description: "A reviewer model decides what your rules leave open.",
+    safety: "some",
     levels: {
       context: "automatic",
       tools: "automatic",
@@ -270,7 +280,8 @@ export const POLICY_PRESETS: Record<
   idgaf: {
     label: "IDGAF",
     description:
-      "Everything runs and nothing asks. Safety checks stay off unless you turn them on.",
+      "Everything runs, nothing asks and no safety check is on. Turn checks back on one by one if you want them.",
+    safety: "none",
     levels: {
       context: "idgaf",
       tools: "idgaf",

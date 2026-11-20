@@ -8,6 +8,7 @@ import { dependencyCommandHit, dependencyFileHit } from "./dependencyChange";
 import { destructiveCommandHit } from "./destructiveCommands";
 import type { RuleSourcesInput } from "./effectiveRules";
 import type { PolicyLevel } from "./policy";
+import { builtinForPreset } from "./safetyDegrees";
 import { testToolCall } from "./testToolCall";
 
 const lines = (n: number) =>
@@ -122,8 +123,17 @@ describe("ask-destructive-commands", () => {
     expect(r.protection).toBe("destructive-command");
   });
 
-  it("is reached past only by IDGAF", () => {
-    expect(cmd("git reset --hard", { level: "idgaf" }).decision).toBe("allow");
+  it("is reached past only by the IDGAF preset, which turns the check off", () => {
+    expect(
+      cmd("git reset --hard", {
+        level: "idgaf",
+        sources: { builtin: builtinForPreset("idgaf") },
+      }).decision,
+    ).toBe("allow");
+  });
+
+  it("still asks at IDGAF levels while the check is on", () => {
+    expect(cmd("git reset --hard", { level: "idgaf" }).decision).toBe("ask");
   });
 });
 
