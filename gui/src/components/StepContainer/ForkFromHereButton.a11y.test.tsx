@@ -37,9 +37,27 @@ describe("Fork from here: assistive technology", () => {
   });
 
   it("can be reached with the keyboard", async () => {
-    await setup();
+    const { view } = await setup();
+    const toolbar = screen.getByRole("toolbar", { name: "Message actions" });
+    const roving = Array.from(
+      toolbar.querySelectorAll<HTMLElement>("[data-roving]"),
+    );
+    const stops = roving.filter((el) => el.tabIndex === 0);
+    expect(stops).toHaveLength(1);
+    const tabbable = Array.from(
+      toolbar.querySelectorAll<HTMLElement>("button, [role='button']"),
+    ).filter((el) => el.tabIndex >= 0);
+    expect(tabbable).toHaveLength(1);
+    stops[0].focus();
     const button = screen.getByRole("button", { name: "Fork from here" });
-    expect(button.tabIndex).toBe(0);
+    for (
+      let i = 0;
+      i < roving.length && document.activeElement !== button;
+      i++
+    ) {
+      await view.user.keyboard("{ArrowRight}");
+    }
+    expect(document.activeElement).toBe(button);
     expect(button.getAttribute("type")).toBe("button");
   });
 

@@ -13,24 +13,65 @@ function hasScheme(value: string): boolean {
   return /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value);
 }
 
-/** A filesystem path is `parent` or inside it. Used when a caller has no URI. */
-function plainInside(parent: string, child: string): boolean {
-  const rel = path.relative(path.resolve(parent), path.resolve(child));
+/** A relative result that did not climb out of the directory it was measured from. */
+function contained(rel: string): boolean {
   return (
     rel === "" ||
     (rel !== ".." &&
-      !rel.startsWith(`..${path.sep}`) &&
+      !rel.startsWith("..\\") &&
       !rel.startsWith("../") &&
-      !path.isAbsolute(rel))
+      !path.win32.isAbsolute(rel) &&
+      !path.posix.isAbsolute(rel))
   );
+}
+
+/** A filesystem path is `parent` or inside it. Used when a caller has no URI. */
+function plainInside(parent: string, child: string): boolean {
+  const rel = path.relative(path.resolve(parent), path.resolve(child));
+  return contained(rel);
+}
+
+/**
+ * A Windows drive or UNC path, including a `file://` URI that names one
+ * (`file:///d%3A/proj` is `d:/proj`). Other URIs are not Windows paths.
+ * A drive letter matches `scheme:`, so this has to be recognised before a
+ * URI parse: `D:\proj` and `D:/proj` are the same folder, not two schemes.
+ */
+function windowsPathOf(value: string): string | undefined {
+  let text = value.trim();
+  if (/^file:/i.test(text)) {
+    const rest = text.replace(/^file:\/\/(localhost)?/i, "");
+    try {
+      text = decodeURIComponent(rest);
+    } catch {
+      return undefined;
+    }
+  }
+  // `file:///d%3A/proj` and uriToPath's `/d:/proj` are the drive path `d:/proj`.
+  text = text.replace(/^\/([a-zA-Z]:[\\/])/, "$1");
+  if (/^[a-zA-Z]:[\\/]/.test(text) || /^\\\\[^\\]/.test(text)) return text;
+  return undefined;
+}
+
+/**
+ * `child` is `parent` or inside it on Windows. Slash direction, drive-letter
+ * case and a trailing separator are the same path. `..` is resolved first.
+ */
+function windowsInside(parent: string, child: string): boolean {
+  return contained(path.win32.relative(parent, child));
 }
 
 /**
  * Whether `fullUri` stays inside `dirUri`. URI pairs go through the normalized
  * comparison. Plain paths (some tests and stubs) are compared as filesystem
- * paths so a missing scheme does not throw.
+ * paths so a missing scheme does not throw. Windows paths are compared with
+ * Windows rules even when this process is not Windows, so a drive letter is
+ * not read as a URI scheme.
  */
 export function staysInDir(fullUri: string, dirUri: string): boolean {
+  const child = windowsPathOf(fullUri);
+  const parent = windowsPathOf(dirUri);
+  if (child && parent) return windowsInside(parent, child);
   if (hasScheme(fullUri) && hasScheme(dirUri)) {
     return findUriInDirs(fullUri, [dirUri]).foundInDir !== null;
   }

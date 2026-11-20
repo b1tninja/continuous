@@ -6,6 +6,7 @@ import type {
   SaveProviderModelsRequest,
 } from "core/config/providerSetup";
 import { catalogPriceNote } from "core/llm/utils/catalogPricing";
+import { contextLengthOverride } from "../ModelConfig/ContextLengthControl";
 import { buildModelFromForm, FormValues } from "../../forms/addModelFormUtils";
 import type { ModelLists } from "../../forms/modelListUtils";
 import type { ModelPackage } from "../../pages/AddNewModel/configs/models";
@@ -281,6 +282,8 @@ export interface BuildRequestArgs {
    * is a suggestion for a new account.
    */
   account?: { name?: string };
+  /** Typed context-length overrides from the model step. Empty keeps the published window. */
+  windows?: Record<string, string>;
 }
 
 /**
@@ -295,7 +298,17 @@ export function buildSaveRequest({
   key,
   useLiveTitles,
   account,
+  windows,
 }: BuildRequestArgs): SaveProviderModelsRequest {
+  const contextWindows = Object.entries(windows ?? {}).flatMap(
+    ([model, raw]) => {
+      const contextLength = contextLengthOverride(raw);
+      return contextLength === undefined ? [] : [{ model, contextLength }];
+    },
+  );
+  const byModel = new Map(
+    contextWindows.map((w) => [w.model, w.contextLength]),
+  );
   const add = diff.add
     .filter((row) => row.pkg)
     .map((row) => {
@@ -307,6 +320,8 @@ export function buildSaveRequest({
         { title: useLiveTitles ? pkg.params.title : undefined },
       );
       delete model.apiKey;
+      const override = byModel.get(pkg.params.model);
+      if (override !== undefined) model.contextLength = override;
       return model;
     });
 
@@ -330,6 +345,7 @@ export function buildSaveRequest({
     request.from = editing;
   }
   if (account) request.account = account;
+  if (contextWindows.length > 0) request.contextWindows = contextWindows;
   if (key) {
     request.key = {
       storage: key.storage,

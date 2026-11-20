@@ -11,6 +11,34 @@ import {
   writePolicyFile,
 } from "./settingsFile";
 
+describe("skipPermissionConfirm", () => {
+  it("reads and writes on and off, and ignores anything else", () => {
+    expect(
+      parsePolicyFile("skipPermissionConfirm: on").settings
+        .skipPermissionConfirm,
+    ).toBe(true);
+    expect(
+      parsePolicyFile("skipPermissionConfirm: off").settings
+        .skipPermissionConfirm,
+    ).toBe(false);
+    expect(parsePolicyFile("skipPermissionConfirm: maybe").notices[0]).toMatch(
+      /skipPermissionConfirm/,
+    );
+    const on = applyPolicyUpdate(undefined, { skipPermissionConfirm: true });
+    expect(on).toMatch(/skipPermissionConfirm: on/);
+    const off = applyPolicyUpdate(on, { skipPermissionConfirm: null });
+    expect(off).not.toMatch(/skipPermissionConfirm/);
+    expect(parsePolicyFile(off).settings.skipPermissionConfirm).toBeUndefined();
+  });
+
+  it("leaves the line alone when the update does not mention it", () => {
+    const text = applyPolicyUpdate("skipPermissionConfirm: on\n", {
+      levels: { ...DEFAULT_POLICY_LEVELS, tools: "permissive" },
+    });
+    expect(parsePolicyFile(text).settings.skipPermissionConfirm).toBe(true);
+  });
+});
+
 describe("the old safetyChecks line", () => {
   it("off reads as every check off", () => {
     const { settings } = parsePolicyFile("safetyChecks: off");
