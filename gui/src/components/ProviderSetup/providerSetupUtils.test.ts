@@ -215,6 +215,19 @@ describe("buildSaveRequest", () => {
     });
   });
 
+  it("writes a context window the person set, and skips an empty one", () => {
+    const request = buildSaveRequest({
+      provider: anthropic,
+      values: {},
+      diff: { add: [rows[0]], remove: [], keep: [] },
+      windows: { [rows[0].model]: "100000", [rows[1].model]: "" },
+    });
+    expect(request.add?.[0].contextLength).toBe(100000);
+    expect(request.contextWindows).toEqual([
+      { model: rows[0].model, contextLength: 100000 },
+    ]);
+  });
+
   it("sends removals by name and no key section when there is none", () => {
     const request = buildSaveRequest({
       provider: anthropic,
