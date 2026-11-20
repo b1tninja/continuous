@@ -63,6 +63,17 @@ describe("resolveInputPath workspace boundary", () => {
     );
     expect(await resolveInputPath(ide, "missing.txt")).toBeNull();
 
+    // A file that has not been created yet is still in the folder. The
+    // boundary is the path, not whether the name is on disk.
+    const missing = path.join(workspace, ".gitignore-python");
+    const created = await resolveInputPath(ide, missing);
+    expect(created?.isWithinWorkspace).toBe(true);
+    expect(fileURLToPath(created!.uri)).toBe(missing);
+    const outsideFile = path.join(parent, "secret.txt");
+    expect((await resolveInputPath(ide, outsideFile))?.isWithinWorkspace).toBe(
+      false,
+    );
+
     const wsUri = pathToFileURL(workspace).href.replace(/\/$/, "");
     const byUri = await resolveInputPath(ide, `${wsUri}/../secret.txt`);
     expect(byUri?.isWithinWorkspace).toBe(false);

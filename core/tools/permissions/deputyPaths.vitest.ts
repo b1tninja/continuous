@@ -71,6 +71,56 @@ describe("deputyPathHit on Windows paths", () => {
   ])("%s is inside and unremarkable", (raw) => {
     expect(why(raw, "win32")).toBeUndefined();
   });
+
+  // Issue #954: VS Code stores the folder as file:///d%3A/..., which uriToPath
+  // reads as /d:/... A write of that same folder with the other slash, a
+  // capital drive letter, or a trailing separator is not outside it.
+  it("a Windows path that differs only by slash, drive letter or a trailing separator is inside", () => {
+    const cwd = "/d:/Qsync/VBNETProjects/Kuid Lister";
+    const inside = [
+      ".gitignore-python",
+      "D:\\Qsync\\VBNETProjects\\Kuid Lister\\.gitignore-python",
+      "D:/Qsync/VBNETProjects/Kuid Lister/.gitignore-python",
+      "file:///D:/Qsync/VBNETProjects/Kuid%20Lister/.gitignore-python",
+    ];
+    for (const root of [
+      cwd,
+      `${cwd}/`,
+      "d:\\Qsync\\VBNETProjects\\Kuid Lister\\",
+    ]) {
+      for (const raw of inside) {
+        expect(
+          deputyPathHit({
+            raw,
+            flavor: "win32",
+            home: WIN_HOME,
+            cwd: root,
+            roots: [root],
+            globalDirs: ["~/.continuous"],
+          })?.why,
+          `${raw} against ${root}`,
+        ).toBeUndefined();
+      }
+    }
+    expect(
+      deputyPathHit({
+        raw: "D:\\elsewhere\\secret.txt",
+        flavor: "win32",
+        home: WIN_HOME,
+        cwd,
+        roots: [cwd],
+      })?.why,
+    ).toBe("outside-workspace");
+    expect(
+      deputyPathHit({
+        raw: "D:\\Qsync\\VBNETProjects\\Kuid Lister Evil\\x",
+        flavor: "win32",
+        home: WIN_HOME,
+        cwd,
+        roots: [cwd],
+      })?.why,
+    ).toBe("outside-workspace");
+  });
 });
 
 describe("deputyPathHit on POSIX paths", () => {

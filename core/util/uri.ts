@@ -96,9 +96,21 @@ export function findUriInDirs(
     if (uriPathParts.length < dirPathParts.length) {
       continue;
     }
+    // `D:` and `d:` are one drive. Folder case stays as written: the drop
+    // handler folds it only when caseInsensitiveFiles is set. A POSIX path
+    // stays case-sensitive, including its first segment.
+    const foldDrive =
+      /^[a-zA-Z]:$/.test(dirPathParts[0] ?? "") &&
+      /^[a-zA-Z]:$/.test(uriPathParts[0] ?? "");
     let allDirPartsMatch = true;
     for (let i = 0; i < dirPathParts.length; i++) {
-      if (dirPathParts[i] !== uriPathParts[i]) {
+      const dirPart = dirPathParts[i];
+      const uriPart = uriPathParts[i];
+      const same =
+        foldDrive && i === 0
+          ? dirPart.toLowerCase() === uriPart.toLowerCase()
+          : dirPart === uriPart;
+      if (!same) {
         allDirPartsMatch = false;
       }
     }
