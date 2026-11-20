@@ -203,7 +203,7 @@ describe("savePolicyWithConfirmation: the native confirmation", () => {
   });
 
   it("default still shows the dialog", async () => {
-    const confirm = vi.fn(async () => true);
+    const confirm = vi.fn(async (_text: string) => true);
     await savePolicyWithConfirmation(
       file,
       {
@@ -239,7 +239,7 @@ describe("savePolicyWithConfirmation: the native confirmation", () => {
   });
 
   it("turning the setting on asks once, and a no writes nothing", async () => {
-    const confirm = vi.fn(async () => false);
+    const confirm = vi.fn(async (_text: string) => false);
     await expect(
       savePolicyWithConfirmation(
         file,
@@ -258,9 +258,10 @@ describe("savePolicyWithConfirmation: the native confirmation", () => {
         group: "Built-In",
         evaluateToolCallPolicy: (base: any, args: Record<string, unknown>) =>
           evaluateTerminalCommandSecurity(base, args.command as string),
-      },
+      } as any,
       toolName: "run_terminal_command",
       basePolicy: "allowedWithoutPermission",
+      permissions: undefined,
       parsedArgs: { command: "git reset --hard" },
       approval: {
         levels: { ...DEFAULT_POLICY_LEVELS, tools: "permissive" },
