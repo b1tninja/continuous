@@ -246,16 +246,23 @@ describe("Keyboard Shortcuts", () => {
   it("Should create a code block when Cmd+L is pressed with text highlighted", async () => {
     const text = "Hello, world!";
 
-    // The new file from beforeEach is not always the focused editor: the
-    // sidebar can still hold focus, and selectText then selects nothing.
-    await TestUtils.waitForSuccess(() => editor.click());
+    // selectText drives the find widget, which does nothing while the
+    // sidebar still has focus after the previous test. Focus the editor
+    // and select with Ctrl+A, which is what Edit.test.ts does.
+    await driver.switchTo().defaultContent();
     await editor.setText(text);
     await TestUtils.waitForSuccess(async () => {
       if ((await editor.getText()).trim() !== text) {
         throw new Error("Editor text is not ready");
       }
     });
-    await editor.selectText(text);
+    await editor.focus();
+    await driver
+      .actions()
+      .keyDown(TestUtils.osControlKey)
+      .sendKeys("a")
+      .keyUp(TestUtils.osControlKey)
+      .perform();
 
     await GUIActions.executeFocusContinueInputShortcut(driver);
 
