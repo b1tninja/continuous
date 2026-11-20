@@ -94,6 +94,12 @@ export interface SaveProviderModelsRequest {
   add?: JSONModelDescription[];
   /** Names (as in config.yaml) of models to remove from this connection. */
   remove?: string[];
+  /**
+   * Context windows the person set in the wizard, by model id. Applied to
+   * models added in this save and to models of this connection already in
+   * the config. Absent means the published window stays.
+   */
+  contextWindows?: { model: string; contextLength: number }[];
   key?: {
     storage: KeyStorage;
     /** Required unless storage is "inline". Must be an environment variable name. */
@@ -393,6 +399,14 @@ export function applyProviderModels(
     taken.add(incoming.name);
     if (apiKey) incoming.apiKey = apiKey;
     remaining.push(incoming);
+  }
+
+  for (const window of req.contextWindows ?? []) {
+    remaining = remaining.map((m) =>
+      inConnection(m) && m.model === window.model
+        ? { ...m, contextLength: window.contextLength }
+        : m,
+    );
   }
 
   const next = { ...config, models: remaining } as ConfigYaml;
