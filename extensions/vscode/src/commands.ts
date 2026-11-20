@@ -304,6 +304,9 @@ const getCommandsMap: (
       // the input. A focused input with nothing selected is the second
       // press: hide the sidebar, or start a new session.
       const rangeInFileWithContents = getRangeInFileWithContents(false);
+      console.log(
+        `[focusContinuousInput] chatFocused=${isContinueInputFocused} selection=${JSON.stringify(rangeInFileWithContents?.contents ?? null)}`,
+      );
 
       // This is a temporary fix—sidebar.webviewProtocol.request is blocking
       // when the GUI hasn't yet been setup and we should instead be
