@@ -22,25 +22,20 @@ import {
 /**
  * Bedrock prices from the AWS Price List bulk file for one region
  * (`AmazonBedrock` offer, public, no credentials and no IAM), kept as a
- * dated file under the global folder (`model-catalog/bedrock-prices-<region>.json`).
+ * dated file under the global folder (`model-catalog/bedrock-prices-<region>.json`)
+ * and refreshed under the "Model information updates" setting:
  *
- * The download is opt-in (`bedrockPriceList`, off unless stored) and is not
- * part of model information updates `automatic`:
+ * - `automatic`: in the background, at most once per refresh interval, for
+ *   the region of the selected Bedrock model only;
+ * - `manual`: on Test connection of a Bedrock model only;
+ * - `off`: never requested, and a copy kept from before is not used.
  *
- * - off: nothing is requested; a copy already on disk still prices estimates
- *   unless model information updates are `off`;
- * - on: downloaded when a Bedrock model is selected or on Test connection,
- *   and only when the copy is missing or older than `PRICE_LIST_CACHE_DAYS`.
- *   The background timer does not download it.
- *
- * pricing.us-east-1.amazonaws.com is contacted only with that opt-in. The
- * file is large, so it is read as a stream and only the per-token rows are
- * kept; nothing else of it is held in memory.
+ * pricing.us-east-1.amazonaws.com is contacted only when a Bedrock model is
+ * configured. The file is large, so it is read as a stream and only the
+ * per-token rows are kept; nothing else of it is held in memory.
  */
 
 export const PRICE_LIST_HOST = "pricing.us-east-1.amazonaws.com";
-/** How long a downloaded Price List is kept before another download. */
-export const PRICE_LIST_CACHE_DAYS = 7;
 
 /** The offer file for `region`. */
 export function bedrockPriceListUrl(region: string): string {
@@ -605,29 +600,25 @@ export function resetBedrockPriceListState(): void {
   lastFailure.clear();
 }
 
-function priceListStale(fetchedAt: string, now: number): boolean {
+function isStale(fetchedAt: string, hours: number, now: number): boolean {
   const t = Date.parse(fetchedAt);
-  return (
-    !Number.isFinite(t) ||
-    t > now ||
-    now - t >= PRICE_LIST_CACHE_DAYS * 24 * 60 * 60 * 1000
-  );
+  return !Number.isFinite(t) || t > now || now - t >= hours * 60 * 60 * 1000;
 }
 
 /**
  * Put the prices of `region` in front of the cost functions, downloading
- * them only when the Price List opt-in is on and the kept copy is missing
- * or older than `PRICE_LIST_CACHE_DAYS`:
+ * them when the setting allows and the kept copy is missing or older than
+ * the refresh interval:
  *
- * - model information updates `off`: nothing is requested, and the kept
- *   copy is not used either;
- * - opt-in off: nothing is requested; a copy already on disk is used;
- * - `test-connection` and `model-selected` download when the opt-in is on;
- *   a selection waits an hour after a failed download;
- * - `background` never downloads.
+ * - `off`: nothing is requested, and the kept copy is not used either;
+ * - `test-connection` downloads under `automatic` and `manual`;
+ * - `model-selected` and `background` download only under `automatic`; a
+ *   selection waits an hour after a failed download, the background
+ *   refresher backs off by itself.
  *
  * Returns the list in use (or undefined). Throws only when a download was
- * made and failed, so a caller can back off; the kept copy stays in use.
+ * made and failed, so a background refresher can back off; the kept copy
+ * stays in use.
  */
 export async function ensureBedrockPriceList(
   region: string | undefined,
@@ -652,18 +643,20 @@ export async function ensureBedrockPriceList(
   const kept = readBedrockPriceList(region, opts.dir);
   activate(kept);
   const now = opts.now?.().getTime() ?? Date.now();
-  if (settings.priceList !== true || trigger === "background") return kept;
-  if (kept && !priceListStale(kept.fetchedAt, now)) return kept;
-  // A selection waits an hour after a failure so switching models does not
-  // download again and again. Test connection is the person asking now.
-  if (
-    trigger === "model-selected" &&
-    now - (lastFailure.get(region) ?? -Infinity) < PRICE_LIST_RETRY_AFTER_MS
-  ) {
+  if (kept && !isStale(kept.fetchedAt, settings.refreshHours, now)) {
     return kept;
   }
+  // The background refresher has its own backoff; a selection waits an hour
+  // after a failure so switching models does not download again and again
+  const mayFetch =
+    trigger === "test-connection" ||
+    (settings.policy === "automatic" &&
+      (trigger === "background" ||
+        now - (lastFailure.get(region) ?? -Infinity) >=
+          PRICE_LIST_RETRY_AFTER_MS));
+  if (!mayFetch) return kept;
   let pending = inFlight.get(region);
-  if (pending === undefined) {
+  if (!pending) {
     pending = fetchBedrockPriceList(region, opts).finally(() =>
       inFlight.delete(region),
     );

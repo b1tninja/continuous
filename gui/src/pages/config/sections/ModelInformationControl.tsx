@@ -10,16 +10,16 @@ type Mode = "automatic" | "manual" | "off";
 
 const OPTIONS: { mode: Mode; label: string; effect: string }[] = [
   {
-    mode: "manual",
-    label: "Only when I ask (default)",
+    mode: "automatic",
+    label: "Automatic (default)",
     effect:
-      "openrouter.ai is contacted only when you choose Pull now or Refresh now, or run `continuous models refresh`. A copy already on this computer is still used.",
+      "Keeps OpenRouter's public model list (names, context sizes, prices, tool support) current: one GET to openrouter.ai, with no key or account, when the copy on this computer is older than the refresh interval, at start-up and while running.",
   },
   {
-    mode: "automatic",
-    label: "Automatic (loosens the default)",
+    mode: "manual",
+    label: "Only when I ask",
     effect:
-      "Loosens the default: one GET to openrouter.ai, with no key or account, when the copy on this computer is older than the refresh interval, at start-up and while running. Also looks up the selected Anthropic or OpenAI model at its own API.",
+      "openrouter.ai is contacted only when you choose Pull now or Refresh now, or run `continuous models refresh`.",
   },
   {
     mode: "off",
@@ -37,8 +37,6 @@ export function ModelInformationControl() {
   const ideMessenger = useContext(IdeMessengerContext);
   const [policy, setPolicy] = useState<CatalogPolicy>();
   const [hours, setHours] = useState<number>();
-  const [community, setCommunity] = useState(false);
-  const [priceList, setPriceList] = useState(false);
   const [error, setError] = useState<string>();
   const [version, setVersion] = useState(0);
 
@@ -48,8 +46,6 @@ export function ModelInformationControl() {
       if (res.status !== "success") return;
       setPolicy(res.content.policy);
       setHours(res.content.refreshHours);
-      setCommunity(res.content.communityOptIn === true);
-      setPriceList(res.content.priceListOptIn === true);
     } catch {
       // not shown
     }
@@ -62,8 +58,6 @@ export function ModelInformationControl() {
   const save = async (next: {
     policy?: CatalogPolicy;
     refreshHours?: number;
-    community?: boolean;
-    priceList?: boolean;
   }) => {
     setError(undefined);
     try {
@@ -123,41 +117,6 @@ export function ModelInformationControl() {
             </label>
           ))}
         </fieldset>
-        <label className="mt-2 flex cursor-pointer items-start gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={community}
-            onChange={() => void save({ community: !community })}
-            className="mt-0.5"
-          />
-          <span>
-            <span className="font-semibold">
-              Community catalogue (models.dev)
-            </span>
-            <span className="block opacity-75">
-              Opt-in, labelled community. Off unless you turn this on. Refresh
-              now then requests models.dev only for a model with no other price.
-              That price is not used for --max-budget-usd unless you also pass
-              --budget-allow-unpriced.
-            </span>
-          </span>
-        </label>
-        <label className="flex cursor-pointer items-start gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={priceList}
-            onChange={() => void save({ priceList: !priceList })}
-            className="mt-0.5"
-          />
-          <span>
-            <span className="font-semibold">AWS Price List</span>
-            <span className="block opacity-75">
-              Opt-in. Off unless you turn this on. Downloads the bulk Price List
-              for a Bedrock model's region and keeps it for 7 days. A copy
-              already on this computer is still used.
-            </span>
-          </span>
-        </label>
         {mode === "automatic" && hours !== undefined && (
           <label className="mt-2 flex items-center gap-2 text-xs">
             Refresh when older than

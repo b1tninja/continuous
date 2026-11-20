@@ -22,11 +22,9 @@ import { setBedrockPriceList } from "./utils/bedrockPriceListPricing.js";
  * provider of the selected model is looked at, never every configured one.
  *
  * - On selection (and at start-up for the model already selected): the kept
- *   price list is put in front of the cost functions (a file read). The bulk
- *   file is downloaded only when `bedrockPriceList` is on and the copy is
- *   missing or older than a week. The background timer does not download it.
- * - In the background under a stored `automatic`: quotas, at most once per
- *   refresh interval. A fresh config does not start that timer.
+ *   price list is put in front of the cost functions (a file read), and
+ *   under `automatic` the quotas and prices are refreshed when stale.
+ * - In the background under `automatic`: at most once per refresh interval.
  * - `off`: nothing is requested and nothing kept is used.
  *
  * A 0 quota for the selected model is reported once per model and region

@@ -424,8 +424,6 @@ export async function unrollBlocks(
     terminal: assistant.terminal,
     modelCatalog: assistant.modelCatalog,
     modelCatalogRefreshHours: assistant.modelCatalogRefreshHours,
-    modelCatalogCommunity: assistant.modelCatalogCommunity,
-    bedrockPriceList: assistant.bedrockPriceList,
   };
 
   if (injectRequestOptions) {
@@ -453,8 +451,6 @@ export async function unrollBlocks(
     | "web"
     | "modelCatalog"
     | "modelCatalogRefreshHours"
-    | "modelCatalogCommunity"
-    | "bedrockPriceList"
   >)[] = ["models", "context", "data", "mcpServers", "prompts", "docs"];
 
   // Process all sections in parallel

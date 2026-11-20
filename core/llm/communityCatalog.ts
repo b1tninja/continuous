@@ -6,13 +6,11 @@
  * `communityCatalogStore.ts`, in core only.
  *
  * models.dev is maintained by pull requests from the community (MIT). It is
- * opt-in (`modelCatalogCommunity`), labelled "community", and off unless the
- * person turns it on. It is the last place a price is looked for: after a
- * price the person entered, a list the provider publishes and the curated
- * tables (plans/research/provider-model-metadata.md, owner decision 3). Every
- * figure priced from it is labelled "community" with the date of the copy, and
- * a dollar budget is never held on it unless `--budget-allow-unpriced` is
- * given.
+ * the last place a price is looked for: after a price the person entered, a
+ * list the provider publishes and the curated tables
+ * (plans/research/provider-model-metadata.md, owner decision 3). Every figure
+ * priced from it is labelled "community" with the date of the copy, and a
+ * dollar budget is never held on it unless `--budget-allow-unpriced` is given.
  *
  * Only prices are kept: provider id, model id and per-million-token rates.
  */

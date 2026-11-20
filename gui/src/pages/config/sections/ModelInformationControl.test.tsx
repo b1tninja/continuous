@@ -16,7 +16,7 @@ function messenger(
   } = {},
 ) {
   const ideMessenger = new MockIdeMessenger();
-  let policy: Policy = initial.policy ?? "ask";
+  let policy: Policy = initial.policy ?? "automatic";
   let refreshHours = 24;
   const saved: unknown[] = [];
   const pulls: unknown[] = [];
@@ -58,26 +58,11 @@ async function render(ui: React.ReactElement, ideMessenger: MockIdeMessenger) {
 }
 
 describe("ModelInformationControl", () => {
-  it("shows Only when I ask as the default and marks Automatic as a loosening", async () => {
+  it("shows Automatic as the default and saves each choice to the shared setting", async () => {
     const { ideMessenger, saved, pulls } = messenger();
     const { user } = await render(<ModelInformationControl />, ideMessenger);
-    const manual = screen.getByRole("radio", { name: /Only when I ask/ });
-    expect((manual as HTMLInputElement).checked).toBe(true);
-    expect(screen.getByText(/loosens the default/)).toBeTruthy();
-    expect(
-      (
-        screen.getByRole("checkbox", {
-          name: /Community catalogue/,
-        }) as HTMLInputElement
-      ).checked,
-    ).toBe(false);
-    expect(
-      (
-        screen.getByRole("checkbox", {
-          name: /AWS Price List/,
-        }) as HTMLInputElement
-      ).checked,
-    ).toBe(false);
+    const automatic = screen.getByRole("radio", { name: /Automatic/ });
+    expect((automatic as HTMLInputElement).checked).toBe(true);
 
     await user.click(screen.getByRole("radio", { name: /^Off/ }));
     await waitFor(() => expect(saved).toContainEqual({ policy: "off" }));
@@ -117,7 +102,6 @@ describe("ModelInfoFreshness", () => {
 
   it("says when an automatic update failed", async () => {
     const { ideMessenger } = messenger({
-      policy: "automatic",
       fetchedAt: "2026-11-12T08:00:00.000Z",
       lastAttempt: { at: "2026-11-13T08:00:00.000Z", error: "offline" },
     });

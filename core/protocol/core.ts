@@ -997,22 +997,17 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
   "mdm/setLicenseKey": [{ licenseKey: string }, boolean];
   /**
    * The dated local copy of OpenRouter's public model list. `status` and
-   * `cached` read the file only; `pull` is one request to openrouter.ai made
+   * `cached` read the file only; `pull` is a request to openrouter.ai made
    * when the person asks (Pull now, Refresh now), refused when model
-   * information updates are `off`. A stored `automatic` also refreshes the
-   * copy in the background when it is older than `refreshHours`; an absent
-   * line does not. `lastAttempt` is that refresher's last request.
-   * models.dev is a separate opt-in (`communityOptIn`).
+   * information updates are `off`. With `automatic` (the default) core also
+   * refreshes the copy in the background when it is older than
+   * `refreshHours`; `lastAttempt` is that refresher's last request.
    */
   "modelCatalog/status": [
     undefined,
     {
       policy: "automatic" | "ask" | "never" | "off";
       refreshHours: number;
-      /** models.dev opt-in. Off unless the person turned it on. */
-      communityOptIn?: boolean;
-      /** Bulk AWS Price List opt-in. Off unless the person turned it on. */
-      priceListOptIn?: boolean;
       lastAttempt?: { at: string; error?: string };
       openrouter?: { fetchedAt: string; count: number };
       /** The community catalogue copy (models.dev), when there is one */
@@ -1025,8 +1020,7 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
   ];
   /**
    * The trimmed community catalogue copy (models.dev prices), the last price
-   * source; a file read, null unless the community opt-in is on, and null
-   * when updates are `off`.
+   * source; a file read, null when there is none or updates are `off`.
    */
   "modelCatalog/communityCached": [
     undefined,
@@ -1043,10 +1037,6 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
     {
       policy?: "automatic" | "ask" | "never" | "off";
       refreshHours?: number;
-      /** Community catalogue (models.dev). Absent leaves the stored value. */
-      community?: boolean;
-      /** Bulk AWS Price List. Absent leaves the stored value. */
-      priceList?: boolean;
     },
     { saved: boolean },
   ];
