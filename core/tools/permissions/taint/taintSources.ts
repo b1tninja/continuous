@@ -4,7 +4,11 @@ import { commandCandidateSet } from "../candidates";
 import { effectsOfCommand } from "../commandSpecs";
 import { programName } from "../destinations";
 import { isSecretPath } from "../protectedPaths";
-import { jqEnvironmentLabel, secretWordLabel } from "../secretCommands";
+import {
+  credentialCommandLabel,
+  jqEnvironmentLabel,
+  secretWordLabel,
+} from "../secretCommands";
 import type { ShellKind } from "../../../util/shell";
 import { mcpLabel, type TaintKind, type TaintLabel } from "./taintState";
 
@@ -282,7 +286,9 @@ function commandSecretSource(
         .map((w, i) =>
           secretWordLabel(w, i === 0, words.length > 1, words[i - 1]),
         )
-        .find(Boolean) ?? jqEnvironmentLabel(words);
+        .find(Boolean) ??
+      jqEnvironmentLabel(words) ??
+      credentialCommandLabel(words);
     if (printed) return { text: `a command that prints ${printed}` };
     const read = wordsReadSecret(words);
     if (read) return read;

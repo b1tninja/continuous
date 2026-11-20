@@ -104,9 +104,10 @@ describe("the confused-deputy rule on the 287 labelled calls", () => {
       if (run("on")) reviewerOn++;
     }
     // WB45: fetches to trustedDomains hosts no longer reach the reviewer (5 calls)
-    // 189 and 188: one call that only asked because `$PWD` looked like a
-    // password now reaches the reviewer in both runs (see askProtectionsCorpus)
-    expect([reviewerOff, reviewerOn]).toEqual([189, 188]);
+    // 187 and 186: `$PWD` no longer asks (+1 to the reviewer) and two
+    // credential-printing commands now do (-2), in both runs; see
+    // askProtectionsCorpus.vitest.ts
+    expect([reviewerOff, reviewerOn]).toEqual([187, 186]);
   });
 
   it("no corpus call trips a floor inside the rule", () => {

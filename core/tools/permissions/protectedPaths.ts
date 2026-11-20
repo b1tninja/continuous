@@ -20,6 +20,46 @@ export const HOME_SECRET_DIRS = new Set([
   ".config/gcloud",
   ".config/doctl",
   ".config/hub",
+  // Cloud sync and AI tool logins: the same path on every platform
+  ".config/rclone",
+  ".config/github-copilot",
+  ".config/op",
+]);
+
+/**
+ * More directories under the home folder that hold credentials, for the
+ * evaluator only. They are written lower case, as the evaluator compares, and
+ * several are not the same on every platform or have a different case on disk,
+ * so the OS sandbox does not read this list: it has its own, with the case the
+ * file system uses (sandboxPolicyData.ts LINUX_HOME_SECRETS, MACOS_HOME_SECRETS).
+ * A Windows profile folder is not a path the sandbox can express at all.
+ */
+export const HOME_SECRET_DIRS_FOLDED = new Set([
+  // Password stores and keyrings
+  ".password-store",
+  ".local/share/keyrings",
+  ".local/share/kwalletd",
+  "library/keychains",
+  ".config/1password",
+  // Browser profiles hold saved logins, cookies and session tokens
+  ".mozilla/firefox",
+  ".config/google-chrome",
+  ".config/chromium",
+  ".config/bravesoftware",
+  ".config/microsoft-edge",
+  "library/application support/google/chrome",
+  "library/application support/firefox",
+  // Windows credential and browser stores, under the profile
+  "appdata/roaming/microsoft/credentials",
+  "appdata/local/microsoft/credentials",
+  "appdata/roaming/microsoft/protect",
+  "appdata/local/google/chrome/user data",
+  "appdata/local/microsoft/edge/user data",
+  "appdata/roaming/mozilla/firefox",
+  "appdata/roaming/1password",
+  "appdata/local/1password",
+  "appdata/roaming/gcloud",
+  "appdata/roaming/github cli",
 ]);
 
 /** Home files that are themselves credentials. */
@@ -36,6 +76,29 @@ export const HOME_SECRET_FILES = new Set([
   ".vault-token",
   ".yarnrc.yml",
   ".gem/credentials",
+  // Package registry and platform tokens
+  ".cargo/credentials",
+  ".cargo/credentials.toml",
+  ".databrickscfg",
+  ".huggingface/token",
+  ".cache/huggingface/token",
+  ".vercel/auth.json",
+]);
+
+/**
+ * Home files that often hold a credential and sometimes only settings: the
+ * evaluator asks once per read. The OS sandbox does not deny them, because a
+ * build tool reads them to log in to a private registry and would fail
+ * without saying why.
+ */
+export const HOME_SECRET_FILES_OFTEN = new Set([
+  ".m2/settings.xml",
+  ".m2/settings-security.xml",
+  ".gradle/gradle.properties",
+  ".config/pip/pip.conf",
+  ".pip/pip.conf",
+  ".terraformrc",
+  ".config/helm/repositories.yaml",
 ]);
 
 /** File names that are credentials wherever they sit. */
@@ -60,6 +123,11 @@ export const SECRET_BASENAMES = new Set([
   "secrets.json",
   "secret.yaml",
   "secret.yml",
+  // Browser credential stores (a profile's own folder name varies)
+  "key3.db",
+  "key4.db",
+  "login data",
+  "cookies.sqlite",
 ]);
 
 export const SECRET_EXTENSIONS = new Set([
@@ -73,12 +141,22 @@ export const SECRET_EXTENSIONS = new Set([
   ".kdbx",
   ".tfvars",
   ".tfstate",
+  ".keychain",
+  ".keychain-db",
 ]);
 
 /** Absolute system locations that hold credentials or secrets. */
 const SYSTEM_SECRET = [
   /^\/etc\/(shadow|gshadow|sudoers|ssh\/ssh_host_[a-z0-9_]+_key)$/,
   /^\/etc\/sudoers\.d(\/|$)/,
+  // Password databases of the BSDs, Kerberos keys and the backups of shadow
+  /^\/etc\/(master\.passwd|krb5\.keytab|shadow-|gshadow-|security\/opasswd)$/,
+  // Keys and credentials the system itself holds; a container's mounted secrets
+  /^\/etc\/(kubernetes|wireguard|ssl\/private)(\/|$)/,
+  /^\/(var\/)?run\/secrets(\/|$)/,
+  // Windows: the account database and the domain database
+  /^[a-z]:\/windows\/system32\/config\/(sam|system|security)$/i,
+  /^[a-z]:\/windows\/ntds\/ntds\.dit$/i,
   /^\/proc\/(self|thread-self|\d+)\/(mem|maps)$/,
   // Any /proc/<pid-or-thread>/environ, including task subdirectories.
   /^\/proc\/(?:[^/]+\/)+environ$/,
@@ -156,8 +234,10 @@ export function isSecretPath(p: string): boolean {
   if (SYSTEM_SECRET.some((re) => re.test(p))) return true;
   const rest = homeRelative(segs);
   if (!rest) return false;
-  if (HOME_SECRET_FILES.has(rest.join("/"))) return true;
-  for (const dir of HOME_SECRET_DIRS) {
+  const relative = rest.join("/");
+  if (HOME_SECRET_FILES.has(relative)) return true;
+  if (HOME_SECRET_FILES_OFTEN.has(relative)) return true;
+  for (const dir of [...HOME_SECRET_DIRS, ...HOME_SECRET_DIRS_FOLDED]) {
     const d = dir.split("/");
     if (d.every((part, i) => rest[i] === part)) return true;
   }
