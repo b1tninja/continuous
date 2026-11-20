@@ -433,6 +433,18 @@ const getCommandsMap: (
     "continuous.newSession": () => {
       sidebar.webviewProtocol?.request("newSession", undefined);
     },
+    "continuous.copyMessageAsMarkdown": async () => {
+      await vscode.commands.executeCommand("continuous.continueGUIView.focus");
+      const copied = await sidebar.webviewProtocol?.request(
+        "copyMessageAsMarkdown",
+        undefined,
+      );
+      if (!copied) {
+        void vscode.window.showInformationMessage(
+          "Focus a message in the chat, then copy it.",
+        );
+      }
+    },
 
     "continuous.shareSession": async (sessionId: string | undefined) => {
       if (!sessionId) {

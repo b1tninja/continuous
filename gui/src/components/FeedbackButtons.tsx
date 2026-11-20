@@ -11,9 +11,11 @@ import HeaderButtonWithToolTip from "./gui/HeaderButtonWithToolTip";
 
 export interface FeedbackButtonsProps {
   item: ChatHistoryItem;
+  /** Join the message toolbar's roving tabindex. */
+  roving?: boolean;
 }
 
-export function FeedbackButtons({ item }: FeedbackButtonsProps) {
+export function FeedbackButtons({ item, roving }: FeedbackButtonsProps) {
   const [feedback, setFeedback] = useState<boolean | undefined>(undefined);
   const ideMessenger = useContext(IdeMessengerContext);
   const sessionId = useAppSelector((store) => store.session.id);
@@ -43,7 +45,8 @@ export function FeedbackButtons({ item }: FeedbackButtonsProps) {
     <>
       <HeaderButtonWithToolTip
         text="Helpful"
-        tabIndex={-1}
+        roving={roving}
+        tabIndex={roving ? undefined : -1}
         onClick={() => sendFeedback(true)}
       >
         <HandThumbUpIcon
@@ -52,7 +55,8 @@ export function FeedbackButtons({ item }: FeedbackButtonsProps) {
       </HeaderButtonWithToolTip>
       <HeaderButtonWithToolTip
         text="Unhelpful"
-        tabIndex={-1}
+        roving={roving}
+        tabIndex={roving ? undefined : -1}
         onClick={() => sendFeedback(false)}
       >
         <HandThumbDownIcon
