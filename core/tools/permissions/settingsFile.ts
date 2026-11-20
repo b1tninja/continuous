@@ -18,6 +18,7 @@ import {
 } from "./policy.js";
 import { validateRuleText } from "./ruleAnalysis.js";
 import { builtinForDegree } from "./safetyDegrees.js";
+import { parseTimerSettings, type TimerSettings } from "./decisionTimer.js";
 import { storedWebLevel } from "./webPolicy.js";
 
 /**
@@ -49,6 +50,13 @@ export interface PolicyFileSettings extends PolicySettings {
   planAllowTerminal?: boolean;
   /** The person's custom set of levels and the preset it started from (`levels.custom`). */
   custom?: StoredCustomSet;
+  /**
+   * The decision timer: a window in seconds per level (`levels.timer`), the
+   * time a decision is held as a proposal before it takes effect
+   * (decisionTimer.ts). Absent is off. Stored inside `levels`, as the custom
+   * set is, so an older build ignores it instead of reading the file as broken.
+   */
+  timer?: TimerSettings;
 }
 
 /**
@@ -70,6 +78,9 @@ export interface StoredCustomSet {
 
 /** Where the custom set lives in the file. */
 export const CUSTOM_SET_PATH = ["levels", "custom"] as const;
+
+/** Where the decision timer lives in the file. */
+export const TIMER_PATH = ["levels", "timer"] as const;
 
 export interface PolicyFileRead {
   settings: PolicyFileSettings;
@@ -208,6 +219,16 @@ export function parsePolicyFile(text: string | undefined): PolicyFileRead {
       );
     }
   }
+  const rawTimer = raw.levels?.timer;
+  if (rawTimer !== undefined) {
+    const timer = parseTimerSettings(rawTimer);
+    if (Object.keys(timer).length > 0) settings.timer = timer;
+    else if (JSON.stringify(rawTimer) !== "{}") {
+      notices.push(
+        "levels.timer: no level has a window of 5, 10, 15, 30 or 60 seconds, so there is no timer.",
+      );
+    }
+  }
   return { settings, notices };
 }
 
@@ -263,6 +284,8 @@ export interface PolicyFileUpdate {
   planAllowTerminal?: boolean;
   /** `levels.custom`: the set to keep for recall; null removes it, absent keeps what the file has */
   custom?: StoredCustomSet | null;
+  /** `levels.timer`: a window per level; null or an empty object removes it, absent keeps what the file has */
+  timer?: TimerSettings | null;
 }
 
 /** Why an update cannot be written, or undefined. Nothing is written when it cannot. */
@@ -285,6 +308,14 @@ export function policyUpdateProblem(
   }
   if (update.custom && !readCustomSet(update.custom)) {
     return "levels.custom: a custom set needs all five levels, none of them IDGAF, and a preset name in from.";
+  }
+  if (update.timer) {
+    const given = Object.keys(update.timer);
+    const kept = Object.keys(parseTimerSettings(update.timer));
+    const bad = given.filter((k) => !kept.includes(k));
+    if (bad.length > 0) {
+      return `levels.timer: ${bad.join(", ")} cannot be set. Use manual, cautious, automatic or permissive, with 5, 10, 15, 30 or 60 seconds (IDGAF has no timer).`;
+    }
   }
   return undefined;
 }
@@ -421,6 +452,18 @@ export function applyPolicyUpdate(
         }),
       );
     }
+  }
+  if (
+    update.timer === null ||
+    (update.timer && Object.keys(update.timer).length === 0)
+  ) {
+    if (doc.hasIn([...TIMER_PATH])) doc.deleteIn([...TIMER_PATH]);
+    dropEmptyMap(doc, "levels");
+  } else if (update.timer) {
+    doc.setIn(
+      [...TIMER_PATH],
+      doc.createNode({ ...parseTimerSettings(update.timer) }),
+    );
   }
   if (update.trustedMcpServers) {
     const wanted = new Set(update.trustedMcpServers.map((n) => n.trim()));

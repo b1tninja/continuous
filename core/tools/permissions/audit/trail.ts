@@ -166,6 +166,45 @@ export class AuditTrail {
     });
   }
 
+  /**
+   * How a held call ended (decisionTimer.ts). One more decision row that
+   * follows the policy's own: `person` when they chose, whether it confirmed
+   * what was proposed or overrode it, and `system` when the window ended
+   * with no answer, so a default can never read as the person's choice. A call
+   * that ends refused has no outcome to wait for.
+   */
+  timerResolved(
+    callId: string,
+    resolved: {
+      outcome: "default-applied" | "overridden" | "confirmed";
+      final: "allow" | "refuse";
+    },
+    held: { proposed: "allow" | "refuse"; seconds: number },
+  ): void {
+    this.guard(() => {
+      const p = this.pending.get(callId);
+      if (!p) return;
+      const chose = resolved.outcome !== "default-applied";
+      const verb = resolved.final === "allow" ? "run" : "refuse";
+      const reason =
+        resolved.outcome === "default-applied"
+          ? `No answer within ${held.seconds} s, so the proposal applied: ${verb}.`
+          : resolved.outcome === "confirmed"
+            ? `Held for ${held.seconds} s; the person chose what was proposed: ${verb}.`
+            : `Held for ${held.seconds} s; the proposal was to ${held.proposed === "allow" ? "run" : "refuse"} and the person chose to ${verb}.`;
+      this.decision({
+        ...p.input,
+        policy: resolved.final === "allow" ? "allow" : "deny",
+        by: chose ? "person" : "system",
+        source: undefined,
+        rule: undefined,
+        reviewer: undefined,
+        reason,
+      });
+      if (resolved.final === "refuse") this.outcome({ callId, ran: false });
+    });
+  }
+
   /** The outcome of a call. `tool` and `session` default to those of its decision. */
   outcome(input: OutcomeRecordInput): void {
     this.guard(() => {
