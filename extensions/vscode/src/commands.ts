@@ -42,7 +42,6 @@ import { QuickEdit, QuickEditShowParams } from "./quickEdit/QuickEditQuickPick";
 import {
   addCodeToContextFromRange,
   addHighlightedCodeToContext,
-  getRangeInFileWithContents,
 } from "./util/addCode";
 import {
   AddToChatHost,
@@ -299,11 +298,6 @@ const getCommandsMap: (
         undefined,
         false,
       );
-      // Read the selection before focus moves to the chat. A highlighted
-      // range is added after the new session, because that reset clears
-      // the input. A focused input with nothing selected is the second
-      // press: hide the sidebar, or start a new session.
-      const rangeInFileWithContents = getRangeInFileWithContents(false);
 
       // This is a temporary fix—sidebar.webviewProtocol.request is blocking
       // when the GUI hasn't yet been setup and we should instead be
@@ -322,7 +316,7 @@ const getCommandsMap: (
         false,
       );
 
-      if (isContinueInputFocused && !rangeInFileWithContents) {
+      if (isContinueInputFocused) {
         if (historyLength === 0) {
           hideGUI();
         } else {
@@ -332,18 +326,14 @@ const getCommandsMap: (
             false,
           );
         }
-        return;
-      }
-
-      await sidebar.webviewProtocol?.request(
-        "focusContinueInputWithNewSession",
-        undefined,
-        false,
-      );
-      if (rangeInFileWithContents) {
-        void sidebar.webviewProtocol?.request("highlightedCode", {
-          rangeInFileWithContents,
-        });
+      } else {
+        focusGUI();
+        sidebar.webviewProtocol?.request(
+          "focusContinueInputWithNewSession",
+          undefined,
+          false,
+        );
+        void addHighlightedCodeToContext(sidebar.webviewProtocol);
       }
     },
     "continuous.focusContinuousInputWithoutClear": async () => {
