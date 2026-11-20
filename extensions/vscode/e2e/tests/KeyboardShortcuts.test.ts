@@ -264,7 +264,9 @@ describe("Keyboard Shortcuts", () => {
           codes: document.querySelectorAll('code').length,
           tiptap: !!tiptap,
           tiptapCodes: tiptap ? tiptap.querySelectorAll('code').length : 0,
-          text: (document.body.innerText || '').slice(0, 700)
+          text: (document.body.innerText || '').slice(0, 400),
+          newSession: document.body.dataset.newSession || '',
+          highlighted: document.body.dataset.highlighted || ''
         });
       `);
       throw new Error(`No code chip. ${info}. ${err}`);

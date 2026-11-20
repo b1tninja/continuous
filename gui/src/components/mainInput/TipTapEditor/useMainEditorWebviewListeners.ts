@@ -106,6 +106,7 @@ export function useMainEditorWebviewListeners({
   useWebviewListener(
     "focusContinueInputWithNewSession",
     async () => {
+      document.body.dataset.newSession = "yes";
       // Ctrl+L: running work is stopped only when the person says so (NI1)
       if (!(await dispatch(confirmSessionSwitch("newSession")).unwrap())) {
         return;
@@ -128,6 +129,9 @@ export function useMainEditorWebviewListeners({
   useWebviewListener(
     "highlightedCode",
     async (data) => {
+      document.body.dataset.highlighted = String(
+        data.rangeInFileWithContents?.contents ?? "",
+      ).slice(0, 80);
       if (!editor) return;
 
       const contextItem = rifWithContentsToContextItem(
