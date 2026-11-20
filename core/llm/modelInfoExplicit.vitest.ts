@@ -171,10 +171,11 @@ describe("model information is explicit", () => {
     await pullRequestedModelInfo({
       settings,
       file: path.join(dir, "openrouter.json"),
-      pullCommunity: () =>
-        pullCommunityCatalog(undefined, {
+      pullCommunity: async () => {
+        await pullCommunityCatalog(undefined, {
           file: path.join(dir, "models-dev.json"),
-        }),
+        });
+      },
     });
     expect(urls.map((u) => new URL(u).host)).toEqual([
       "openrouter.ai",
