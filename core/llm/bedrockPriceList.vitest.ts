@@ -507,68 +507,99 @@ describe("download and cache", () => {
       expect(getBedrockPriceList()).toBe(list);
     });
 
-    it("manual: downloads on Test connection only", async () => {
-      const fetch = vi.fn(async () => nodeStreamResponse(FIXTURE_TEXT));
-      for (const trigger of ["model-selected", "background"] as const) {
-        expect(
-          await ensureBedrockPriceList("us-east-1", trigger, {
-            settings: MANUAL,
-            fetch,
-            dir,
-          }),
-        ).toBeUndefined();
-      }
-      expect(fetch).not.toHaveBeenCalled();
-      await ensureBedrockPriceList("us-east-1", "test-connection", {
-        settings: MANUAL,
-        fetch,
-        dir,
-      });
-      expect(fetch).toHaveBeenCalledTimes(1);
-      expect(getBedrockPriceList()?.region).toBe("us-east-1");
-    });
-
-    it("automatic: a failed download keeps the old copy, and a selection waits an hour", async () => {
+    it("the Price List opt-in is off by default: no download, a kept copy stays", async () => {
       await fetchBedrockPriceList("us-east-1", {
         fetch: async () => nodeStreamResponse(FIXTURE_TEXT),
         dir,
-        now: () => new Date("2026-11-10T00:00:00Z"),
+        now: fresh,
+      });
+      const fetch = vi.fn();
+      for (const trigger of [
+        "model-selected",
+        "background",
+        "test-connection",
+      ] as const) {
+        const list = await ensureBedrockPriceList("us-east-1", trigger, {
+          settings: MANUAL,
+          fetch,
+          dir,
+        });
+        expect(list?.region).toBe("us-east-1");
+      }
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it("opt-in: downloads on Test connection and selection, not in the background, and keeps a copy for days", async () => {
+      const opted = { ...MANUAL, priceList: true };
+      const fetch = vi.fn(async () => nodeStreamResponse(FIXTURE_TEXT));
+      expect(
+        await ensureBedrockPriceList("us-east-1", "background", {
+          settings: opted,
+          fetch,
+          dir,
+        }),
+      ).toBeUndefined();
+      expect(fetch).not.toHaveBeenCalled();
+      await ensureBedrockPriceList("us-east-1", "test-connection", {
+        settings: opted,
+        fetch,
+        dir,
+        now: fresh,
+      });
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(getBedrockPriceList()?.region).toBe("us-east-1");
+      await ensureBedrockPriceList("us-east-1", "model-selected", {
+        settings: opted,
+        fetch,
+        dir,
+        now: () => new Date("2026-11-18T00:00:00Z"),
+      });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("opt-in: a failed download keeps the old copy, and a selection waits an hour", async () => {
+      const opted = { ...AUTOMATIC, priceList: true };
+      await fetchBedrockPriceList("us-east-1", {
+        fetch: async () => nodeStreamResponse(FIXTURE_TEXT),
+        dir,
+        now: () => new Date("2026-10-01T00:00:00Z"),
       });
       const failing = vi.fn(async () => nodeStreamResponse("", 503));
       const now = () => new Date("2026-11-13T00:00:00Z");
       await expect(
         ensureBedrockPriceList("us-east-1", "model-selected", {
-          settings: AUTOMATIC,
+          settings: opted,
           fetch: failing,
           dir,
           now,
         }),
       ).rejects.toThrow(/answered 503/);
-      expect(getBedrockPriceList()?.fetchedAt).toBe("2026-11-10T00:00:00.000Z");
+      expect(getBedrockPriceList()?.fetchedAt).toBe("2026-10-01T00:00:00.000Z");
       const again = await ensureBedrockPriceList(
         "us-east-1",
         "model-selected",
         {
-          settings: AUTOMATIC,
+          settings: opted,
           fetch: failing,
           dir,
           now,
         },
       );
       expect(failing).toHaveBeenCalledTimes(1);
-      expect(again?.fetchedAt).toBe("2026-11-10T00:00:00.000Z");
+      expect(again?.fetchedAt).toBe("2026-10-01T00:00:00.000Z");
     });
 
     it("downloads one region once when asked twice at the same time", async () => {
+      const opted = { ...AUTOMATIC, priceList: true };
       const fetch = vi.fn(async () => nodeStreamResponse(FIXTURE_TEXT));
       await Promise.all([
         ensureBedrockPriceList("us-east-1", "test-connection", {
-          settings: AUTOMATIC,
+          settings: opted,
           fetch,
           dir,
         }),
         ensureBedrockPriceList("us-east-1", "background", {
-          settings: AUTOMATIC,
+          settings: opted,
           fetch,
           dir,
         }),
@@ -608,7 +639,7 @@ describe("Test connection of another region", () => {
     };
     setBedrockPriceList(selected);
     const list = await ensureBedrockPriceList("us-east-1", "test-connection", {
-      settings: AUTOMATIC,
+      settings: { ...AUTOMATIC, priceList: true },
       fetch: async () => nodeStreamResponse(FIXTURE_TEXT),
       dir,
       activate: false,

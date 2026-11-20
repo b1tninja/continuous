@@ -139,12 +139,29 @@ describe("readModelCatalogSettings", () => {
     `name: x\nversion: 1\nmodelCatalog: ${value}\n${extra}`;
   const noEnv = {};
 
-  it("defaults to automatic with a 24 hour interval", () => {
+  it("defaults to explicit refresh, with the opt-ins off", () => {
     const file = path.join(dir, "config.yaml");
     const standIn = path.join(dir, "policy.json");
     expect(readModelCatalogSettings(file, standIn, noEnv)).toEqual({
-      policy: "automatic",
+      policy: "ask",
       refreshHours: 24,
+      community: false,
+      priceList: false,
+    });
+    fs.writeFileSync(file, yaml("automatic"));
+    expect(readModelCatalogSettings(file, standIn, noEnv)).toMatchObject({
+      policy: "automatic",
+      community: false,
+      priceList: false,
+    });
+    fs.writeFileSync(
+      file,
+      yaml("manual", "modelCatalogCommunity: true\nbedrockPriceList: true\n"),
+    );
+    expect(readModelCatalogSettings(file, standIn, noEnv)).toMatchObject({
+      policy: "ask",
+      community: true,
+      priceList: true,
     });
   });
 
@@ -165,7 +182,7 @@ describe("readModelCatalogSettings", () => {
     }
     fs.rmSync(standIn);
     fs.writeFileSync(file, yaml("sometimes"));
-    expect(readModelCatalogPolicy(file, standIn, noEnv)).toBe("automatic");
+    expect(readModelCatalogPolicy(file, standIn, noEnv)).toBe("ask");
   });
 
   it("reads the refresh interval and keeps it within 1 hour and 30 days", () => {
@@ -196,7 +213,12 @@ describe("readModelCatalogSettings", () => {
         CONTINUOUS_MODEL_INFO_UPDATES: "off",
         CONTINUOUS_MODEL_INFO_REFRESH_HOURS: "48",
       }),
-    ).toEqual({ policy: "off", refreshHours: 48 });
+    ).toEqual({
+      policy: "off",
+      refreshHours: 48,
+      community: false,
+      priceList: false,
+    });
     // An unknown value is ignored, not treated as off or on
     expect(
       readModelCatalogSettings(file, standIn, {

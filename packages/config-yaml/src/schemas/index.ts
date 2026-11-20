@@ -302,16 +302,27 @@ export const baseConfigYamlSchema = z.object({
   web: webConfigSchema.optional(),
   /**
    * Model information updates: OpenRouter's public model list (names, sizes,
-   * prices). `automatic` (default) refreshes it in the background when the
-   * copy is older than `modelCatalogRefreshHours`; `manual` only when asked
-   * (provider setup offers it); `off` never contacts openrouter.ai. `ask` is
-   * the old spelling of `manual`; `never` is `manual` without the offer.
+   * prices). Absent means `manual` (explicit refresh only). A stored
+   * `automatic` loosens that and refreshes in the background when the copy
+   * is older than `modelCatalogRefreshHours`. `off` never contacts
+   * openrouter.ai. `ask` is the old spelling of `manual`; `never` is
+   * `manual` without the offer.
    */
   modelCatalog: z
     .enum(["automatic", "manual", "off", "ask", "never"])
     .optional(),
   /** Hours before an automatic refresh replaces the list (default 24). */
   modelCatalogRefreshHours: z.number().positive().optional(),
+  /**
+   * Community catalogue (models.dev). Off unless true. Labelled community,
+   * and never a `--max-budget-usd` price without `--budget-allow-unpriced`.
+   */
+  modelCatalogCommunity: z.boolean().optional(),
+  /**
+   * Bulk AWS Price List for the selected Bedrock region. Off unless true.
+   * A download is kept for 7 days.
+   */
+  bedrockPriceList: z.boolean().optional(),
   env: envRecord.optional(),
   requestOptions: requestOptionsSchema.optional(),
 });

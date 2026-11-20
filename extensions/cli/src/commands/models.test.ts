@@ -182,7 +182,7 @@ describe("continuous models list", () => {
 });
 
 describe("egress allowlist", () => {
-  it("covers the one host `models refresh` contacts, as on by default", () => {
+  it("covers the one host `models refresh` contacts, as opt-in", () => {
     const list = JSON.parse(
       fs.readFileSync(
         path.resolve(
@@ -194,8 +194,7 @@ describe("egress allowlist", () => {
     ) as { groups: { class: string; hosts: string[] }[] };
     const host = new URL(OPENROUTER_MODELS_URL).hostname;
     const group = list.groups.find((g) => g.hosts.includes(host));
-    // The background refresh (model information updates `automatic`) is
-    // the default, so the host is reachable without opting in
-    expect(group?.class).toBe("D");
+    // Refresh is explicit. A fresh config does not contact the host.
+    expect(group?.class).toBe("O");
   });
 });

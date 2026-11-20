@@ -10,11 +10,13 @@ import {
 import type { ModelCatalog } from "./openRouterCatalog.js";
 
 /**
- * The background refresh of OpenRouter's public model list, for "Model
- * information updates: Automatic" (the default). It never blocks start-up or
- * a request: `start` only sets a timer, the check runs later, and a failure
- * (offline, a proxy refusing, a bad answer) is kept as status and retried
- * with backoff while the copy already on disk stays in use.
+ * The background refresh of OpenRouter's public model list, for a stored
+ * "Model information updates: Automatic" (a loosening; the default is
+ * explicit refresh only). It never blocks start-up or a request: `start`
+ * only sets a timer, the check runs later, and a failure (offline, a proxy
+ * refusing, a bad answer) is kept as status and retried with backoff while
+ * the copy already on disk stays in use. A policy other than `automatic`
+ * makes no request.
  *
  * Only openrouter.ai is contacted here. Ollama's list is never fetched by
  * this module: that stays a choice made in Ollama's own setup.

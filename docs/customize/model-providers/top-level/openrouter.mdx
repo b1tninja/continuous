@@ -145,12 +145,12 @@ If you're experiencing issues with Agent mode or tools not working, you can add 
 
 ## Model information and prices
 
-OpenRouter publishes a public list of its models: names, ids, context sizes, whether a model takes tools, and prices per token. Continuous keeps a dated copy of that list on this computer and, by default, keeps it current on its own. The setting **Model information updates** decides when `openrouter.ai` is contacted:
+OpenRouter publishes a public list of its models: names, ids, context sizes, whether a model takes tools, and prices per token. Continuous keeps a dated copy of that list on this computer. It does not download the list unless you ask. The setting **Model information updates** decides when `openrouter.ai` is contacted:
 
 | Value | What happens |
 | --- | --- |
-| **Automatic** (default) | When the copy is missing or older than the refresh interval (24 hours unless you change it), Continuous downloads the list in the background: about 15 to 60 seconds after the IDE starts (1 to 3 seconds for the terminal agent), then again once the interval has passed while it keeps running. Nothing waits for it, and provider setup does not ask first. |
-| **Only when I ask** | The behaviour of 2.16.0 and 2.16.1: the list is downloaded only when you choose **Pull now** or **Refresh now**, or run `continuous models refresh`. Provider setup asks "Pull the latest model information from OpenRouter?". |
+| **Only when I ask** (default) | The list is downloaded only when you choose **Pull now** or **Refresh now**, or run `continuous models refresh`. A copy already on this computer is still used. Provider setup asks "Pull the latest model information from OpenRouter?". |
+| **Automatic** (loosens the default) | When you store `modelCatalog: automatic` and the copy is missing or older than the refresh interval (24 hours unless you change it), Continuous downloads the list in the background: about 15 to 60 seconds after the IDE starts (1 to 3 seconds for the terminal agent), then again once the interval has passed while it keeps running. Nothing waits for it. |
 | **Off** | `openrouter.ai` is never contacted. A downloaded copy is not used either: model names, sizes and prices come from the data bundled with Continuous. |
 
 Every request is the same: one GET to `openrouter.ai/api/v1/models` with no account, key, prompt or body. The only headers are `accept: application/json` and `user-agent: continuous`; the `headers` of your `requestOptions` are not sent to this host, though its proxy and certificate settings apply.
