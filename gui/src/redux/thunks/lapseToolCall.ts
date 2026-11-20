@@ -5,13 +5,19 @@ import { errorToolCall } from "../slices/sessionSlice";
 import { ThunkApiType } from "../store";
 import { findToolCallById } from "../util";
 
+import { callToolById } from "./callToolById";
 import { streamResponseAfterToolCall } from "./streamResponseAfterToolCall";
 
 /**
- * A decision timer's window ran out with no answer: the ask is refused, as the
- * policy does when nobody can answer. The audit trail records it as the system's
- * decision, never the person's, and the model is told that nobody answered and
- * that the command was not judged unsafe (decisionTimer.ts modelNote).
+ * A decision timer's window ran out with no answer, and the proposal applies.
+ *
+ * For an ask the proposal is a refusal, as the policy does when nobody can
+ * answer: the audit trail records it as the system's decision, never the
+ * person's, and the model is told that nobody answered and that the command
+ * was not judged unsafe (decisionTimer.ts modelNote).
+ *
+ * For a heads-up on a call the policy allowed, the proposal is to run it, so
+ * the call runs as the policy allowed. Nobody objected.
  *
  * Does nothing unless the call is still waiting and its timer is still running,
  * so a click that lands just before the window ends, or a second tick, is safe.
@@ -29,12 +35,20 @@ export const lapseToolCallThunk = createAsyncThunk<
       return;
     }
 
-    const resolved = { outcome: "default-applied", final: "refuse" } as const;
+    const resolved =
+      timer.proposed === "allow"
+        ? ({ outcome: "default-applied", final: "allow" } as const)
+        : ({ outcome: "default-applied", final: "refuse" } as const);
     void extra.ideMessenger.request("audit/timer", {
       callId: toolCallId,
       resolved,
       held: { proposed: timer.proposed, seconds: timer.seconds },
     });
+
+    if (resolved.final === "allow") {
+      void dispatch(callToolById({ toolCallId, isAutoApproved: true }));
+      return;
+    }
 
     const note =
       modelNote(resolved, toolCall.toolCall.function.name, timer.seconds) ?? "";

@@ -18,7 +18,11 @@ import {
 } from "./policy.js";
 import { validateRuleText } from "./ruleAnalysis.js";
 import { builtinForDegree } from "./safetyDegrees.js";
-import { parseTimerSettings, type TimerSettings } from "./decisionTimer.js";
+import {
+  HEADS_UP_SECONDS,
+  parseTimerSettings,
+  type TimerSettings,
+} from "./decisionTimer.js";
 import { storedWebLevel } from "./webPolicy.js";
 
 /**
@@ -57,6 +61,12 @@ export interface PolicyFileSettings extends PolicySettings {
    * set is, so an older build ignores it instead of reading the file as broken.
    */
   timer?: TimerSettings;
+  /**
+   * A heads-up on a call the policy allows (`levels.headsUp`): a window per
+   * level, 5 or 10 s, during which the call is held and can be denied. Separate
+   * from `timer`, which governs asks. Absent is none.
+   */
+  headsUp?: TimerSettings;
 }
 
 /**
@@ -81,6 +91,9 @@ export const CUSTOM_SET_PATH = ["levels", "custom"] as const;
 
 /** Where the decision timer lives in the file. */
 export const TIMER_PATH = ["levels", "timer"] as const;
+
+/** Where the heads-up windows live in the file. */
+export const HEADS_UP_PATH = ["levels", "headsUp"] as const;
 
 export interface PolicyFileRead {
   settings: PolicyFileSettings;
@@ -229,6 +242,16 @@ export function parsePolicyFile(text: string | undefined): PolicyFileRead {
       );
     }
   }
+  const rawHeadsUp = raw.levels?.headsUp;
+  if (rawHeadsUp !== undefined) {
+    const headsUp = parseTimerSettings(rawHeadsUp, HEADS_UP_SECONDS);
+    if (Object.keys(headsUp).length > 0) settings.headsUp = headsUp;
+    else if (JSON.stringify(rawHeadsUp) !== "{}") {
+      notices.push(
+        "levels.headsUp: no level has a window of 5 or 10 seconds, so allowed calls are not held.",
+      );
+    }
+  }
   return { settings, notices };
 }
 
@@ -286,6 +309,8 @@ export interface PolicyFileUpdate {
   custom?: StoredCustomSet | null;
   /** `levels.timer`: a window per level; null or an empty object removes it, absent keeps what the file has */
   timer?: TimerSettings | null;
+  /** `levels.headsUp`: a window per level; null or an empty object removes it, absent keeps what the file has */
+  headsUp?: TimerSettings | null;
 }
 
 /** Why an update cannot be written, or undefined. Nothing is written when it cannot. */
@@ -315,6 +340,16 @@ export function policyUpdateProblem(
     const bad = given.filter((k) => !kept.includes(k));
     if (bad.length > 0) {
       return `levels.timer: ${bad.join(", ")} cannot be set. Use manual, cautious, automatic or permissive, with 5, 10, 15 or 30 seconds (IDGAF has no timer).`;
+    }
+  }
+  if (update.headsUp) {
+    const given = Object.keys(update.headsUp);
+    const kept = Object.keys(
+      parseTimerSettings(update.headsUp, HEADS_UP_SECONDS),
+    );
+    const bad = given.filter((k) => !kept.includes(k));
+    if (bad.length > 0) {
+      return `levels.headsUp: ${bad.join(", ")} cannot be set. Use manual, cautious, automatic or permissive, with 5 or 10 seconds (IDGAF has none).`;
     }
   }
   return undefined;
@@ -463,6 +498,20 @@ export function applyPolicyUpdate(
     doc.setIn(
       [...TIMER_PATH],
       doc.createNode({ ...parseTimerSettings(update.timer) }),
+    );
+  }
+  if (
+    update.headsUp === null ||
+    (update.headsUp && Object.keys(update.headsUp).length === 0)
+  ) {
+    if (doc.hasIn([...HEADS_UP_PATH])) doc.deleteIn([...HEADS_UP_PATH]);
+    dropEmptyMap(doc, "levels");
+  } else if (update.headsUp) {
+    doc.setIn(
+      [...HEADS_UP_PATH],
+      doc.createNode({
+        ...parseTimerSettings(update.headsUp, HEADS_UP_SECONDS),
+      }),
     );
   }
   if (update.trustedMcpServers) {

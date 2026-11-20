@@ -57,6 +57,7 @@ export const loadPolicySettings = createAsyncThunk<void, void, ThunkApiType>(
           planAllowTerminal: settings.planAllowTerminal,
           customSet: settings.custom,
           timer: settings.timer,
+          headsUp: settings.headsUp,
         }),
       );
       for (const notice of notices) console.warn(notice);
@@ -121,6 +122,15 @@ export const savePolicySettings = createAsyncThunk<void, void, ThunkApiType>(
       // While the IDGAF preset is in force the file keeps what it had: IDGAF
       // and the checks it turned off last for this session only
       builtin: builtinToSave(policyExtras.builtin, policyExtras.savedBuiltin),
+      // The decision timer is sent only once there is something to send: a save
+      // made before the file loaded must not remove what the file has. An empty
+      // object, which the person chose by turning every window off, removes it.
+      ...(policyExtras.timer !== undefined
+        ? { timer: policyExtras.timer }
+        : {}),
+      ...(policyExtras.headsUp !== undefined
+        ? { headsUp: policyExtras.headsUp }
+        : {}),
     };
     const res = await extra.ideMessenger.request("policy/save", update);
     if (res.status !== "success") {

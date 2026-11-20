@@ -27,6 +27,7 @@ const ctx = (over: Partial<TimerContext> = {}): TimerContext => ({
   attended: true,
   level: "cautious",
   settings: { cautious: 10, permissive: 5 },
+  headsUp: { cautious: 10, permissive: 5 },
   now: 1_000,
   ...over,
 });
@@ -96,12 +97,13 @@ describe("propose", () => {
 
   it("has no proposal where the level has no window", () => {
     expect(propose(ALLOW, ctx({ level: "manual" }))).toBeUndefined();
-    expect(propose(ALLOW, ctx({ settings: {} }))).toBeUndefined();
+    expect(propose(ALLOW, ctx({ headsUp: {} }))).toBeUndefined();
+    expect(propose(ALLOW, ctx({ headsUp: undefined }))).toBeUndefined();
   });
 
   it("has no proposal at IDGAF, whatever is set", () => {
     expect(
-      propose(ALLOW, ctx({ level: "idgaf", settings: { idgaf: 10 } as never })),
+      propose(ALLOW, ctx({ level: "idgaf", headsUp: { idgaf: 10 } as never })),
     ).toBeUndefined();
   });
 
@@ -172,7 +174,7 @@ describe("propose", () => {
 describe("the countdown", () => {
   const p = propose(
     ALLOW,
-    ctx({ now: 10_000, settings: { cautious: 10 } }),
+    ctx({ now: 10_000, headsUp: { cautious: 10 } }),
   ) as Proposal;
 
   it("counts down from the window and stops at zero", () => {

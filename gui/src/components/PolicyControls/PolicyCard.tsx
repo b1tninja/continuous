@@ -13,6 +13,7 @@ import {
 import ToggleSwitch from "../gui/Switch";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import { changePolicyExtras } from "../../redux/thunks/policySettings";
+import { DecisionTimerCard } from "./DecisionTimerCard";
 import { Card } from "../ui";
 import { AreaLevelSelect } from "./PolicyControls";
 import { PresetSelect } from "./PresetSelect";
@@ -190,6 +191,8 @@ export function PolicyCard() {
           ))}
         </div>
       </Card>
+
+      <DecisionTimerCard />
 
       {floor.length > 0 && (
         <p

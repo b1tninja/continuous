@@ -27,11 +27,22 @@ export type TimerSeconds = (typeof TIMER_SECONDS)[number];
 export type TimerSettings = Partial<Record<PolicyLevel, TimerSeconds>>;
 
 /**
+ * The windows for a heads-up on a call the policy allows ("Runs in 5 s unless
+ * you answer"). These are not the ask windows: setting a window for asks must
+ * not start delaying every allowed call, so the two are separate settings.
+ * None is longer than ALLOW_PROPOSAL_MAX_SECONDS.
+ */
+export const HEADS_UP_SECONDS = [0, 5, 10] as const;
+
+/**
  * Settings from a file or a flag. A level that is not known, or a value that
  * is not one of the windows, is off, so a typo never starts a delay. IDGAF is
  * always off: nothing is checked there, so there is nothing to propose.
  */
-export function parseTimerSettings(value: unknown): TimerSettings {
+export function parseTimerSettings(
+  value: unknown,
+  windows: readonly number[] = TIMER_SECONDS,
+): TimerSettings {
   const out: TimerSettings = {};
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return out;
@@ -40,7 +51,7 @@ export function parseTimerSettings(value: unknown): TimerSettings {
     if (level === "idgaf") continue;
     const raw = (value as Record<string, unknown>)[level];
     const n = typeof raw === "string" ? Number(raw.trim()) : raw;
-    if ((TIMER_SECONDS as readonly number[]).includes(n as number) && n !== 0) {
+    if (windows.includes(n as number) && n !== 0) {
       out[level] = n as TimerSeconds;
     }
   }
@@ -89,7 +100,10 @@ export interface TimerContext {
   /** Someone is at the keyboard and can see a countdown. False for headless and unattended runs. */
   attended: boolean;
   level: PolicyLevel;
+  /** The windows for asks (`levels.timer`) */
   settings: TimerSettings;
+  /** The windows for a heads-up on an allowed call (`levels.headsUp`); absent is none */
+  headsUp?: TimerSettings;
   now: number;
 }
 
@@ -104,9 +118,13 @@ export function propose(
   ctx: TimerContext,
 ): Proposal | undefined {
   if (!ctx.attended || ctx.level === "idgaf") return undefined;
-  const seconds = ctx.settings[ctx.level];
-  if (!seconds) return undefined;
   if (isFinalRefusal(fact)) return undefined;
+  // An ask has the ask windows; an allowed call has its own, separate ones
+  const seconds =
+    fact.policy === "allowedWithPermission"
+      ? ctx.settings[ctx.level]
+      : ctx.headsUp?.[ctx.level];
+  if (!seconds) return undefined;
   if (fact.policy === "allowedWithPermission") {
     if (fact.protection !== undefined) return undefined;
     if (fact.source === undefined || !TIMED_ASK_SOURCES.has(fact.source)) {

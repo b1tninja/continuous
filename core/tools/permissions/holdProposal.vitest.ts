@@ -49,6 +49,7 @@ const proposal = (
       attended: true,
       level: "cautious",
       settings: { cautious: seconds },
+      headsUp: { cautious: seconds as never },
       now: 0,
     },
   ) as Proposal;

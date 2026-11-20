@@ -92,6 +92,8 @@ type UIState = {
 export interface PolicyExtras {
   /** The decision timer: a window per level, from `levels.timer` in the file */
   timer?: TimerSettings;
+  /** A heads-up on allowed calls: a window per level, from `levels.headsUp` */
+  headsUp?: TimerSettings;
   /** Permissive on Plan edits: new to-dos a re-plan may add by itself */
   maxNewPlanItems?: number;
   questions?: { youDecide?: QuestionType[]; agentDecides?: QuestionType[] };

@@ -24,14 +24,18 @@ const ctx = (seconds: 5 | 10 | 15 | 30): TimerContext => ({
   attended: true,
   level: "cautious",
   settings: { cautious: seconds },
+  headsUp: { cautious: Math.min(seconds, 10) as never },
   now: 0,
 });
 
 describe("a proposal to run an allowed call is capped", () => {
-  it("holds an allow for at most 10 s, whatever the level's window", () => {
+  it("holds an allow for at most 10 s even if a larger window reaches it", () => {
     expect(ALLOW_PROPOSAL_MAX_SECONDS).toBe(10);
-    expect(propose(ALLOW, ctx(30))?.seconds).toBe(10);
-    expect(propose(ALLOW, ctx(15))?.seconds).toBe(10);
+    // parseTimerSettings never lets one through; this is the second guard
+    for (const wide of [15, 30, 600]) {
+      const c = { ...ctx(30), headsUp: { cautious: wide as never } };
+      expect(propose(ALLOW, c)?.seconds, String(wide)).toBe(10);
+    }
     expect(propose(ALLOW, ctx(10))?.seconds).toBe(10);
   });
 

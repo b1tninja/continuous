@@ -49,6 +49,21 @@ export const callToolById = createAsyncThunk<
     return;
   }
 
+  // A call the decision timer was holding, answered by the person before its
+  // window ended: the trail records it with the timer's outcome. A window that
+  // ends is recorded by lapseToolCall, which runs the call with isAutoApproved.
+  const heldByTimer = toolCallState.askTimer;
+  if (heldByTimer && !heldByTimer.kept && !isAutoApproved) {
+    void extra.ideMessenger.request("audit/timer", {
+      callId: toolCallId,
+      resolved: {
+        outcome: heldByTimer.proposed === "allow" ? "confirmed" : "overridden",
+        final: "allow",
+      },
+      held: { proposed: heldByTimer.proposed, seconds: heldByTimer.seconds },
+    });
+  }
+
   const selectedChatModel = selectSelectedChatModel(state);
 
   if (!selectedChatModel) {
