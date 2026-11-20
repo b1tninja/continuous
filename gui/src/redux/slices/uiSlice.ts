@@ -299,10 +299,18 @@ export const uiSlice = createSlice({
     },
     setReasoningSetting: (
       state,
-      action: PayloadAction<{ modelTitle: string; enabled: boolean }>,
+      action: PayloadAction<{
+        modelTitle: string;
+        /** Undefined clears the stored bulb choice so a mode effort applies. */
+        enabled: boolean | undefined;
+      }>,
     ) => {
-      state.reasoningSettings[action.payload.modelTitle] =
-        action.payload.enabled;
+      if (action.payload.enabled === undefined) {
+        delete state.reasoningSettings[action.payload.modelTitle];
+      } else {
+        state.reasoningSettings[action.payload.modelTitle] =
+          action.payload.enabled;
+      }
     },
     setPromptCacheSetting: (
       state,
