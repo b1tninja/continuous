@@ -36,6 +36,8 @@ export class BackgroundJobService {
   private jobs: Map<string, BackgroundJob> = new Map();
   private processes: Map<string, ChildProcess> = new Map();
   private jobCounter = 0;
+  /** Callers waiting for a job to end; every way a job ends answers them. */
+  private endWaiters: Map<string, Array<() => void>> = new Map();
 
   createJob(command: string): BackgroundJob | null {
     const runningCount = this.getRunningJobCount();
@@ -184,6 +186,7 @@ export class BackgroundJobService {
       job.exitCode = exitCode;
       job.endTime = new Date();
       this.processes.delete(jobId);
+      this.notifyEnded(jobId);
     }
   }
 
@@ -194,6 +197,7 @@ export class BackgroundJobService {
       job.error = error;
       job.endTime = new Date();
       this.processes.delete(jobId);
+      this.notifyEnded(jobId);
     }
   }
 
@@ -210,7 +214,45 @@ export class BackgroundJobService {
 
     job.status = "cancelled";
     job.endTime = new Date();
+    this.notifyEnded(jobId);
     return true;
+  }
+
+  /**
+   * Waits for a job to end, for at most `ms`. Resolves true when it has ended
+   * (at once when it already had) and false when the time ran out or the job
+   * does not exist. It waits on the end itself, so it does not poll.
+   */
+  waitForJob(jobId: string, ms: number): Promise<boolean> {
+    const job = this.jobs.get(jobId);
+    if (!job) return Promise.resolve(false);
+    if (job.status !== "running" && job.status !== "pending") {
+      return Promise.resolve(true);
+    }
+    if (!(ms > 0)) return Promise.resolve(false);
+    return new Promise<boolean>((resolve) => {
+      let timer: NodeJS.Timeout | undefined;
+      const wake = () => {
+        if (timer) clearTimeout(timer);
+        resolve(true);
+      };
+      this.endWaiters.set(jobId, [...(this.endWaiters.get(jobId) ?? []), wake]);
+      timer = setTimeout(() => {
+        const rest = (this.endWaiters.get(jobId) ?? []).filter(
+          (w) => w !== wake,
+        );
+        if (rest.length) this.endWaiters.set(jobId, rest);
+        else this.endWaiters.delete(jobId);
+        resolve(false);
+      }, ms);
+    });
+  }
+
+  private notifyEnded(jobId: string): void {
+    const waiting = this.endWaiters.get(jobId);
+    if (!waiting) return;
+    this.endWaiters.delete(jobId);
+    for (const wake of waiting) wake();
   }
 
   getJob(jobId: string): BackgroundJob | undefined {
@@ -238,6 +280,7 @@ export class BackgroundJobService {
       if (job) {
         job.status = "cancelled";
         job.endTime = new Date();
+        this.notifyEnded(jobId);
       }
     }
     this.processes.clear();

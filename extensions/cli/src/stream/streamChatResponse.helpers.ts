@@ -25,6 +25,7 @@ import {
   recordCliOutcome,
   type ApprovalTrace,
 } from "../audit/cliAudit.js";
+import { takeBashEnd } from "../audit/bashExit.js";
 import { startShadowReview } from "../audit/shadowHook.js";
 import { firePermissionRequest } from "../hooks/fireHook.js";
 import { notifyAttention } from "../hooks/lifecycleHooks.js";
@@ -1283,9 +1284,20 @@ export async function executeStreamedToolCalls(
               flagToolResult(rawResult, approvedCall),
             );
             noteCliToolResult(approvedCall, approvedCall.tool?.mcpServer);
+            // A command that exited non-zero with nothing on stderr returns
+            // normally, so its code comes from the tool's own note
+            const bashEnd = takeBashEnd(approvedCall.id);
             recordCliOutcome(approvedCall, {
               ran: true,
               durMs: Date.now() - startedAt,
+              ...(bashEnd
+                ? {
+                    exit: bashEnd.exit,
+                    ...(bashEnd.exit !== 0
+                      ? { error: `exited with code ${bashEnd.exit}` }
+                      : {}),
+                  }
+                : {}),
               output: typeof toolResult === "string" ? toolResult : undefined,
             });
             const entry: ToolResultWithStatus = {
@@ -1317,9 +1329,10 @@ export async function executeStreamedToolCalls(
               name: approvedCall.name,
               error: errorMessage,
             });
+            // The real code when a command chose one; 1 for any other failure
             recordCliOutcome(approvedCall, {
               ran: true,
-              exit: 1,
+              exit: takeBashEnd(approvedCall.id)?.exit ?? 1,
               error: errorMessage,
             });
             await runPostToolUseFailureHooks(approvedCall, errorMessage);

@@ -82,6 +82,8 @@ import {
 import { EditAggregator } from "./nextEdit/context/aggregateEdits";
 import { createNewPromptFileV2 } from "./promptFiles/createNewPromptFile";
 import { BuiltInToolNames } from "./tools/builtIn";
+import { effectiveCwdForPolicy } from "./tools/implementations/terminalCwd";
+import { terminalEndOf } from "./tools/permissions/audit/terminalEnd";
 import { callTool } from "./tools/callTool";
 import { toolForPolicy } from "./tools/definitions/sessionMessaging";
 import { recordAutoAnswer } from "./tools/permissions/audit/autoAnswer";
@@ -303,6 +305,29 @@ import { Logger } from "./util/Logger.js";
 import { MessageAbortControllers } from "./util/messageAbortControllers";
 import { webContentStore } from "./util/web/contentStore";
 import { setWebAgentVersion } from "./web/webHeaders";
+
+/**
+ * The folder the permission layer judges a call against. For a terminal
+ * command that is the folder it was asked to run in (`cwd`), so a relative
+ * path in the command is read from where it really runs; for every other tool
+ * it is the workspace's first folder, as before.
+ */
+function terminalCwdForPolicy(
+  toolName: string,
+  parsedArgs: Record<string, unknown>,
+  dirs: string[],
+): string | undefined {
+  const first = uriToPath(dirs[0]);
+  if (first === undefined) return undefined;
+  if (toolName !== BuiltInToolNames.RunTerminalCommand) return first;
+  return effectiveCwdForPolicy(parsedArgs?.cwd, {
+    defaultCwd: first,
+    workspaceRoots: dirs.flatMap((d) => {
+      const p = uriToPath(d);
+      return p === undefined ? [] : [p];
+    }),
+  });
+}
 
 export class Core {
   configHandler: ConfigHandler;
@@ -2720,7 +2745,9 @@ export class Core {
           trustedDomains: readUserTrustedDomains(),
           envNames: readUserEnvNames(),
           largeChangeLines: readUserLargeChangeLines(),
-          ...(dirs[0] ? { cwd: uriToPath(dirs[0]) } : {}),
+          ...(dirs[0]
+            ? { cwd: terminalCwdForPolicy(toolName, parsedArgs, dirs) }
+            : {}),
           ...deputyWorkspace(dirs),
           shell: shell.kind,
           // The tainted-session rule's fact (nothing when the rule is off)
@@ -2911,12 +2938,24 @@ export class Core {
       });
       throw e;
     }
+    // A terminal command that ran and exited non-zero returns an ordinary
+    // result, so its code is read from the command's record
+    const end = result.errorMessage
+      ? undefined
+      : terminalEndOf(result.contextItems);
     trail.outcome({
       callId: toolCall.id,
       tool: toolCall.function.name,
       ran: true,
       durMs: Date.now() - startedAt,
-      ...(result.errorMessage ? { exit: 1, error: result.errorMessage } : {}),
+      ...(result.errorMessage
+        ? { exit: 1, error: result.errorMessage }
+        : end
+          ? {
+              exit: end.exit,
+              ...(end.error ? { error: end.error } : {}),
+            }
+          : {}),
       output: result.contextItems?.map((c) => c.content).join("\n") ?? "",
     });
     return result;

@@ -7,6 +7,8 @@ import {
   type ToolPolicy,
 } from "@continuedev/terminal-security";
 import { commandLintGate } from "core/tools/permissions/commandLint.js";
+import { resolveRequestedCwd } from "core/tools/implementations/terminalCwd.js";
+import { noteBashEnd } from "../audit/bashExit.js";
 import { missingBinaryGate } from "core/tools/permissions/missingBinaryGate.js";
 import { getCommandExecutor } from "core/util/commandExecutor.js";
 import { decodeCommandOutput } from "core/util/commandOutput.js";
@@ -125,8 +127,10 @@ function commandBlocked(command: string): string | undefined {
 // tool); PowerShell is asked for the exit code the command's own program chose
 function startCommand(
   command: string,
+  cwd?: string,
 ): Promise<ChildProcessByStdio<null, Readable, Readable>> {
   return spawnAgentCommand(getCommandExecutor(), command, {
+    ...(cwd ? { cwd } : {}),
     env: commandEnvironment(terminalEnvironment(shellChildEnv())),
     // No open standard input: a prompt must fail, not wait for the timeout
     stdio: COMMAND_STDIO,
@@ -167,7 +171,7 @@ export const runTerminalCommandTool: Tool = {
   description: `Executes a terminal command and returns the output. ${describeShell()}
 ${TERMINAL_ENV_NOTICE}
 
-Commands are automatically executed from the current working directory (${process.cwd()}), so there's no need to change directories with 'cd' commands.
+Commands are executed from the current working directory (${process.cwd()}). The shell keeps nothing between calls, so to run in a folder inside it, pass cwd instead of starting the command with 'cd'.
 
 IMPORTANT: To edit files, use Edit/MultiEdit tools instead of bash commands (sed, awk, etc). A command that writes a file (redirection, Set-Content, node -e or python -c calling a write) counts as a file edit: use Write or Edit for it, and if Write or Edit was refused, the command is refused too.
 `,
@@ -183,6 +187,11 @@ IMPORTANT: To edit files, use Edit/MultiEdit tools instead of bash commands (sed
         type: "number",
         description:
           "Optional timeout in seconds (max 600). Use this parameter for commands that take longer than the default 180 second timeout.",
+      },
+      cwd: {
+        type: "string",
+        description:
+          "Optional folder to run the command in: the current working directory or a folder inside it, relative to it. Use this instead of starting the command with cd.",
       },
     },
   },
@@ -218,9 +227,11 @@ IMPORTANT: To edit files, use Edit/MultiEdit tools instead of bash commands (sed
     {
       command,
       timeout,
+      cwd,
     }: {
       command: string;
       timeout?: number;
+      cwd?: string;
     },
     context?: ToolRunContext,
   ): Promise<string> => {
@@ -237,13 +248,23 @@ IMPORTANT: To edit files, use Edit/MultiEdit tools instead of bash commands (sed
       return lintMessage;
     }
 
+    // The folder asked for, inside the folder the CLI was started in
+    const where = resolveRequestedCwd(cwd, {
+      defaultCwd: process.cwd(),
+      workspaceRoots: [process.cwd()],
+    });
+    if (!where.ok) return where.error;
+
     emitBashToolStarted();
 
     // Same start as the core implementation. A shell that cannot start is
     // reported as its "error" event was
     let child: Awaited<ReturnType<typeof startCommand>>;
     try {
-      child = await startCommand(command);
+      child = await startCommand(
+        command,
+        where.requested ? where.cwd : undefined,
+      );
     } catch (error) {
       throw `Error: ${error instanceof Error ? error.message : String(error)}`;
     }
@@ -405,6 +426,11 @@ IMPORTANT: To edit files, use Edit/MultiEdit tools instead of bash commands (sed
       function finish(code: number | null) {
         if (isResolved) return;
         isResolved = true;
+        // For the audit trail: the code the command chose, which the string
+        // this tool returns or throws does not carry
+        if (typeof code === "number") {
+          noteBashEnd(context?.toolCallId, { exit: code });
+        }
 
         if (timeoutId) {
           clearTimeout(timeoutId);
