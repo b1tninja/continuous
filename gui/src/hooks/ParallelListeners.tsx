@@ -28,6 +28,9 @@ import {
 import { setTTSActive } from "../redux/slices/uiSlice";
 
 import { modelSupportsReasoning } from "core/llm/autodetect";
+import { selectModelUse } from "../redux/selectors/selectModelUse";
+import { getModeReasoningEffort } from "../util/modeModels";
+import { sessionReasoningAfterConfig } from "../util/sessionReasoning";
 import { expectsStartupResume } from "../pages/gui/resumingSession";
 import { cancelStream } from "../redux/thunks/cancelStream";
 import { handleApplyStateUpdate } from "../redux/thunks/handleApplyStateUpdate";
@@ -62,6 +65,7 @@ function ParallelListeners() {
   const reasoningSettings = useAppSelector(
     (store) => store.ui.reasoningSettings,
   );
+  const modelUse = useAppSelector(selectModelUse);
   const hasDoneInitialConfigLoad = useRef(false);
 
   // Load symbols for chat on any session change
@@ -145,20 +149,31 @@ function ParallelListeners() {
 
       const chatModel = configResult.config?.selectedModelByRole.chat;
       const supportsReasoning = modelSupportsReasoning(chatModel);
-      const isReasoningDisabled =
-        chatModel?.completionOptions?.reasoning === false;
-      const wasReasoningPreviouslyEnabled = chatModel?.title
-        ? reasoningSettings[chatModel.title] !== false
-        : true;
+      const modeEffort =
+        configResult.config && modelUse
+          ? getModeReasoningEffort(configResult.config, modelUse)
+          : undefined;
       dispatch(
         setHasReasoningEnabled(
-          supportsReasoning &&
-            !isReasoningDisabled &&
-            wasReasoningPreviouslyEnabled,
+          sessionReasoningAfterConfig({
+            supportsReasoning,
+            reasoningDisabledOnModel:
+              chatModel?.completionOptions?.reasoning === false,
+            storedToggle: chatModel?.title
+              ? reasoningSettings[chatModel.title]
+              : undefined,
+            modeEffort,
+          }),
         ),
       );
     },
-    [dispatch, hasDoneInitialConfigLoad, selectedProfileId, reasoningSettings],
+    [
+      dispatch,
+      hasDoneInitialConfigLoad,
+      selectedProfileId,
+      reasoningSettings,
+      modelUse,
+    ],
   );
 
   // Load config from the IDE

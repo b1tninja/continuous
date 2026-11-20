@@ -287,6 +287,29 @@ describe("the settings beside the levels", () => {
     expect(saved.at(-1).builtin).toEqual({ "protect-secrets": false });
   });
 
+  it("the confirmation skip is off until it is switched on, and the change is saved", async () => {
+    const ideMessenger = new MockIdeMessenger();
+    const saved: any[] = [];
+    ideMessenger.responseHandlers["policy/save"] = (async (data: any) => {
+      saved.push(data);
+    }) as any;
+    const store = setupStore({ ideMessenger });
+    const { user } = await renderWithProviders(<PolicyCard />, {
+      store,
+      mockIdeMessenger: ideMessenger,
+    });
+    expect(store.getState().ui.policyExtras.skipPermissionConfirm).toBe(
+      undefined,
+    );
+    await user.click(
+      screen
+        .getByTestId("skip-permission-confirm")
+        .querySelector(".rounded-full")!,
+    );
+    expect(store.getState().ui.policyExtras.skipPermissionConfirm).toBe(true);
+    expect(saved.at(-1).skipPermissionConfirm).toBe(true);
+  });
+
   it("who decides a question type moves it between the two lists", async () => {
     const ideMessenger = new MockIdeMessenger();
     const store = setupStore({ ideMessenger });

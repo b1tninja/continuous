@@ -52,6 +52,7 @@ Most of this is written for you: the toolbar and **Settings, Tools** in the exte
 | `mcpServers.<name>`      | `trusted`                              | none                                     | by hand, extension (Custom policy) |
 | `allow`, `ask`, `exclude` | list of terminal agent rules          | none                                     | terminal agent ("always allow")              |
 | `sandbox`                | reserved                               |                                          | accepted, nothing reads it yet               |
+| `skipPermissionConfirm`  | `on` / `off`                           | off (the line is absent)                 | extension (Settings, Tools)                  |
 
 ### `levels`
 
@@ -140,6 +141,12 @@ The Permissions page shows them as locked. Change them in this file, or in the e
 ### `mcpServers`
 
 `<server name>: trusted` believes that server's own read-only hints, so Plan mode may use the tools it marks read-only. A server that came with the open folder is never trusted this way.
+
+### `skipPermissionConfirm`
+
+`on` skips the editor dialog that asks before a permission change is saved ("Save these permission changes?"). Absent or `off` shows that dialog. Turning it on asks once. It does not skip an ask or a refusal before a command runs, and it does not change the dialog for a rule change.
+
+The line is written only when the setting is on. A terminal agent that does not know the key treats `permissions.yaml` as broken while the line is present, and will not add an "always allow" rule until the line is removed.
 
 ### `allow`, `ask`, `exclude`
 

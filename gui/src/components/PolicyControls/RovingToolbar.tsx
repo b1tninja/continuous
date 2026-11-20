@@ -21,11 +21,20 @@ export function RovingToolbar({
   testId,
   className,
   children,
+  copyKey,
+  onItemFocus,
 }: {
   label: string;
   testId?: string;
   className?: string;
   children: ReactNode;
+  /**
+   * Set on a message's action row so a shortcut can find that message.
+   * Absent on toolbars that are not a message.
+   */
+  copyKey?: string;
+  /** A roving control in this toolbar received focus. */
+  onItemFocus?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const current = useRef<HTMLElement | null>(null);
@@ -79,6 +88,8 @@ export function RovingToolbar({
       role="toolbar"
       aria-label={label}
       data-testid={testId}
+      data-message-actions={copyKey === undefined ? undefined : ""}
+      data-copy-key={copyKey}
       className={className}
       onKeyDown={onKeyDown}
       onFocus={(e) => {
@@ -86,6 +97,7 @@ export function RovingToolbar({
         if (t.matches(ITEM)) {
           current.current = t;
           apply();
+          onItemFocus?.();
         }
       }}
     >

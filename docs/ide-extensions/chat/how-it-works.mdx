@@ -32,6 +32,14 @@ Each code section in the AI response includes action buttons:
 - **Insert at cursor** - Add code at cursor position
 - **Copy** - Copy code to clipboard
 
+## Copy a reply
+
+Copy under a reply copies that reply as Markdown. The menu beside it also copies plain text. The Markdown starts with the chat title and the date. Reasoning is left out. Line breaks stay line breaks, and a link is copied as it was written.
+
+Tab to the reply's actions. That row is one Tab stop; Left and Right move between the buttons. `Ctrl+Alt+C` (`Cmd+Alt+C` on macOS) copies the reply whose actions are focused. The same action is **Continuous: Copy Message as Markdown** in the Command Palette.
+
+A copy stays in the system clipboard history until you replace it.
+
 ## How Session Management Works
 
 - Use `Cmd/Ctrl + L` (VS Code) to start a new session

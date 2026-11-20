@@ -99,4 +99,6 @@ export type ToWebviewFromIdeProtocol = ToWebviewFromIdeOrCoreProtocol & {
   stopLoop: [undefined, boolean];
   showAgents: [undefined, boolean];
   testConnection: [undefined, boolean];
+  /** Copy the focused chat message as Markdown. False when none is focused. */
+  copyMessageAsMarkdown: [undefined, boolean];
 };

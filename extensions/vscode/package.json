@@ -2,7 +2,7 @@
   "name": "continuous",
   "icon": "media/icon.png",
   "author": "b1tninja",
-  "version": "2.38.2",
+  "version": "2.38.4",
   "repository": {
     "type": "git",
     "url": "https://github.com/b1tninja/continuous"
@@ -627,6 +627,12 @@
         "category": "Continuous",
         "title": "Open in new window",
         "group": "Continuous"
+      },
+      {
+        "command": "continuous.copyMessageAsMarkdown",
+        "category": "Continuous",
+        "title": "Copy Message as Markdown",
+        "group": "Continuous"
       }
     ],
     "keybindings": [
@@ -745,6 +751,12 @@
         "command": "continuous.rejectJump",
         "key": "escape",
         "when": "editorTextFocus && continuous.jumpDecorationVisible"
+      },
+      {
+        "command": "continuous.copyMessageAsMarkdown",
+        "key": "ctrl+alt+c",
+        "mac": "cmd+alt+c",
+        "when": "focusedView == continuous.continueGUIView || activeWebviewPanelId == continuous.continueGUIView"
       }
     ],
     "submenus": [
