@@ -247,21 +247,16 @@ describe("Keyboard Shortcuts", () => {
     const text = "Hello, world!";
 
     await driver.switchTo().defaultContent();
+    await editor.click();
     await editor.setText(text);
     await TestUtils.waitForSuccess(async () => {
       if ((await editor.getText()).trim() !== text) {
         throw new Error("Editor text is not ready");
       }
     });
-
-    // The previous test leaves the chat input focused. Ctrl+L then starts
-    // a new session and does not add the selection. selectText also drives
-    // the find widget, which does nothing while that input has focus.
-    ({ view } = await GUIActions.switchToReactIframe());
-    const input = await GUISelectors.getMessageInputFieldAtIndex(view, 0);
-    await driver.executeScript("arguments[0].blur()", input);
-    await view.switchBack();
-    await editor.focus();
+    // getText() collapses the selection. Click the editor so it is the
+    // active one, then select everything with a command.
+    await editor.click();
     await new Workbench().executeCommand("editor.action.selectAll");
     await new Workbench().executeCommand("continuous.focusContinuousInput");
 
