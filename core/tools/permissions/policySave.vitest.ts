@@ -3,6 +3,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as YAML from "yaml";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { evaluateTerminalCommandSecurity } from "@continuedev/terminal-security";
+import { evaluateToolPolicyWithRules } from "./evaluate";
 import { DEFAULT_POLICY_LEVELS, normalizePolicy } from "./policy";
 import {
   POLICY_SAVE_NOT_CONFIRMED,
@@ -10,6 +12,7 @@ import {
   policySaveLoosenings,
   previewPolicySave,
   savePolicyWithConfirmation,
+  skipPermissionConfirmText,
 } from "./policySave";
 import {
   applyPolicyUpdate,
@@ -197,6 +200,74 @@ describe("savePolicyWithConfirmation: the native confirmation", () => {
     ).rejects.toThrow(/^Not saved: floor:/);
     expect(confirm).not.toHaveBeenCalled();
     expect(fs.readFileSync(file, "utf-8")).toBe(FILE);
+  });
+
+  it("default still shows the dialog", async () => {
+    const confirm = vi.fn(async () => true);
+    await savePolicyWithConfirmation(
+      file,
+      {
+        levels: { ...before.levels, tools: "permissive" },
+        // The same save cannot grant itself the skip
+        skipPermissionConfirm: true,
+      },
+      { confirm },
+    );
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm.mock.calls[0][0]).toContain(
+      "Save these permission changes?",
+    );
+    expect(confirm.mock.calls[0][0]).toContain(
+      "Tool use: Cautious → Permissive",
+    );
+  });
+
+  it("the setting on does not show the dialog", async () => {
+    fs.writeFileSync(file, `${FILE}skipPermissionConfirm: on\n`);
+    const confirm = vi.fn(async () => {
+      throw new Error("dialog");
+    });
+    await savePolicyWithConfirmation(
+      file,
+      { levels: { ...before.levels, tools: "permissive" } },
+      { confirm },
+    );
+    expect(confirm).not.toHaveBeenCalled();
+    expect(
+      parsePolicyFile(fs.readFileSync(file, "utf-8")).settings.levels.tools,
+    ).toBe("permissive");
+  });
+
+  it("turning the setting on asks once, and a no writes nothing", async () => {
+    const confirm = vi.fn(async () => false);
+    await expect(
+      savePolicyWithConfirmation(
+        file,
+        { skipPermissionConfirm: true },
+        { confirm },
+      ),
+    ).rejects.toThrow(POLICY_SAVE_NOT_CONFIRMED);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm.mock.calls[0][0]).toBe(skipPermissionConfirmText());
+    expect(fs.readFileSync(file, "utf-8")).toBe(FILE);
+  });
+
+  it("a dangerous-command ask is unchanged", () => {
+    const asked = evaluateToolPolicyWithRules({
+      tool: {
+        group: "Built-In",
+        evaluateToolCallPolicy: (base: any, args: Record<string, unknown>) =>
+          evaluateTerminalCommandSecurity(base, args.command as string),
+      },
+      toolName: "run_terminal_command",
+      basePolicy: "allowedWithoutPermission",
+      parsedArgs: { command: "git reset --hard" },
+      approval: {
+        levels: { ...DEFAULT_POLICY_LEVELS, tools: "permissive" },
+      },
+      shell: "bash",
+    });
+    expect(asked.policy).toBe("allowedWithPermission");
   });
 
   it("compares against a missing file as the defaults", async () => {

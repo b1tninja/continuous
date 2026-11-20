@@ -114,13 +114,31 @@ export function policySaveLoosenings(
 }
 
 /** The native dialog's text. */
-export function policySaveConfirmText(loosens: PolicyLoosening[]): string {
+export function policySaveConfirmText(
+  loosens: PolicyLoosening[],
+  options?: { alsoSkipConfirm?: boolean },
+): string {
+  const effect = options?.alsoSkipConfirm
+    ? "This lets something run without asking that did not before. This save also skips this confirmation from now on."
+    : "This lets something run without asking that did not before.";
   return [
     "Save these permission changes?",
     "",
     ...loosens.map((l) => `• ${l.text}`),
     "",
-    "This lets something run without asking that did not before. Settings are saved to permissions.yaml, which the CLI reads too.",
+    `${effect} Settings are saved to permissions.yaml, which the CLI reads too.`,
+  ].join("\n");
+}
+
+/**
+ * The dialog for turning `skipPermissionConfirm` on by itself. One ask: after
+ * a yes, later permission changes are saved without the dialog above.
+ */
+export function skipPermissionConfirmText(): string {
+  return [
+    "Skip the confirmation when permissions change?",
+    "",
+    "A later save that lets something run without asking will be written without this dialog. An ask before a command runs is unchanged. This is saved to permissions.yaml, which the CLI reads too.",
   ].join("\n");
 }
 
@@ -148,6 +166,10 @@ function readText(file: string): string | undefined {
  * Write the update, after the IDE's own confirmation when it loosens. An
  * update the writer would refuse is refused before anything is asked; a "no"
  * writes nothing. Returns what was loosened (and confirmed).
+ *
+ * `skipPermissionConfirm: on` already in the file skips that dialog only.
+ * Turning it on asks once, in the same dialog. It never skips an ask before
+ * a command runs.
  */
 export async function savePolicyWithConfirmation(
   file: string,
@@ -158,10 +180,16 @@ export async function savePolicyWithConfirmation(
   if (problem) throw new Error(`Not saved: ${problem}`);
   const before = parsePolicyFile(readText(file)).settings;
   const loosens = policySaveLoosenings(before, update);
-  if (loosens.length > 0) {
-    const yes = await host
-      .confirm(policySaveConfirmText(loosens))
-      .catch(() => false);
+  // The file as it already is, not this update. A save cannot skip its own
+  // dialog by setting the flag in the same request.
+  const skipAlready = before.skipPermissionConfirm === true;
+  const turningOn = update.skipPermissionConfirm === true && !skipAlready;
+  if (!skipAlready && (loosens.length > 0 || turningOn)) {
+    const text =
+      loosens.length > 0
+        ? policySaveConfirmText(loosens, { alsoSkipConfirm: turningOn })
+        : skipPermissionConfirmText();
+    const yes = await host.confirm(text).catch(() => false);
     if (!yes) throw new Error(POLICY_SAVE_NOT_CONFIRMED);
   }
   writePolicyFile(file, update);
