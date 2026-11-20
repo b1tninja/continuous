@@ -51,6 +51,8 @@ function catalog(): CommunityCatalog {
 const automatic: ModelCatalogSettings = {
   policy: "automatic",
   refreshHours: 24,
+  community: true,
+  priceList: false,
 };
 
 let dir: string;
@@ -348,6 +350,19 @@ describe("the cached copy", () => {
     expect(getCommunityCatalog()).toBeUndefined();
     expect(loadCommunityPrices({ file, settings: automatic })).toBeDefined();
     expect(getCommunityCatalog()).toBeDefined();
+    // Opt-in off: the copy stays on disk and is not used
+    expect(
+      loadCommunityPrices({
+        file,
+        settings: {
+          policy: "automatic",
+          refreshHours: 24,
+          community: false,
+          priceList: false,
+        },
+      }),
+    ).toBeUndefined();
+    expect(getCommunityCatalog()).toBeUndefined();
   });
 });
 
@@ -387,6 +402,20 @@ describe("createCommunityRefresher: when models.dev is contacted", () => {
     expect(
       await run(automatic, true, new Date(Date.now() - 3600_000).toISOString()),
     ).toEqual({ outcome: "fresh", calls: 0 });
+  });
+
+  it("automatic without the community opt-in: no request", async () => {
+    expect(
+      await run(
+        {
+          policy: "automatic",
+          refreshHours: 24,
+          community: false,
+          priceList: false,
+        },
+        true,
+      ),
+    ).toEqual({ outcome: "disabled", calls: 0 });
   });
 
   it("manual and off never request in the background", async () => {

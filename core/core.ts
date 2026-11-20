@@ -38,9 +38,7 @@ import {
   withQuotaWarnings,
 } from "./llm/bedrockMetadata";
 import { ensureBedrockPriceList } from "./llm/bedrockPriceList";
-import type { CommunityCatalog } from "./llm/communityCatalog";
 import {
-  createCommunityRefresher,
   loadCommunityPrices,
   needsCommunityPrice,
   pullCommunityCatalog,
@@ -67,8 +65,8 @@ import {
 } from "./llm/modelCatalogRefresh";
 import {
   loadOpenRouterPrices,
-  modelInfoFetchBlocked,
-  pullOpenRouterCatalog,
+  modelInfoRefreshesInBackground,
+  pullRequestedModelInfo,
   readModelCatalogSettings,
   readOpenRouterCatalog,
   saveModelCatalogSettings,
@@ -319,8 +317,6 @@ export class Core {
   private modelCatalogRefresher?: ModelCatalogRefresher;
   private selectedModelRefresher?: SelectedModelRefresher;
   private selectedChatModel?: ILLM;
-  /** The background community catalogue refresh (not started in tests). */
-  private communityCatalogRefresher?: ModelCatalogRefresher<CommunityCatalog>;
   /** Prices and quotas for the selected Bedrock model (not started in tests). */
   private bedrockMetadata?: BedrockMetadataTracker;
   private messageAbortControllers = new MessageAbortControllers();
@@ -581,35 +577,37 @@ export class Core {
       }
     });
 
-    // Cost figures use the downloaded prices, if there are any (a file read)
+    // Cost figures use the downloaded prices, if there are any (a file read).
+    // A fresh config does not contact openrouter.ai, models.dev, the Price
+    // List or a provider's model endpoint. Background refreshers run only
+    // when the person stored `automatic` (a loosening).
     loadOpenRouterPrices();
 
-    // "Model information updates: Automatic" (the default): refresh the
-    // OpenRouter list in the background when it is older than the interval.
-    // Only a timer is set here; start-up and requests never wait for it.
     const requestOptions = async () =>
       (await this.configHandler.loadConfig()).config?.requestOptions;
     if (!underTestRunner()) {
-      this.modelCatalogRefresher = createOpenRouterRefresher({
-        requestOptions,
-        log: (m) => console.warn(m),
-      });
-      this.modelCatalogRefresher.start();
-      // The selected Anthropic or OpenAI model's own facts, from its
-      // provider with the person's key; armed by the config update that
-      // names the selected model, never at start-up itself
-      this.selectedModelRefresher = createSelectedModelRefresher({
-        log: (m) => console.warn(m),
-        onUpdated: (target, facts) => this.applyModelFacts(target, facts),
-      });
-      // Prices and quotas for the selected Bedrock model
-      this.startBedrockMetadata(requestOptions);
+      const background = modelInfoRefreshesInBackground();
+      if (background) {
+        this.modelCatalogRefresher = createOpenRouterRefresher({
+          requestOptions,
+          log: (m) => console.warn(m),
+        });
+        this.modelCatalogRefresher.start();
+        // The selected Anthropic or OpenAI model's own facts, from its
+        // provider with the person's key; armed by the config update that
+        // names the selected model, never at start-up itself
+        this.selectedModelRefresher = createSelectedModelRefresher({
+          log: (m) => console.warn(m),
+          onUpdated: (target, facts) => this.applyModelFacts(target, facts),
+        });
+      }
+      // A Price List already on disk stays readable. Its timer runs only
+      // for a stored automatic, and the bulk file is a separate opt-in.
+      this.startBedrockMetadata(requestOptions, { background });
     }
 
-    // The community catalogue (models.dev) is the last price source: its copy
-    // is used when there is one (a file read), and with updates automatic it
-    // is downloaded in the background only while a selected model has no
-    // price from a better source (plans/research/provider-model-metadata.md).
+    // models.dev is opt-in and labelled community. The copy on disk is used
+    // only then (a file read). It is not downloaded at start-up.
     loadCommunityPrices();
     const unpricedSelection = async () => {
       const { config } = await this.configHandler.loadConfig();
@@ -622,14 +620,6 @@ export class Core {
           needsCommunityPrice({ provider: m.providerName, model: m.model }),
       );
     };
-    if (!underTestRunner()) {
-      this.communityCatalogRefresher = createCommunityRefresher({
-        unpriced: unpricedSelection,
-        requestOptions,
-        log: (m) => console.warn(m),
-      });
-      this.communityCatalogRefresher.start();
-    }
 
     on("modelCatalog/status", async () => {
       const cached = readOpenRouterCatalog();
@@ -639,6 +629,8 @@ export class Core {
       return {
         policy: settings.policy,
         refreshHours: settings.refreshHours,
+        communityOptIn: settings.community,
+        priceListOptIn: settings.priceList,
         ...(refresh?.lastAttemptAt
           ? {
               lastAttempt: {
@@ -666,10 +658,11 @@ export class Core {
       };
     });
 
-    // The community copy for the window's cost figures; none when updates
-    // are off
+    // The community copy for the window's cost figures. None unless the
+    // person opted in, and none when updates are off.
     on("modelCatalog/communityCached", async () => {
-      if (readModelCatalogSettings().policy === "off") return null;
+      const settings = readModelCatalogSettings();
+      if (settings.policy === "off" || settings.community !== true) return null;
       const cached = readCommunityCatalog();
       return cached
         ? { fetchedAt: cached.fetchedAt, prices: cached.prices }
@@ -686,42 +679,27 @@ export class Core {
         : null;
     });
 
-    // Refresh now / Pull now: the person's own request. Refused only when
-    // model information updates are off.
-    on("modelCatalog/pull", async () => {
-      const blocked = modelInfoFetchBlocked();
-      if (blocked) return { ok: false as const, error: blocked };
-      try {
-        const catalog = await pullOpenRouterCatalog(await requestOptions());
-        // The person's refresh also covers the community catalogue, but only
-        // while a selected model has no better price; its failure does not
-        // fail the refresh
-        try {
+    // Refresh now / Pull now: the person's own request. One request to
+    // openrouter.ai. models.dev only with the community opt-in, and only
+    // while a selected model has no better price. Refused when updates are off.
+    on("modelCatalog/pull", async () =>
+      pullRequestedModelInfo({
+        requestOptions: await requestOptions(),
+        pullCommunity: async () => {
           if (await unpricedSelection()) {
             await pullCommunityCatalog(await requestOptions());
           }
-        } catch (e) {
-          console.warn(
-            `Community catalogue refresh failed: ${e instanceof Error ? e.message : String(e)}`,
-          );
-        }
-        return {
-          ok: true as const,
-          fetchedAt: catalog.fetchedAt,
-          models: catalog.models,
-        };
-      } catch (e: any) {
-        return {
-          ok: false as const,
-          error: e instanceof Error ? e.message : String(e),
-        };
-      }
-    });
+        },
+        log: (m) => console.warn(m),
+      }),
+    );
 
     on("modelCatalog/setPolicy", async (msg) => ({
       saved: saveModelCatalogSettings({
         policy: msg.data.policy,
         refreshHours: msg.data.refreshHours,
+        community: msg.data.community,
+        priceList: msg.data.priceList,
       }),
     }));
 
@@ -1325,6 +1303,7 @@ export class Core {
    */
   private startBedrockMetadata(
     requestOptions: () => Promise<RequestOptions | undefined>,
+    opts: { background?: boolean } = {},
   ) {
     const tracker = new BedrockMetadataTracker({
       requestOptions,
@@ -1336,7 +1315,9 @@ export class Core {
       const chat = result.config?.selectedModelByRole.chat;
       void tracker.select(chat instanceof Bedrock ? chat : undefined);
     });
-    tracker.refresher.start();
+    // The timer is the stored-automatic loosening. A fresh config does not
+    // start it, so start-up makes no Service Quotas or Price List request.
+    if (opts.background) tracker.refresher.start();
   }
 
   /**

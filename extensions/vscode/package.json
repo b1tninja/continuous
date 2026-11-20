@@ -209,13 +209,13 @@
             "Off"
           ],
           "enumDescriptions": [
-            "Refresh OpenRouter's public model list in the background when the copy on this computer is older than the refresh interval: at start-up and while running.",
-            "Contact openrouter.ai only when you choose Pull now or Refresh now, or run `continuous models refresh`.",
+            "Loosens the default. Refresh OpenRouter's public model list in the background when the copy on this computer is older than the refresh interval, and look up the selected Anthropic or OpenAI model at its own API.",
+            "Contact openrouter.ai only when you choose Pull now or Refresh now, or run `continuous models refresh`. This is the default.",
             "Never contact openrouter.ai; use the bundled model data."
           ],
-          "default": "automatic",
+          "default": "manual",
           "scope": "application",
-          "markdownDescription": "Model information updates: OpenRouter's public model list (names, context sizes, per-token prices for cost estimates and `--max-budget-usd`, tool support). `automatic` sends one GET to `openrouter.ai/api/v1/models`, with no key, account or prompt, when the copy is older than `#continuous.modelInformationRefreshHours#`. Saved as `modelCatalog:` in the user-level `config.yaml`, so JetBrains and the terminal agent follow it too. Ollama's model list is not affected: it is fetched only from Ollama's own setup. `automatic` also looks up the selected Anthropic or OpenAI chat model at its own API base, with your key, for its context window, output cap and deprecation date; `off` stops that too."
+          "markdownDescription": "Model information updates: OpenRouter's public model list (names, context sizes, per-token prices for cost estimates and `--max-budget-usd`, tool support). The default, `manual`, sends nothing at start-up; Refresh now sends one GET to `openrouter.ai/api/v1/models`, with no key, account or prompt. `automatic` loosens that and refreshes when the copy is older than `#continuous.modelInformationRefreshHours#`, and looks up the selected Anthropic or OpenAI chat model at its own API base, with your key. Saved as `modelCatalog:` in the user-level `config.yaml`, so JetBrains and the terminal agent follow it too. Ollama's model list is not affected: it is fetched only from Ollama's own setup. `off` stops every request."
         },
         "continuous.modelInformationRefreshHours": {
           "type": "number",

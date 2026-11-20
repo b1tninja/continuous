@@ -112,11 +112,24 @@ describe("user settings", () => {
     afterEach(() => {
       if (saved === undefined) delete process.env.CONTINUOUS_MODEL_INFO_UPDATES;
       else process.env.CONTINUOUS_MODEL_INFO_UPDATES = saved;
+      delete process.env.CONTINUOUS_MODEL_INFO_COMMUNITY;
       setCommunityCatalog(undefined);
+    });
+
+    it("without the community opt-in, models.dev is not a budget price", () => {
+      process.env.CONTINUOUS_MODEL_INFO_UPDATES = "automatic";
+      delete process.env.CONTINUOUS_MODEL_INFO_COMMUNITY;
+      expect(() =>
+        startRunLimits({ maxBudgetUsd: "1" }, mistral, {
+          homeDir: home,
+          communityFile,
+        }),
+      ).toThrow(/the cost table has no price for it/);
     });
 
     it("refuses --max-budget-usd on the community price, allows it with the flag", () => {
       process.env.CONTINUOUS_MODEL_INFO_UPDATES = "automatic";
+      process.env.CONTINUOUS_MODEL_INFO_COMMUNITY = "on";
       expect(() =>
         startRunLimits({ maxBudgetUsd: "1" }, mistral, {
           homeDir: home,
