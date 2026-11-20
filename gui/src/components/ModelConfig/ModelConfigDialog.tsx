@@ -1,16 +1,15 @@
 import type { ToolDialectSetting } from "@continuedev/config-yaml";
 import type { ModelDescription, Tool, ToolOverride } from "core";
-import { defaultSecretName } from "core/config/providerSecretName";
 import { parseEntryYaml } from "core/config/modelEdit/entryYaml";
 import type {
   DiffLine,
   ModelBlockInfo,
 } from "core/config/modelEdit/modelBlockEdit";
 import {
+  DEFAULT_ROLES,
   getPath,
   MODEL_EDIT_FIELDS,
   MODEL_ROLES,
-  DEFAULT_ROLES,
   opsFromEntryEdit,
   pathKey,
   type EntryEditResult,
@@ -19,6 +18,7 @@ import {
   type ModelPatchOp,
   type TriState,
 } from "core/config/modelEdit/modelEditFields";
+import { defaultSecretName } from "core/config/providerSecretName";
 import { DEFAULT_CONTEXT_LENGTH } from "core/llm/constants";
 import { modelSupportsNativeTools } from "core/llm/toolSupport";
 import { formatPriceSource } from "core/llm/utils/priceSourceText";
@@ -26,6 +26,7 @@ import { applyToolOverrides } from "core/tools/applyToolOverrides";
 import { hasConnectionTest } from "core/util/anthropicSurfaceTest";
 import { costOf } from "core/util/costOf";
 import { USER_PRICE_SOURCE, userPriceOf } from "core/util/modelPrice";
+import type { Suggestion } from "core/util/suggestedSettings";
 import { providerRecoversText } from "core/util/toolDialectLeak";
 import { useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { IdeMessengerContext } from "../../context/IdeMessenger";
@@ -160,6 +161,11 @@ export function ModelConfigDialog({
   }>();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string>();
+  /** What the model's own server lists for it (models/listedLimits). */
+  const [listed, setListed] = useState<{
+    contextLength?: number;
+    note?: string;
+  }>();
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -195,6 +201,24 @@ export function ModelConfigDialog({
     if (ready) tabRefs.current.connection?.focus();
   }, [ready]);
 
+  // Ask the model's server what window it lists; quietly nothing when it
+  // does not say or the model has no OpenAI-style listing
+  useEffect(() => {
+    let live = true;
+    void ideMessenger
+      .request("models/listedLimits", { title })
+      .then((res) => {
+        if (!live) return;
+        if (res.status === "success" && res.content.ok && res.content.limits) {
+          setListed(res.content.limits);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [ideMessenger, title]);
+
   const yamlEdit: YamlEdit = useMemo(() => {
     if (yamlText === undefined || !info?.entry || yamlText === info.entryYaml) {
       return NO_YAML_EDIT;
@@ -215,6 +239,15 @@ export function ModelConfigDialog({
   function patchForm(p: Partial<ModelForm>) {
     setForm((f) => f && { ...f, ...p });
     setReview(undefined);
+  }
+  /** What a Test connection suggested, put in the form (reviewed before it is saved). */
+  function applySuggestions(list: Suggestion[]) {
+    for (const s of list) {
+      if (s.key === "contextLength") update("contextLength", String(s.value));
+      else if (s.key === "toolDialect") update("toolDialect", s.value);
+      else patchForm({ tools: s.value });
+    }
+    setErrors(({ capabilities: _gone, ...rest }) => rest);
   }
   function editYaml(text: string) {
     setYamlText(text);
@@ -501,6 +534,7 @@ export function ModelConfigDialog({
                     setErrors(({ [k]: _gone, ...rest }) => rest);
                   }}
                   setHeaders={(headers) => patchForm({ headers })}
+                  applySuggestions={applySuggestions}
                 />
               )}
               {tab === "capabilities" && (
@@ -536,6 +570,11 @@ export function ModelConfigDialog({
                     error={errors.contextLength}
                     published={loaded?.contextLength}
                     source={loaded?.contextLengthSource}
+                  />
+                  <ListedWindowNote
+                    listed={listed}
+                    form={form}
+                    update={update}
                   />
                   <FieldList
                     section="context"
@@ -752,6 +791,41 @@ function ContextLengthControl({
   );
 }
 
+/**
+ * What the model's own server lists for its window, with a button to use it.
+ * Shown only when the server said, and not when the form already holds it.
+ */
+function ListedWindowNote({
+  listed,
+  form,
+  update,
+}: {
+  listed?: { contextLength?: number; note?: string };
+  form: ModelForm;
+  update: (key: string, value: string | string[] | null) => void;
+}) {
+  if (!listed?.note || listed.contextLength === undefined) return null;
+  const already =
+    parseTokens(form.fields[CONTEXT_KEY]) === listed.contextLength;
+  return (
+    <div className="flex flex-col gap-1" data-testid="listed-window">
+      <span className="text-2xs text-description-muted">{listed.note}</span>
+      {!already && (
+        <div>
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="use-listed-window"
+            onClick={() => update(CONTEXT_KEY, String(listed.contextLength))}
+          >
+            Use {listed.contextLength.toLocaleString()} tokens
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CatalogContext(props: {
   form: ModelForm;
   update: (key: string, value: string | string[] | null) => void;
@@ -921,6 +995,7 @@ function ConnectionPanel(
     setKey: (k: KeyChoice) => void;
     setSecret: (key: string, k: KeyChoice) => void;
     setHeaders: (h: HeaderRow[]) => void;
+    applySuggestions: (list: Suggestion[]) => void;
   },
 ) {
   const { form, info, loaded, provider, modelId, title } = props;
@@ -1010,6 +1085,13 @@ function ConnectionPanel(
             model={modelId}
             modelTitle={title}
             canTest={!!provider}
+            onUseContextLength={(n) => props.update("contextLength", String(n))}
+            current={{
+              contextLength: parseTokens(form.fields[CONTEXT_KEY]),
+              toolDialect: String(form.fields.toolDialect ?? ""),
+              tools: form.tools,
+            }}
+            onApplySuggestions={props.applySuggestions}
           />
         ) : (
           <span className="text-2xs text-description-muted">

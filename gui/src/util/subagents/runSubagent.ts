@@ -1,4 +1,3 @@
-import { maskCommandForDisplay } from "core/tools/permissions/displayMask";
 import type {
   ChatHistoryItem,
   ContextItem,
@@ -15,20 +14,19 @@ import {
   findSubagent,
   SubagentDefinition,
 } from "core/subagents/definitions";
+import { sessionMessageText } from "core/subagents/messages";
 import { resolveSubagentModel } from "core/subagents/model";
-import type { AuditAgent } from "core/tools/permissions/audit/record";
-import { subagentAuditAgent } from "core/tools/permissions/audit/identity";
-import { modeModelFor } from "core/util/modelUse";
-import { subagentStoreId } from "core/util/web/contentStoreIds";
 import {
   SubagentRunStatus,
   SubagentToolCallSummary,
   summarizeToolArgs,
 } from "core/subagents/result";
-import { sessionMessageText } from "core/subagents/messages";
 import { resolveSubagentTools } from "core/subagents/tools";
 import { applyToolOverrides } from "core/tools/applyToolOverrides";
 import { BuiltInToolNames } from "core/tools/builtIn";
+import { subagentAuditAgent } from "core/tools/permissions/audit/identity";
+import type { AuditAgent } from "core/tools/permissions/audit/record";
+import { maskCommandForDisplay } from "core/tools/permissions/displayMask";
 import {
   flagToolOutput,
   stripsHiddenCharacters,
@@ -38,15 +36,12 @@ import { interceptSystemToolCalls } from "core/tools/systemMessageTools/intercep
 import { SystemMessageToolCodeblocksFramework } from "core/tools/systemMessageTools/toolCodeblocks";
 import { ContinueError, ContinueErrorReason } from "core/util/errors";
 import { renderChatMessage } from "core/util/messageContent";
-import { selectCacheSetting } from "../../redux/selectors/selectCacheSetting";
-import {
-  nextSubagentAutoTtl,
-  subagentFirstCacheTtl,
-  subagentTtlPolicy,
-} from "./subagentCacheTtl";
+import { modeModelFor } from "core/util/modelUse";
+import { subagentStoreId } from "core/util/web/contentStoreIds";
+import type { IIdeMessenger } from "../../context/IdeMessenger";
 import { selectActiveTools } from "../../redux/selectors/selectActiveTools";
 import { selectApprovalSettings } from "../../redux/selectors/selectAutoApproval";
-import { allowOutsideWorkspaceOf } from "../outsideEdits";
+import { selectCacheSetting } from "../../redux/selectors/selectCacheSetting";
 import { selectSelectedChatModel } from "../../redux/slices/configSlice";
 import {
   acceptToolCall,
@@ -64,28 +59,22 @@ import {
 import { evaluateToolPolicy } from "../../redux/thunks/evaluateToolPolicies";
 import { findToolCallById } from "../../redux/util";
 import { constructMessages } from "../../redux/util/constructMessages";
-import type { IIdeMessenger } from "../../context/IdeMessenger";
 import type {
   ClientToolExtras,
   ClientToolOutput,
 } from "../clientTools/callClientTool";
+import { allowOutsideWorkspaceOf } from "../outsideEdits";
 import {
   INITIAL_PROMPT_CACHE_STATE,
   modelSupportsPromptCacheControl,
-  type PromptCacheSessionState,
   promptCacheStatus,
   resolvePromptCache,
+  type PromptCacheSessionState,
 } from "../promptCache";
 import { splitPromptProgress } from "../promptProgress";
 import { subagentResultItem } from "./interrupt";
 import {
-  answerSessionTool,
-  sessionToolsFor,
-  subagentBatchOf,
-} from "./sessionTools";
-import {
   registerSubagentRun,
-  STOPPED_BY_USER,
   subagentPrefixGate,
   subagentServerSlots,
   subagentSlots,
@@ -93,6 +82,16 @@ import {
   waitForSubagentApproval,
   type SubagentInboxMessage,
 } from "./registry";
+import {
+  answerSessionTool,
+  sessionToolsFor,
+  subagentBatchOf,
+} from "./sessionTools";
+import {
+  nextSubagentAutoTtl,
+  subagentFirstCacheTtl,
+  subagentTtlPolicy,
+} from "./subagentCacheTtl";
 
 const CANCELLED_BY_PARENT = "The parent conversation was stopped";
 
@@ -105,6 +104,10 @@ function reasonOf(signal: AbortSignal): string {
 }
 
 const ABORTED = Symbol("aborted");
+
+/** The last message of a run that hit its turn limit. */
+export const SUBAGENT_WRAP_UP_PROMPT =
+  "You have used your call limit. Do not call any more tools. Write your final report now from what you have found so far: the answer first, then the evidence (file paths and line numbers), then anything you could not finish or check.";
 
 /** The promise's value, or ABORTED as soon as the signal aborts. */
 function unlessAborted<T>(
@@ -290,6 +293,12 @@ export interface SubagentDriveInput {
    */
   autoCacheTtl?: boolean;
   maxTurns: number;
+  /**
+   * At the turn limit, make one more model call that asks for the report from
+   * what the run has found, instead of stopping with nothing. Off for a Loop
+   * worker, which has its own turn-limit report.
+   */
+  wrapUpAtLimit?: boolean;
   /** The run's live state: the parent's card, or a Loop worker's inbox row */
   onUpdate: (patch: Partial<SubagentRunState>) => void;
   /** Ids of this run's approvals start with it (the parent's tool call id) */
@@ -395,6 +404,7 @@ export async function driveSubagent(
     cachingOn,
     autoCacheTtl,
     maxTurns,
+    wrapUpAtLimit,
     onUpdate,
   } = input;
   let autoCacheState: PromptCacheSessionState | undefined;
@@ -438,8 +448,28 @@ export async function driveSubagent(
 
   for (let turn = 1; ; turn++) {
     if (signal.aborted) return result("cancelled", reasonOf(signal));
-    if (turn > maxTurns) {
-      return result("partial", `Stopped after ${maxTurns} model calls`);
+    const wrapUp = turn > maxTurns;
+    if (wrapUp) {
+      if (!wrapUpAtLimit || turn > maxTurns + 1) {
+        return result("partial", `Stopped after ${maxTurns} model calls`);
+      }
+      // The last call: ask for the report from what the run has. Tools stay
+      // in the request (a history with tool calls needs them on some
+      // providers), but any call in the reply is not run.
+      local = {
+        ...local,
+        history: [
+          ...local.history,
+          {
+            message: {
+              role: "user",
+              content: SUBAGENT_WRAP_UP_PROMPT,
+              id: "subagent-wrap-up",
+            },
+            contextItems: [],
+          },
+        ],
+      };
     }
 
     const messages = constructMessages(
@@ -504,6 +534,12 @@ export async function driveSubagent(
       gate?.opened();
     }
     if (signal.aborted) return result("cancelled", reasonOf(signal));
+    if (wrapUp) {
+      return result(
+        "partial",
+        `Stopped after ${maxTurns} model calls; the report was written from what it had found`,
+      );
+    }
 
     const calls = lastToolCalls(local);
     if (calls.length === 0) {
@@ -927,6 +963,7 @@ export async function runSubagentTool(
       tools,
       ...prepared,
       maxTurns: definition.maxTurns ?? DEFAULT_SUBAGENT_MAX_TURNS,
+      wrapUpAtLimit: true,
       onUpdate: update,
       approvalScope: toolCallId,
       inboxId: toolCallId,

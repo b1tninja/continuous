@@ -48,6 +48,11 @@ import {
 } from "./llm/communityCatalogStore";
 import { countTokens } from "./llm/countTokens";
 import { fetchModels } from "./llm/fetchModels";
+import {
+  firstAttempt,
+  rememberLearned,
+  usableLearnedFacts,
+} from "./llm/learnedLimits";
 import Bedrock from "./llm/llms/Bedrock";
 import { globalProfileStatus } from "./llm/llms/bedrockHelpers";
 import BedrockMantle, { mantleRegionError } from "./llm/llms/BedrockMantle";
@@ -105,10 +110,6 @@ import {
   readUserTrustedDomains,
   ruleSourcesOfLoadedConfig,
 } from "./tools/permissions/readRuleSources";
-import { getWebConfig } from "./util/webConfig";
-import { forgetWebGrants, webGrantsFor } from "./tools/permissions/webGrants";
-import { webCallContext } from "./tools/permissions/webPolicy";
-import { readUserHostAllow } from "./tools/permissions/webHostRules";
 import {
   confirmInIde,
   registerRuleEditorHandlers,
@@ -131,15 +132,22 @@ import { initTreeSitterBash } from "./tools/permissions/treeSitterBash";
 import { readUserEnvNames } from "./tools/permissions/userEnvNames";
 import { readUserLargeChangeLines } from "./tools/permissions/userLimits";
 import { readUserReviewerPrompt } from "./tools/permissions/userReviewerPrompt";
+import { forgetWebGrants, webGrantsFor } from "./tools/permissions/webGrants";
+import { readUserHostAllow } from "./tools/permissions/webHostRules";
+import { webCallContext } from "./tools/permissions/webPolicy";
 import { deputyWorkspace } from "./tools/permissions/workspaceRoots";
 import { ChatDescriber } from "./util/chatDescriber";
 import {
   compactConversation,
   summarizeConversation,
 } from "./util/conversationCompaction";
-import { GlobalContext } from "./util/GlobalContext";
 import { getFetchLog } from "./util/fetchRecord";
+import { GlobalContext } from "./util/GlobalContext";
 import historyManager, { damagedSessionNotice } from "./util/history";
+import {
+  describeListedLimits,
+  limitsFromModelsBody,
+} from "./util/listedModelLimits";
 import { probeStatusFor } from "./util/measuredFacts";
 import { liveFromFetched } from "./util/modelRetirement";
 import { modelToolFetch } from "./util/modelToolFetch";
@@ -175,6 +183,7 @@ import {
 } from "./util/terminalEnvironment";
 import { readUserGuidance } from "./util/userGuidance";
 import { saveUserTerminalSettings } from "./util/userTerminalSettings";
+import { getWebConfig } from "./util/webConfig";
 import { isIgnoreFile } from "./util/workspaceDirs";
 import { ideInWorkspace } from "./util/workspaceOverride";
 import {
@@ -277,8 +286,8 @@ import { ApplyAbortManager } from "./edit/applyAbortManager";
 import { streamDiffLines } from "./edit/streamDiffLines";
 import { shouldIgnore } from "./indexing/shouldIgnore";
 import { walkDirCache } from "./indexing/walkDir";
-import { LLMLogger } from "./llm/logger";
 import { localPrewarm, strataMetrics } from "./llm/localPrewarm";
+import { LLMLogger } from "./llm/logger";
 import { llmStreamChat } from "./llm/streamChat";
 import { BeforeAfterDiff } from "./nextEdit/context/diffFormatting";
 import { processSmallEdit } from "./nextEdit/context/processSmallEdit";
@@ -400,6 +409,7 @@ export class Core {
         this.selectedModelRefresher?.select(
           refreshTargetOf(this.selectedChatModel),
         );
+        void this.learnUnknownWindow(this.selectedChatModel);
         void (async () => {
           const serializedResult =
             await this.configHandler.getSerializedConfig();
@@ -741,6 +751,42 @@ export class Core {
       const llm = config?.modelsByRole.chat.find((m) => m.title === title);
       if (!llm?.apiBase) return undefined;
       return serverConcurrency(llm.apiBase, llm.apiKey);
+    });
+    // What the model's own server lists for it (window, output cap): asked
+    // with the model's resolved key, for the Configure dialog. OpenAI-style
+    // clients only (OpenAI-compatible servers, Bedrock Mantle).
+    on("models/listedLimits", async ({ data: { title } }) => {
+      try {
+        const { config } = await this.configHandler.loadConfig();
+        const llm = Object.values(config?.modelsByRole ?? {})
+          .flat()
+          .find((m) => m.title === title);
+        const adapter = (
+          llm as unknown as
+            { openaiAdapter?: { list(): Promise<unknown[]> } } | undefined
+        )?.openaiAdapter;
+        if (!llm || !adapter) {
+          return {
+            ok: false as const,
+            error: "This model's server has no model listing to read.",
+          };
+        }
+        const limits = limitsFromModelsBody(
+          { data: await adapter.list() },
+          llm.model,
+        );
+        if (!limits) return { ok: true as const };
+        const note = describeListedLimits(limits);
+        return {
+          ok: true as const,
+          limits: { ...limits, ...(note ? { note } : {}) },
+        };
+      } catch (e) {
+        return {
+          ok: false as const,
+          error: e instanceof Error ? e.message : String(e),
+        };
+      }
     });
   }
 
@@ -2909,6 +2955,37 @@ export class Core {
 
   private plaintextKeysOffered = new Set<string>();
   private offeringPlaintextKeys = false;
+
+  /**
+   * The selected model has no known context window (32,768 would be assumed):
+   * ask its own server once what it lists, keep the answer for this session,
+   * and reload the config so the model comes back with it. Only the model's
+   * own endpoint is asked, with its own key; nothing is asked with model
+   * information updates off. Never throws.
+   */
+  private async learnUnknownWindow(llm: ILLM | undefined): Promise<void> {
+    try {
+      const model = llm as
+        | (BaseLLM & { openaiAdapter?: { list(): Promise<unknown[]> } })
+        | undefined;
+      if (!model?.openaiAdapter || model.contextLengthSource !== "unknown") {
+        return;
+      }
+      if (readModelCatalogSettings().policy === "off") return;
+      if (!firstAttempt(model.limitsKey)) return;
+      const facts = usableLearnedFacts(
+        limitsFromModelsBody(
+          { data: await model.openaiAdapter.list() },
+          model.model,
+        ),
+      );
+      if (!facts) return;
+      rememberLearned(model.limitsKey, facts);
+      await this.configHandler.reloadConfig("Context window learned");
+    } catch {
+      // advisory: the default window stays
+    }
+  }
 
   /**
    * After a config loads, offer once per session to move API keys written as

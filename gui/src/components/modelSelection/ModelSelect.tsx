@@ -1,5 +1,3 @@
-import type { RetirementNotice } from "core/util/modelRetirement";
-import { selectCacheSetting } from "../../redux/selectors/selectCacheSetting";
 import {
   ArrowPathIcon,
   ChevronDownIcon,
@@ -8,9 +6,11 @@ import {
   PlusIcon,
   ServerStackIcon,
 } from "@heroicons/react/24/outline";
-import { useEffect, useMemo, useRef, useState } from "react";
+import type { RetirementNotice } from "core/util/modelRetirement";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/Auth";
+import { IdeMessengerContext } from "../../context/IdeMessenger";
 import {
   retirementDetail,
   retirementKey,
@@ -18,8 +18,7 @@ import {
   useRetirementNotices,
 } from "../../hooks/useRetirementNotices";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
-import { useProviderSetupDialog } from "../ProviderSetup/useProviderSetupDialog";
-import { useModelConfigDialog } from "../ModelConfig/useModelConfigDialog";
+import { selectCacheSetting } from "../../redux/selectors/selectCacheSetting";
 import {
   setDialogMessage,
   setModeModelOverride,
@@ -28,17 +27,20 @@ import {
 import { updateSelectedModelByRole } from "../../redux/thunks/updateSelectedModelByRole";
 import { getMetaKeyLabel, isMetaEquivalentKeyPressed } from "../../util";
 import {
-  getModeModelTitles,
-  nextModelTitle,
-  partitionModelsByMode,
-} from "../../util/modeModels";
-import { modelHasMissingSecret } from "../../util/missingSecrets";
-import {
   isSignificantLoss,
   switchKeepsCache,
   warmCacheLoss,
 } from "../../util/cacheSafeguards";
+import { modelHasMissingSecret } from "../../util/missingSecrets";
+import {
+  getModeModelTitles,
+  nextModelTitle,
+  partitionModelsByMode,
+} from "../../util/modeModels";
 import { CONFIG_ROUTES } from "../../util/navigation";
+import { useModelConfigDialog } from "../ModelConfig/useModelConfigDialog";
+import { connectionForModel } from "../ProviderSetup/providerSetupUtils";
+import { useProviderSetupDialog } from "../ProviderSetup/useProviderSetupDialog";
 import {
   Button,
   Listbox,
@@ -70,6 +72,8 @@ interface Option {
   missingSecret?: boolean;
   provider?: string;
   model?: string;
+  /** No window is set or published: 32,768 tokens is assumed. */
+  contextUnknown?: boolean;
 }
 
 function modelSelectTitle(model: any): string {
@@ -145,6 +149,15 @@ function ModelOption({
                 (Key not set)
               </span>
             )}
+            {option.contextUnknown && (
+              <span
+                className="ml-1.5 text-[10px] text-warning italic"
+                data-testid="model-option-window-unknown"
+                title="No context window is known for this model, so 32,768 tokens is assumed. Open Configure to set it."
+              >
+                (Window unknown)
+              </span>
+            )}
             {retirement && (
               <span
                 className="ml-1.5 text-[10px] text-warning italic"
@@ -176,6 +189,7 @@ export const OPEN_MODEL_SELECT_EVENT = "continuous:openModelSelect";
 function ModelSelect() {
   const dispatch = useAppDispatch();
   const { openSetup } = useProviderSetupDialog();
+  const ideMessenger = useContext(IdeMessengerContext);
   const navigate = useNavigate();
 
   const isInEdit = useAppSelector((store) => store.session.isInEdit);
@@ -248,6 +262,7 @@ function ModelSelect() {
           missingSecret: modelHasMissingSecret(model),
           provider: model.provider,
           model: model.model,
+          contextUnknown: model.contextLengthSource === "unknown",
         };
       }),
     );
@@ -349,7 +364,30 @@ function ModelSelect() {
 
     closeDropDown(buttonRef.current);
 
-    openSetup();
+    // Open where the current model is configured: its provider connection, at
+    // the model checklist. Without a match (a model no connection lists), the
+    // plain add-provider flow.
+    const title =
+      (isInEdit ? config.selectedModelByRole.edit : undefined)?.title ??
+      config.selectedModelByRole.chat?.title;
+    void ideMessenger
+      .request("config/getProviderSetup", undefined)
+      .then((res) => {
+        const found =
+          res.status === "success"
+            ? connectionForModel(res.content.connections, title)
+            : undefined;
+        if (found) {
+          openSetup({
+            initialProvider: found.provider,
+            initialConnection: found.connection,
+            initialStep: "models",
+          });
+        } else {
+          openSetup();
+        }
+      })
+      .catch(() => openSetup());
   }
 
   function onClickProviders(e: MouseEvent) {

@@ -5,6 +5,7 @@ import type {
   SubagentRunState,
   ToolCallState,
 } from "core";
+import { ToCoreProtocol } from "core/protocol";
 import { EXPLORE_AGENT, SubagentDefinition } from "core/subagents/definitions";
 import { serializeTool } from "core/tools";
 import { BuiltInToolNames } from "core/tools/builtIn";
@@ -14,7 +15,6 @@ import {
   runTerminalCommandTool,
 } from "core/tools/definitions";
 import { buildSubagentTool } from "core/tools/definitions/subagent";
-import { ToCoreProtocol } from "core/protocol";
 import { renderChatMessage } from "core/util/messageContent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MockIdeMessenger } from "../../context/MockIdeMessenger";
@@ -28,7 +28,7 @@ import {
   sendToSubagent,
   stopSubagentRun,
 } from "./registry";
-import { runSubagentTool } from "./runSubagent";
+import { runSubagentTool, SUBAGENT_WRAP_UP_PROMPT } from "./runSubagent";
 
 const model: ModelDescription = {
   title: "Claude",
@@ -400,6 +400,7 @@ describe("runSubagentTool", () => {
         { role: "assistant", content: "Looking." },
         toolCallChunk("c1", BuiltInToolNames.GrepSearch, { query: "foo" }),
       ],
+      [{ role: "assistant", content: "Report: foo is in a.ts:3." }],
     ]);
     const result = await runSubagentTool(
       args(),
@@ -408,9 +409,41 @@ describe("runSubagentTool", () => {
     );
     expect(runOf(store, "s1")!.status).toBe("partial");
     expect(result.output![0].content).toContain("Looking.");
+    expect(result.output![0].content).toContain("Report: foo is in a.ts:3.");
     expect(result.output![0].content).toContain(
-      "reason: Stopped after 1 model calls",
+      "reason: Stopped after 1 model calls; the report was written from what it had found",
     );
+  });
+
+  it("at its turn limit asks for the report in one more call, from what it found", async () => {
+    const { store, messenger } = makeStore(["s1"]);
+    messenger.responses["subagents/list"] = {
+      agents: [{ ...EXPLORE_AGENT, maxTurns: 1 }],
+      errors: [],
+    };
+    const requests = script(messenger, [
+      [toolCallChunk("c1", BuiltInToolNames.GrepSearch, { query: "foo" })],
+      [{ role: "assistant", content: "The report" }],
+    ]);
+    await runSubagentTool(args(), "s1", extras(store, messenger));
+    expect(requests).toHaveLength(2);
+    expect(userTexts(requests[1]).at(-1)).toBe(SUBAGENT_WRAP_UP_PROMPT);
+    // The first request carried no wrap-up message
+    expect(userTexts(requests[0])).toEqual(["Find foo"]);
+  });
+
+  it("does not make the extra call when the run finishes inside the limit", async () => {
+    const { store, messenger } = makeStore(["s1"]);
+    messenger.responses["subagents/list"] = {
+      agents: [{ ...EXPLORE_AGENT, maxTurns: 1 }],
+      errors: [],
+    };
+    const requests = script(messenger, [
+      [{ role: "assistant", content: "Done at once" }],
+    ]);
+    await runSubagentTool(args(), "s1", extras(store, messenger));
+    expect(requests).toHaveLength(1);
+    expect(runOf(store, "s1")!.status).toBe("completed");
   });
 
   it("fails with the reason when the agent does not exist", async () => {
