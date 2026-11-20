@@ -128,9 +128,6 @@ export function useMainEditorWebviewListeners({
   useWebviewListener(
     "highlightedCode",
     async (data) => {
-      console.log(
-        `[highlightedCode] editor=${!!editor} destroyed=${!!editor?.isDestroyed} chars=${data.rangeInFileWithContents?.contents?.length ?? 0}`,
-      );
       if (!editor) return;
 
       const contextItem = rifWithContentsToContextItem(
