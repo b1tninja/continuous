@@ -150,14 +150,22 @@ export const handleApplyStateUpdate = createAsyncThunk<
                     contextItems,
                   }),
                 );
-              } else {
+              } else if (!toolCallState.output?.length) {
+                // An apply error already says why (applyForEditTool); only
+                // fill in a generic line when nothing does. The closed event
+                // carries no filepath, so fall back to the call's own.
+                const failedPath =
+                  applyState.filepath ??
+                  (typeof toolCallState.parsedArgs?.filepath === "string"
+                    ? toolCallState.parsedArgs.filepath
+                    : "the file");
                 dispatch(
                   updateToolCallOutput({
                     toolCallId: applyState.toolCallId,
                     contextItems: [
                       {
                         name: "Edit Failed",
-                        content: `Failed to edit ${applyState.filepath}. To continue working with the file, read it again to see the most up-to-date contents`,
+                        content: `Failed to edit ${failedPath}. To continue working with the file, read it again to see the most up-to-date contents`,
                         description: "",
                         hidden: true,
                       },

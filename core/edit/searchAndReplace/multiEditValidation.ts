@@ -14,7 +14,7 @@ export function validateMultiEdit(args: unknown): {
   if (typeof args !== "object" || !args || !("edits" in args)) {
     throw new ContinueError(
       ContinueErrorReason.MultiEditEditsArrayRequired,
-      "invalid multi-edit args",
+      'The multi_edit arguments need "filepath" and an "edits" array of { old_string, new_string } objects. None of them arrived, so nothing was changed. Send the call again with all of them.',
     );
   }
 

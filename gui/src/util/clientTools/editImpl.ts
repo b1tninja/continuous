@@ -3,9 +3,10 @@ import {
   uniqueOpenFileInWorkspace,
 } from "core/util/ideUtils";
 import { v4 as uuid } from "uuid";
-import { allowOutsideWorkspaceOf } from "../outsideEdits";
 import { applyForEditTool } from "../../redux/thunks/handleApplyStateUpdate";
+import { allowOutsideWorkspaceOf } from "../outsideEdits";
 import { ClientToolImpl } from "./callClientTool";
+import { withFileLockUntilClosed } from "./lockedEdit";
 
 export const editToolImpl: ClientToolImpl = async (
   args,
@@ -41,15 +42,18 @@ export const editToolImpl: ClientToolImpl = async (
   if (!firstUriMatch) {
     throw new Error(`${filepath} does not exist`);
   }
-  const streamId = uuid();
-  void extras.dispatch(
-    applyForEditTool({
-      streamId,
-      text: args.changes,
-      toolCallId,
-      filepath: firstUriMatch,
-    }),
-  );
+  // One edit at a time per file, so two diffs never open on it together
+  await withFileLockUntilClosed(firstUriMatch, toolCallId, extras, async () => {
+    const streamId = uuid();
+    void extras.dispatch(
+      applyForEditTool({
+        streamId,
+        text: args.changes,
+        toolCallId,
+        filepath: firstUriMatch,
+      }),
+    );
+  });
 
   return {
     respondImmediately: false,
