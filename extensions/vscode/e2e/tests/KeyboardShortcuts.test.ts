@@ -247,8 +247,8 @@ describe("Keyboard Shortcuts", () => {
     const text = "Hello, world!";
 
     // selectText drives the find widget, which does nothing while the
-    // sidebar still has focus after the previous test. Focus the editor
-    // and select with Ctrl+A, which is what Edit.test.ts does.
+    // sidebar still has focus after the previous test. Select All is a
+    // command, so that focus does not eat the keypress.
     await driver.switchTo().defaultContent();
     await editor.setText(text);
     await TestUtils.waitForSuccess(async () => {
@@ -256,13 +256,10 @@ describe("Keyboard Shortcuts", () => {
         throw new Error("Editor text is not ready");
       }
     });
+    // getText() collapses the selection. Select All goes through the
+    // command, so a focused sidebar does not eat the keypress.
     await editor.focus();
-    await driver
-      .actions()
-      .keyDown(TestUtils.osControlKey)
-      .sendKeys("a")
-      .keyUp(TestUtils.osControlKey)
-      .perform();
+    await new Workbench().executeCommand("editor.action.selectAll");
 
     await GUIActions.executeFocusContinueInputShortcut(driver);
 
