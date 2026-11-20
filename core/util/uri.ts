@@ -96,9 +96,19 @@ export function findUriInDirs(
     if (uriPathParts.length < dirPathParts.length) {
       continue;
     }
+    // A Windows drive path compares without case: `D:` and `d:` are one drive,
+    // and the folders under it do too. A POSIX path stays case-sensitive.
+    const foldCase =
+      /^[a-zA-Z]:$/.test(dirPathParts[0] ?? "") &&
+      /^[a-zA-Z]:$/.test(uriPathParts[0] ?? "");
     let allDirPartsMatch = true;
     for (let i = 0; i < dirPathParts.length; i++) {
-      if (dirPathParts[i] !== uriPathParts[i]) {
+      const dirPart = dirPathParts[i];
+      const uriPart = uriPathParts[i];
+      const same = foldCase
+        ? dirPart.toLowerCase() === uriPart.toLowerCase()
+        : dirPart === uriPart;
+      if (!same) {
         allDirPartsMatch = false;
       }
     }
