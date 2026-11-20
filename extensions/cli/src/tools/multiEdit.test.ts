@@ -1,7 +1,7 @@
-import { POLICY_PRESETS } from "core/tools/permissions/policy.js";
 import * as fs from "fs";
 import * as path from "path";
 
+import { POLICY_PRESETS } from "core/tools/permissions/policy.js";
 import { writeFileAtomicSync } from "core/util/atomicWrite.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
