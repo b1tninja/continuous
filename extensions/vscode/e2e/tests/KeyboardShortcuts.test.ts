@@ -248,29 +248,14 @@ describe("Keyboard Shortcuts", () => {
 
     await editor.setText(text);
     await editor.selectText(text);
+
     await GUIActions.executeFocusContinueInputShortcut(driver);
 
     ({ view } = await GUIActions.switchToReactIframe());
 
-    let codeBlock: WebElement;
-    try {
-      codeBlock = await TestUtils.waitForSuccess(() =>
-        GUISelectors.getInputBoxCodeBlockAtIndex(view, 0),
-      );
-    } catch (err) {
-      const info = await driver.executeScript(`
-        const tiptap = document.querySelector('.tiptap');
-        return JSON.stringify({
-          codes: document.querySelectorAll('code').length,
-          tiptap: !!tiptap,
-          tiptapCodes: tiptap ? tiptap.querySelectorAll('code').length : 0,
-          text: (document.body.innerText || '').slice(0, 400),
-          newSession: document.body.dataset.newSession || '',
-          highlighted: document.body.dataset.highlighted || ''
-        });
-      `);
-      throw new Error(`No code chip. ${info}. ${err}`);
-    }
+    const codeBlock = await TestUtils.waitForSuccess(() =>
+      GUISelectors.getInputBoxCodeBlockAtIndex(view, 0),
+    );
     const codeblockContent = await codeBlock.getAttribute(
       "data-codeblockcontent",
     );
