@@ -201,8 +201,8 @@ export function AreaLevelSelect({ area, variant }: AreaLevelSelectProps) {
             <div className="flex flex-col">
               <span>Custom…</span>
               <span className="text-2xs whitespace-normal text-description">
-                Open the policy editor: levels, rules and settings, starting
-                from what is set now.
+                Edit the policy: levels, rules and settings, starting from what
+                is set now.
               </span>
             </div>
           </ListboxOption>

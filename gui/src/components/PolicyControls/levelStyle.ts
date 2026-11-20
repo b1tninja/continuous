@@ -2,7 +2,7 @@ import {
   BoltIcon,
   EyeIcon,
   HandRaisedIcon,
-  LockOpenIcon,
+  PlayIcon,
   ShieldCheckIcon,
   SparklesIcon,
 } from "@heroicons/react/24/outline";
@@ -14,7 +14,7 @@ import {
 /**
  * A glyph and a colour for each level, so a chip reads without its text: the
  * glyph says what happens (a raised hand asks you, a shield checks against
- * your rules, sparkles is the reviewer model, an open lock lets rules decide,
+ * your rules, sparkles is the reviewer model, a play triangle lets rules decide,
  * a bolt ignores them) and the colour says how far the trust goes, from green
  * (you decide) through blue (a reviewer) and amber (rules only) to red
  * (nothing checks).
@@ -23,7 +23,7 @@ export const LEVEL_GLYPHS: Record<PolicyLevel, typeof EyeIcon> = {
   manual: HandRaisedIcon,
   cautious: ShieldCheckIcon,
   automatic: SparklesIcon,
-  permissive: LockOpenIcon,
+  permissive: PlayIcon,
   idgaf: BoltIcon,
 };
 

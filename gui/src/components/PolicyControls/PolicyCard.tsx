@@ -67,8 +67,8 @@ export function PolicyCard() {
     <div data-testid="policy-card">
       <h3 className="my-0 mb-1 text-sm font-semibold">Approval</h3>
       <p className="mt-0 mb-2 text-xs text-description">
-        One decision per area: who decides a call your rules leave open. Fewer
-        decisions reach you as you go from Manual to IDGAF. Saved in
+        One decision per area: who decides a call your rules do not decide.
+        Fewer decisions reach you as you go from Manual to IDGAF. Saved in
         permissions.yaml, which the CLI reads too. IDGAF is never saved.
       </p>
       <Card>
