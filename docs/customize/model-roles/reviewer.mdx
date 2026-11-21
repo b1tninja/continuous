@@ -45,7 +45,7 @@ Tool arguments are treated as untrusted. They are fenced in the prompt as data, 
 
 ## Order of decisions
 
-The reviewer only handles what your rules leave open. It cannot loosen anything earlier in this list.
+The reviewer only handles what your rules do not decide. It cannot loosen anything earlier in this list.
 
 1. `deny` rules, tools turned off, and commands the built-in safety check refuses: refused.
 2. Protected paths (`.env`, `~/.ssh`, `.git`, workflows, shell startup files): ask.

@@ -298,7 +298,7 @@ export function UserSettingsSection() {
                   <UserSetting
                     type="toggle"
                     title="Auto approval with a reviewer model"
-                    description=" lets a reviewer model approve or refuse tool calls your rules leave open. Needs a model with roles: [reviewer]. Your messages and tool calls are sent to that model's provider."
+                    description=" lets a reviewer model approve or refuse tool calls your rules do not decide. Needs a model with roles: [reviewer]. Your messages and tool calls are sent to that model's provider."
                     value={enableAutoApproval}
                     onChange={(value) =>
                       handleUpdate({ enableAutoApproval: value })

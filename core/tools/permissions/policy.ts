@@ -262,7 +262,7 @@ export const POLICY_PRESETS: Record<
   },
   reviewer: {
     label: "Reviewer",
-    description: "A reviewer model decides what your rules leave open.",
+    description: "A reviewer model decides what your rules do not decide.",
     safety: "some",
     levels: {
       context: "automatic",
