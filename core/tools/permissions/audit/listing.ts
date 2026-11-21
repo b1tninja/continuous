@@ -52,6 +52,8 @@ export interface ListedCall {
   agent?: AuditAgent;
   ran?: boolean;
   exit?: number;
+  signal?: string;
+  timedOut?: true;
   durMs?: number;
 }
 
@@ -80,6 +82,8 @@ export interface CallDetail extends ListedCall {
     ts: string;
     ran: boolean;
     exit?: number;
+    signal?: string;
+    timedOut?: true;
     durMs?: number;
     outBytes?: number;
     errSig?: string;
@@ -189,6 +193,8 @@ export function listedCall(row: AuditCallRow): ListedCall {
     agent: safeAgent(row.agent),
     ran: row.ran,
     exit: row.exit,
+    signal: row.signal,
+    timedOut: row.timedOut,
     durMs: row.durMs,
   });
 }
@@ -215,6 +221,8 @@ function listedOutcome(o: OutcomeEvent): NonNullable<CallDetail["outcome"]> {
     ts: o.ts,
     ran: o.ran,
     exit: o.exit,
+    signal: o.signal,
+    timedOut: o.timedOut,
     durMs: o.durMs,
     outBytes: o.outBytes,
     errSig: safe(o.errSig),

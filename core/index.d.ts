@@ -1485,6 +1485,12 @@ export interface ContextItem {
     outputPath?: string;
     /** The same file as a file:// URI, for the editor to open. */
     outputUri?: string;
+    /**
+     * The output as the program wrote it, with its terminal escape sequences
+     * (colours), for the screen to draw. Set only when the output had any:
+     * `content` is the same text without them, which is what the model gets.
+     */
+    display?: string;
   };
 }
 

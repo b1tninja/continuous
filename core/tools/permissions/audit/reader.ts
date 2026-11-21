@@ -97,6 +97,8 @@ export interface AuditCallRow {
   agent?: AuditAgent;
   ran?: boolean;
   exit?: number;
+  signal?: string;
+  timedOut?: true;
   durMs?: number;
   decisions: DecisionEvent[];
   outcome?: OutcomeEvent;
@@ -154,6 +156,8 @@ export function callRows(records: readonly AuditRecord[]): AuditCallRow[] {
       row.outcome = r;
       row.ran = r.ran;
       row.exit = r.exit;
+      row.signal = r.signal;
+      row.timedOut = r.timedOut;
       row.durMs = r.durMs;
     }
   }

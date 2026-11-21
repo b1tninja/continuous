@@ -189,6 +189,8 @@ export function recordCliOutcome(
   outcome: {
     ran: boolean;
     exit?: number;
+    signal?: string;
+    timedOut?: true;
     output?: string;
     error?: string;
     durMs?: number;

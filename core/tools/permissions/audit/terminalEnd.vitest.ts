@@ -61,14 +61,69 @@ describe("terminalEndOf", () => {
     );
   });
 
-  it("marks a command we stopped", () => {
+  it("a command we stopped is not marked as timed out: that is the time limit", () => {
     const r = registerCommand({ toolCallId: "t", command: "x" });
     r.stoppedFor = "stopped";
     finishCommand(r, 1);
-    expect(terminalEndOf([item(r.id, "partial")])).toMatchObject({
+    const end = terminalEndOf([item(r.id, "partial")]);
+    expect(end).toMatchObject({ exit: 1 });
+    expect(end?.timedOut).toBeUndefined();
+  });
+
+  it("marks a command that hit the time limit", () => {
+    const r = registerCommand({ toolCallId: "t", command: "x" });
+    finishCommand(r, null, undefined, { signal: "SIGTERM", timedOut: true });
+    expect(terminalEndOf([item(r.id, "slow")])).toEqual({
+      signal: "SIGTERM",
+      timedOut: true,
+      error: "timed out",
+    });
+  });
+
+  it("reports a command ended by a signal by the signal, with no exit code", () => {
+    const r = registerCommand({ toolCallId: "t", command: "x" });
+    finishCommand(r, null, undefined, { signal: "SIGKILL" });
+    const end = terminalEndOf([item(r.id, "Killed")]);
+    expect(end).toEqual({ signal: "SIGKILL", error: "Killed" });
+    expect("exit" in (end ?? {})).toBe(false);
+  });
+
+  it("names the signal when the command printed nothing", () => {
+    const r = registerCommand({ toolCallId: "t", command: "x" });
+    finishCommand(r, null, undefined, { signal: "SIGTERM" });
+    expect(terminalEndOf([item(r.id, "")])?.error).toBe("ended by SIGTERM");
+  });
+
+  it("a command stopped by a runaway check, with no code, is reported as stopped", () => {
+    const r = registerCommand({ toolCallId: "t", command: "x" });
+    r.stoppedFor = "flood" as never;
+    finishCommand(r, null);
+    expect(terminalEndOf([item(r.id, "")])).toEqual({ error: "stopped" });
+  });
+
+  it("keeps the exit code and the signal when both are known", () => {
+    const r = registerCommand({ toolCallId: "t", command: "x" });
+    finishCommand(r, 143, undefined, { signal: "SIGTERM" });
+    expect(terminalEndOf([item(r.id, "")])).toMatchObject({
+      exit: 143,
+      signal: "SIGTERM",
+    });
+  });
+
+  it("a command that timed out and exited with a code keeps both", () => {
+    const r = registerCommand({ toolCallId: "t", command: "x" });
+    finishCommand(r, 1, undefined, { timedOut: true });
+    expect(terminalEndOf([item(r.id, "boom")])).toEqual({
       exit: 1,
+      error: "boom",
       timedOut: true,
     });
+  });
+
+  it("a clean exit has no signal and no time-out", () => {
+    const r = registerCommand({ toolCallId: "t", command: "x" });
+    finishCommand(r, 0);
+    expect(terminalEndOf([item(r.id, "ok")])).toEqual({ exit: 0 });
   });
 
   it("says nothing about a command that is still running", () => {
@@ -80,7 +135,7 @@ describe("terminalEndOf", () => {
     expect(terminalEndOf([item(r.id, "started")])).toBeUndefined();
   });
 
-  it("says nothing when the process ended without a code", () => {
+  it("says nothing when the process ended with no code and no known reason", () => {
     const r = registerCommand({ toolCallId: "t", command: "x" });
     finishCommand(r, null);
     expect(terminalEndOf([item(r.id, "killed")])).toBeUndefined();

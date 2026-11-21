@@ -14,6 +14,7 @@ import {
   listCommands,
   waitForEnd,
 } from "../../util/commandOutputStore";
+import { stripAnsi } from "../../util/ansi";
 import { killProcessTree } from "../../util/killProcessTree";
 import { getOptionalStringArg } from "../parseArgs";
 
@@ -116,6 +117,11 @@ async function grepFile(
   return { matches, more };
 }
 
+/** A line as the model reads it: without terminal escape sequences. */
+function plain(line: string): string {
+  return stripAnsi(line);
+}
+
 /** Keeps a reply within what one tool result may carry. */
 function capped(text: string): string {
   const max = DEFAULT_OUTPUT_LIMITS.modelChars;
@@ -172,13 +178,13 @@ export const readCommandOutputImpl: ToolImpl = async (args) => {
     const limit = clampLines(args?.lines, MAX_GREP_MATCHES);
     if (fileReadable) {
       const { matches, more } = await grepFile(file, pattern, limit);
-      lines = matches;
+      lines = matches.map(plain);
       if (more) note = `\n[more than ${limit} matches; narrow the pattern]`;
     } else {
       const source = kept ?? record.capture.tail;
       lines = source
         .split("\n")
-        .map((line, i) => ({ line, i }))
+        .map((line, i) => ({ line: plain(line), i }))
         .filter(({ line }) => pattern!.test(line))
         .slice(0, limit)
         .map(({ line, i }) => `${i + 1}: ${line}`);
@@ -187,12 +193,12 @@ export const readCommandOutputImpl: ToolImpl = async (args) => {
   } else {
     const count = clampLines(args?.lines, DEFAULT_TAIL_LINES);
     if (fileReadable) {
-      lines = await tailOfFile(file, count);
+      lines = (await tailOfFile(file, count)).map(plain);
     } else {
       const all = (kept ?? record.capture.tail).split("\n");
       // Output that ends in a newline has no empty last line
       if (all[all.length - 1] === "") all.pop();
-      lines = all.slice(-count);
+      lines = all.slice(-count).map(plain);
     }
   }
 
@@ -242,6 +248,7 @@ export const stopCommandImpl: ToolImpl = async (args) => {
   const tail = (fullText(record.capture) ?? record.capture.tail)
     .split("\n")
     .slice(-20)
+    .map(plain)
     .join("\n");
   return item(capped(`Stopped. ${stateLine(record)}\n${tail}`), "Stopped");
 };

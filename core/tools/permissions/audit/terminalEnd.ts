@@ -10,10 +10,16 @@ import { findCommand } from "../../../util/commandOutputStore";
  * often a command failed. The command's record holds the code; this reads it.
  */
 export interface TerminalEnd {
-  exit: number;
-  /** Why it counts as failed, for the audit's step detection (non-zero only) */
+  /**
+   * The exit code. Absent for a command ended by a signal: such a command has
+   * no code, and recording one (the 1 it used to get, or 0) would be a guess.
+   */
+  exit?: number;
+  /** The signal that ended it (SIGTERM, SIGKILL) */
+  signal?: string;
+  /** Why it counts as failed, for the audit's step detection */
   error?: string;
-  /** Ended by the time limit, or stopped by us */
+  /** Ended by the foreground time limit. A stop we asked for is not this. */
   timedOut?: true;
 }
 
@@ -28,8 +34,13 @@ function lastLine(text: string): string {
 
 /**
  * The end of a terminal command, from the items its tool returned. Undefined
- * for any other tool, for a command that is still running (a background
- * command returns before it ends), and for one with no recorded code.
+ * for any other tool and for a command that is still running (a background
+ * command returns before it ends).
+ *
+ * A command that exited has its code. One ended by a signal (the time limit,
+ * a stop, a runaway check) has no code, and is reported by its signal: it used
+ * to be reported as nothing, so a command that hit its time limit left no
+ * outcome at all.
  */
 export function terminalEndOf(
   items: readonly ContextItem[] | undefined,
@@ -40,12 +51,22 @@ export function terminalEndOf(
   const record = findCommand(id);
   if (!record || record.endedAt === undefined) return undefined;
   const code = record.exitCode;
-  if (typeof code !== "number") return undefined;
-  const end: TerminalEnd = { exit: code };
-  if (code !== 0) {
-    end.error =
-      lastLine(withOutput?.content ?? "") || `exited with code ${code}`;
+  const label = lastLine(withOutput?.content ?? "");
+  const end: TerminalEnd = {};
+  if (typeof code === "number") {
+    end.exit = code;
+    if (code !== 0) end.error = label || `exited with code ${code}`;
+  } else if (record.signal || record.timedOut || record.stoppedFor) {
+    // No code, so the failure is the way it ended
+    if (record.signal) end.signal = record.signal;
+    end.error = record.timedOut
+      ? "timed out"
+      : label || (record.signal ? `ended by ${record.signal}` : "stopped");
+  } else {
+    // Ended with neither a code nor a known reason: nothing to say
+    return undefined;
   }
-  if (record.stoppedFor) end.timedOut = true;
+  if (record.signal && typeof code === "number") end.signal = record.signal;
+  if (record.timedOut) end.timedOut = true;
   return end;
 }

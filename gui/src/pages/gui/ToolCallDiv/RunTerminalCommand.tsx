@@ -34,6 +34,7 @@ export function RunTerminalCommand(props: RunTerminalCommandToolCallProps) {
     <UnifiedTerminalCommand
       command={props.command}
       output={terminalContent}
+      displayOutput={outputItem?.commandOutput?.display}
       status={statusType}
       statusMessage={statusMessage}
       toolCallState={props.toolCallState}
