@@ -178,10 +178,20 @@ export function Chat() {
   const scrollElement = useScrollBox(stepsDivRef);
   const tabsRef = useRef<HTMLDivElement>(null);
   const history = useAppSelector((state) => state.session.history);
-  const transcriptItems = useMemo(
-    () => history.filter((item) => item.message.role !== "system"),
-    [history],
-  );
+  // A `system` item is not shown, so a row's place in the transcript can
+  // differ from its place in the history. Nothing here writes one, but a
+  // loaded session file is taken as it is, and Delete, Edit and "is last"
+  // all act on the history index.
+  const { transcriptItems, historyIndexOfRow } = useMemo(() => {
+    const transcriptItems: typeof history = [];
+    const historyIndexOfRow: number[] = [];
+    history.forEach((item, index) => {
+      if (item.message.role === "system") return;
+      transcriptItems.push(item);
+      historyIndexOfRow.push(index);
+    });
+    return { transcriptItems, historyIndexOfRow };
+  }, [history]);
   const showChatScrollbar = useAppSelector(
     (state) => state.config.config.ui?.showChatScrollbar,
   );
@@ -623,22 +633,25 @@ export function Chat() {
           itemKey={(item, index) =>
             item.message.id ?? `${item.message.role}-${index}`
           }
-          renderItem={(item, index) => (
-            <TranscriptMessage
-              role={item.message.role}
-              minHeight={index === history.length - 1 ? "200px" : 0}
-            >
-              <ErrorBoundary
-                FallbackComponent={fallbackRender}
-                onReset={() => {
-                  dispatch(newSession());
-                }}
+          renderItem={(item, row) => {
+            const index = historyIndexOfRow[row] ?? row;
+            return (
+              <TranscriptMessage
+                role={item.message.role}
+                minHeight={index === history.length - 1 ? "200px" : 0}
               >
-                {renderChatHistoryItem(item, index)}
-              </ErrorBoundary>
-              {index === history.length - 1 && <InlineErrorMessage />}
-            </TranscriptMessage>
-          )}
+                <ErrorBoundary
+                  FallbackComponent={fallbackRender}
+                  onReset={() => {
+                    dispatch(newSession());
+                  }}
+                >
+                  {renderChatHistoryItem(item, index)}
+                </ErrorBoundary>
+                {index === history.length - 1 && <InlineErrorMessage />}
+              </TranscriptMessage>
+            );
+          }}
         />
         <ResumeResponse />
         {/* Inside the scroll area, so it does not push the input down */}
