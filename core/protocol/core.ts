@@ -103,6 +103,7 @@ import {
   SiteIndexingConfig,
   SlashCommandDescWithSource,
   StreamDiffLinesPayload,
+  ToolArgRepair,
   ToolCall,
 } from "../";
 import { AutocompleteCodeSnippet } from "../autocomplete/snippets/types";
@@ -1008,6 +1009,12 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
       preprocessedArgs?: Record<string, unknown>;
       errorReason?: ContinueErrorReason;
       errorMessage?: string;
+      /**
+       * The arguments with strings read as the value the tool's schema
+       * declares, and what was read; both absent when nothing was changed.
+       */
+      args?: Record<string, unknown>;
+      argRepairs?: ToolArgRepair[];
     },
   ];
   "clipboardCache/add": [{ content: string }, void];

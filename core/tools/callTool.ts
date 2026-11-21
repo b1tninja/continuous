@@ -1,3 +1,4 @@
+import type { RepairNote } from "@continuedev/openai-adapters";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { ContextItem, McpUiState, Tool, ToolCall, ToolExtras } from "..";
 import { MCPManagerSingleton } from "../context/mcp/MCPManagerSingleton";
@@ -35,7 +36,11 @@ import { searchWebImpl } from "./implementations/searchWeb";
 import { viewDiffImpl } from "./implementations/viewDiff";
 import { viewRepoMapImpl } from "./implementations/viewRepoMap";
 import { viewSubdirectoryImpl } from "./implementations/viewSubdirectory";
-import { coerceArgsToSchema, safeParseToolCallArgs } from "./parseArgs";
+import {
+  coerceArgsToSchema,
+  coerceStringArgsToSchema,
+  safeParseToolCallArgs,
+} from "./parseArgs";
 import { noteCoreToolResult } from "./taintResult";
 
 async function callHttpTool(
@@ -273,9 +278,19 @@ export async function callTool(
   errorMessage: string | undefined;
   errorReason?: ContinueErrorReason;
   mcpUiState?: McpUiState;
+  /** Strings read as the value the tool's schema declares, when any were */
+  argRepairs?: RepairNote[];
 }> {
+  let argRepairs: RepairNote[] | undefined;
   try {
-    const args = safeParseToolCallArgs(toolCall);
+    // Some models send an array, boolean or number as a string
+    const { args, repairs } = coerceStringArgsToSchema(
+      safeParseToolCallArgs(toolCall),
+      tool.function.parameters,
+    );
+    if (repairs.length > 0) {
+      argRepairs = repairs;
+    }
     const { contextItems, mcpUiState } = tool.uri
       ? await callToolFromUri(tool.uri, args, extras)
       : {
@@ -292,6 +307,7 @@ export async function callTool(
       contextItems,
       errorMessage: undefined,
       mcpUiState,
+      ...(argRepairs ? { argRepairs } : {}),
     };
   } catch (e) {
     let errorMessage = `${e}`;
@@ -308,6 +324,7 @@ export async function callTool(
       contextItems: [],
       errorMessage,
       errorReason,
+      ...(argRepairs ? { argRepairs } : {}),
     };
   }
 }

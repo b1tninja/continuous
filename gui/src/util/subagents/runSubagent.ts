@@ -51,6 +51,7 @@ import {
   INITIAL_SESSION_STATE,
   sessionSlice,
   setProcessedToolCallArgs,
+  setRepairedToolCallArgs,
   setToolGenerated,
   streamUpdate,
   updateSubagentRun,
@@ -642,6 +643,15 @@ export async function driveSubagent(
         if (pre.content.errorMessage) {
           fail(pre.content.errorMessage);
           return false;
+        }
+        if (pre.content.args && pre.content.argRepairs) {
+          reduce(
+            setRepairedToolCallArgs({
+              toolCallId: call.toolCallId,
+              args: pre.content.args,
+              repairs: pre.content.argRepairs,
+            }),
+          );
         }
         if (pre.content.preprocessedArgs) {
           reduce(
