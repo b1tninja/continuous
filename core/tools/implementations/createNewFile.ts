@@ -41,7 +41,11 @@ export function outsideAbsolutePath(
 
 export const createNewFileImpl: ToolImpl = async (args, extras) => {
   const filepath = getStringArg(args, "filepath");
-  const contents = getStringArg(args, "contents", true);
+  // Contents sent as a JSON value are the file: written indented, not on one line
+  const contents =
+    typeof args?.contents === "object" && args.contents !== null
+      ? JSON.stringify(args.contents, null, 2)
+      : getStringArg(args, "contents", true);
   const append = getBooleanArg(args, "append") === true;
 
   if (!extras.allowOutsideWorkspace) {
