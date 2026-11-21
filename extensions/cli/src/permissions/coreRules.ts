@@ -1,7 +1,6 @@
 import type { AssistantUnrolled, ModelConfig } from "@continuedev/config-yaml";
 import type { ToolPolicy } from "@continuedev/terminal-security";
 import type { ChatHistoryItem } from "core/index.js";
-import { effectiveCwdForPolicy } from "core/tools/implementations/terminalCwd.js";
 import {
   readUserAdditionalFolders,
   withAdditionalFolders,
@@ -44,6 +43,7 @@ import { getWebConfig } from "core/util/webConfig.js";
 import { createLlmApi } from "../config.js";
 import { logger } from "../util/logger.js";
 
+import { policyCwd } from "./policyCwd.js";
 import { getPolicyExtras } from "./policyLevels.js";
 import type {
   PermissionCheckResult,
@@ -310,23 +310,6 @@ export interface CoreRulesInput {
   cwd?: string;
   /** The Web area's facts: web.enabled, the session's grants, the person's URLs (WB45) */
   web?: WebCallContext;
-}
-
-/**
- * The folder a call is judged from. A Bash call that was given `cwd` runs
- * there, so a relative path in its command is read from there; every other call
- * runs where the CLI was started.
- */
-function policyCwd(
-  input: { cwd?: string; cliToolName?: string },
-  parsedArgs: Record<string, unknown>,
-): string {
-  const base = input.cwd ?? process.cwd();
-  if (input.cliToolName !== "Bash") return base;
-  return effectiveCwdForPolicy(parsedArgs?.cwd, {
-    defaultCwd: base,
-    workspaceRoots: [base],
-  });
 }
 
 /** The MCP tool's declared schema, where the engine reads it (`function.parameters`). */

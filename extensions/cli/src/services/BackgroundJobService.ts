@@ -231,13 +231,13 @@ export class BackgroundJobService {
     }
     if (!(ms > 0)) return Promise.resolve(false);
     return new Promise<boolean>((resolve) => {
-      let timer: NodeJS.Timeout | undefined;
+      const pending: { timer?: NodeJS.Timeout } = {};
       const wake = () => {
-        if (timer) clearTimeout(timer);
+        if (pending.timer) clearTimeout(pending.timer);
         resolve(true);
       };
       this.endWaiters.set(jobId, [...(this.endWaiters.get(jobId) ?? []), wake]);
-      timer = setTimeout(() => {
+      pending.timer = setTimeout(() => {
         const rest = (this.endWaiters.get(jobId) ?? []).filter(
           (w) => w !== wake,
         );
