@@ -9,7 +9,10 @@ import { runTerminalCommandTool } from "./runTerminalCommand.js";
 describe("Bash notes the exit code for the audit", () => {
   beforeEach(() => clearBashEndsForTests());
 
-  const ctx = (id: string) => ({ toolCallId: id });
+  const ctx = (id: string) => ({
+    toolCallId: id,
+    parallelToolCallCount: 1,
+  });
 
   it("a command that succeeds is noted with exit 0", async () => {
     await runTerminalCommandTool.run(

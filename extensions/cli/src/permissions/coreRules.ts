@@ -1,11 +1,7 @@
 import type { AssistantUnrolled, ModelConfig } from "@continuedev/config-yaml";
 import type { ToolPolicy } from "@continuedev/terminal-security";
 import type { ChatHistoryItem } from "core/index.js";
-import { effectiveCwdForPolicy } from "core/tools/implementations/terminalCwd.js";
-import {
-  readUserAdditionalFolders,
-  withAdditionalFolders,
-} from "core/tools/permissions/additionalFolders.js";
+import { dirsWithAddedFolders } from "core/tools/permissions/additionalFolders.js";
 import {
   levelOfCall,
   type ApprovalSettings,
@@ -44,6 +40,7 @@ import { getWebConfig } from "core/util/webConfig.js";
 import { createLlmApi } from "../config.js";
 import { logger } from "../util/logger.js";
 
+import { policyCwd } from "./policyCwd.js";
 import { getPolicyExtras } from "./policyLevels.js";
 import type {
   PermissionCheckResult,
@@ -312,23 +309,6 @@ export interface CoreRulesInput {
   web?: WebCallContext;
 }
 
-/**
- * The folder a call is judged from. A Bash call that was given `cwd` runs
- * there, so a relative path in its command is read from there; every other call
- * runs where the CLI was started.
- */
-function policyCwd(
-  input: { cwd?: string; cliToolName?: string },
-  parsedArgs: Record<string, unknown>,
-): string {
-  const base = input.cwd ?? process.cwd();
-  if (input.cliToolName !== "Bash") return base;
-  return effectiveCwdForPolicy(parsedArgs?.cwd, {
-    defaultCwd: base,
-    workspaceRoots: [base],
-  });
-}
-
 /** The MCP tool's declared schema, where the engine reads it (`function.parameters`). */
 function schemaOf(
   name: string,
@@ -426,10 +406,7 @@ export async function evaluateWithCoreRules(
         trustedDomains: readUserTrustedDomains(),
         envNames: readUserEnvNames(),
         environment: {
-          workspaceDirs: withAdditionalFolders(
-            [input.cwd ?? process.cwd()],
-            readUserAdditionalFolders(),
-          ),
+          workspaceDirs: dirsWithAddedFolders(input.cwd),
           os: process.platform,
         },
         sessions,
@@ -482,12 +459,7 @@ export async function evaluateWithCoreRules(
     trustedDomains: readUserTrustedDomains(),
     envNames: readUserEnvNames(),
     cwd: policyCwd(input, parsedArgs),
-    ...deputyWorkspace(
-      withAdditionalFolders(
-        [input.cwd ?? process.cwd()],
-        readUserAdditionalFolders(),
-      ),
-    ),
+    ...deputyWorkspace(dirsWithAddedFolders(input.cwd)),
     // The shell the CLI runs commands in: its login shell, PowerShell on Windows
     shell: resolveShell().kind,
     ...taint,

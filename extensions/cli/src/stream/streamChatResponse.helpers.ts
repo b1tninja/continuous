@@ -20,12 +20,12 @@ import { ChatCompletionToolMessageParam } from "openai/resources/chat/completion
 import { ToolPermissionServiceState } from "src/services/ToolPermissionService.js";
 import type { ModelServiceState } from "src/services/types.js";
 
+import { takeBashEnd } from "../audit/bashExit.js";
 import {
   recordCliDecision,
   recordCliOutcome,
   type ApprovalTrace,
 } from "../audit/cliAudit.js";
-import { takeBashEnd } from "../audit/bashExit.js";
 import { startShadowReview } from "../audit/shadowHook.js";
 import {
   modelNote,
@@ -1522,9 +1522,9 @@ export async function executeStreamedToolCalls(
               ...(bashEnd
                 ? {
                     exit: bashEnd.exit,
-                    ...(bashEnd.exit !== 0
-                      ? { error: `exited with code ${bashEnd.exit}` }
-                      : {}),
+                    ...(bashEnd.exit === 0
+                      ? {}
+                      : { error: `exited with code ${bashEnd.exit}` }),
                   }
                 : {}),
               output: typeof toolResult === "string" ? toolResult : undefined,

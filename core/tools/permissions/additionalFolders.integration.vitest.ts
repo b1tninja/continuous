@@ -137,20 +137,41 @@ describe("a file in an added folder", () => {
     expect(result.policy).toBe(ALLOW);
   });
 
-  it("an absolute path to a file that does not exist yet asks, as it does in the workspace itself", async () => {
-    // Existing behaviour, not a limit of this feature: the control below is
-    // the real workspace, and the same path there asks too.
+  it("a new file at an absolute path gets the answer the workspace itself gets", async () => {
+    // What a new file at an absolute path does is decided by the edit rules, not
+    // by this feature: the real workspace is the control, and an added folder
+    // must match it exactly. (This used to assert "asks"; at Permissive the
+    // workspace allows it, on main as well, so the invariant is the match.)
     const inWorkspace = await decide(
       createNewFileTool,
       path.join(ws, "new.txt"),
     );
-    expect(inWorkspace.result.policy).toBe(ASK);
+    expect(inWorkspace.resolved?.isWithinWorkspace).toBe(true);
     addFolders(shared);
     const inAdded = await decide(
       createNewFileTool,
       path.join(shared, "new.txt"),
     );
+    expect(inAdded.resolved?.isWithinWorkspace).toBe(true);
     expect(inAdded.result.policy).toBe(inWorkspace.result.policy);
+    expect(inAdded.result.protection).toBe(inWorkspace.result.protection);
+  });
+
+  it("a new file in a folder that was not added is not treated like the workspace", async () => {
+    addFolders(shared);
+    const inWorkspace = await decide(
+      createNewFileTool,
+      path.join(ws, "new.txt"),
+    );
+    const notAdded = await decide(
+      createNewFileTool,
+      path.join(elsewhere, "new.txt"),
+    );
+    expect(notAdded.resolved?.isWithinWorkspace).toBe(false);
+    // outside the workspace it asks, whatever the workspace itself does
+    expect(notAdded.result.policy).toBe(ASK);
+    expect(notAdded.result.protection).toBe("file-deputy");
+    expect(inWorkspace.resolved?.isWithinWorkspace).toBe(true);
   });
 
   it("a folder that was not added still asks", async () => {
