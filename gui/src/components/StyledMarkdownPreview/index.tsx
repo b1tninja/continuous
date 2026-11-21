@@ -32,6 +32,7 @@ import { safeMarkdownHref } from "./utils/safeMarkdownHref";
 import { fixDoubleDollarNewLineLatex } from "./utils/fixDoubleDollarLatex";
 import { normalizeDisplayMathBlocks } from "./utils/normalizeDisplayMathBlocks";
 import { patchNestedMarkdown } from "./utils/patchNestedMarkdown";
+import { rehypeCreateElement } from "./utils/rehypeCreateElement";
 import { rehypeElementStyleObjects } from "./utils/rehypeElementStyleObjects";
 import { rehypeTableCellAlign } from "./utils/rehypeTableCellAlign";
 import { remarkTables } from "./utils/remarkTables";
@@ -299,6 +300,7 @@ const StyledMarkdownPreview = memo(function StyledMarkdownPreview(
       rehypeElementStyleObjects,
     ],
     rehypeReactOptions: {
+      createElement: rehypeCreateElement(),
       components: {
         a: ({ ...aProps }) => {
           const href = safeMarkdownHref(
