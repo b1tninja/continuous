@@ -1,7 +1,6 @@
 import type { AssistantUnrolled, ModelConfig } from "@continuedev/config-yaml";
 import type { ToolPolicy } from "@continuedev/terminal-security";
 import type { ChatHistoryItem } from "core/index.js";
-import { effectiveCwdForPolicy } from "core/tools/implementations/terminalCwd.js";
 import {
   levelOfCall,
   type ApprovalSettings,
@@ -40,6 +39,7 @@ import { getWebConfig } from "core/util/webConfig.js";
 import { createLlmApi } from "../config.js";
 import { logger } from "../util/logger.js";
 
+import { policyCwd } from "./policyCwd.js";
 import { getPolicyExtras } from "./policyLevels.js";
 import type {
   PermissionCheckResult,
@@ -457,15 +457,7 @@ export async function evaluateWithCoreRules(
     ...(input.web ? { web: input.web } : {}),
     trustedDomains: readUserTrustedDomains(),
     envNames: readUserEnvNames(),
-    // A Bash call that was given cwd runs there, so a relative path in its
-    // command is read from there. Every other call runs where the CLI started.
-    cwd:
-      input.cliToolName === "Bash"
-        ? effectiveCwdForPolicy(parsedArgs?.cwd, {
-            defaultCwd: input.cwd ?? process.cwd(),
-            workspaceRoots: [input.cwd ?? process.cwd()],
-          })
-        : (input.cwd ?? process.cwd()),
+    cwd: policyCwd(input, parsedArgs),
     ...deputyWorkspace([input.cwd ?? process.cwd()]),
     // The shell the CLI runs commands in: its login shell, PowerShell on Windows
     shell: resolveShell().kind,
