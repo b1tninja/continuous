@@ -11,6 +11,8 @@
  * Pure: no I/O, no clock. The caller passes the time.
  */
 
+import { stripAnsi } from "./ansi";
+
 /** What to do when a command's output looks like a runaway. */
 export enum RunawayAction {
   /** End the command and its children, and tell the model why. */
@@ -331,18 +333,29 @@ export function formatBytes(bytes: number): string {
   return `${bytes} bytes`;
 }
 
-/** The kept output, with a marker where the middle was not kept. */
-function keptText(state: CaptureState): string {
+/**
+ * The kept output, with a marker where the middle was not kept. Terminal
+ * escape sequences are removed from the head and the tail one at a time: the
+ * cut can fall inside a sequence, and the half of it that is left must not
+ * stay behind as text. `keepAnsi` leaves them in, for the screen.
+ */
+function keptText(state: CaptureState, keepAnsi: boolean): string {
+  const clean = keepAnsi ? (s: string) => s : stripAnsi;
   const omitted = omittedChars(state);
-  if (omitted === 0) return state.head + state.tail;
+  if (omitted === 0) return clean(state.head + state.tail);
   // Start the tail at a line, so a half line does not look like output
   const nl = state.tail.indexOf("\n");
   const tail = nl >= 0 && nl < 1000 ? state.tail.slice(nl + 1) : state.tail;
-  return `${state.head}\n[... ${omitted.toLocaleString("en-US")} characters not kept ...]\n${tail}`;
+  return `${clean(state.head)}\n[... ${omitted.toLocaleString("en-US")} characters not kept ...]\n${clean(tail)}`;
 }
 
 export interface ModelTextOptions {
   failed: boolean;
+  /**
+   * Keep terminal escape sequences (colours). The model's text has them removed;
+   * this is for the copy the screen shows, which draws the colours.
+   */
+  keepAnsi?: boolean;
   /** Where the full output is, when it was written to a file. */
   outputPath?: string;
   /** The command's id for read_command_output. */
@@ -353,7 +366,8 @@ export interface ModelTextOptions {
 /**
  * What the model gets: the whole output when it fits, else the first 20% and
  * the last 80% of the limit with a note saying how much there was and where
- * the rest is.
+ * the rest is. Terminal escape sequences are removed (ansi.ts): they cost
+ * tokens and make two identical lines look different.
  */
 export function modelText(
   state: CaptureState,
@@ -361,7 +375,7 @@ export function modelText(
 ): string {
   const limits = options.limits ?? DEFAULT_OUTPUT_LIMITS;
   const limit = options.failed ? limits.modelFailureChars : limits.modelChars;
-  const text = compressProgress(keptText(state));
+  const text = compressProgress(keptText(state, options.keepAnsi === true));
   if (omittedChars(state) === 0 && text.length <= limit) return text;
 
   let headPart = text.slice(0, Math.floor(limit * 0.2));
@@ -383,7 +397,10 @@ export function modelText(
   return `${note}\n${headPart}\n[...]\n${tailPart}`;
 }
 
-/** The end of the output, for the chat view. */
+/**
+ * The end of the output, for the chat view. The escape sequences stay: the
+ * screen draws the colours. (The model's copy is modelText, which removes them.)
+ */
 export function viewText(
   state: CaptureState,
   limits: OutputLimits = DEFAULT_OUTPUT_LIMITS,

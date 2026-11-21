@@ -332,6 +332,11 @@ function CollapsibleOutputContainer({
 interface UnifiedTerminalCommandProps {
   command: string;
   output?: string;
+  /**
+   * The output with its terminal escape sequences (colours), for drawing.
+   * `output` is the same text without them, and is what is copied.
+   */
+  displayOutput?: string;
   status?: "running" | "completed" | "failed" | "background";
   statusMessage?: string;
   toolCallState?: ToolCallState;
@@ -344,6 +349,7 @@ interface UnifiedTerminalCommandProps {
 export function UnifiedTerminalCommand({
   command: rawCommand,
   output: rawOutput = "",
+  displayOutput,
   status = "completed",
   statusMessage = "",
   toolCallState,
@@ -361,6 +367,17 @@ export function UnifiedTerminalCommand({
     [rawCommand],
   );
   const output = useMemo(() => maskCommandForDisplay(rawOutput), [rawOutput]);
+  // What is drawn: the coloured text, when there is some and nothing in the
+  // output needed hiding. Masking works on the text, and a secret split by an
+  // escape sequence could get past it in the coloured copy, so once the plain
+  // text had something masked, the masked plain text is what is shown.
+  const shown = useMemo(
+    () =>
+      displayOutput !== undefined && output === rawOutput
+        ? maskCommandForDisplay(displayOutput)
+        : output,
+    [displayOutput, output, rawOutput],
+  );
   const [isExpanded, setIsExpanded] = useState(true);
   const [outputExpanded, setOutputExpanded] = useState(false);
 
@@ -371,7 +388,7 @@ export function UnifiedTerminalCommand({
 
   // Process terminal content for line limiting
   const processedTerminalContent = useMemo(() => {
-    if (!output) {
+    if (!shown) {
       return {
         fullContent: "",
         limitedContent: "",
@@ -381,13 +398,13 @@ export function UnifiedTerminalCommand({
       };
     }
 
-    const lines = output.split("\n");
+    const lines = shown.split("\n");
     const totalLines = lines.length;
 
     if (totalLines > displayLines) {
       const lastLines = lines.slice(-displayLines);
       return {
-        fullContent: output,
+        fullContent: shown,
         limitedContent: lastLines.join("\n"),
         totalLines,
         isLimited: true,
@@ -396,13 +413,13 @@ export function UnifiedTerminalCommand({
     }
 
     return {
-      fullContent: output,
-      limitedContent: output,
+      fullContent: shown,
+      limitedContent: shown,
       totalLines,
       isLimited: false,
       hiddenLinesCount: 0,
     };
-  }, [output, displayLines]);
+  }, [shown, displayLines]);
 
   // Determine status type
   let statusType: "running" | "completed" | "failed" | "background" = status;

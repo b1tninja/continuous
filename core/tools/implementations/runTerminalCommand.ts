@@ -67,6 +67,7 @@ import {
   RunawayReason,
   viewText,
 } from "../../util/commandOutputBuffer";
+import { hasAnsi, stripAnsi } from "../../util/ansi";
 import {
   CommandRecord,
   finishCommand,
@@ -208,19 +209,28 @@ function runawayActionOf(value: string | undefined): RunawayAction {
     : RunawayAction.Stop;
 }
 
-/** The terminal item, with the meter's numbers and where the full output is. */
+/**
+ * The terminal item, with the meter's numbers and where the full output is.
+ * `content` is what the model reads, so it has no terminal escape sequences.
+ * `display` is the coloured text for the screen, present only when there was
+ * colour to show.
+ */
 function terminalItem(
   content: string,
   status: string | undefined,
   record: CommandRecord,
+  display?: string,
 ) {
+  const plain = stripAnsi(content);
+  const coloured = display ?? content;
   return {
     name: "Terminal",
     description: "Terminal command output",
-    content,
+    content: plain,
     ...(status === undefined ? {} : { status }),
     commandOutput: {
       id: record.id,
+      ...(hasAnsi(coloured) ? { display: coloured } : {}),
       ...outputStats(record.capture),
       ...(record.outputPath
         ? {
@@ -232,10 +242,18 @@ function terminalItem(
   };
 }
 
-/** What the model gets for a command that has finished. */
-function finalContent(record: CommandRecord, failed: boolean): string {
+/**
+ * What the model gets for a command that has finished. `keepAnsi` is the same
+ * text with its colours, for the screen.
+ */
+function finalContent(
+  record: CommandRecord,
+  failed: boolean,
+  keepAnsi = false,
+): string {
   const text = modelText(record.capture, {
     failed,
+    keepAnsi,
     outputPath: record.outputPath,
     commandId: record.id,
     limits: record.limits,
@@ -366,10 +384,13 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
             extras.onPartialOutput?.({
               toolCallId,
               contextItems: [
+                // The chat view draws colour, so it gets the escape sequences;
+                // content, which a saved session keeps, does not have them
                 terminalItem(
                   viewText(record.capture, record.limits),
                   status,
                   record,
+                  viewText(record.capture, record.limits),
                 ),
               ],
             });
@@ -469,7 +490,10 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
             if (forceTimeoutId) clearTimeout(forceTimeoutId);
             if (exitTimeoutId) clearTimeout(exitTimeoutId);
             if (viewTimeoutId) clearTimeout(viewTimeoutId);
-            finishCommand(record, code);
+            finishCommand(record, code, undefined, {
+              signal: childProc.signalCode,
+              timedOut,
+            });
 
             // Clean up process tracking
             if (toolCallId) {
@@ -491,6 +515,7 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
                   finalContent(record, true),
                   "Command stopped: its output looked like a runaway",
                   record,
+                  finalContent(record, true, true),
                 ),
               ]);
             } else if (timedOut) {
@@ -499,6 +524,7 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
                   finalContent(record, true),
                   "Command timed out",
                   record,
+                  finalContent(record, true, true),
                 ),
               ]);
             } else if (!code || code === 0) {
@@ -507,6 +533,7 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
                   finalContent(record, false),
                   "Command completed",
                   record,
+                  finalContent(record, false, true),
                 ),
               ]);
             } else {
@@ -515,6 +542,7 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
                   finalContent(record, true),
                   `Command failed with exit code ${code}`,
                   record,
+                  finalContent(record, true, true),
                 ),
               ]);
             }

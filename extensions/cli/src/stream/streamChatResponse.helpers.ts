@@ -1532,10 +1532,20 @@ export async function executeStreamedToolCalls(
               durMs: Date.now() - startedAt,
               ...(bashEnd
                 ? {
-                    exit: bashEnd.exit,
+                    ...(bashEnd.exit !== undefined
+                      ? { exit: bashEnd.exit }
+                      : {}),
+                    ...(bashEnd.signal ? { signal: bashEnd.signal } : {}),
+                    ...(bashEnd.timedOut ? { timedOut: true as const } : {}),
                     ...(bashEnd.exit === 0
                       ? {}
-                      : { error: `exited with code ${bashEnd.exit}` }),
+                      : {
+                          error: bashEnd.timedOut
+                            ? "timed out"
+                            : bashEnd.exit === undefined
+                              ? `ended by ${bashEnd.signal ?? "a signal"}`
+                              : `exited with code ${bashEnd.exit}`,
+                        }),
                   }
                 : {}),
               output: typeof toolResult === "string" ? toolResult : undefined,
@@ -1570,9 +1580,15 @@ export async function executeStreamedToolCalls(
               error: errorMessage,
             });
             // The real code when a command chose one; 1 for any other failure
+            const failedEnd = takeBashEnd(approvedCall.id);
             recordCliOutcome(approvedCall, {
               ran: true,
-              exit: takeBashEnd(approvedCall.id)?.exit ?? 1,
+              // A signal has no code, so none is made up for it
+              ...(failedEnd?.signal && failedEnd.exit === undefined
+                ? {}
+                : { exit: failedEnd?.exit ?? 1 }),
+              ...(failedEnd?.signal ? { signal: failedEnd.signal } : {}),
+              ...(failedEnd?.timedOut ? { timedOut: true as const } : {}),
               error: errorMessage,
             });
             await runPostToolUseFailureHooks(approvedCall, errorMessage);

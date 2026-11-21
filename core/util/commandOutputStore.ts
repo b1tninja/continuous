@@ -37,6 +37,10 @@ export interface CommandRecord {
   startedAt: number;
   endedAt?: number;
   exitCode?: number | null;
+  /** The signal that ended it (SIGTERM, SIGKILL), when one did; its exit code is then null. */
+  signal?: string;
+  /** Ended by the foreground time limit (not a stop the model or a runaway check asked for). */
+  timedOut?: boolean;
   process?: ChildProcess;
   capture: CaptureState;
   limits: OutputLimits;
@@ -200,13 +204,21 @@ export function recordOutput(
   return record;
 }
 
+export interface CommandEnd {
+  signal?: string | null;
+  timedOut?: boolean;
+}
+
 export function finishCommand(
   record: CommandRecord,
   exitCode: number | null,
   now: number = Date.now(),
+  end: CommandEnd = {},
 ): void {
   record.endedAt ??= now;
   record.exitCode = exitCode;
+  if (end.signal) record.signal = end.signal;
+  if (end.timedOut) record.timedOut = true;
   record.process = undefined;
   closeFile(record);
   pruneFinished();

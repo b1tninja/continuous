@@ -9,8 +9,12 @@
  * grows past a small bound.
  */
 export interface BashEnd {
-  exit: number;
+  /** The code the command chose. Absent when a signal ended it: it has none. */
+  exit?: number;
+  /** The signal that ended it (SIGTERM, SIGKILL) */
   signal?: string;
+  /** Ended by this tool's time limit (no output for a while) */
+  timedOut?: true;
 }
 
 const ends = new Map<string, BashEnd>();
