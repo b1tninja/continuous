@@ -194,8 +194,8 @@ export function withAdditionalFolders(
 ): string[] {
   if (folders.length === 0) return [...dirs];
   const asUris = dirs.length > 0 && dirs[0].includes("://");
-  const key = (s: string) =>
-    process.platform === "win32" ? s.toLowerCase() : s;
+  const fold = typeof process !== "undefined" && process.platform === "win32";
+  const key = (s: string) => (fold ? s.toLowerCase() : s);
   const present = new Set(dirs.map(key));
   const out = [...dirs];
   for (const folder of folders) {
@@ -205,6 +205,14 @@ export function withAdditionalFolders(
     out.push(form);
   }
   return out;
+}
+
+/** Where the CLI started, plus the folders the person added to the workspace. */
+export function dirsWithAddedFolders(startedIn?: string): string[] {
+  return withAdditionalFolders(
+    [startedIn ?? process.cwd()],
+    readUserAdditionalFolders(),
+  );
 }
 
 // ---------------------------------------------------------------------------

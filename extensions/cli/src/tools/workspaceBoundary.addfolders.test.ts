@@ -2,17 +2,16 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import { clearAdditionalFoldersCacheForTests } from "core/tools/permissions/additionalFolders.js";
 import { removeTestTempDir, testTempDir } from "core/util/testTempDir.js";
+
+import { outsideWorkspaceNote } from "./workspaceBoundary.js";
 
 const holder = vi.hoisted(() => ({ dir: "" }));
 vi.mock("core/util/paths.js", async (original) => ({
   ...(await original<typeof import("core/util/paths.js")>()),
   getContinueGlobalPath: () => holder.dir,
 }));
-
-import { clearAdditionalFoldersCacheForTests } from "core/tools/permissions/additionalFolders.js";
-
-import { outsideWorkspaceNote } from "./workspaceBoundary.js";
 
 /**
  * The CLI's "outside the working directory" note, with the folders the person
