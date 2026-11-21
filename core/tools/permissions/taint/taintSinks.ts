@@ -3,7 +3,11 @@ import { hostTrusted } from "../askProtections";
 import { commandCandidateSet } from "../candidates";
 import { destinationsOf, programName } from "../destinations";
 import { canonicalRuleName } from "../names";
-import { jqEnvironmentLabel, secretWordLabel } from "../secretCommands";
+import {
+  credentialCommandLabel,
+  jqEnvironmentLabel,
+  secretWordLabel,
+} from "../secretCommands";
 import type { ShellKind } from "../../../util/shell";
 
 /**
@@ -155,7 +159,8 @@ function commandSink(call: SinkCall, command: string): Sink | undefined {
         secretWordLabel(w, i === 0, words.length > 1, words[i - 1]),
       )
       .find(Boolean);
-    const label = secret ?? jqEnvironmentLabel(words);
+    const label =
+      secret ?? jqEnvironmentLabel(words) ?? credentialCommandLabel(words);
     if (label) return { class: "credential-read", detail: label };
 
     const found = destinationsOf(c);
