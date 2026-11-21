@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-// What the chat webview ships for Node's path, path/posix, fs and os: empty
-// modules, so every property read from them is undefined.
+// What the chat webview ships for Node's path, path/posix, os and url: empty
+// modules, so every property read from them is undefined. (url matters:
+// pathForSecretCheck calls fileURLToPath, and the webview build stubs node:url.)
 const empty = vi.hoisted(
   () =>
     new Proxy(
@@ -16,6 +17,7 @@ vi.mock("node:path", () => empty);
 vi.mock("path", () => empty);
 vi.mock("node:path/posix", () => empty);
 vi.mock("node:os", () => empty);
+vi.mock("node:url", () => empty);
 
 import type { IDE } from "..";
 import { cleanPath } from "../tools/permissions/names";
@@ -50,8 +52,13 @@ describe("with no Node path or os, as in the chat webview", () => {
       string,
       unknown
     >;
+    const url = (await import("node:url")) as unknown as Record<
+      string,
+      unknown
+    >;
     expect(os.homedir).toBeUndefined();
     expect(posix.normalize).toBeUndefined();
+    expect(url.fileURLToPath).toBeUndefined();
   });
 
   it("there is no home folder to find, and asking does not throw", () => {
