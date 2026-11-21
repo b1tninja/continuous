@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
+import { tryLink } from "../tools/permissions/testLinks";
 import {
   DEFAULT_SECURITY_IGNORE_DIRS,
   DEFAULT_SECURITY_IGNORE_FILETYPES,
@@ -257,14 +258,16 @@ describe("isSecurityConcern", () => {
       expect(isSecurityConcern("src/main.js")).toBe(false);
     });
 
-    it("follows a symlink to a file outside the workspace", () => {
+    it("follows a symlink to a file outside the workspace", (ctx) => {
       const parent = fs.mkdtempSync(path.join(os.tmpdir(), "cn-ignore-"));
       const dir = path.join(parent, "proj");
       fs.mkdirSync(dir);
       try {
         const outside = path.join(parent, "secret.txt");
         fs.writeFileSync(outside, "k");
-        fs.symlinkSync(outside, path.join(dir, "notes"));
+        // File links need Developer Mode on Windows: skip there, with the reason
+        const link = tryLink(outside, path.join(dir, "notes"), "file");
+        if (!link.ok) return ctx.skip(link.reason);
         expect(isSecurityConcern("notes", dir)).toBe(true);
         expect(isSecurityConcern("missing.js", dir)).toBe(false);
       } finally {

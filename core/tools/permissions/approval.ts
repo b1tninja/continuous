@@ -1,4 +1,5 @@
 import type { Tool } from "../..";
+import type { ShellKind } from "../../util/shell";
 import {
   areaOfTool,
   builtinRuleOn,
@@ -9,7 +10,6 @@ import {
   type PolicyLevels,
   type WebLevel,
 } from "./policy";
-import type { ShellKind } from "../../util/shell";
 import type { ProtectedKind } from "./protected";
 
 /**
@@ -34,11 +34,6 @@ export interface ApprovalSettings {
   builtin?: Partial<Record<BuiltinRuleId, boolean>>;
   /** Deny rules that bind at every level below IDGAF (IDGAF runs past them and records it) */
   floor?: string[];
-  /**
-   * The safety-check shield. Absent follows the mode (off at IDGAF). An
-   * explicit value is the person's choice at every level.
-   */
-  safetyChecks?: boolean;
 }
 
 /**

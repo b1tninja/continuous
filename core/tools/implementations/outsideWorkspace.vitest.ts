@@ -19,7 +19,11 @@ let elsewhere: string;
 let ide: IDE;
 
 beforeAll(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), "outside-ws-"));
+  // The canonical spelling: os.tmpdir() can be an 8.3 short path on Windows
+  // (C:\Users\LONGNA~1\...), which the product resolves to the long name
+  root = fs.realpathSync.native(
+    fs.mkdtempSync(path.join(os.tmpdir(), "outside-ws-")),
+  );
   work = path.join(root, "workspace");
   elsewhere = path.join(root, "elsewhere");
   fs.mkdirSync(work);

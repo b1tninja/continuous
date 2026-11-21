@@ -17,6 +17,7 @@ import {
   type QuestionDelivery,
 } from "./policy.js";
 import { validateRuleText } from "./ruleAnalysis.js";
+import { builtinForDegree } from "./safetyDegrees.js";
 import { storedWebLevel } from "./webPolicy.js";
 
 /**
@@ -155,12 +156,17 @@ export function parsePolicyFile(text: string | undefined): PolicyFileRead {
   notices.push(...problems.map((p) => `permissions.yaml: ${p}`));
 
   const settings: PolicyFileSettings = { ...policy };
-  const safetyChecks = asBool(raw.safetyChecks);
+  // `safetyChecks` was one switch for all of them. It is now the individual
+  // checks under `builtin:`, which a preset sets: `off` reads as every check
+  // off (a check named under `builtin:` keeps its own value), `on` is the
+  // default and says nothing. The line is removed the next time the file is
+  // written.
+  const legacySafety = asBool(raw.safetyChecks);
   if (raw.safetyChecks !== undefined) {
-    if (safetyChecks === undefined) {
+    if (legacySafety === undefined) {
       notices.push("safetyChecks: use on or off.");
-    } else {
-      settings.safetyChecks = safetyChecks;
+    } else if (legacySafety === false) {
+      settings.builtin = builtinForDegree("none");
     }
   }
   const skipPermissionConfirm = asBool(raw.skipPermissionConfirm);
@@ -183,7 +189,7 @@ export function parsePolicyFile(text: string | undefined): PolicyFileRead {
         builtin[id as BuiltinRuleId] = on;
       }
     }
-    settings.builtin = builtin;
+    settings.builtin = { ...settings.builtin, ...builtin };
   }
   if (Array.isArray(raw.floor)) {
     settings.floor = raw.floor.filter((r: unknown) => typeof r === "string");
@@ -262,11 +268,6 @@ export interface PolicyFileUpdate {
     agentDecides?: string[];
   };
   builtin?: Partial<Record<BuiltinRuleId, boolean>>;
-  /**
-   * The safety-check shield. Absent follows the mode. `null` removes the
-   * line, so the shield follows the mode again.
-   */
-  safetyChecks?: boolean | null;
   /**
    * Skip the editor dialog before a permission change is saved. Absent
    * leaves the line. `null` removes it (the dialog appears again).
@@ -402,11 +403,8 @@ export function applyPolicyUpdate(
   if (update.questions?.agentDecides) {
     doc.setIn(["questions", "agentDecides"], update.questions.agentDecides);
   }
-  if (update.safetyChecks === null) {
-    doc.delete("safetyChecks");
-  } else if (update.safetyChecks !== undefined) {
-    doc.set("safetyChecks", update.safetyChecks ? "on" : "off");
-  }
+  // The old single switch is replaced by the checks themselves
+  if (update.builtin) doc.delete("safetyChecks");
   if (update.skipPermissionConfirm === null) {
     doc.delete("skipPermissionConfirm");
   } else if (update.skipPermissionConfirm !== undefined) {

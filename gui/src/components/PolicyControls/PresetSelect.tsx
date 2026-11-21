@@ -286,8 +286,7 @@ export function PresetSelect({
             <div className="flex flex-col">
               <span>Custom…</span>
               <span className="text-2xs whitespace-normal text-description">
-                Open the policy editor: levels, rules and settings, starting
-                from{" "}
+                Edit the policy: levels, rules and settings, starting from{" "}
                 {preset ? POLICY_PRESETS[preset].label : "your current set"}.
                 {preset ? "" : " This is your current set."}
               </span>

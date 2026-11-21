@@ -4,6 +4,7 @@ import { evaluateToolPolicyWithRules, PROFILE_WRITE_REASON } from "./evaluate";
 import { DEFAULT_POLICY_LEVELS, type PolicyLevel } from "./policy";
 import { normalizeProtectedPath } from "./protected";
 import { isConfigPath, isPowerShellProfilePath } from "./protectedPaths";
+import { builtinForPreset } from "./safetyDegrees";
 import { profileWriteHit } from "./selfProtect";
 
 /**
@@ -110,11 +111,16 @@ describe("a profile write: refused at Automatic, asked elsewhere", () => {
     }
   });
 
-  it("IDGAF runs it and records that it would have been refused", () => {
-    const r = write(PROFILE, "idgaf");
+  it("the IDGAF preset has protect-config off, so it just runs", () => {
+    const r = write(PROFILE, "idgaf", builtinForPreset("idgaf"));
     expect(r.policy).toBe(ALLOW);
-    expect(r.idgafOverride?.policy).toBe(OFF);
-    expect(r.idgafOverride?.reason).toContain(PROFILE_WRITE_REASON);
+    expect(r.source).toBe("idgaf");
+  });
+
+  it("IDGAF with protect-config left on still refuses it, as at Automatic", () => {
+    const r = write(PROFILE, "idgaf");
+    expect(r.policy).toBe(OFF);
+    expect(r.reason).toContain(PROFILE_WRITE_REASON);
   });
 
   it("another config file still asks at Automatic and is not refused", () => {

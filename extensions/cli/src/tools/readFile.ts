@@ -7,6 +7,7 @@ import { parseEnvNumber } from "../util/truncateOutput.js";
 
 import { formatToolArgument } from "./formatters.js";
 import { Tool, ToolRunContext } from "./types.js";
+import { secretFilesAllowed } from "./workspaceBoundary.js";
 
 // Output truncation defaults
 const DEFAULT_READ_FILE_MAX_CHARS = 100000; // ~25k tokens
@@ -53,7 +54,7 @@ export const readFileTool: Tool = {
     if (filepath.startsWith("./")) {
       filepath = filepath.slice(2);
     }
-    throwIfFileIsSecurityConcern(filepath);
+    if (!secretFilesAllowed()) throwIfFileIsSecurityConcern(filepath);
     return {
       args,
       preview: [

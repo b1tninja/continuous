@@ -226,7 +226,7 @@ describe.runIf(hasWsl)("commands in WSL (this machine's distribution)", () => {
     expect(run('echo "$0"').out).toBe("bash\n");
     const shell = resolveShell({ terminalShell: { kind: "wsl" } });
     const r = spawnSync(shell.executable, shell.args("pwd"), {
-      cwd: "C:\Windows",
+      cwd: "C:\\Windows",
       encoding: "utf8",
       timeout: 30000,
     });

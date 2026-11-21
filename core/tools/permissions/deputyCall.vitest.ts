@@ -3,11 +3,12 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
-import { createNewFileTool, readFileTool } from "../definitions";
-import { resolveInputPath } from "../../util/pathResolver";
 import type { IDE } from "../..";
+import { resolveInputPath } from "../../util/pathResolver";
+import { createNewFileTool, readFileTool } from "../definitions";
 import { evaluateToolPolicyWithRules, type EvaluateInput } from "./evaluate";
 import type { PolicyLevel } from "./policy";
+import { builtinForPreset } from "./safetyDegrees";
 import { needsLink, tryLink } from "./testLinks";
 
 const ASK = "allowedWithPermission";
@@ -120,13 +121,47 @@ describe("the confused-deputy rule in the evaluator", () => {
     }
   });
 
-  it("IDGAF is the one level that reaches past it", () => {
+  it("the IDGAF preset reaches past it, because that preset turns the check off", () => {
+    const r = run(readFileTool, "/srv/x", {
+      level: "idgaf",
+      within: false,
+      resolved: "/srv/x",
+      builtin: builtinForPreset("idgaf"),
+    });
+    expect(r.policy).toBe(ALLOW);
+  });
+
+  it("turning off only ask-outside-paths reaches past it at every level that runs a read", () => {
+    for (const level of ["cautious", "permissive", "idgaf"] as const) {
+      const r = run(readFileTool, "/srv/x", {
+        level,
+        within: false,
+        resolved: "/srv/x",
+        builtin: { "ask-outside-paths": false },
+      });
+      expect(r.policy, level).toBe(ALLOW);
+    }
+  });
+
+  it("with the check off, a path outside is treated like one inside", () => {
+    const inside = run(readFileTool, "src/a.ts", { level: "cautious" });
+    const outside = run(readFileTool, "/srv/x", {
+      level: "cautious",
+      within: false,
+      resolved: "/srv/x",
+      builtin: { "ask-outside-paths": false },
+    });
+    expect(outside.policy).toBe(inside.policy);
+  });
+
+  it("IDGAF levels with the check left on still ask", () => {
     const r = run(readFileTool, "/srv/x", {
       level: "idgaf",
       within: false,
       resolved: "/srv/x",
     });
-    expect(r.policy).toBe(ALLOW);
+    expect(r.policy).toBe(ASK);
+    expect(r.protection).toBe("file-deputy");
   });
 
   it("an allow rule does not loosen it, and a deny rule still refuses", () => {

@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 
+import { POLICY_PRESETS } from "core/tools/permissions/policy.js";
 import { writeFileAtomicSync } from "core/util/atomicWrite.js";
 import { ContinueError } from "core/util/errors.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -138,9 +139,16 @@ describe("writeFileTool outside the working directory at each File edits level",
     resetPolicyLevels();
   });
 
+  // "IDGAF" here is the preset, which sets the checks along with the levels;
+  // the other levels change File edits alone
   const withEdits = (
     edits: "manual" | "cautious" | "automatic" | "permissive" | "idgaf",
-  ) => setPolicyLevels({ ...getPolicyLevels(), edits });
+  ) =>
+    setPolicyLevels(
+      edits === "idgaf"
+        ? { ...getPolicyLevels(), ...POLICY_PRESETS.idgaf.levels }
+        : { ...getPolicyLevels(), edits },
+    );
 
   it("File edits IDGAF: a headless write outside is prepared, not refused", async () => {
     withEdits("idgaf");

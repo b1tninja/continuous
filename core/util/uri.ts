@@ -29,15 +29,25 @@ export function getCleanUriPath(uri: string) {
  * Workspace checks use this so `file:///proj/../other/x` is not treated as a
  * file inside `proj`.
  */
+/** A Windows drive letter is case-insensitive: `C:` and `c:` name the same drive. */
+function withLowerDrive(parts: string[]): string[] {
+  if (parts.length > 0 && /^[a-zA-Z]:$/.test(parts[0])) {
+    return [parts[0].toLowerCase(), ...parts.slice(1)];
+  }
+  return parts;
+}
+
 export function normalizedUriPathParts(uri: string): string[] {
   const comps = URI.parse(uri);
   if (comps.scheme === "file") {
     try {
       // fileURLToPath percent-decodes and resolves dot segments.
-      return path
-        .normalize(fileURLToPath(uri))
-        .split(/[/\\]/)
-        .filter((part) => part !== "");
+      return withLowerDrive(
+        path
+          .normalize(fileURLToPath(uri))
+          .split(/[/\\]/)
+          .filter((part) => part !== ""),
+      );
     } catch {
       // Not a file URL this platform accepts; fall through.
     }
@@ -59,17 +69,32 @@ export function normalizedUriPathParts(uri: string): string[] {
     }
     stack.push(decoded);
   }
-  return stack;
+  return withLowerDrive(stack);
 }
 
 export function findUriInDirs(
   uri: string,
   dirUriCandidates: string[],
+  options: {
+    /**
+     * Compare folder and file names without regard to case. Default: on
+     * Windows, whose filesystems are case-insensitive, so `My-Project`
+     * and `my-project` are one folder there and not elsewhere.
+     */
+    caseInsensitive?: boolean;
+  } = {},
 ): {
   uri: string;
   relativePathOrBasename: string;
   foundInDir: string | null;
 } {
+  // This file is bundled into the webview, which has no `process`.
+  // Node still defaults to case-insensitive names on Windows.
+  const caseInsensitive =
+    options.caseInsensitive ??
+    (typeof process !== "undefined" && process.platform === "win32");
+  const same = (a: string, b: string) =>
+    caseInsensitive ? a.toLowerCase() === b.toLowerCase() : a === b;
   const uriComps = URI.parse(uri);
   if (!uriComps.scheme) {
     throw new Error(`Invalid uri: ${uri}`);
@@ -96,21 +121,9 @@ export function findUriInDirs(
     if (uriPathParts.length < dirPathParts.length) {
       continue;
     }
-    // `D:` and `d:` are one drive. Folder case stays as written: the drop
-    // handler folds it only when caseInsensitiveFiles is set. A POSIX path
-    // stays case-sensitive, including its first segment.
-    const foldDrive =
-      /^[a-zA-Z]:$/.test(dirPathParts[0] ?? "") &&
-      /^[a-zA-Z]:$/.test(uriPathParts[0] ?? "");
     let allDirPartsMatch = true;
     for (let i = 0; i < dirPathParts.length; i++) {
-      const dirPart = dirPathParts[i];
-      const uriPart = uriPathParts[i];
-      const same =
-        foldDrive && i === 0
-          ? dirPart.toLowerCase() === uriPart.toLowerCase()
-          : dirPart === uriPart;
-      if (!same) {
+      if (!same(dirPathParts[i], uriPathParts[i])) {
         allDirPartsMatch = false;
       }
     }

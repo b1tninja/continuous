@@ -12,6 +12,7 @@ import {
   CommandRecord,
   findCommand,
   listCommands,
+  waitForEnd,
 } from "../../util/commandOutputStore";
 import { killProcessTree } from "../../util/killProcessTree";
 import { getOptionalStringArg } from "../parseArgs";
@@ -123,11 +124,30 @@ function capped(text: string): string {
     : `[cut to the last ${max.toLocaleString("en-US")} characters]\n${text.slice(-max)}`;
 }
 
+/**
+ * The longest a read_command_output call waits for a command to end. It is
+ * below the foreground command limit so a wait never outlasts the call it
+ * replaces, and short enough that stopping the turn is not held up for long
+ * (a tool call carries no abort signal).
+ */
+export const MAX_WAIT_SECONDS = 60;
+
 export const readCommandOutputImpl: ToolImpl = async (args) => {
   const id = getOptionalStringArg(args, "id");
   const record = recordFor(id);
   if (!record) return notFound(id);
   const grep = getOptionalStringArg(args, "grep");
+  // Wait for the end first, so the output read below is the whole of it
+  const waited = clampWaitSeconds(args?.waitSeconds);
+  let waitNote = "";
+  if (waited > 0 && record.endedAt === undefined) {
+    const startedWaiting = Date.now();
+    const ended = await waitForEnd(record, waited * 1000);
+    const took = Math.max(0, Math.round((Date.now() - startedWaiting) / 1000));
+    waitNote = ended
+      ? `[waited ${took} s: the command ended]\n`
+      : `[waited ${waited} s: the command is still running]\n`;
+  }
   const status = record.endedAt === undefined ? "Running" : "Finished";
 
   let pattern: RegExp | undefined;
@@ -182,10 +202,19 @@ export const readCommandOutputImpl: ToolImpl = async (args) => {
       ? "Only the start and the end of this output were kept."
       : "";
   return item(
-    capped(`${stateLine(record)} ${where}\n${lines.join("\n")}${note}`),
+    capped(
+      `${waitNote}${stateLine(record)} ${where}\n${lines.join("\n")}${note}`,
+    ),
     status,
   );
 };
+
+/** `waitSeconds` as a whole number from 0 to MAX_WAIT_SECONDS; anything else is 0. */
+export function clampWaitSeconds(value: unknown): number {
+  const n = typeof value === "string" ? Number(value) : value;
+  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(MAX_WAIT_SECONDS, Math.floor(n));
+}
 
 /** How long stop_command waits for the command to end before it answers. */
 export const STOP_WAIT_MS = 3_000;

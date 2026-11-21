@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { evaluateToolPolicyWithRules } from "./evaluate";
 import { parsePermissions } from "./names";
 import { DEFAULT_POLICY_LEVELS, type PolicyLevel } from "./policy";
+import { builtinForPreset } from "./safetyDegrees";
 
 const LEVELS: PolicyLevel[] = [
   "manual",
@@ -40,7 +41,11 @@ function run(
     basePolicy,
     parsedArgs: { q: "x" },
     permissions,
-    approval: { levels: { ...DEFAULT_POLICY_LEVELS, tools: level } },
+    approval: {
+      levels: { ...DEFAULT_POLICY_LEVELS, tools: level },
+      // The IDGAF preset leaves no check on
+      ...(level === "idgaf" ? { builtin: builtinForPreset("idgaf") } : {}),
+    },
   } as never);
 }
 
@@ -116,7 +121,10 @@ describe("an MCP tool whose definition changed since approval", () => {
         basePolicy: "allowedWithoutPermission",
         parsedArgs: {},
         permissions: undefined,
-        approval: { levels: { ...DEFAULT_POLICY_LEVELS, tools: level } },
+        approval: {
+          levels: { ...DEFAULT_POLICY_LEVELS, tools: level },
+          ...(level === "idgaf" ? { builtin: builtinForPreset("idgaf") } : {}),
+        },
       } as never);
       if (level === "idgaf") {
         expect(r.policy).toBe("allowedWithoutPermission");

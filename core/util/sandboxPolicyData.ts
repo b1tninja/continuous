@@ -59,7 +59,13 @@ export const SYSTEM_SECRET_PATHS: readonly string[] = [
 export const OWN_HOME_DIRS: readonly string[] = [".continuous", ".continue"];
 
 /** macOS only: where credentials live outside the dotfile convention. */
-export const MACOS_HOME_SECRETS: readonly string[] = ["Library/Keychains"];
+export const MACOS_HOME_SECRETS: readonly string[] = [
+  "Library/Keychains",
+  // Browser profiles: saved logins, cookies and session tokens
+  "Library/Cookies",
+  "Library/Application Support/Google/Chrome",
+  "Library/Application Support/Firefox",
+];
 
 /**
  * Linux and WSL2: the desktop credential stores in the home directory (GNOME
@@ -69,6 +75,13 @@ export const LINUX_HOME_SECRETS: readonly string[] = [
   ".local/share/keyrings",
   ".local/share/kwalletd",
   ".password-store",
+  // Browser profiles: saved logins, cookies and session tokens
+  ".mozilla/firefox",
+  ".config/google-chrome",
+  ".config/chromium",
+  ".config/BraveSoftware",
+  ".config/microsoft-edge",
+  ".config/1Password",
 ];
 
 /**

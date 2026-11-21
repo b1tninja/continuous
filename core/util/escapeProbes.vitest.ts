@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 import type { CommandExecutor } from "./commandExecutor";
+import { getCommandExecutor } from "./commandExecutor";
 import { createCanaries, lanAddress, runProbes } from "./escapeProbeRunner";
 import {
   COMMON_PROBES,
@@ -18,7 +19,33 @@ import {
   type Probe,
   type ProbeResult,
 } from "./escapeProbes";
-import { getCommandExecutor } from "./commandExecutor";
+import { wslArgs } from "./shell";
+
+/**
+ * Runs `script` in bash and returns the result. On Windows `bash` on the PATH
+ * is often the WSL launcher (System32\bash.exe), which re-parses its command
+ * line and expands `$x` and backticks that were quoted. There the script goes
+ * through wsl.exe the way the product runs it (wslArgs), so the tests see the
+ * same bash the product does.
+ */
+const wslRuns =
+  process.platform === "win32" &&
+  spawnSync("wsl.exe", ["--", "true"], { timeout: 20000 }).status === 0;
+
+function runBash(script: string) {
+  return wslRuns
+    ? spawnSync("wsl.exe", wslArgs(script), {
+        encoding: "utf8",
+        timeout: 60000,
+      })
+    : spawnSync("bash", ["-c", script], { encoding: "utf8", timeout: 60000 });
+}
+
+/** `bash -n` on the script's text, which is passed encoded so no layer can change it. */
+function bashSyntaxCheck(script: string) {
+  const encoded = Buffer.from(script, "utf8").toString("base64");
+  return runBash(`printf %s '${encoded}' | base64 -d | bash -n`);
+}
 
 const FULL_VARS = Object.fromEntries(
   PROBE_VARIABLES.map((v) => [v, `/value/of/${v}`]),
@@ -26,7 +53,7 @@ const FULL_VARS = Object.fromEntries(
 
 const bashAvailable = (() => {
   try {
-    const r = spawnSync("bash", ["-c", "echo ok"], { encoding: "utf8" });
+    const r = runBash("echo ok");
     return r.status === 0 && r.stdout.trim() === "ok";
   } catch {
     return false;
@@ -94,16 +121,17 @@ describe("the probe definitions", () => {
     }
   });
 
-  it.skipIf(!bashAvailable)("are valid bash", () => {
-    for (const p of COMMON_PROBES) {
-      const r = renderProbe(p, FULL_VARS) as { command: string };
-      const syntax = spawnSync("bash", ["-n"], {
-        input: r.command,
-        encoding: "utf8",
-      });
-      expect(syntax.status, `${p.id}: ${syntax.stderr}`).toBe(0);
-    }
-  });
+  it.skipIf(!bashAvailable)(
+    "are valid bash",
+    () => {
+      for (const p of COMMON_PROBES) {
+        const r = renderProbe(p, FULL_VARS) as { command: string };
+        const syntax = bashSyntaxCheck(r.command);
+        expect(syntax.status, `${p.id}: ${syntax.stderr}`).toBe(0);
+      }
+    },
+    120_000,
+  );
 });
 
 describe("shellQuote", () => {
@@ -116,9 +144,7 @@ describe("shellQuote", () => {
 
   it.skipIf(!bashAvailable)("round-trips through bash", () => {
     const value = `a 'b' "c" $d \`e\` \\f ;g`;
-    const r = spawnSync("bash", ["-c", `printf %s ${shellQuote(value)}`], {
-      encoding: "utf8",
-    });
+    const r = runBash(`printf %s ${shellQuote(value)}`);
     expect(r.stdout).toBe(value);
   });
 });
