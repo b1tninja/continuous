@@ -117,6 +117,17 @@ export function decodePackageIdentifier(identifier: string): PackageIdentifier {
       fileUri: expandLeadingTilde(identifier),
     };
   }
+  // A Windows drive path (C:\a or C:/a) or UNC path (\\server\share) is a
+  // path too. A slug has no ":" or "\", so none is taken from it.
+  else if (
+    /^[a-zA-Z]:[\\/]/.test(identifier) ||
+    identifier.startsWith("\\\\")
+  ) {
+    return {
+      uriType: "file",
+      fileUri: identifier,
+    };
+  }
   // Otherwise, it's a slug
   return {
     uriType: "slug",
