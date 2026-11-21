@@ -231,7 +231,8 @@ class MessageTypes {
             "loop/worktreePatch",
             "loop/worktreeApply",
             "loop/worktreeRemove",
-            "loop/dirtyFiles"
+            "loop/dirtyFiles",
+            "loop/runCheck"
         )
     }
 }

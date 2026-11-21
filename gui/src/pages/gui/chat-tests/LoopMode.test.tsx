@@ -13,6 +13,7 @@ import {
   singleFindAndReplaceTool,
   taskListTool,
 } from "core/tools/definitions";
+import type { LoopCheckRun } from "core/util/loopCheckRun";
 import { renderChatMessage } from "core/util/messageContent";
 import { serializePlanFile } from "core/util/planFile";
 import { selectActiveTools } from "../../../redux/selectors/selectActiveTools";
@@ -1672,14 +1673,24 @@ describe("Loop mode's checks and dependencies", () => {
       source: "allow-rule",
     });
 
-  /** The IDE's subprocess: each call takes the next result; all are recorded. */
-  function subprocess(h: Setup, ...results: (string | Error)[]) {
-    const ran: { command: string; cwd?: string; requests: number }[] = [];
-    h.ideMessenger.responseHandlers["subprocess"] = async (data: any) => {
+  /**
+   * Core's check run (loop/runCheck): each call takes the next result, a
+   * string for exit 0 and an Error for exit 1; all are recorded. The editor's
+   * `subprocess` must not be asked: it throws if it is.
+   */
+  function checkRuns(h: Setup, ...results: (string | Error | LoopCheckRun)[]) {
+    const ran: { command: string; callId: string; requests: number }[] = [];
+    h.ideMessenger.responseHandlers["subprocess"] = async () => {
+      throw new Error("a Loop check went to ide.subprocess");
+    };
+    h.ideMessenger.responseHandlers["loop/runCheck"] = async (data: any) => {
       ran.push({ ...data, requests: h.requests.length });
       const result = results.shift() ?? "ok";
-      if (result instanceof Error) throw result;
-      return [result, ""];
+      if (typeof result === "string") return { exitCode: 0, output: result };
+      if (result instanceof Error) {
+        return { exitCode: 1, output: result.message };
+      }
+      return result;
     };
     return ran;
   }
@@ -1717,7 +1728,7 @@ describe("Loop mode's checks and dependencies", () => {
   test("an item's check runs when it reports done; passing, the item is done and the next runs", async () => {
     const h = await setup([]);
     allowTerminal(h);
-    const ran = subprocess(h, "Tests: 3 passed");
+    const ran = checkRuns(h, "Tests: 3 passed");
     h.turns.push(
       presentPlan(
         ["Add a retry helper", "Document it"],
@@ -1732,7 +1743,7 @@ describe("Loop mode's checks and dependencies", () => {
     expect(h.loop().stopReason).toBe("done");
     // The check ran in the workspace after item 1, before item 2's turn
     expect(ran).toEqual([
-      { command: CHECK, cwd: "/Users/user/workspace1", requests: 2 },
+      { command: CHECK, callId: expect.any(String), requests: 2 },
     ]);
     expect(h.prompt(1)).toContain(
       `When you report it done, its check runs: \`${CHECK}\``,
@@ -1753,7 +1764,7 @@ describe("Loop mode's checks and dependencies", () => {
       { text: "Document it", check: "npm run docs:check" },
     ]);
     allowTerminal(h);
-    const ran = subprocess(h, "Tests: 3 passed", "docs ok");
+    const ran = checkRuns(h, "Tests: 3 passed", "docs ok");
     h.turns.push(finish("done", "helper added"), finish("done", "documented"));
     await h.start({ fallbackCheck: "npm test" });
 
@@ -1773,7 +1784,7 @@ describe("Loop mode's checks and dependencies", () => {
 
   test("without a fallback check an item with none is done on its own report", async () => {
     const h = await setup(["Add a retry helper"]);
-    const ran = subprocess(h);
+    const ran = checkRuns(h);
     h.turns.push(finish("done", "helper added"));
     await h.start();
     await waitFor(() => expect(h.loop().status).toBe("stopped"));
@@ -1784,7 +1795,7 @@ describe("Loop mode's checks and dependencies", () => {
   test("a failing check sends the item back with the failure in its prompt", async () => {
     const h = await setup([]);
     allowTerminal(h);
-    const ran = subprocess(h, new Error("1 test failed"), "all passed");
+    const ran = checkRuns(h, new Error("1 test failed"), "all passed");
     const again = heldFinish("retries fixed");
     h.turns.push(
       presentPlan(["Add a retry helper"], [{ todo: 1, check: CHECK }]),
@@ -1796,11 +1807,13 @@ describe("Loop mode's checks and dependencies", () => {
     // The second run: its prompt has the check's output
     await waitFor(() => expect(h.requests).toHaveLength(3));
     expect(h.prompt(2)).toContain("only this item: Add a retry helper");
-    expect(h.prompt(2)).toContain(`but its check \`${CHECK}\` failed.`);
+    expect(h.prompt(2)).toContain(
+      `but its check \`${CHECK}\` failed (exit 1).`,
+    );
     expect(h.prompt(2)).toContain("1 test failed");
     expect(h.loop().items[0].check).toMatchObject({
       status: "failed",
-      exitCode: null,
+      exitCode: 1,
       output: "1 test failed",
     });
     // The inbox shows the failure while the item runs again
@@ -1842,7 +1855,7 @@ describe("Loop mode's checks and dependencies", () => {
   test("a check that would ask is held as an approval question, and Allow runs it", async () => {
     // The harness's Manual mode: run_terminal_command asks
     const h = await setup([]);
-    const ran = subprocess(h, "ok");
+    const ran = checkRuns(h, "ok");
     h.turns.push(
       presentPlan(["Add a retry helper"], [{ todo: 1, check: CHECK }]),
       finish("done", "helper added"),
@@ -1879,7 +1892,7 @@ describe("Loop mode's checks and dependencies", () => {
       source: "deny-rule",
       reason: "Blocked by your rule run_terminal_command(npm test*)",
     });
-    const ran = subprocess(h, "ok");
+    const ran = checkRuns(h, "ok");
     const reply = (content: string): Turn =>
       async function* () {
         yield [{ role: "assistant", content }];
@@ -1906,6 +1919,98 @@ describe("Loop mode's checks and dependencies", () => {
     expect(el("loop-check-result-1")!.textContent).toContain(
       "check not run: Blocked by your rule",
     );
+  });
+
+  /** A plan of one checked item, with replies for the repair that follows a failure. */
+  async function oneCheckedItem(h: Setup) {
+    const reply = (content: string): Turn =>
+      async function* () {
+        yield [{ role: "assistant", content }];
+      };
+    h.turns.push(
+      presentPlan(["Add a retry helper"], [{ todo: 1, check: CHECK }]),
+      finish("done", "helper added"),
+      reply("Looking"),
+      reply("Still looking"),
+    );
+    await startInLoop(h);
+    await waitFor(() => expect(h.loop().status).toBe("stopped"));
+  }
+
+  test("a check goes to core under the id its decision was asked with, never to the editor's subprocess", async () => {
+    const h = await setup([]);
+    const decided: string[] = [];
+    h.ideMessenger.responseHandlers["tools/evaluatePolicy"] = async (
+      data: any,
+    ) => {
+      if (data.toolName !== BuiltInToolNames.RunTerminalCommand) {
+        return { policy: data.basePolicy };
+      }
+      decided.push(data.callId);
+      return {
+        policy: "allowedWithoutPermission",
+        source: "allow-rule",
+      } as any;
+    };
+    const ran = checkRuns(h, "ok");
+    h.turns.push(
+      presentPlan(["Add a retry helper"], [{ todo: 1, check: CHECK }]),
+      finish("done", "helper added"),
+    );
+    await startInLoop(h);
+    await waitFor(() => expect(h.loop().status).toBe("stopped"));
+
+    expect(ran).toHaveLength(1);
+    expect(ran[0].command).toBe(CHECK);
+    expect(decided).toEqual([ran[0].callId]);
+    expect(ran[0].callId).toMatch(/^loop-check-1-/);
+    expect(h.loop().items[0].check?.status).toBe("passed");
+  });
+
+  test("a check the executor cannot run is not run, and the item is not done", async () => {
+    const h = await setup([]);
+    allowTerminal(h);
+    const unavailable =
+      "Commands are set to run in a container, but docker is not installed.";
+    checkRuns(h, { exitCode: null, output: unavailable, notRun: true });
+    await oneCheckedItem(h);
+
+    expect(h.loop().stopReason).not.toBe("done");
+    expect(h.itemStatus("1")).toBe("failed");
+    expect(h.loop().items[0].check).toMatchObject({
+      status: "refused",
+      output: unavailable,
+    });
+    expect(el("loop-check-result-1")!.textContent).toContain(
+      `check not run: ${unavailable}`,
+    );
+  });
+
+  test("a check core stopped at its time limit is failed and says so", async () => {
+    const h = await setup([]);
+    allowTerminal(h);
+    checkRuns(
+      h,
+      { exitCode: null, output: "still running", timedOut: true },
+      "ok",
+    );
+    const again = heldFinish("fixed");
+    h.turns.push(
+      presentPlan(["Add a retry helper"], [{ todo: 1, check: CHECK }]),
+      finish("done", "helper added"),
+      again.turn,
+    );
+    await startInLoop(h);
+
+    await waitFor(() => expect(h.requests).toHaveLength(3));
+    expect(h.loop().items[0].check).toMatchObject({
+      status: "failed",
+      exitCode: null,
+      output: "still running\nThe check timed out and was stopped.",
+    });
+    await act(async () => again.release());
+    await waitFor(() => expect(h.loop().status).toBe("stopped"));
+    expect(h.itemStatus("1")).toBe("done");
   });
 
   test("a reminder reaches the next item once, marked when its file changed", async () => {
@@ -2062,10 +2167,10 @@ describe("Loop mode's parallel waves", () => {
       data.toolName === BuiltInToolNames.RunTerminalCommand
         ? ({ policy: "allowedWithoutPermission", source: "allow-rule" } as any)
         : { policy: data.basePolicy };
-    const checks: { command: string; cwd?: string }[] = [];
-    h.ideMessenger.responseHandlers["subprocess"] = async (data: any) => {
-      checks.push(data);
-      return ["docs ok", ""];
+    const checks: { command: string }[] = [];
+    h.ideMessenger.responseHandlers["loop/runCheck"] = async (data: any) => {
+      checks.push({ command: data.command });
+      return { exitCode: 0, output: "docs ok" };
     };
     const first = heldFinish("retry added");
     const second = heldFinish("documented");
@@ -2132,9 +2237,7 @@ describe("Loop mode's parallel waves", () => {
     // the checkout while item 1 still runs; no item starts meanwhile
     await act(async () => second.release());
     await waitFor(() => expect(h.itemStatus("2")).toBe("done"));
-    expect(checks).toEqual([
-      { command: "npm run docs:check", cwd: "/Users/user/workspace1" },
-    ]);
+    expect(checks).toEqual([{ command: "npm run docs:check" }]);
     expect(h.loop().items[1].check).toMatchObject({
       status: "passed",
       output: "docs ok",

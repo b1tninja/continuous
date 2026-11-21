@@ -183,6 +183,7 @@ export const WEBVIEW_TO_CORE_PASS_THROUGH: (keyof ToCoreFromWebviewProtocol)[] =
     "loop/worktreeApply",
     "loop/worktreeRemove",
     "loop/dirtyFiles",
+    "loop/runCheck",
   ];
 
 // Message types to pass through from core to webview
