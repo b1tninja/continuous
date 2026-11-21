@@ -7,6 +7,7 @@ import {
   calculateRequestCost,
   type CostBreakdown,
 } from "core/llm/utils/calculateRequestCost.js";
+import { coerceStringArgsToSchema } from "core/tools/parseArgs.js";
 import {
   modelNote,
   type Proposal,
@@ -1266,8 +1267,16 @@ export async function preprocessStreamedToolCalls(
 
       validateToolCallArgsPresent(toolCall, tool);
 
+      // Some models send an array, boolean or number as a string
+      const { args, repairs } = coerceStringArgsToSchema(
+        toolCall.arguments,
+        tool.parameters,
+      );
+
       const preprocessedCall: PreprocessedToolCall = {
         ...toolCall,
+        arguments: args,
+        ...(repairs.length > 0 ? { argRepairs: repairs } : {}),
         tool,
       };
 
@@ -1276,7 +1285,7 @@ export async function preprocessStreamedToolCalls(
           name: toolCall.name,
           arguments: toolCall.arguments,
         });
-        const preprocessed = await tool.preprocess(toolCall.arguments);
+        const preprocessed = await tool.preprocess(args);
         preprocessedCall.preprocessResult = preprocessed;
       }
 

@@ -1569,6 +1569,17 @@ interface ToolCallDecision {
   category?: string;
 }
 
+/**
+ * A string argument that was read as the value the tool's schema declares
+ * (`"true"` for a boolean, a JSON string for an array), with what the model
+ * wrote.
+ */
+export interface ToolArgRepair {
+  argument: string;
+  from: string;
+  to: unknown;
+}
+
 // Will exist only on "assistant" messages with tool calls
 interface ToolCallState {
   toolCallId: string;
@@ -1580,6 +1591,8 @@ interface ToolCallState {
    */
   index?: number;
   parsedArgs: any;
+  /** What was changed in the arguments to fit the tool's schema, when anything was */
+  argRepairs?: ToolArgRepair[];
   processedArgs?: Record<string, any>; // Added in preprocesing step
   /** Why this call is waiting for approval, when a rule or protected path says so. */
   policyNote?: string;

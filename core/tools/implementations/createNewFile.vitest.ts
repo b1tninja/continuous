@@ -39,6 +39,17 @@ describe("create_new_file", () => {
     expect(files[URI]).toBe("one\n");
   });
 
+  test("writes contents sent as a JSON value indented", async () => {
+    const files: Record<string, string> = {};
+    await createNewFileImpl(
+      { filepath: "report.md", contents: { name: "x", list: [1, 2] } },
+      extrasWith(files),
+    );
+    expect(files[URI]).toBe(
+      '{\n  "name": "x",\n  "list": [\n    1,\n    2\n  ]\n}',
+    );
+  });
+
   test("shows the new file without taking the keyboard, then saves it", async () => {
     const files: Record<string, string> = {};
     const opened: Array<[string, unknown]> = [];

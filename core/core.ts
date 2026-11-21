@@ -90,6 +90,7 @@ import {
 } from "./tools/permissions/additionalFolders";
 import { terminalEndOf } from "./tools/permissions/audit/terminalEnd";
 import { callTool } from "./tools/callTool";
+import { coerceStringArgsToSchema } from "./tools/parseArgs";
 import { toolForPolicy } from "./tools/definitions/sessionMessaging";
 import { recordAutoAnswer } from "./tools/permissions/audit/autoAnswer";
 import { getAuditTrail } from "./tools/permissions/audit/global";
@@ -2840,8 +2841,16 @@ export class Core {
           throw new Error(`Tool ${toolName} not found`);
         }
 
+        // Some models send an array, boolean or number as a string. Read here,
+        // and handed back so the checks and the tool see the same value.
+        const read = coerceStringArgsToSchema(args, tool.function.parameters);
+        const repaired =
+          read.repairs.length > 0
+            ? { args: read.args, argRepairs: read.repairs }
+            : {};
+
         try {
-          const preprocessedArgs = await tool.preprocessArgs?.(args, {
+          const preprocessedArgs = await tool.preprocessArgs?.(read.args, {
             ide: workspaceDirs?.length
               ? ideInWorkspace(this.ide, workspaceDirs)
               : this.ide,
@@ -2849,6 +2858,7 @@ export class Core {
           });
           return {
             preprocessedArgs,
+            ...repaired,
           };
         } catch (e) {
           let errorReason =
@@ -2861,6 +2871,7 @@ export class Core {
             preprocessedArgs: undefined,
             errorReason,
             errorMessage,
+            ...repaired,
           };
         }
       },

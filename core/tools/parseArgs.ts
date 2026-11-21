@@ -1,3 +1,9 @@
+import {
+  coerceToSchema,
+  repairNote,
+  type RepairNote,
+} from "@continuedev/openai-adapters";
+
 import { ToolCallDelta } from "..";
 
 export function safeParseToolCallArgs(
@@ -60,6 +66,42 @@ export function coerceArgsToSchema(
   }
 
   return coerced;
+}
+
+/**
+ * A string where the schema declares an array, boolean, number or object is
+ * read as the value it spells (`"true"`, `"10"`, `"[...]"`), by the rule that
+ * calls recovered from text already follow. A parameter that may be a string
+ * is never changed, and a string that spells no such value is left as it is,
+ * for the tool to refuse. Each change is listed in `repairs`.
+ */
+export function coerceStringArgsToSchema(
+  args: Record<string, any>,
+  schema?: Record<string, any>,
+): { args: Record<string, any>; repairs: RepairNote[] } {
+  const repairs: RepairNote[] = [];
+  if (
+    !args ||
+    typeof args !== "object" ||
+    Array.isArray(args) ||
+    !schema?.properties
+  ) {
+    return { args, repairs };
+  }
+
+  const coerced = { ...args };
+  for (const [key, value] of Object.entries(args)) {
+    if (typeof value !== "string") {
+      continue;
+    }
+    const fit = coerceToSchema(value, schema.properties[key]?.type);
+    if (fit?.repaired) {
+      coerced[key] = fit.value;
+      repairs.push(repairNote(key, value, fit.value));
+    }
+  }
+
+  return repairs.length > 0 ? { args: coerced, repairs } : { args, repairs };
 }
 
 export function getStringArg(

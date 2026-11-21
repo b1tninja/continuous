@@ -1,3 +1,4 @@
+import type { RepairNote } from "@continuedev/openai-adapters";
 import type { ToolPolicy } from "@continuedev/terminal-security";
 
 // JSON Schema compatible parameter definition
@@ -114,5 +115,7 @@ export interface ToolCall {
 
 export interface PreprocessedToolCall extends ToolCall {
   tool: Tool;
+  /** Strings read as the value the tool's schema declares, when any were */
+  argRepairs?: RepairNote[];
   preprocessResult?: PreprocessToolCallResult;
 }

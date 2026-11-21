@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ToolCallDelta } from "..";
 import {
   coerceArgsToSchema,
+  coerceStringArgsToSchema,
   getBooleanArg,
   getNumberArg,
   getOptionalStringArg,
@@ -496,5 +497,68 @@ describe("getNumberArg", () => {
     expect(() => getNumberArg(undefined, "count")).toThrowError(
       "Argument `count` is required (type number)",
     );
+  });
+});
+
+describe("coerceStringArgsToSchema", () => {
+  const schema = {
+    type: "object",
+    properties: {
+      edits: { type: "array" },
+      force: { type: "boolean" },
+      limit: { type: "integer" },
+      ratio: { type: "number" },
+      name: { type: "string" },
+      either: { type: ["string", "boolean"] },
+      untyped: {},
+    },
+  };
+
+  it("reads a JSON string as the array the schema declares", () => {
+    const edits = [{ old_string: "a", new_string: "b" }];
+    const { args, repairs } = coerceStringArgsToSchema(
+      { edits: JSON.stringify(edits) },
+      schema,
+    );
+    expect(args.edits).toEqual(edits);
+    expect(repairs).toEqual([
+      {
+        kind: "string-to-literal",
+        argument: "edits",
+        from: JSON.stringify(edits),
+        to: edits,
+      },
+    ]);
+  });
+
+  it("reads booleans and numbers written as strings", () => {
+    const { args, repairs } = coerceStringArgsToSchema(
+      { force: "true", limit: "10", ratio: "0.5" },
+      schema,
+    );
+    expect(args).toEqual({ force: true, limit: 10, ratio: 0.5 });
+    expect(repairs.map((r) => r.argument)).toEqual(["force", "limit", "ratio"]);
+  });
+
+  it("never changes a parameter that may be a string", () => {
+    const sent = { name: "true", either: "false", untyped: "[1]", extra: "10" };
+    const { args, repairs } = coerceStringArgsToSchema(sent, schema);
+    expect(args).toBe(sent);
+    expect(repairs).toEqual([]);
+  });
+
+  it("leaves a string that spells no such value for the tool to refuse", () => {
+    const sent = { edits: "not json", force: "yes", limit: "10abc" };
+    const { args, repairs } = coerceStringArgsToSchema(sent, schema);
+    expect(args).toBe(sent);
+    expect(repairs).toEqual([]);
+  });
+
+  it("leaves values of the right type and a missing schema alone", () => {
+    const sent = { edits: [], force: false, limit: 3 };
+    expect(coerceStringArgsToSchema(sent, schema).args).toBe(sent);
+    expect(coerceStringArgsToSchema({ force: "true" }).args).toEqual({
+      force: "true",
+    });
   });
 });

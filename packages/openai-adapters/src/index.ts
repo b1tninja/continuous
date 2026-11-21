@@ -307,6 +307,7 @@ export {
   type RecoveredCall,
   type RepairNote,
 } from "./dialects/qwenXml.js";
+export { coerceToSchema, repairNote } from "./dialects/schemaCheck.js";
 export {
   LlamaJsonRecovery,
   recoverLlamaJsonCalls,
