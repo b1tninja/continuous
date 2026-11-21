@@ -43,6 +43,7 @@ import {
 import { splitPromptProgress } from "../../util/promptProgress";
 import { selectCacheSetting } from "../selectors/selectCacheSetting";
 import { selectSelectedChatModel } from "../slices/configSlice";
+import { nextWithDeadline, stallLimitMs } from "../../util/streamDeadline";
 import {
   abortStream,
   addPromptCompletionPair,
@@ -485,7 +486,22 @@ export const streamNormalInput = createAsyncThunk<
           }
         | undefined;
 
-      let next = await gen.next();
+      // The model may not stay silent without limit: a stream that is open
+      // and sends nothing ends the turn after a while (util/streamDeadline.ts)
+      // instead of showing "Generating…" until the connection times out hours
+      // later. The first read has the longer limit; once a chunk has arrived,
+      // silence is measured between chunks.
+      const localServer = modelUsesLocalPrefixCache(selectedChatModel);
+      let sawChunk = false;
+      const readNext = () =>
+        nextWithDeadline(
+          () => gen.next(),
+          stallLimitMs({ sawChunk, local: localServer }),
+          sawChunk,
+          () => streamAborter.abort(),
+        );
+      let next = await readNext();
+      sawChunk = true;
       while (!next.done) {
         // A request that was replaced (Stop, a retry, a new turn) stops here
         // even when a newer one has set isStreaming again: its chunks would
@@ -586,7 +602,7 @@ export const streamNormalInput = createAsyncThunk<
             );
           }
         }
-        next = await gen.next();
+        next = await readNext();
       }
       if (getState().session.promptProgress) {
         dispatch(setPromptProgress(undefined));
