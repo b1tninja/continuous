@@ -1,6 +1,5 @@
 import * as path from "node:path";
 import { IDE } from "..";
-
 import {
   findUriInDirs,
   joinEncodedUriPathSegmentToUri,

@@ -198,3 +198,18 @@ The file tools read and write with the editor's own authority, so text from a re
 It covers read, list, write and search tools (a search `path`, or the literal start of a glob such as `../../**`), in the editor and in the CLI, and the path-named arguments of MCP tools (`path`, `file_path`, `directory`, `uri`, `destination`...). An MCP tool whose path hides under another argument name is not read.
 
 The check is the same text judged by Windows rules on Windows and by POSIX rules elsewhere. Case is ignored on Windows only; on Linux a path that differs from the workspace only by case asks.
+
+### Folders you add to the workspace
+
+If you work across sibling repositories, every read in the next one counts as outside the workspace. List the folders in your own `config.yaml`:
+
+```yaml
+toolPermissions:
+  auto:
+    environment:
+      additionalFolders:
+        - ~/src/shared-lib
+        - D:/work/docs
+```
+
+A listed folder counts as part of the workspace for this check only, in the editor and in the CLI. Secret files, files that change what runs later and the locked policy files still ask inside it, and a link that leaves it still asks. An entry is ignored if it is not an absolute path (or `~/...`), does not exist, is not a folder, is a drive or filesystem root, is your home folder or a folder that contains it, holds the product's own files, or is past the twentieth. A workspace file cannot set it: it is taken from your own `config.yaml` only, and a repository's copy is dropped with a notice.

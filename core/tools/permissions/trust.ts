@@ -22,6 +22,9 @@ export const UNTRUSTED_LOOSENING_KEYS: readonly string[] = [
   "toolPermissions.auto.environment.trustedDomains",
   "toolPermissions.auto.environment.envNames.allow",
   "toolPermissions.auto.environment.largeChangeLines",
+  // Folders added to the workspace for the outside-the-workspace check: a
+  // repository that could add one would widen its own reach (additionalFolders.ts)
+  "toolPermissions.auto.environment.additionalFolders",
   "toolPermissions.auto.environment.fetchMaxBytes",
   "toolPermissions.auto.environment.fetchTimeoutSeconds",
 ];

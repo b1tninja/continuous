@@ -57,7 +57,15 @@ async function isUriWithinWorkspace(ide: IDE, uri: string): Promise<boolean> {
   // Partial IDE stubs used by some tests do not implement this. A path that
   // already resolved against a workspace directory stays inside.
   if (typeof ide.getWorkspaceDirs !== "function") return true;
-  const workspaceDirs = await ide.getWorkspaceDirs();
+  // The folders the person added count as the workspace for this question.
+  // The chat page bundles this file and has no filesystem, so only Node reads them.
+  const opened = await ide.getWorkspaceDirs();
+  const workspaceDirs =
+    typeof process === "undefined"
+      ? opened
+      : await import("../tools/permissions/additionalFolders").then((m) =>
+          m.withAdditionalFolders(opened, m.readUserAdditionalFolders()),
+        );
   const realUri = uri.startsWith("file:") ? followLocalSymlink(uri) : uri;
   const realDirs = workspaceDirs.map((dir) =>
     dir.startsWith("file:") ? followLocalSymlink(dir) : dir,

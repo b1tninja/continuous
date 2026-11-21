@@ -83,6 +83,10 @@ import { EditAggregator } from "./nextEdit/context/aggregateEdits";
 import { createNewPromptFileV2 } from "./promptFiles/createNewPromptFile";
 import { BuiltInToolNames } from "./tools/builtIn";
 import { effectiveCwdForPolicy } from "./tools/implementations/terminalCwd";
+import {
+  readUserAdditionalFolders,
+  withAdditionalFolders,
+} from "./tools/permissions/additionalFolders";
 import { terminalEndOf } from "./tools/permissions/audit/terminalEnd";
 import { callTool } from "./tools/callTool";
 import { toolForPolicy } from "./tools/definitions/sessionMessaging";
@@ -2748,7 +2752,9 @@ export class Core {
           ...(dirs[0]
             ? { cwd: terminalCwdForPolicy(toolName, parsedArgs, dirs) }
             : {}),
-          ...deputyWorkspace(dirs),
+          ...deputyWorkspace(
+            withAdditionalFolders(dirs, readUserAdditionalFolders()),
+          ),
           shell: shell.kind,
           // The tainted-session rule's fact (nothing when the rule is off)
           // and B92's secret read (whatever the rule says)
