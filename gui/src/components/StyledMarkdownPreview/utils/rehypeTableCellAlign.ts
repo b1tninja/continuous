@@ -10,7 +10,8 @@ const TEXT_ALIGN = new Set(["left", "right", "center", "justify"]);
  * hast-to-hyperscript to parse it into an object. hast-to-hyperscript only
  * does that when it recognises React by the `_owner`/`_store` fields of an
  * element, which React 19 production builds no longer have, so React gets a
- * string `style` and throws (minified error #62) for every markdown table.
+ * string `style` and throws (minified error #62). KaTeX output is handled by
+ * `rehypeElementStyleObjects`.
  */
 export function rehypeTableCellAlign() {
   return (tree: any) => {
