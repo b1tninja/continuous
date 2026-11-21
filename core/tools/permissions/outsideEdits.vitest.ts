@@ -4,6 +4,11 @@ import { createNewFileTool, editFileTool } from "../definitions";
 import { evaluateToolPolicyWithRules, type EvaluateInput } from "./evaluate";
 import { editsAllowOutsideWorkspace, wroteOutsideNote } from "./outsideEdits";
 import type { PolicyLevel } from "./policy";
+import { builtinForDegree, builtinForPreset } from "./safetyDegrees";
+
+// The IDGAF preset leaves no safety check on. These tests use it for "IDGAF";
+// IDGAF levels alone (checks left on) have their own cases below.
+const NO_CHECKS = builtinForPreset("idgaf");
 
 const ASK = "allowedWithPermission";
 const ALLOW = "allowedWithoutPermission";
@@ -61,9 +66,9 @@ function write(
 const TOOLS = [createNewFileTool, editFileTool] as const;
 
 describe("File edits outside the workspace, by level", () => {
-  it("IDGAF carries it out, with no prompt, and says where it lands", () => {
+  it("the IDGAF preset carries it out, with no prompt, and says where it lands", () => {
     for (const tool of TOOLS) {
-      const r = write(tool, OUTSIDE, { edits: "idgaf" });
+      const r = write(tool, OUTSIDE, { edits: "idgaf", builtin: NO_CHECKS });
       expect(r.policy, tool.function.name).toBe(ALLOW);
       expect(r.source).toBe("idgaf");
       expect(r.reason).toContain("File edits is set to IDGAF");
@@ -73,47 +78,74 @@ describe("File edits outside the workspace, by level", () => {
     }
   });
 
+  it("with the outside-paths check on, IDGAF levels still ask: the check decides, not the level", () => {
+    for (const tool of TOOLS) {
+      const r = write(tool, OUTSIDE, { edits: "idgaf" });
+      expect(r.policy, tool.function.name).toBe(ASK);
+      expect(r.protection).toBe("file-deputy");
+    }
+  });
+
+  it("turning only that check off lets it through, at any level", () => {
+    for (const edits of ["cautious", "permissive", "idgaf"] as const) {
+      expect(
+        write(createNewFileTool, OUTSIDE, {
+          edits,
+          builtin: { "ask-outside-paths": false },
+        }).policy,
+        edits,
+      ).not.toBe(OFF);
+    }
+    expect(
+      write(createNewFileTool, OUTSIDE, {
+        edits: "permissive",
+        builtin: { "ask-outside-paths": false },
+      }).policy,
+    ).toBe(ALLOW);
+  });
+
   it("does not say it for a target inside the workspace", () => {
     const r = write(createNewFileTool, `${CWD}/src/new.ts`, {
       edits: "idgaf",
+      builtin: NO_CHECKS,
       within: true,
     });
     expect(r.policy).toBe(ALLOW);
     expect(r.reason).not.toContain("outside the workspace");
   });
 
-  it("IDGAF ignores Never rules, Ask rules, protected paths and the switch for the check", () => {
+  it("the IDGAF preset ignores Never rules, Ask rules, protected paths and every check", () => {
+    const idgaf = { edits: "idgaf", builtin: NO_CHECKS } as const;
     expect(
       write(createNewFileTool, OUTSIDE, {
-        edits: "idgaf",
+        ...idgaf,
         permissions: { deny: ["writeFile(**)"] },
       }).policy,
     ).toBe(ALLOW);
     expect(
       write(createNewFileTool, OUTSIDE, {
-        edits: "idgaf",
+        ...idgaf,
         permissions: { ask: ["writeFile(**)"] },
       }).policy,
     ).toBe(ALLOW);
-    expect(
-      write(createNewFileTool, "/srv/other/.env", { edits: "idgaf" }).policy,
-    ).toBe(ALLOW);
-    expect(
-      write(createNewFileTool, OUTSIDE, {
-        edits: "idgaf",
-        builtin: { "ask-outside-paths": false },
-      }).policy,
-    ).toBe(ALLOW);
+    expect(write(createNewFileTool, "/srv/other/.env", idgaf).policy).toBe(
+      ALLOW,
+    );
+    expect(write(createNewFileTool, OUTSIDE, idgaf).policy).toBe(ALLOW);
   });
 
   it("the tainted-session rule is off by default, so it does not hold a IDGAF write", () => {
     // No taint fact reaches the evaluator unless the person turned the rule on.
-    expect(write(editFileTool, OUTSIDE, { edits: "idgaf" }).policy).toBe(ALLOW);
+    expect(
+      write(editFileTool, OUTSIDE, { edits: "idgaf", builtin: NO_CHECKS })
+        .policy,
+    ).toBe(ALLOW);
   });
 
   it("IDGAF runs what the floor or the policy-file lock would refuse, and records it", () => {
     const floored = write(createNewFileTool, OUTSIDE, {
       edits: "idgaf",
+      builtin: NO_CHECKS,
       floor: ["writeFile(/srv/other/**)"],
     });
     expect(floored.policy).toBe(ALLOW);
@@ -123,6 +155,7 @@ describe("File edits outside the workspace, by level", () => {
     });
     const own = write(createNewFileTool, "/home/me/.continue/config.yaml", {
       edits: "idgaf",
+      builtin: NO_CHECKS,
     });
     expect(own.policy).toBe(ALLOW);
     expect(own.idgafOverride).toMatchObject({ policy: OFF, source: "floor" });
@@ -165,27 +198,35 @@ describe("File edits outside the workspace, by level", () => {
 });
 
 describe("outsideEdits helpers", () => {
-  it("only the File edits level decides", () => {
-    const levels = (edits: PolicyLevel, tools: PolicyLevel = "cautious") =>
-      ({
-        levels: {
-          context: "cautious",
-          tools,
-          edits,
-          plan: "cautious",
-          questions: "cautious",
-        },
-      }) as never;
-    expect(editsAllowOutsideWorkspace(levels("idgaf"))).toBe(true);
-    for (const l of [
-      "manual",
-      "cautious",
-      "automatic",
-      "permissive",
-    ] as const) {
-      expect(editsAllowOutsideWorkspace(levels(l, "idgaf"))).toBe(false);
-    }
+  it("only the outside-paths check decides, whatever the levels", () => {
+    const checks = (builtin?: Record<string, boolean>) =>
+      ({ ...(builtin ? { builtin } : {}) }) as never;
+    // The IDGAF preset leaves no check on
+    expect(
+      editsAllowOutsideWorkspace({ builtin: builtinForPreset("idgaf") }),
+    ).toBe(true);
+    // Turning only that check off is enough
+    expect(
+      editsAllowOutsideWorkspace(checks({ "ask-outside-paths": false })),
+    ).toBe(true);
+    // On, or not mentioned, it is not allowed
+    expect(editsAllowOutsideWorkspace(checks())).toBe(false);
+    expect(
+      editsAllowOutsideWorkspace(checks({ "ask-outside-paths": true })),
+    ).toBe(false);
+    // Another check off does not free a path
+    expect(
+      editsAllowOutsideWorkspace(checks({ "ask-large-change": false })),
+    ).toBe(false);
+    // A host without settings allows nothing extra
     expect(editsAllowOutsideWorkspace(undefined)).toBe(false);
+    // 'A few on' leaves the outside-paths check off; 'All on' keeps it
+    expect(
+      editsAllowOutsideWorkspace({ builtin: builtinForDegree("few") }),
+    ).toBe(true);
+    expect(
+      editsAllowOutsideWorkspace({ builtin: builtinForDegree("all") }),
+    ).toBe(false);
   });
 
   it("names the path in the transcript note", () => {

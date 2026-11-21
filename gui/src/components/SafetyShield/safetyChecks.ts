@@ -1,18 +1,5 @@
 import type { BuiltinRuleId } from "core/tools/permissions/policy";
 
-/**
- * What the shield shows. Absent follows the mode: off when any area is IDGAF,
- * on otherwise. An explicit value is the person's choice everywhere.
- */
-export function safetyShieldOn(
-  safetyChecks: boolean | undefined,
-  anyAreaIdgaf: boolean,
-): boolean {
-  if (safetyChecks === true) return true;
-  if (safetyChecks === false) return false;
-  return !anyAreaIdgaf;
-}
-
 /** The built-in switch a blocked call's source turns off, when there is one. */
 export function builtinForBlockedCall(item: {
   source: string;

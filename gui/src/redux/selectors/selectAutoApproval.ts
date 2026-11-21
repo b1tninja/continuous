@@ -85,12 +85,11 @@ export function selectPolicySettings(state: RootState): PolicySettings {
 
 /** What is sent to core with every policy check. */
 export function selectApprovalSettings(state: RootState): ApprovalSettings {
-  const { builtin, floor, safetyChecks } = state.ui.policyExtras ?? {};
+  const { builtin, floor } = state.ui.policyExtras ?? {};
   return {
     levels: selectEffectiveLevels(state),
     ...(builtin && Object.keys(builtin).length ? { builtin } : {}),
     ...(floor?.length ? { floor } : {}),
-    ...(typeof safetyChecks === "boolean" ? { safetyChecks } : {}),
   };
 }
 

@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { ApprovalSettings } from "./approval";
 import { evaluateToolPolicyWithRules } from "./evaluate";
 import { DEFAULT_POLICY_LEVELS, PolicyLevels } from "./policy";
+import { builtinForPreset } from "./safetyDegrees";
 
 const ASK = "allowedWithPermission" as const;
 const ALLOW = "allowedWithoutPermission" as const;
@@ -33,6 +34,12 @@ const mcpTool = (group: string, readonly = false) => ({
   readonly,
 });
 const plain = { group: "Built-In" };
+
+/** The IDGAF preset sets the levels and leaves no safety check on. */
+const withNoChecks = (a: ApprovalSettings): ApprovalSettings => ({
+  ...a,
+  builtin: builtinForPreset("idgaf"),
+});
 
 /** The defaults, with the named areas changed. */
 const levels = (over: Partial<PolicyLevels>): ApprovalSettings => ({
@@ -207,22 +214,24 @@ describe("obfuscated commands the safety floor cannot see", () => {
     plan: "permissive",
     questions: "permissive",
   });
-  const idgaf = levels({
-    tools: "idgaf",
-    context: "idgaf",
-    edits: "idgaf",
-    plan: "idgaf",
-    questions: "idgaf",
-  });
+  const idgaf = withNoChecks(
+    levels({
+      tools: "idgaf",
+      context: "idgaf",
+      edits: "idgaf",
+      plan: "idgaf",
+      questions: "idgaf",
+    }),
+  );
 
   it.each(["{rm,-rf,~}", "rm${IFS}-rf${IFS}~", "G=rm; $G -rf ~"])(
-    "does not run %s under Hands-off; IDGAF runs it and records the refusal",
+    "does not run %s under Hands-off; the IDGAF preset runs it",
     (command) => {
       expect(cmd(command, handsOff).policy).toBe(OFF);
       const r = cmd(command, idgaf);
       expect(r.policy).toBe(ALLOW);
       expect(r.source).toBe("idgaf");
-      expect(r.idgafOverride?.policy).toBe(OFF);
+      // No check is on, so none ran and none left a record
     },
   );
 
@@ -232,16 +241,17 @@ describe("obfuscated commands the safety floor cannot see", () => {
     expect(cmd("rm -rf /", idgaf).policy).toBe(ALLOW);
   });
 
-  it("asks about a substitution under Hands-off; IDGAF runs it and records the ask", () => {
+  it("asks about a substitution under Hands-off; the IDGAF preset runs it", () => {
     expect(cmd("echo $(date)", handsOff).policy).toBe(ASK);
     const r = cmd("echo $(date)", idgaf);
     expect(r.policy).toBe(ALLOW);
-    expect(r.idgafOverride?.policy).toBe(ASK);
   });
 });
 
 describe("IDGAF", () => {
-  const idgaf = levels({ tools: "idgaf", context: "idgaf", edits: "idgaf" });
+  const idgaf = withNoChecks(
+    levels({ tools: "idgaf", context: "idgaf", edits: "idgaf" }),
+  );
 
   it("allows everything and ignores every rule", () => {
     expect(cmd("git push", idgaf).source).toBe("idgaf");

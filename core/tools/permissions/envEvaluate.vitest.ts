@@ -3,10 +3,11 @@ import { describe, expect, it } from "vitest";
 import type { ShellKind } from "../../util/shell";
 import { commandCandidates } from "./candidates";
 import { hiddenCommandName } from "./commandName";
+import { maskAssignmentValues } from "./envMask";
 import { evaluateToolPolicyWithRules as evaluateAndRun } from "./evaluate";
 import { wouldDecide } from "./idgafView.testutil";
-import { maskAssignmentValues } from "./envMask";
 import { DEFAULT_POLICY_LEVELS } from "./policy";
+import { builtinForPreset } from "./safetyDegrees";
 
 // At IDGAF every call runs; these tests read what the guard would have
 // decided (wouldDecide), which IDGAF records instead of acting on.
@@ -284,10 +285,27 @@ describe("an assignment never lets a command past a rule", () => {
 });
 
 describe("the run-time write target after an assignment (ROADMAP B31)", () => {
-  it("TMP=. node x.js > $HOME/x asks at IDGAF", () => {
+  it("TMP=. node x.js > $HOME/x runs under the IDGAF preset: no check stands in front of it", () => {
+    // The raw evaluator: this file's wrapper reads what the guard would have said
+    const r = evaluateAndRun({
+      tool: terminalTool as any,
+      toolName: "run_terminal_command",
+      basePolicy: RUN,
+      parsedArgs: { command: "TMP=. node x.js > $HOME/x" },
+      permissions: undefined,
+      shell: "bash",
+      approval: {
+        levels: allAreas("idgaf"),
+        builtin: builtinForPreset("idgaf"),
+      },
+    });
+    expect(r.policy).toBe(RUN);
+    expect(r.source).toBe("idgaf");
+  });
+
+  it("TMP=. node x.js > $HOME/x asks at IDGAF levels while the env check is on", () => {
     const r = run("TMP=. node x.js > $HOME/x", "bash", "idgaf");
     expect(r.policy).toBe(ASK);
-    expect(r.source).toBe("floor");
   });
 
   it("$env:TEMP set to another folder asks at IDGAF", () => {

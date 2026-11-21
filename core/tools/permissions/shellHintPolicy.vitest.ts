@@ -4,6 +4,7 @@ import type { ShellKind } from "../../util/shell";
 import type { ApprovalSettings } from "./approval";
 import { evaluateToolPolicyWithRules } from "./evaluate";
 import { DEFAULT_POLICY_LEVELS } from "./policy";
+import { builtinForPreset } from "./safetyDegrees";
 
 const ASK = "allowedWithPermission" as const;
 const ALLOW = "allowedWithoutPermission" as const;
@@ -16,6 +17,8 @@ const IDGAF: ApprovalSettings = {
     tools: "idgaf",
     edits: "idgaf",
   },
+  // The IDGAF preset leaves no safety check on
+  builtin: builtinForPreset("idgaf"),
 };
 
 const run = (
@@ -70,7 +73,7 @@ describe("detectShellHints on the terminal command path", () => {
     }
   });
 
-  it("runs rm -rf at IDGAF when the shield is off", () => {
+  it("runs rm -rf under the IDGAF preset, which has no check on", () => {
     const r = run("rm -rf src", "powershell", ALLOW, IDGAF);
     expect(r.policy).toBe(ALLOW);
     expect(r.source).not.toBe("shell-hint");

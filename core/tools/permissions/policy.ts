@@ -203,11 +203,6 @@ export interface PolicySettings {
   };
   /** Built-in rules by id. Absent means on. */
   builtin?: Partial<Record<BuiltinRuleId, boolean>>;
-  /**
-   * The safety-check shield. Absent follows the mode: on below IDGAF, off at
-   * IDGAF. `true` or `false` is the person's choice at every level.
-   */
-  safetyChecks?: boolean;
 }
 
 export const DEFAULT_MAX_NEW_PLAN_ITEMS = 5;
@@ -232,22 +227,31 @@ export type PolicyPresetName =
 
 export const POLICY_PRESETS: Record<
   PolicyPresetName,
-  { label: string; description: string; levels: PolicyLevels }
+  {
+    label: string;
+    description: string;
+    levels: PolicyLevels;
+    /** How many safety checks the preset leaves on (core/tools/permissions/safetyDegrees.ts) */
+    safety: "all" | "some" | "few" | "none";
+  }
 > = {
   careful: {
     label: "Careful",
     description: "Reads freely, asks for commands, you review edits.",
+    safety: "all",
     levels: DEFAULT_POLICY_LEVELS,
   },
   acceptEdits: {
     label: "Accept edits",
     description: "Like Careful, and edits are accepted unless denied.",
+    safety: "all",
     levels: { ...DEFAULT_POLICY_LEVELS, edits: "permissive" },
   },
   handsOff: {
     label: "Hands off",
     description:
       "Runs everything your rules do not stop. The agent makes the small calls.",
+    safety: "few",
     levels: {
       context: "permissive",
       tools: "permissive",
@@ -259,6 +263,7 @@ export const POLICY_PRESETS: Record<
   reviewer: {
     label: "Reviewer",
     description: "A reviewer model decides what your rules leave open.",
+    safety: "some",
     levels: {
       context: "automatic",
       tools: "automatic",
@@ -270,7 +275,8 @@ export const POLICY_PRESETS: Record<
   idgaf: {
     label: "IDGAF",
     description:
-      "Everything runs and nothing asks. Safety checks stay off unless you turn them on.",
+      "Everything runs, nothing asks and no safety check is on. Turn checks back on one by one if you want them.",
+    safety: "none",
     levels: {
       context: "idgaf",
       tools: "idgaf",
@@ -437,20 +443,6 @@ export function builtinRuleOn(
   id: BuiltinRuleId,
 ): boolean {
   return policy?.builtin?.[id] !== false;
-}
-
-/**
- * Whether the safety checks apply to this call. Absent follows the mode: on
- * below IDGAF, off at IDGAF. An explicit true or false is the person's choice
- * at every level, IDGAF included.
- */
-export function safetyChecksApply(
-  policy: { safetyChecks?: boolean } | undefined,
-  atIdgaf: boolean,
-): boolean {
-  if (policy?.safetyChecks === true) return true;
-  if (policy?.safetyChecks === false) return false;
-  return !atIdgaf;
 }
 
 /** Automatic needs a reviewer: without one, Cautious, so nothing loosens. */

@@ -63,7 +63,7 @@ import type {
   ClientToolExtras,
   ClientToolOutput,
 } from "../clientTools/callClientTool";
-import { allowOutsideWorkspaceOf } from "../outsideEdits";
+import { allowOutsideWorkspaceOf, allowSecretFilesOf } from "../outsideEdits";
 import {
   INITIAL_PROMPT_CACHE_STATE,
   modelSupportsPromptCacheControl,
@@ -717,6 +717,7 @@ export async function driveSubagent(
           ...(allowOutsideWorkspaceOf(getState())
             ? { allowOutsideWorkspace: true }
             : {}),
+          ...(allowSecretFilesOf(getState()) ? { allowSecretFiles: true } : {}),
           ...(input.webSessionId ? { sessionId: input.webSessionId } : {}),
         }),
         signal,

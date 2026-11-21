@@ -4,6 +4,7 @@ import {
   DEFAULT_POLICY_LEVELS,
   isDeprecatedLevelSpelling,
   parsePolicyLevel,
+  parseWebLevel,
   POLICY_AREA_LABELS,
   POLICY_AREAS,
   POLICY_LEVEL_DESCRIPTIONS,
@@ -11,13 +12,13 @@ import {
   POLICY_PRESET_ORDER,
   POLICY_PRESETS,
   policyLevelLabel,
-  parseWebLevel,
   presetOf,
   WEB_LEVELS,
   type PolicyArea,
   type PolicyLevel,
   type PolicyLevels,
 } from "core/tools/permissions/policy.js";
+import { switchesInForce } from "core/tools/permissions/safetyDegrees.js";
 import {
   readPolicyFile,
   writePolicyFile,
@@ -115,17 +116,20 @@ export function resetPolicyLevels(): void {
   commandFlags = {};
 }
 
-/** What core's engine is given besides the levels. */
-export function approvalExtras(): Pick<
-  ApprovalSettings,
-  "builtin" | "floor" | "safetyChecks"
-> {
+/**
+ * What core's engine is given besides the levels. Pass the levels in force: a
+ * run whose tool areas are at IDGAF (`--policy idgaf`, `--auto`) has no
+ * safety check on, and that lasts for the run only, so it is not in the file.
+ */
+export function approvalExtras(
+  levelsInForce?: PolicyLevels,
+): Pick<ApprovalSettings, "builtin" | "floor"> {
+  const builtin = levelsInForce
+    ? switchesInForce(levelsInForce, extras.builtin)
+    : extras.builtin;
   return {
-    ...(extras.builtin ? { builtin: extras.builtin } : {}),
+    ...(builtin ? { builtin } : {}),
     ...(extras.floor?.length ? { floor: extras.floor } : {}),
-    ...(typeof extras.safetyChecks === "boolean"
-      ? { safetyChecks: extras.safetyChecks }
-      : {}),
   };
 }
 
@@ -134,13 +138,12 @@ export function approvalExtras(): Pick<
  * engine need not run for a call that has no rules.
  */
 export function policyIsDefault(l: PolicyLevels): boolean {
-  const extra = approvalExtras();
+  const extra = approvalExtras(l);
   return (
     toolLevelsAreDefault(l) &&
     // A Web level of its own changes what a fetch does (WB45)
     l.web === undefined &&
     !extra.floor &&
-    extra.safetyChecks !== false &&
     !Object.values(extra.builtin ?? {}).includes(false)
   );
 }

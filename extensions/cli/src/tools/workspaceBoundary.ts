@@ -7,7 +7,10 @@ import {
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
 
 import { env } from "../env.js";
-import { effectiveLevels } from "../permissions/policyLevels.js";
+import {
+  approvalExtras,
+  effectiveLevels,
+} from "../permissions/policyLevels.js";
 import { services } from "../services/index.js";
 
 import type { ToolCallPreview } from "./types.js";
@@ -21,21 +24,42 @@ import type { ToolCallPreview } from "./types.js";
  * such a write; interactive runs say so in the approval preview, and the
  * person decides.
  *
- * File edits at IDGAF is the person saying nothing asks, so neither
- * the refusal nor the note's hold applies there: the write goes through, and
- * the result says where it landed (`wroteOutsideResult`). The levels are read
- * from the same place the permission check reads them, so a run started with
- * `--auto` or `--policy idgaf` behaves the same headless, in the TUI and under
- * `serve`. The permission layer (core's engine) still decides every call
- * first: the locked policy files, a tool switched off and the person's own
- * floor rules hold at every level.
+ * The outside-paths check is the person saying where files may go, so with it
+ * off (the IDGAF preset, `--policy idgaf`, `--auto`, or `ask-outside-paths: off`
+ * in permissions.yaml) neither the refusal nor the note's hold applies: the
+ * write goes through, and the result says where it landed
+ * (`wroteOutsideResult`). The levels and switches are read from the same place
+ * the permission check reads them, so a run behaves the same headless, in the
+ * TUI and under `serve`. The permission layer (core's engine) still decides
+ * every call first: the locked policy files, a tool switched off and the
+ * person's own floor rules hold at every level.
  */
 
-/** True while File edits is IDGAF, `--auto` included. */
+/** True while the outside-paths check is off, `--auto` included. */
 export function editsAreIdgaf(): boolean {
   try {
     const mode = services.toolPermissions.getCurrentMode();
-    return editsAllowOutsideWorkspace({ levels: effectiveLevels(mode) });
+    const levels = effectiveLevels(mode);
+    return editsAllowOutsideWorkspace({
+      builtin: approvalExtras(levels).builtin,
+    });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True when the protect-secrets check is off for this run: the file tools may
+ * then read and write a file that looks like a secret. The same levels and
+ * switches the permission check reads.
+ */
+export function secretFilesAllowed(): boolean {
+  try {
+    const mode = services.toolPermissions.getCurrentMode();
+    return (
+      approvalExtras(effectiveLevels(mode)).builtin?.["protect-secrets"] ===
+      false
+    );
   } catch {
     return false;
   }
@@ -104,7 +128,7 @@ export function checkWorkspaceWrite(
   if (note && services.toolPermissions.isHeadless() && !editsAreIdgaf()) {
     throw new ContinueError(
       ContinueErrorReason.FileWriteError,
-      `${toolName} was not run: ${note} A headless run writes only inside the working directory (or under the Continuous home folder, ${env.continueHome}) unless File edits is set to IDGAF (--policy edits=idgaf or --auto). Use a path inside ${process.cwd()}.`,
+      `${toolName} was not run: ${note} A headless run writes only inside the working directory (or under the Continuous home folder, ${env.continueHome}) unless the outside-paths check is off (--policy idgaf, --auto, or ask-outside-paths: off under builtin: in permissions.yaml). Use a path inside ${process.cwd()}.`,
     );
   }
   return note;

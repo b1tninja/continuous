@@ -16,6 +16,7 @@ import {
   type PolicyExtras,
 } from "../slices/uiSlice";
 import { ThunkApiType } from "../store";
+import { afterApplying, afterLoading, builtinToSave } from "./presetChecks";
 
 /**
  * The levels and settings live in the file the CLI shares
@@ -35,7 +36,10 @@ export const loadPolicySettings = createAsyncThunk<void, void, ThunkApiType>(
       if (res.status !== "success") return;
       const { settings, notices } = res.content;
       const session = await sessionIdgafAreas(extra.ideMessenger);
-      dispatch(setPolicyLevels(keepIdgaf(session, settings.levels)));
+      const levels = keepIdgaf(session, settings.levels);
+      // Levels restored as the IDGAF preset bring its checks back off
+      const checks = afterLoading(levels, settings.builtin);
+      dispatch(setPolicyLevels(levels));
       dispatch(
         setPolicyExtras({
           maxNewPlanItems: settings.maxNewPlanItems,
@@ -43,7 +47,8 @@ export const loadPolicySettings = createAsyncThunk<void, void, ThunkApiType>(
             youDecide: settings.questions?.youDecide,
             agentDecides: settings.questions?.agentDecides,
           },
-          builtin: settings.builtin ?? {},
+          builtin: checks.builtin,
+          savedBuiltin: checks.savedBuiltin,
           floor: settings.floor ?? [],
           planMcpTools: settings.planMcpTools ?? [],
           backgroundMcpTools: settings.backgroundMcpTools ?? [],
@@ -51,9 +56,6 @@ export const loadPolicySettings = createAsyncThunk<void, void, ThunkApiType>(
           questionDelivery: settings.questions?.delivery,
           planAllowTerminal: settings.planAllowTerminal,
           customSet: settings.custom,
-          ...(typeof settings.safetyChecks === "boolean"
-            ? { safetyChecks: settings.safetyChecks }
-            : {}),
           ...(typeof settings.skipPermissionConfirm === "boolean"
             ? { skipPermissionConfirm: settings.skipPermissionConfirm }
             : {}),
@@ -118,13 +120,9 @@ export const savePolicySettings = createAsyncThunk<void, void, ThunkApiType>(
           ? { agentDecides: policyExtras.questions.agentDecides }
           : {}),
       },
-      builtin: policyExtras.builtin,
-      // Absent in the state means the file has no line: remove it, so the
-      // shield follows the mode (switching to IDGAF clears the choice)
-      safetyChecks:
-        typeof policyExtras.safetyChecks === "boolean"
-          ? policyExtras.safetyChecks
-          : null,
+      // While the IDGAF preset is in force the file keeps what it had: IDGAF
+      // and the checks it turned off last for this session only
+      builtin: builtinToSave(policyExtras.builtin, policyExtras.savedBuiltin),
       // Absent means the dialog still appears: remove the line
       skipPermissionConfirm:
         policyExtras.skipPermissionConfirm === true ? true : null,
@@ -220,47 +218,14 @@ export function customPolicyUpdate({
   };
 }
 
-/** True when `next` has an IDGAF area and `previous` had none. */
-export function enteredIdgaf(
-  previous: PolicyLevels,
-  next: PolicyLevels,
-): boolean {
-  const any = (levels: PolicyLevels) =>
-    (Object.keys(levels) as PolicyArea[]).some(
-      (a) => parsePolicyLevel(levels[a]) === "idgaf",
-    );
-  return any(next) && !any(previous);
-}
-
-/**
- * Switching to IDGAF switches the safety checks off: a choice made at a lower
- * level (shield on) is cleared, so the shield follows the mode. The person can
- * turn it back on afterwards.
- */
-function clearSafetyChoiceOnIdgaf(
-  previous: PolicyLevels,
-  getState: () => {
-    ui: { policyLevels: PolicyLevels; policyExtras: PolicyExtras };
-  },
-  dispatch: (action: ReturnType<typeof setPolicyExtras>) => unknown,
-) {
-  const { policyLevels, policyExtras } = getState().ui;
-  if (
-    enteredIdgaf(previous, policyLevels) &&
-    policyExtras.safetyChecks !== undefined
-  ) {
-    dispatch(setPolicyExtras({ safetyChecks: undefined }));
-  }
-}
-
 export const changePolicyLevel = createAsyncThunk<
   void,
   { area: PolicyArea; level: PolicyLevel },
   ThunkApiType
 >("policy/changeLevel", async (change, { dispatch, getState, extra }) => {
   const previous = getState().ui.policyLevels;
+  // One area changes; the safety checks are their own knobs and stay as they are
   dispatch(setPolicyLevel(change));
-  clearSafetyChoiceOnIdgaf(previous, getState, dispatch);
   const saved = await dispatch(savePolicySettings());
   if (savePolicySettings.rejected.match(saved)) {
     dispatch(setPolicyLevels(previous));
@@ -274,11 +239,28 @@ export const applyPolicyPreset = createAsyncThunk<
   ThunkApiType
 >("policy/applyPreset", async (levels, { dispatch, getState, extra }) => {
   const previous = getState().ui.policyLevels;
+  const previousExtras = getState().ui.policyExtras;
   dispatch(setPolicyLevels(levels));
-  clearSafetyChoiceOnIdgaf(previous, getState, dispatch);
+  // A preset sets every knob: the five levels and its safety checks together
+  const checks = afterApplying(levels, {
+    builtin: previousExtras.builtin,
+    savedBuiltin: previousExtras.savedBuiltin,
+  });
+  dispatch(
+    setPolicyExtras({
+      builtin: checks.builtin,
+      savedBuiltin: checks.savedBuiltin,
+    }),
+  );
   const saved = await dispatch(savePolicySettings());
   if (savePolicySettings.rejected.match(saved)) {
     dispatch(setPolicyLevels(previous));
+    dispatch(
+      setPolicyExtras({
+        builtin: previousExtras.builtin,
+        savedBuiltin: previousExtras.savedBuiltin,
+      }),
+    );
   }
   rememberSessionIdgaf(extra.ideMessenger, getState().ui.policyLevels);
 });

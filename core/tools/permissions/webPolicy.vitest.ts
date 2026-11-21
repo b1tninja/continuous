@@ -11,16 +11,17 @@ import {
   POLICY_PRESET_WEB,
   POLICY_PRESETS,
   presetOf,
+  WEB_LEVELS,
   withoutReviewer,
   type PolicyLevels,
   type WebLevel,
-  WEB_LEVELS,
 } from "./policy";
+import { builtinForPreset } from "./safetyDegrees";
 import { applyPolicyUpdate, parsePolicyFile } from "./settingsFile";
 import {
-  WebGrantStore,
-  webGrantsFor,
   resetWebGrantsForTests,
+  webGrantsFor,
+  WebGrantStore,
 } from "./webGrants";
 import {
   capWebAtDefault,
@@ -311,10 +312,12 @@ describe("hard checks at IDGAF", () => {
     expect(r.reason).toContain("floor rule");
   });
 
-  it("a private start URL runs at IDGAF and is recorded", () => {
-    const r = fetchAt("http://10.0.0.5/", idgaf);
+  it("a private start URL runs under the IDGAF preset, which turns protect-secrets off", () => {
+    const r = fetchAt("http://10.0.0.5/", idgaf, {
+      approval: { levels: idgaf, builtin: builtinForPreset("idgaf") },
+    });
     expect(r.policy).toBe("allowedWithoutPermission");
-    expect(r.idgafOverride?.protection).toBe("private-url");
+    expect(r.idgafOverride).toBeUndefined();
   });
 
   it("a deny rule is ignored at IDGAF on Web (it is recorded)", () => {

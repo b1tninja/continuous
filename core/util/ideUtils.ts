@@ -133,6 +133,19 @@ export async function resolveRelativePathInDir(
     }
   }
 
+  // An absolute path (or file URI) that lies inside a workspace folder names
+  // that file itself. Joining it onto a folder can build a path that never
+  // exists (a drive path with backslashes, or a different drive-letter case
+  // than the folder's), so the file was reported missing.
+  const absolute = absoluteLocalUri(path);
+  if (absolute) {
+    for (const dirUri of dirs) {
+      if (staysInDir(absolute, dirUri) && (await ide.fileExists(absolute))) {
+        return absolute;
+      }
+    }
+  }
+
   if (options?.allowOutside) {
     // An absolute path, or a climb out of the folder, names the file itself.
     const candidates = [
