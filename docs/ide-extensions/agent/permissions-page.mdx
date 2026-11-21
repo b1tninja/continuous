@@ -144,6 +144,8 @@ Every policy control (the preset and each area, in the toolbar and in **Settings
 
 A save that loosens `permissions.yaml` (an area's level raised, a built-in rule switched off, a locked rule removed, an MCP server trusted, an MCP tool added for Plan mode, the terminal offered in Plan mode) waits for your editor's own confirmation dialog, listing each of them, as rule changes do; there is no checkbox in the page. The review lists what the dialog will ask. If you decline, nothing is saved: not `permissions.yaml` and not one rule. The same dialog guards the toolbar and **Settings, Tools**: raising a level or switching a built-in rule off there asks too, and a "no" leaves the control as it was.
 
+**Settings, Tools** has **Skip the confirmation when permissions change**. It is off, so the dialog still appears. Turning it on asks once; after that, a permission change is saved without that dialog. Rule changes still use the editor's dialog. An ask before a command runs is unchanged, including a dangerous command. The setting is `skipPermissionConfirm` in [`permissions.yaml`](/reference/permissions-yaml).
+
 When the levels you save match no preset, the set is kept in `permissions.yaml` (`levels.custom`) with the preset it started from. The chip then says **Custom (from Careful)** rather than **Custom**, and after you choose a preset, the preset menu offers your custom set back. Choosing it is a save like any other: a raised level asks first.
 
 IDGAF chosen here is for this session only, as everywhere else, and a set with IDGAF in it is not kept.

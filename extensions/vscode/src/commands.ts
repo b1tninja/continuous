@@ -42,6 +42,7 @@ import { QuickEdit, QuickEditShowParams } from "./quickEdit/QuickEditQuickPick";
 import {
   addCodeToContextFromRange,
   addHighlightedCodeToContext,
+  getRangeInFileWithContents,
 } from "./util/addCode";
 import {
   AddToChatHost,
@@ -327,13 +328,21 @@ const getCommandsMap: (
           );
         }
       } else {
+        // The selection has to be read before the new session focuses the
+        // chat. That reset clears the input, so the code is added after it,
+        // into the session that stays on screen.
+        const rangeInFileWithContents = getRangeInFileWithContents(false);
         focusGUI();
-        sidebar.webviewProtocol?.request(
+        await sidebar.webviewProtocol?.request(
           "focusContinueInputWithNewSession",
           undefined,
           false,
         );
-        void addHighlightedCodeToContext(sidebar.webviewProtocol);
+        if (rangeInFileWithContents) {
+          void sidebar.webviewProtocol?.request("highlightedCode", {
+            rangeInFileWithContents,
+          });
+        }
       }
     },
     "continuous.focusContinuousInputWithoutClear": async () => {
@@ -432,6 +441,18 @@ const getCommandsMap: (
     },
     "continuous.newSession": () => {
       sidebar.webviewProtocol?.request("newSession", undefined);
+    },
+    "continuous.copyMessageAsMarkdown": async () => {
+      await vscode.commands.executeCommand("continuous.continueGUIView.focus");
+      const copied = await sidebar.webviewProtocol?.request(
+        "copyMessageAsMarkdown",
+        undefined,
+      );
+      if (!copied) {
+        void vscode.window.showInformationMessage(
+          "Focus a message in the chat, then copy it.",
+        );
+      }
     },
 
     "continuous.shareSession": async (sessionId: string | undefined) => {

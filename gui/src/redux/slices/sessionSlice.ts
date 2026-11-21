@@ -1754,7 +1754,10 @@ export const sessionSlice = createSlice({
     setIsInEdit: (state, action: PayloadAction<boolean>) => {
       state.isInEdit = action.payload;
     },
-    setHasReasoningEnabled: (state, action: PayloadAction<boolean>) => {
+    setHasReasoningEnabled: (
+      state,
+      action: PayloadAction<boolean | undefined>,
+    ) => {
       state.hasReasoningEnabled = action.payload;
     },
     setPromptCacheState: (

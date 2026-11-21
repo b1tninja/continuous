@@ -67,6 +67,12 @@ export interface PolicyFileSettings extends PolicySettings {
    * from `timer`, which governs asks. Absent is none.
    */
   headsUp?: TimerSettings;
+  /**
+   * Skip the editor dialog that asks before a permission change is saved.
+   * Absent or off: the dialog appears. On: that dialog is skipped. It does
+   * not change an ask or a refusal before a command runs.
+   */
+  skipPermissionConfirm?: boolean;
 }
 
 /**
@@ -112,6 +118,7 @@ export const POLICY_FILE_KEYS = [
   "sandbox",
   "background",
   "safetyChecks",
+  "skipPermissionConfirm",
 ] as const;
 
 const BUILTIN_IDS = new Set<string>(BUILTIN_RULES.map((r) => r.id));
@@ -184,6 +191,14 @@ export function parsePolicyFile(text: string | undefined): PolicyFileRead {
       notices.push("safetyChecks: use on or off.");
     } else if (legacySafety === false) {
       settings.builtin = builtinForDegree("none");
+    }
+  }
+  const skipPermissionConfirm = asBool(raw.skipPermissionConfirm);
+  if (raw.skipPermissionConfirm !== undefined) {
+    if (skipPermissionConfirm === undefined) {
+      notices.push("skipPermissionConfirm: use on or off.");
+    } else {
+      settings.skipPermissionConfirm = skipPermissionConfirm;
     }
   }
   if (raw.builtin && typeof raw.builtin === "object") {
@@ -297,6 +312,11 @@ export interface PolicyFileUpdate {
     agentDecides?: string[];
   };
   builtin?: Partial<Record<BuiltinRuleId, boolean>>;
+  /**
+   * Skip the editor dialog before a permission change is saved. Absent
+   * leaves the line. `null` removes it (the dialog appears again).
+   */
+  skipPermissionConfirm?: boolean | null;
   /** The whole `floor:` list as it should be; each entry a valid rule */
   floor?: string[];
   /** The servers whose read-only hints are trusted; every other entry is removed */
@@ -451,6 +471,14 @@ export function applyPolicyUpdate(
   }
   // The old single switch is replaced by the checks themselves
   if (update.builtin) doc.delete("safetyChecks");
+  if (update.skipPermissionConfirm === null) {
+    doc.delete("skipPermissionConfirm");
+  } else if (update.skipPermissionConfirm !== undefined) {
+    doc.set(
+      "skipPermissionConfirm",
+      update.skipPermissionConfirm ? "on" : "off",
+    );
+  }
   if (update.builtin) {
     for (const [id, on] of Object.entries(update.builtin)) {
       if (!BUILTIN_IDS.has(id)) continue;

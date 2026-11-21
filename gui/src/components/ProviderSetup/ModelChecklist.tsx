@@ -1,5 +1,6 @@
 import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { useMemo, useState } from "react";
+import { ContextLengthControl } from "../ModelConfig/ContextLengthControl";
 import {
   ChecklistGroups,
   ChecklistRow,
@@ -12,6 +13,9 @@ interface ModelChecklistProps {
   onToggle: (model: string) => void;
   /** The lists come from the provider's live model list. */
   isLive?: boolean;
+  /** Typed context-length overrides, keyed by model id. Empty means the published window. */
+  windows?: Record<string, string>;
+  onWindow?: (model: string, value: string) => void;
 }
 
 const USE_CASE_ROW_TITLE =
@@ -93,6 +97,15 @@ function Row({
             {row.description}
           </span>
         )}
+        {typeof row.pkg?.params.contextLength === "number" &&
+          row.pkg.params.contextLength > 0 && (
+            <span
+              className="text-description-muted"
+              data-testid={`model-window-${row.model}`}
+            >
+              {row.pkg.params.contextLength.toLocaleString()} token window
+            </span>
+          )}
       </span>
     </label>
   );
@@ -107,6 +120,8 @@ export function ModelChecklist({
   checked,
   onToggle,
   isLive,
+  windows,
+  onWindow,
 }: ModelChecklistProps) {
   const [query, setQuery] = useState("");
 
@@ -130,14 +145,35 @@ export function ModelChecklist({
         <div className="px-1 text-xs font-medium text-description-muted">
           {label}
         </div>
-        {rows.map((row) => (
-          <Row
-            key={row.model}
-            row={row}
-            checked={checked.has(row.model)}
-            onToggle={() => onToggle(row.model)}
-          />
-        ))}
+        {rows.map((row) => {
+          const published = row.pkg?.params.contextLength;
+          const showWindow = checked.has(row.model) && onWindow !== undefined;
+          return (
+            <div key={row.model} className="flex flex-col">
+              <Row
+                row={row}
+                checked={checked.has(row.model)}
+                onToggle={() => onToggle(row.model)}
+              />
+              {showWindow && (
+                <div className="py-1 pr-1 pl-6">
+                  <ContextLengthControl
+                    value={windows?.[row.model] ?? ""}
+                    onChange={(value) => onWindow(row.model, value)}
+                    published={
+                      typeof published === "number" ? published : undefined
+                    }
+                    source={
+                      typeof published === "number" ? "published" : "unknown"
+                    }
+                    inputId={`context-length-${row.model}`}
+                    testId={`context-length-slider-${row.model}`}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     );
 

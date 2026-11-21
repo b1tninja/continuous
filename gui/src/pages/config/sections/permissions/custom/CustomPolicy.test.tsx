@@ -21,6 +21,7 @@ import {
   PolicyControls,
 } from "../../../../../components/PolicyControls";
 import { MockIdeMessenger } from "../../../../../context/MockIdeMessenger";
+import { loadPolicySettings } from "../../../../../redux/thunks/policySettings";
 import { setupStore } from "../../../../../redux/store";
 import { renderWithProviders } from "../../../../../util/test/render";
 import { PermissionsSection } from "../PermissionsSection";
@@ -660,6 +661,62 @@ describe("the toolbar and Settings controls go through the same native confirmat
     expect(store.getState().ui.policyExtras.builtin?.["protect-secrets"]).toBe(
       undefined,
     );
+  });
+
+  it("the setting on does not show the dialog", async () => {
+    const ideMessenger = new MockIdeMessenger();
+    const { confirm, file } = policyHost(ideMessenger, {
+      confirm: false,
+      fileText: "skipPermissionConfirm: on\n",
+    });
+    const store = setupStore({ ideMessenger });
+    const { user } = await renderWithProviders(<PolicyCard />, {
+      store,
+      mockIdeMessenger: ideMessenger,
+    });
+    await act(async () => {
+      await store.dispatch(loadPolicySettings());
+    });
+    expect(store.getState().ui.policyExtras.skipPermissionConfirm).toBe(true);
+    await user.click(
+      screen
+        .getByTestId("builtin-protect-secrets")
+        .querySelector(".rounded-full")!,
+    );
+    await act(async () => {});
+    expect(confirm).not.toHaveBeenCalled();
+    expect(readPolicyFile(file).settings.skipPermissionConfirm).toBe(true);
+    expect(readPolicyFile(file).settings.builtin?.["protect-secrets"]).toBe(
+      false,
+    );
+    expect(store.getState().ui.policyExtras.builtin?.["protect-secrets"]).toBe(
+      false,
+    );
+  });
+
+  it("turning the setting on asks once", async () => {
+    const ideMessenger = new MockIdeMessenger();
+    const { confirm, file } = policyHost(ideMessenger, { confirm: true });
+    const store = setupStore({ ideMessenger });
+    const { user } = await renderWithProviders(<PolicyCard />, {
+      store,
+      mockIdeMessenger: ideMessenger,
+    });
+    expect(screen.getByTestId("skip-permission-confirm").textContent).toContain(
+      "Skip the confirmation when permissions change",
+    );
+    await user.click(
+      screen
+        .getByTestId("skip-permission-confirm")
+        .querySelector(".rounded-full")!,
+    );
+    await act(async () => {});
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm.mock.calls[0][0]).toContain(
+      "Skip the confirmation when permissions change?",
+    );
+    expect(readPolicyFile(file).settings.skipPermissionConfirm).toBe(true);
+    expect(store.getState().ui.policyExtras.skipPermissionConfirm).toBe(true);
   });
 });
 

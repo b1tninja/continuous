@@ -58,6 +58,9 @@ export const loadPolicySettings = createAsyncThunk<void, void, ThunkApiType>(
           customSet: settings.custom,
           timer: settings.timer,
           headsUp: settings.headsUp,
+          ...(typeof settings.skipPermissionConfirm === "boolean"
+            ? { skipPermissionConfirm: settings.skipPermissionConfirm }
+            : {}),
         }),
       );
       for (const notice of notices) console.warn(notice);
@@ -131,6 +134,9 @@ export const savePolicySettings = createAsyncThunk<void, void, ThunkApiType>(
       ...(policyExtras.headsUp !== undefined
         ? { headsUp: policyExtras.headsUp }
         : {}),
+      // Absent means the dialog still appears: remove the line
+      skipPermissionConfirm:
+        policyExtras.skipPermissionConfirm === true ? true : null,
     };
     const res = await extra.ideMessenger.request("policy/save", update);
     if (res.status !== "success") {

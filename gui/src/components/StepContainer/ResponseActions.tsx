@@ -6,7 +6,6 @@ import {
 } from "@heroicons/react/24/outline";
 import { ChatHistoryItem } from "core";
 import { hasCheckpointsFrom } from "core/util/checkpoints";
-import { renderChatMessage } from "core/util/messageContent";
 import { useAppSelector } from "../../redux/hooks";
 import { useCompactionCacheNote } from "../../hooks/useCompactionCacheNote";
 import { useCompactConversation } from "../../util/compactConversation";
@@ -15,10 +14,17 @@ import {
   getTurnOrder,
   useRestoreCheckpoint,
 } from "../../util/restoreCheckpoint";
+import { RovingToolbar } from "../PolicyControls/RovingToolbar";
 import { FeedbackButtons } from "../FeedbackButtons";
 import { ForkFromHereButton } from "./ForkFromHereButton";
 import { CopyIconButton } from "../gui/CopyIconButton";
 import HeaderButtonWithToolTip from "../gui/HeaderButtonWithToolTip";
+import {
+  copyKeyOf,
+  markdownToPlainText,
+  messageAsMarkdown,
+  rememberFocusedMessage,
+} from "../../util/copyAsMarkdown";
 
 export interface ResponseActionsProps {
   isTruncated: boolean;
@@ -68,9 +74,18 @@ export default function ResponseActions({
   });
   const isStreaming = useAppSelector((state) => state.session.isStreaming);
   const restoreToTurn = useRestoreCheckpoint();
+  const sessionTitle = useAppSelector((state) => state.session.title);
+  const copyKey = copyKeyOf(item.message, index);
+  const markdown = () =>
+    messageAsMarkdown(item, { title: sessionTitle, date: new Date() });
 
   return (
-    <div className="mx-2 flex cursor-default items-center justify-end space-x-1 bg-transparent pb-0 text-xs text-description-muted">
+    <RovingToolbar
+      label="Message actions"
+      copyKey={copyKey}
+      onItemFocus={() => rememberFocusedMessage(copyKey)}
+      className="mx-2 flex cursor-default items-center justify-end space-x-1 bg-transparent pb-0 text-xs text-description-muted"
+    >
       <HeaderButtonWithToolTip
         testId={`compact-button-${index}`}
         text={`${
@@ -78,7 +93,7 @@ export default function ResponseActions({
             ? "Summarize conversation to reduce context length"
             : "Compact conversation"
         }${compactionNote ? `. ${compactionNote}` : ""}`}
-        tabIndex={-1}
+        roving
         onClick={() => compactConversation(index)}
       >
         <div className="flex items-center space-x-1">
@@ -99,7 +114,7 @@ export default function ResponseActions({
         <HeaderButtonWithToolTip
           testId={`restore-checkpoint-button-${index}`}
           text="Restore files to before this turn"
-          tabIndex={-1}
+          roving
           onClick={() => void restoreToTurn(restorableTurnId)}
         >
           <ArrowUturnLeftIcon className="h-3.5 w-3.5 text-description-muted" />
@@ -110,7 +125,7 @@ export default function ResponseActions({
 
       {isTruncated && (
         <HeaderButtonWithToolTip
-          tabIndex={-1}
+          roving
           text="Continue generation"
           onClick={onContinueGeneration}
         >
@@ -121,20 +136,21 @@ export default function ResponseActions({
       <HeaderButtonWithToolTip
         testId={`delete-button-${index}`}
         text="Delete"
-        tabIndex={-1}
+        roving
         onClick={onDelete}
       >
         <TrashIcon className="h-3.5 w-3.5 text-description-muted" />
       </HeaderButtonWithToolTip>
 
       <CopyIconButton
-        tabIndex={-1}
-        text={renderChatMessage(item.message)}
+        roving
+        text={markdown}
+        plainText={() => markdownToPlainText(markdown())}
         clipboardIconClassName="h-3.5 w-3.5 text-description-muted"
         checkIconClassName="h-3.5 w-3.5 text-success"
       />
 
-      <FeedbackButtons item={item} />
-    </div>
+      <FeedbackButtons item={item} roving />
+    </RovingToolbar>
   );
 }

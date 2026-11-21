@@ -18,6 +18,8 @@ interface HeaderButtonWithToolTipProps {
   hoverBackgroundColor?: string;
   tooltipPlacement?: PlacesType;
   testId?: string;
+  /** Join a roving-tabindex toolbar. The toolbar sets tabindex. */
+  roving?: boolean;
 }
 
 const HeaderButtonWithToolTip = React.forwardRef<
@@ -41,7 +43,8 @@ const HeaderButtonWithToolTip = React.forwardRef<
         style={{ minWidth: 24, minHeight: 24, ...props.style }}
         aria-label={typeof props.children === "string" ? undefined : props.text}
         ref={ref}
-        tabIndex={props.tabIndex}
+        data-roving={props.roving ? "" : undefined}
+        tabIndex={props.roving ? undefined : props.tabIndex}
       >
         {props.children}
       </HeaderButton>

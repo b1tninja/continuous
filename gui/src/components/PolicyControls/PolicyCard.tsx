@@ -98,6 +98,25 @@ export function PolicyCard() {
               <AreaLevelSelect area={area} variant="row" />
             </div>
           ))}
+          <div data-testid="skip-permission-confirm">
+            <ToggleSwitch
+              isToggled={extras.skipPermissionConfirm === true}
+              onToggle={() =>
+                void dispatch(
+                  changePolicyExtras({
+                    skipPermissionConfirm:
+                      extras.skipPermissionConfirm !== true,
+                  }),
+                )
+              }
+              text="Skip the confirmation when permissions change"
+            />
+            <div className="text-2xs text-description">
+              The dialog that asks before a permission change is saved. Off, so
+              the dialog still appears. Turning this on asks once. An ask before
+              a command runs is unchanged.
+            </div>
+          </div>
         </div>
       </Card>
 
