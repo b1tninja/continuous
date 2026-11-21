@@ -17,6 +17,18 @@ export function looksSecret(name: string): boolean {
   return name.split(/[_-]/).some((w) => SECRET_WORD.test(w));
 }
 
+/**
+ * The one variable every shell sets to something that is not a credential:
+ * `PWD`, the current directory. The word list reads it as an abbreviation of
+ * "password". Only that exact name is skipped, in any letter case (PowerShell
+ * ignores case, and the command candidates fold it): `DB_PWD`, `MYSQL_PWD`
+ * and `PWD_FILE` still match. A variable the person names `pwd` in bash is
+ * the cost of that, and an ask is the safe side of it.
+ */
+export function isCurrentDirectoryVariable(name: string): boolean {
+  return name.toLowerCase() === "pwd";
+}
+
 /** `$NAME`, `${NAME}`, `%NAME%`, `$env:NAME`: the variable names a word mentions. */
 export function variableNames(word: string): string[] {
   const names: string[] = [];
@@ -68,11 +80,16 @@ export function secretWordLabel(
     return "the environment variables (env:)";
   }
   if (previous && PRINT_VARIABLE.has(previous.toLowerCase())) {
-    if (/^[A-Za-z_]\w*$/.test(word) && looksSecret(word)) {
+    if (
+      /^[A-Za-z_]\w*$/.test(word) &&
+      !isCurrentDirectoryVariable(word) &&
+      looksSecret(word)
+    ) {
       return `the variable ${word}`;
     }
   }
   for (const v of variableNames(word)) {
+    if (isCurrentDirectoryVariable(v)) continue;
     if (looksSecret(v)) return `the variable ${v}`;
   }
   return undefined;

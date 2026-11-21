@@ -39,6 +39,7 @@ import { getWebConfig } from "core/util/webConfig.js";
 import { createLlmApi } from "../config.js";
 import { logger } from "../util/logger.js";
 
+import { policyCwd } from "./policyCwd.js";
 import { getPolicyExtras } from "./policyLevels.js";
 import type {
   PermissionCheckResult,
@@ -456,7 +457,7 @@ export async function evaluateWithCoreRules(
     ...(input.web ? { web: input.web } : {}),
     trustedDomains: readUserTrustedDomains(),
     envNames: readUserEnvNames(),
-    cwd: input.cwd ?? process.cwd(),
+    cwd: policyCwd(input, parsedArgs),
     ...deputyWorkspace([input.cwd ?? process.cwd()]),
     // The shell the CLI runs commands in: its login shell, PowerShell on Windows
     shell: resolveShell().kind,
