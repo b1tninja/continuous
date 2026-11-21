@@ -1,6 +1,8 @@
 // Helper functions extracted from streamChatResponse.ts to reduce file size
 /* eslint-disable max-lines */
 
+import { randomUUID } from "node:crypto";
+
 import type { ToolStatus, Usage } from "core/index.js";
 import { totalInputTokens } from "core/llm/utils/cacheStats.js";
 import {
@@ -969,6 +971,13 @@ export function processToolCallDelta(
   } else if (toolCallDelta.index !== undefined) {
     // No ID, but we have an index - look up the ID from our map
     toolCallId = indexToIdMap.get(toolCallDelta.index);
+    if (!toolCallId) {
+      // Some servers stream a call with an index and never an id. Dropping
+      // its deltas lost the call; an id made here lets it run and pairs it
+      // with its result. Random, so ids never repeat within a session.
+      toolCallId = `call_${randomUUID().replace(/-/g, "")}`;
+      indexToIdMap.set(toolCallDelta.index, toolCallId);
+    }
   }
 
   if (!toolCallId) {
