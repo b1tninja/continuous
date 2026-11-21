@@ -308,23 +308,6 @@ export interface CoreRulesInput {
   web?: WebCallContext;
 }
 
-/**
- * The folder a call is judged from. A Bash call that was given `cwd` runs
- * there, so a relative path in its command is read from there; every other call
- * runs where the CLI was started.
- */
-function policyCwd(
-  input: { cwd?: string; cliToolName?: string },
-  parsedArgs: Record<string, unknown>,
-): string {
-  const base = input.cwd ?? process.cwd();
-  if (input.cliToolName !== "Bash") return base;
-  return effectiveCwdForPolicy(parsedArgs?.cwd, {
-    defaultCwd: base,
-    workspaceRoots: [base],
-  });
-}
-
 /** The MCP tool's declared schema, where the engine reads it (`function.parameters`). */
 function schemaOf(
   name: string,
@@ -474,7 +457,15 @@ export async function evaluateWithCoreRules(
     ...(input.web ? { web: input.web } : {}),
     trustedDomains: readUserTrustedDomains(),
     envNames: readUserEnvNames(),
-    cwd: policyCwd(input, parsedArgs),
+    // A Bash call that was given cwd runs there, so a relative path in its
+    // command is read from there. Every other call runs where the CLI started.
+    cwd:
+      input.cliToolName === "Bash"
+        ? effectiveCwdForPolicy(parsedArgs?.cwd, {
+            defaultCwd: input.cwd ?? process.cwd(),
+            workspaceRoots: [input.cwd ?? process.cwd()],
+          })
+        : (input.cwd ?? process.cwd()),
     ...deputyWorkspace([input.cwd ?? process.cwd()]),
     // The shell the CLI runs commands in: its login shell, PowerShell on Windows
     shell: resolveShell().kind,
