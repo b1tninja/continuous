@@ -148,6 +148,25 @@ describe("PackageIdentifier", () => {
     });
   });
 
+  it.each([
+    ["C:\\a\\b.yaml"],
+    ["C:/a/b.yaml"],
+    ["d:\\a\\b.yaml"],
+    ["\\\\server\\share\\b.yaml"],
+  ])("should decode Windows path %s as a file", (path) => {
+    expect(decodePackageIdentifier(path)).toEqual({
+      uriType: "file",
+      fileUri: path,
+    });
+  });
+
+  it("should still decode a one-letter owner as a slug", () => {
+    expect(decodePackageIdentifier("c/a@1.0.0")).toEqual({
+      uriType: "slug",
+      fullSlug: { ownerSlug: "c", packageSlug: "a", versionSlug: "1.0.0" },
+    });
+  });
+
   it("should throw error for unknown URI type", () => {
     const invalidIdentifier = {
       uriType: "invalid",
