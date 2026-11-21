@@ -194,8 +194,7 @@ export function withAdditionalFolders(
 ): string[] {
   if (folders.length === 0) return [...dirs];
   const asUris = dirs.length > 0 && dirs[0].includes("://");
-  const fold =
-    typeof process !== "undefined" && process.platform === "win32";
+  const fold = typeof process !== "undefined" && process.platform === "win32";
   const key = (s: string) => (fold ? s.toLowerCase() : s);
   const present = new Set(dirs.map(key));
   const out = [...dirs];

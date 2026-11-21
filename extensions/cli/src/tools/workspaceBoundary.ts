@@ -1,10 +1,10 @@
 import * as path from "path";
 
+import { readUserAdditionalFolders } from "core/tools/permissions/additionalFolders.js";
 import {
   editsAllowOutsideWorkspace,
   wroteOutsideNote,
 } from "core/tools/permissions/outsideEdits.js";
-import { readUserAdditionalFolders } from "core/tools/permissions/additionalFolders.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
 
 import { env } from "../env.js";
