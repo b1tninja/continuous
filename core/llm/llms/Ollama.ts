@@ -15,6 +15,7 @@ import { renderChatMessage } from "../../util/messageContent.js";
 import { getRemoteModelInfo } from "../../util/ollamaHelper.js";
 import { extractBase64FromDataUrl } from "../../util/url.js";
 import { BaseLLM } from "../index.js";
+import { rememberLearned } from "../learnedLimits.js";
 import { ollamaUsage } from "../serverTimings.js";
 
 type OllamaChatMessage = {
@@ -185,6 +186,13 @@ class Ollama extends BaseLLM implements ModelInstaller {
 
   private modelInfoPromise: Promise<void> | undefined = undefined;
   private explicitContextLength: boolean;
+  /** `num_ctx` from the Modelfile, when it has one. */
+  private modelfileNumCtx: number | undefined;
+  /**
+   * Whether the server said which window it runs the model with when the
+   * request names none: undefined until asked, false when it did not say.
+   */
+  private serverSaidWindow: boolean | undefined;
 
   constructor(options: LLMOptions) {
     super(options);
@@ -234,7 +242,12 @@ class Ollama extends BaseLLM implements ModelInstaller {
             switch (key) {
               case "num_ctx":
                 if (!this.explicitContextLength) {
-                  this._contextLength = Number.parseInt(value);
+                  const numCtx = Number.parseInt(value);
+                  if (Number.isFinite(numCtx)) {
+                    this.modelfileNumCtx = numCtx;
+                    this._contextLength = numCtx;
+                    this.contextLengthSource = "provider";
+                  }
                 }
                 break;
               case "stop":
@@ -267,6 +280,90 @@ class Ollama extends BaseLLM implements ModelInstaller {
       });
 
     return this.modelInfoPromise;
+  }
+
+  /**
+   * The `num_ctx` a request names: the person's context length, else the
+   * Modelfile's. With neither the server picks the window (its own setting,
+   * or what fits the machine), so a number chosen here must not replace it,
+   * unless the server cannot say what it picked: then the request keeps
+   * naming the window the prompt is cut to, so the two agree.
+   */
+  private _numCtxToSend(): number | undefined {
+    if (this.explicitContextLength) {
+      return this.contextLength;
+    }
+    if (this.modelfileNumCtx !== undefined) {
+      return this.modelfileNumCtx;
+    }
+    return this.serverSaidWindow ? undefined : this.contextLength;
+  }
+
+  /**
+   * When no window is set here, load the model the way the request will and
+   * read the window it got from `/api/ps`, so the prompt is cut to the size
+   * the server really uses. Asked until the server answers; a server that
+   * answers without a window is not asked again.
+   */
+  private async ensureWindowInUse(signal: AbortSignal): Promise<void> {
+    if (
+      this.explicitContextLength ||
+      this.modelfileNumCtx !== undefined ||
+      this.serverSaidWindow !== undefined ||
+      this.model === "AUTODETECT"
+    ) {
+      return;
+    }
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (this.apiKey) {
+      headers.Authorization = `Bearer ${this.apiKey}`;
+    }
+    const model = this._getModel();
+    try {
+      // A request with no prompt only loads the model. It names no num_ctx,
+      // like the request that follows, so both get the same window.
+      const load = await this.fetch(this.getEndpoint("api/generate"), {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          model,
+          keep_alive: this.completionOptions.keepAlive ?? 60 * 30,
+        }),
+        signal,
+      });
+      if (load?.status !== 200) {
+        this.serverSaidWindow = false;
+        return;
+      }
+      const ps = await this.fetch(this.getEndpoint("api/ps"), {
+        method: "GET",
+        headers,
+        signal,
+      });
+      const body = ps?.status === 200 ? await ps.json() : undefined;
+      const loaded = (body?.models ?? []).find(
+        (m: { name?: string; model?: string }) =>
+          [m.name, m.model].some(
+            (name) => name === model || name === `${model}:latest`,
+          ),
+      );
+      const window = loaded?.context_length;
+      if (typeof window === "number" && window > 0) {
+        this.serverSaidWindow = true;
+        this._contextLength = window;
+        this.contextLengthSource = "provider";
+        // The next config load builds this model with the window, so the
+        // model row shows it.
+        rememberLearned(this.limitsKey, { contextLength: window });
+      } else {
+        this.serverSaidWindow = false;
+      }
+    } catch (e) {
+      // Stopped or unreachable: the request itself reports that. Ask again
+      // next time.
+    }
   }
 
   // Map of "continue model name" to Ollama actual model name
@@ -333,7 +430,7 @@ class Ollama extends BaseLLM implements ModelInstaller {
       top_k: options.topK,
       num_predict: options.maxTokens,
       stop: options.stop,
-      num_ctx: this.contextLength,
+      num_ctx: this._numCtxToSend(),
       mirostat: options.mirostat,
       num_thread: options.numThreads,
       use_mmap: options.useMmap,
@@ -441,6 +538,7 @@ class Ollama extends BaseLLM implements ModelInstaller {
     options: CompletionOptions,
   ): AsyncGenerator<string> {
     await this.ensureModelInfo();
+    await this.ensureWindowInUse(signal);
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
@@ -530,6 +628,7 @@ class Ollama extends BaseLLM implements ModelInstaller {
     options: CompletionOptions,
   ): AsyncGenerator<ChatMessage> {
     await this.ensureModelInfo();
+    await this.ensureWindowInUse(signal);
     const ollamaMessages = this._convertMessages(messages);
     const chatOptions: OllamaChatOptions = {
       model: this._getModel(),
@@ -540,7 +639,9 @@ class Ollama extends BaseLLM implements ModelInstaller {
       stream: options.stream,
       // format: options.format, // Not currently in base completion options
     };
-    if (options.tools?.length && ollamaMessages.at(-1)?.role === "user") {
+    // Every request of a tool loop carries the tools: the one after a tool
+    // result too, or the model cannot make its next call.
+    if (options.tools?.length) {
       chatOptions.tools = options.tools.map((tool) => ({
         type: "function",
         function: {
@@ -715,6 +816,7 @@ class Ollama extends BaseLLM implements ModelInstaller {
     options: CompletionOptions,
   ): AsyncGenerator<string> {
     await this.ensureModelInfo();
+    await this.ensureWindowInUse(signal);
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
