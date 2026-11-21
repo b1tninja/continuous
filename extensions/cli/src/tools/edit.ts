@@ -23,6 +23,7 @@ import {
   checkWorkspaceWrite,
   outsideWorkspacePreview,
   resolveWorkspacePath,
+  secretFilesAllowed,
   wroteOutsideResult,
 } from "./workspaceBoundary.js";
 import { generateDiff } from "./writeFile.js";
@@ -56,7 +57,7 @@ export function validateAndResolveFilePath(
 
   const resolvedPath = fs.realpathSync(absolutePath);
 
-  throwIfFileIsSecurityConcern(resolvedPath);
+  if (!secretFilesAllowed()) throwIfFileIsSecurityConcern(resolvedPath);
 
   // Check if file exists
   if (!fs.existsSync(resolvedPath)) {

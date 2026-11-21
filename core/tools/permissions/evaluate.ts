@@ -1,19 +1,20 @@
 import type { ToolPolicy } from "@continuedev/terminal-security";
 import type { Tool } from "../..";
+import { isPrivateFetchTarget } from "../../util/networkAddress";
 import type { ResolvedPath } from "../../util/pathResolver";
+import type { ShellKind } from "../../util/shell";
 import {
+  ApprovalSettings,
   approvalLoosening,
   areaLabelOf,
-  ApprovalSettings,
   isManualCall,
   levelOfCall,
-  skippedProtections,
 } from "./approval";
-import { hiddenCommandName } from "./commandName";
+import { askProtectionHit } from "./askProtections";
+import type { ExemptableRule } from "./builtinExemptions";
+import { protectionsWithCheckOff } from "./checkOfProtection";
 import { hasUnsafeShellConstruct } from "./command";
-import { envAssignmentHit } from "./envAssignments";
-import { maskAssignmentValues } from "./envMask";
-import type { EnvNameOptions } from "./envNames";
+import { hiddenCommandName } from "./commandName";
 import {
   DecisionSource,
   decideToolCall,
@@ -21,35 +22,34 @@ import {
   type DecideInput,
   type ToolDecision,
 } from "./decide";
-import type { ShellKind } from "../../util/shell";
-import { isPrivateFetchTarget } from "../../util/networkAddress";
-import { askProtectionHit } from "./askProtections";
+import { deputyCallHit, type DeputyCallInput } from "./deputyCall";
+import { envAssignmentHit } from "./envAssignments";
+import { maskAssignmentValues } from "./envMask";
+import type { EnvNameOptions } from "./envNames";
 import {
   annotateExemptions,
   exemptionsFor,
   trustedFetchAllow,
 } from "./evaluateExtras";
-import type { ExemptableRule } from "./builtinExemptions";
-import { deputyCallHit, type DeputyCallInput } from "./deputyCall";
+import { parsePermissions, uriToPath } from "./names";
 import { outsideTargetReason } from "./outsideEdits";
 import { builtinRuleOn } from "./policy";
-import { parsePermissions, uriToPath } from "./names";
+import type { ProtectedHit, ProtectedKind } from "./protected";
 import { findProtected } from "./protectedCall";
-import type { Sink } from "./taint/taintSinks";
+import type { RuleSource, ToolPermissions } from "./rules";
+import { runtimeWriteTarget } from "./runtimeWriteTarget";
+import {
+  POLICY_FILE_REASON,
+  policyFileHit,
+  profileWriteHit,
+} from "./selfProtect";
+import { shellHintDecision } from "./shellHints";
 import {
   applySecretEgressRule,
   applyTaintedSessionRule,
   type TaintedSessionInput,
 } from "./taint/taintRule";
-import { runtimeWriteTarget } from "./runtimeWriteTarget";
-import { shellHintDecision } from "./shellHints";
-import {
-  policyFileHit,
-  POLICY_FILE_REASON,
-  profileWriteHit,
-} from "./selfProtect";
-import type { ProtectedHit, ProtectedKind } from "./protected";
-import type { RuleSource, ToolPermissions } from "./rules";
+import type { Sink } from "./taint/taintSinks";
 import { applyWebArea, type WebEvaluateInput } from "./webPolicy";
 
 /**
@@ -302,26 +302,9 @@ function callLevel(input: EvaluateInput): string | undefined {
   })?.level;
 }
 
-/** Protections the call skips: every one, when the person turned safety checks off. */
+/** Protections the call skips: those whose safety check is off. */
 function protectionsToSkip(input: EvaluateInput): ProtectedKind[] {
-  if (input.approval?.safetyChecks === false) {
-    return [
-      "secret",
-      "config",
-      "network",
-      "private-url",
-      "fetch-and-run",
-      "mcp-definition-changed",
-      "hidden-command",
-      "env-assignment",
-      "destructive-command",
-      "large-change",
-      "dependency-change",
-      "unknown-host",
-      "file-deputy",
-    ];
-  }
-  return skippedProtections(input.approval);
+  return protectionsWithCheckOff(input.approval);
 }
 
 /** Says what IDGAF let through, for the decision chip, the transcript and the audit trail. */
@@ -366,13 +349,16 @@ function idgafRunsPast(
     shell: input.shell,
   });
   if (found?.level !== "idgaf") return result;
-  // The person turned safety checks on: those blocks stand at IDGAF too
+  // A block that exists here comes from a check that is on (a protection
+  // whose check is off was skipped), so it stands. IDGAF as a preset turns
+  // every check off, which is why nothing stands after picking it.
   if (
-    input.approval?.safetyChecks === true &&
     result.source &&
     (result.source === "safety-floor" || result.source === "protected-path")
   ) {
-    return result;
+    // IDGAF did not override it, so it carries no record that it did
+    const { idgafOverride: _none, ...stands } = result;
+    return stands;
   }
   const { protection, rule, ...rest } = result;
   return {
@@ -535,35 +521,36 @@ function firstProtectedHit(
 ): ProtectedHit | undefined {
   const { tool, toolName, parsedArgs } = input;
   const { resolved, resolvedPath } = parts;
+  const skip = protectionsToSkip(input);
+  // A hit worked out beforehand still belongs to one check: with that check
+  // off it is dropped, like the ones findProtected skips itself
+  const kept = (hit: ProtectedHit | undefined) =>
+    hit && !skip.includes(hit.kind) ? hit : undefined;
   return [
     findProtected({
       toolName,
       parsedArgs,
       resolvedPath,
-      skip: protectionsToSkip(input),
+      skip,
       cwd: input.cwd,
       shell: input.shell,
     }),
-    parts.privateUrl,
-    parts.changedDefinition,
-    parts.hiddenName,
-    parts.envHit,
-    input.approval?.safetyChecks === false
-      ? undefined
-      : askProtectionHit({
-          toolName,
-          parsedArgs,
-          resolvedPath,
-          shell: input.shell,
-          approval: input.approval,
-          trustedDomains: input.trustedDomains,
-          largeChangeLines: input.largeChangeLines,
-          cwd: input.cwd,
-          exempt: exemptionsFor(input),
-        }),
-    input.approval?.safetyChecks === false
-      ? undefined
-      : deputyCallHit(deputyInputOf(input, resolved, resolvedPath)),
+    kept(parts.privateUrl),
+    kept(parts.changedDefinition),
+    kept(parts.hiddenName),
+    kept(parts.envHit),
+    askProtectionHit({
+      toolName,
+      parsedArgs,
+      resolvedPath,
+      shell: input.shell,
+      approval: input.approval,
+      trustedDomains: input.trustedDomains,
+      largeChangeLines: input.largeChangeLines,
+      cwd: input.cwd,
+      exempt: exemptionsFor(input),
+    }),
+    deputyCallHit(deputyInputOf(input, resolved, resolvedPath)),
   ].find((hit) => hit !== undefined);
 }
 
@@ -643,9 +630,7 @@ function applySafetyFloor(
   basePolicy: ToolPolicy,
   commandText: string | undefined,
 ): { evaluated: ToolPolicy; floorOn: boolean } {
-  const floorOn =
-    input.approval?.safetyChecks !== false &&
-    builtinRuleOn(input.approval, "refuse-dangerous-commands");
+  const floorOn = builtinRuleOn(input.approval, "refuse-dangerous-commands");
   if (
     evaluated === "disabled" &&
     basePolicy !== "disabled" &&
@@ -680,8 +665,13 @@ function evaluateRules(input: EvaluateInput): ToolPolicyResult {
     displayValue = maskAssignmentValues(parsedArgs.command as string);
   }
 
+  // The tool's own check of where a file is reads the same switch as the
+  // evaluator's outside-paths protection
+  const outsideCheckOff = !builtinRuleOn(input.approval, "ask-outside-paths");
   let evaluated = tool.evaluateToolCallPolicy
-    ? tool.evaluateToolCallPolicy(basePolicy, parsedArgs, processedArgs)
+    ? tool.evaluateToolCallPolicy(basePolicy, parsedArgs, processedArgs, {
+        outsideCheckOff,
+      })
     : basePolicy;
   const commandText =
     toolName === "run_terminal_command" &&

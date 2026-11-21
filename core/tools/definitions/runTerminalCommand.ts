@@ -63,6 +63,11 @@ export const runTerminalCommandTool: Tool = {
           description:
             "Whether to wait for the command to complete before returning. Default is true. Set to false to run the command in the background. Set to true to run the command in the foreground and wait to collect the output.",
         },
+        cwd: {
+          type: "string",
+          description:
+            "The folder to run the command in: a workspace folder or a folder inside it, relative to the workspace root. The shell keeps nothing between calls, so use this instead of starting the command with cd. Default is the workspace root.",
+        },
       },
     },
   },

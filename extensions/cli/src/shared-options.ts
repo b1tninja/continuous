@@ -29,11 +29,11 @@ export function addCommonOptions(command: Command): Command {
     .option("--auto", "Start in auto mode (all tools allowed)")
     .option(
       "--auto-review",
-      "Experimental: a model with the 'reviewer' role decides tool calls your rules and --allow/--ask/--exclude leave open. Needs a reviewer model in config.yaml. With -p, calls it will not allow are refused.",
+      "Experimental: a model with the 'reviewer' role decides tool calls your rules and --allow/--ask/--exclude do not decide. Needs a reviewer model in config.yaml. With -p, calls it will not allow are refused.",
     )
     .option(
       "--policy <spec>",
-      "Who decides what a rule leaves open, per area (context, tools, edits, plan, questions): a preset (careful, acceptEdits, handsOff, reviewer, idgaf) or area=level pairs such as tools=permissive,plan=manual. Levels: manual, cautious, automatic, permissive, idgaf. Or a path to a policy file in the permissions.yaml format. Headless runs (-p, serve) are at your saved levels unless this or --auto is given, and a call that would ask is refused.",
+      "Who decides what a rule does not decide, per area (context, tools, edits, plan, questions): a preset (careful, acceptEdits, handsOff, reviewer, idgaf) or area=level pairs such as tools=permissive,plan=manual. Levels: manual, cautious, automatic, permissive, idgaf. Or a path to a policy file in the permissions.yaml format. Headless runs (-p, serve) are at your saved levels unless this or --auto is given, and a call that would ask is refused.",
     )
     .option("--verbose", "Enable verbose logging")
     .option(

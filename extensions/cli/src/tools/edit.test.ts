@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 
+import { POLICY_PRESETS } from "core/tools/permissions/policy.js";
 import { writeFileAtomicSync } from "core/util/atomicWrite.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -335,7 +336,7 @@ describe("editTool outside the working directory by File edits level", () => {
   });
 
   it("File edits IDGAF: a headless edit outside is prepared, not refused", async () => {
-    setPolicyLevels({ ...getPolicyLevels(), edits: "idgaf" });
+    setPolicyLevels({ ...getPolicyLevels(), ...POLICY_PRESETS.idgaf.levels });
     markFileAsRead(outsidePath);
     const result = await editTool.preprocess!({
       file_path: outsidePath,
@@ -360,7 +361,7 @@ describe("editTool outside the working directory by File edits level", () => {
   });
 
   it("the run writes the file and says it landed outside", async () => {
-    setPolicyLevels({ ...getPolicyLevels(), edits: "idgaf" });
+    setPolicyLevels({ ...getPolicyLevels(), ...POLICY_PRESETS.idgaf.levels });
     markFileAsRead(outsidePath);
     const prepared = await editTool.preprocess!({
       file_path: outsidePath,

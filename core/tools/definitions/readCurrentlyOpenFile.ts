@@ -2,7 +2,10 @@ import { ToolPolicy } from "@continuedev/terminal-security";
 import { Tool } from "../..";
 import { ResolvedPath, resolveInputPath } from "../../util/pathResolver";
 import { BUILT_IN_GROUP_NAME, BuiltInToolNames } from "../builtIn";
-import { evaluateFileAccessPolicy } from "../policies/fileAccess";
+import {
+  evaluateFileAccessPolicy,
+  type ToolPolicyContext,
+} from "../policies/fileAccess";
 
 export const readCurrentlyOpenFileTool: Tool = {
   type: "function",
@@ -32,11 +35,16 @@ export const readCurrentlyOpenFileTool: Tool = {
     basePolicy: ToolPolicy,
     _: Record<string, unknown>,
     processedArgs?: Record<string, unknown>,
+    context?: ToolPolicyContext,
   ): ToolPolicy => {
     const resolvedPath = processedArgs?.resolvedPath as
       ResolvedPath | null | undefined;
     if (!resolvedPath) return basePolicy;
-    return evaluateFileAccessPolicy(basePolicy, resolvedPath.isWithinWorkspace);
+    return evaluateFileAccessPolicy(
+      basePolicy,
+      resolvedPath.isWithinWorkspace,
+      context,
+    );
   },
   systemMessageDescription: {
     prefix: `To view the user's currently open file, use the ${BuiltInToolNames.ReadCurrentlyOpenFile} tool.

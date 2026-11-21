@@ -2,6 +2,7 @@ import { evaluateTerminalCommandSecurity } from "@continuedev/terminal-security"
 import { describe, expect, it } from "vitest";
 import { evaluateToolPolicyWithRules } from "./evaluate";
 import { POLICY_PRESETS, type PolicyLevels } from "./policy";
+import { builtinForPreset } from "./safetyDegrees";
 
 /**
  * IDGAF (2.16.2): the permission layer never refuses or holds a call. Every
@@ -23,6 +24,8 @@ const fileTool = {
 };
 
 const IDGAF: PolicyLevels = POLICY_PRESETS.idgaf.levels;
+// Picking the preset sets the checks too: none of them is on
+const NO_CHECKS = builtinForPreset("idgaf");
 
 const command = (
   text: string,
@@ -35,7 +38,7 @@ const command = (
     parsedArgs: { command: text },
     permissions: undefined,
     shell: "bash",
-    approval: { levels: IDGAF },
+    approval: { levels: IDGAF, builtin: NO_CHECKS },
     ...over,
   });
 
@@ -49,7 +52,7 @@ const write = (filepath: string, levels: PolicyLevels = IDGAF) =>
       resolvedPath: { uri: `file://${filepath}`, isWithinWorkspace: false },
     },
     permissions: undefined,
-    approval: { levels },
+    approval: { levels, builtin: levels === IDGAF ? NO_CHECKS : undefined },
   });
 
 describe("IDGAF runs every call and records what would have objected", () => {
@@ -60,6 +63,7 @@ describe("IDGAF runs every call and records what would have objected", () => {
         command("terraform destroy", {
           approval: {
             levels: IDGAF,
+            builtin: NO_CHECKS,
             floor: ["runTerminalCommand(terraform destroy*)"],
           },
         }),
@@ -74,18 +78,6 @@ describe("IDGAF runs every call and records what would have objected", () => {
     ],
     ["the run-time write lock", () => command("rm -rf $DIR"), ASK, "floor"],
     [
-      "a command that hides what it runs",
-      () => command("G=rm; $G -rf ~"),
-      OFF,
-      undefined,
-    ],
-    [
-      "obfuscation the safety floor cannot see through",
-      () => command("rm${IFS}-rf${IFS}~"),
-      OFF,
-      undefined,
-    ],
-    [
       "a deny rule (Never) in config.yaml",
       () =>
         command("git push origin main", {
@@ -94,13 +86,6 @@ describe("IDGAF runs every call and records what would have objected", () => {
       OFF,
       "deny-rule",
     ],
-    [
-      "a protected secret file",
-      () => command("cat .env"),
-      ASK,
-      "protected-path",
-    ],
-    ["the safety floor", () => command("rm -rf /"), OFF, undefined],
   ] as const)("%s", (_name, decide, would, source) => {
     const r = decide();
     expect(r.policy).toBe(ALLOW);
@@ -110,6 +95,37 @@ describe("IDGAF runs every call and records what would have objected", () => {
     // The model is never told: the reason is for the chip and the audit trail
     expect(r.reason).toContain("IDGAF");
   });
+
+  const CHECKS = [
+    ["a command that hides what it runs", "G=rm; $G -rf ~", OFF],
+    [
+      "obfuscation the safety floor cannot see through",
+      "rm${IFS}-rf${IFS}~",
+      OFF,
+    ],
+    ["a protected secret file", "cat .env", ASK],
+    ["the safety floor", "rm -rf /", OFF],
+  ] as const;
+
+  it.each(CHECKS)(
+    "%s: with the IDGAF preset no check is on, so it runs and nothing objects",
+    (_name, text) => {
+      const r = command(text);
+      expect(r.policy).toBe(ALLOW);
+      expect(r.source).toBe("idgaf");
+      // The check did not run, so there is nothing to record
+      expect(r.idgafOverride).toBeUndefined();
+    },
+  );
+
+  it.each(CHECKS)(
+    "%s: IDGAF levels with the checks left on still stop it",
+    (_name, text, stops) => {
+      const r = command(text, { approval: { levels: IDGAF } });
+      expect(r.policy).toBe(stops);
+      expect(r.source).not.toBe("idgaf");
+    },
+  );
 
   it("records nothing when nothing would have objected", () => {
     const r = command("npm test");

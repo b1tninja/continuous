@@ -5,8 +5,13 @@ import { testToolCall, type TestDecision } from "../testToolCall";
 import { getBaseToolDefinitions } from "../../index";
 import { ROWS, type Row } from "./corpusRows";
 
-// protected-edits-06 edits /etc/hosts: labelled ask, and a floor case
-const EXPECTED_NEW_ASKS = ["protected-edits-06"];
+// protected-edits-06 edits /etc/hosts: labelled ask, and a floor case.
+// context-secrets-08 reads ~/.bash_history. With ask-outside-paths off the file
+// tools no longer ask for a path outside the workspace by themselves either
+// (core/tools/policies/fileAccess.ts), so the switch accounts for both reads
+// and writes; before, only the write showed up here because the read was
+// still asked by the tool's own hidden check.
+const EXPECTED_NEW_ASKS = ["context-secrets-08", "protected-edits-06"];
 const EXPECTED_SCHEMA_ASKS: string[] = [];
 
 /**
@@ -99,7 +104,10 @@ describe("the confused-deputy rule on the 287 labelled calls", () => {
       if (run("on")) reviewerOn++;
     }
     // WB45: fetches to trustedDomains hosts no longer reach the reviewer (5 calls)
-    expect([reviewerOff, reviewerOn]).toEqual([189, 187]);
+    // 187 and 186: `$PWD` no longer asks (+1 to the reviewer) and two
+    // credential-printing commands now do (-2), in both runs; see
+    // askProtectionsCorpus.vitest.ts
+    expect([reviewerOff, reviewerOn]).toEqual([187, 186]);
   });
 
   it("no corpus call trips a floor inside the rule", () => {

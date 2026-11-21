@@ -1,22 +1,26 @@
 import { ShieldCheckIcon } from "@heroicons/react/24/outline";
 import { BUILTIN_RULES } from "core/tools/permissions/policy";
+import {
+  builtinForDegree,
+  safetyLabel,
+  safetyStateOf,
+} from "core/tools/permissions/safetyDegrees";
 import { useEffect, useId, useRef, useState } from "react";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
-import { selectIdgafAreas } from "../../redux/selectors/selectAutoApproval";
 import { changePolicyExtras } from "../../redux/thunks/policySettings";
 import ToggleSwitch from "../gui/Switch";
-import { safetyShieldOn } from "./safetyChecks";
 
 /**
- * The safety-check shield. It is the person's choice: on, the checks ask
- * (and refuse at IDGAF); off, they do not. Left unset, they are off at IDGAF
- * and on at every other level. The list under it switches one check at a time.
+ * The safety checks. A preset sets them together with the levels (IDGAF
+ * leaves none on); each check is still its own switch, and the two buttons set
+ * all of them at once. The badge says how many are on.
  */
 export function SafetyShield() {
   const dispatch = useAppDispatch();
   const extras = useAppSelector((s) => s.ui.policyExtras);
-  const idgaf = useAppSelector((s) => selectIdgafAreas(s).length > 0);
-  const on = safetyShieldOn(extras.safetyChecks, idgaf);
+  const state = safetyStateOf(extras.builtin);
+  const label = safetyLabel(extras.builtin);
+  const anyOn = state.on > 0;
   const [open, setOpen] = useState(false);
   const listId = useId();
   const root = useRef<HTMLDivElement>(null);
@@ -41,13 +45,9 @@ export function SafetyShield() {
     };
   }, [open]);
 
-  const label = on
-    ? extras.safetyChecks === true
-      ? "Safety checks on"
-      : "Safety checks on, off at IDGAF until you choose"
-    : extras.safetyChecks === false
-      ? "Safety checks off"
-      : "Safety checks off at IDGAF";
+  const setAll = (degree: "all" | "none") =>
+    void dispatch(changePolicyExtras({ builtin: builtinForDegree(degree) }));
+  const summary = `Safety checks: ${label}`;
 
   return (
     <div ref={root} data-testid="safety-shield" className="text-2xs">
@@ -56,13 +56,14 @@ export function SafetyShield() {
         type="button"
         data-testid="safety-shield-toggle"
         data-roving=""
-        data-on={on ? "true" : "false"}
-        aria-label={label}
+        data-on={anyOn ? "true" : "false"}
+        data-degree={state.degree}
+        aria-label={summary}
         aria-expanded={open}
         aria-controls={listId}
-        title={label}
+        title={summary}
         className={`hover:bg-list-item-hover flex min-h-6 min-w-6 flex-none cursor-pointer items-center justify-center rounded-full border-none bg-transparent px-1 ${
-          on ? "text-success" : "text-description"
+          anyOn ? "text-success" : "text-description"
         }`}
         onClick={() => setOpen(!open)}
       >
@@ -76,34 +77,36 @@ export function SafetyShield() {
           data-testid="safety-shield-panel"
           className="absolute inset-x-0 bottom-full z-10 flex max-h-72 flex-col gap-1 overflow-y-auto rounded-t-default border border-solid border-command-border bg-input px-2 py-1 shadow-lg"
         >
-          <div className="font-semibold text-foreground">Safety checks</div>
-          <p className="mt-0 mb-1 text-description-muted">
-            Your choice. Off, these checks do not block. On, they ask, and at
-            IDGAF they refuse. Left unset, they are off at IDGAF and on
-            otherwise.
-          </p>
-          <div data-testid="safety-shield-master">
-            <ToggleSwitch
-              isToggled={on}
-              text={on ? "Safety checks on" : "Safety checks off"}
-              onToggle={() =>
-                void dispatch(changePolicyExtras({ safetyChecks: !on }))
-              }
-            />
-          </div>
-          <div className="mt-1 font-semibold text-foreground">
-            Individual checks
+          <div className="font-semibold text-foreground">
+            Safety checks:{" "}
+            <span data-testid="safety-shield-label">{label}</span>
           </div>
           <p className="mt-0 mb-1 text-description-muted">
-            {on
-              ? "These apply when safety checks are on."
-              : "Safety checks are off, so none of these apply. Turn them on to choose one at a time."}
+            A preset sets these along with the levels: IDGAF leaves none on.
+            Each one can be switched on its own.
           </p>
+          <div className="flex gap-1" data-testid="safety-shield-master">
+            <button
+              type="button"
+              data-testid="safety-shield-all"
+              className="hover:bg-list-item-hover cursor-pointer rounded-default border border-solid border-command-border bg-transparent px-2 py-0.5 text-foreground"
+              onClick={() => setAll("all")}
+            >
+              All on
+            </button>
+            <button
+              type="button"
+              data-testid="safety-shield-none"
+              className="hover:bg-list-item-hover cursor-pointer rounded-default border border-solid border-command-border bg-transparent px-2 py-0.5 text-foreground"
+              onClick={() => setAll("none")}
+            >
+              None on
+            </button>
+          </div>
           {BUILTIN_RULES.map((rule) => (
             <div key={rule.id} data-testid={`shield-${rule.id}`}>
               <ToggleSwitch
-                isToggled={on && extras.builtin?.[rule.id] !== false}
-                disabled={!on}
+                isToggled={extras.builtin?.[rule.id] !== false}
                 text={rule.label}
                 tooltip={rule.description}
                 onToggle={() =>

@@ -827,11 +827,16 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
        */
       workspaceDirs?: string[];
       /**
-       * File edits is IDGAF: the file tools may name a path outside
-       * the workspace (tools/permissions/outsideEdits.ts). The decision was
-       * made by tools/evaluatePolicy; this lets the tool resolve the path.
+       * The outside-paths check is off: the file tools may name a path
+       * outside the workspace (tools/permissions/outsideEdits.ts). The decision
+       * was made by tools/evaluatePolicy; this lets the tool resolve the path.
        */
       allowOutsideWorkspace?: boolean;
+      /**
+       * The protect-secrets check is off: the file tools may read and write
+       * a file that looks like a secret (tools/permissions/outsideEdits.ts).
+       */
+      allowSecretFiles?: boolean;
       /**
        * What run_terminal_command does with output that looks like a
        * runaway, from the Tools policy level: "stop" (default) or
@@ -980,7 +985,7 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
       args: Record<string, unknown>;
       /** As for tools/call: resolve paths against these folders */
       workspaceDirs?: string[];
-      /** As for tools/call: File edits is IDGAF */
+      /** As for tools/call: the outside-paths check is off */
       allowOutsideWorkspace?: boolean;
     },
     {
