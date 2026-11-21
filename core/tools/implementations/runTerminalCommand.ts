@@ -265,6 +265,36 @@ function finalContent(
   return stopped + text;
 }
 
+/**
+ * The item for a command that has ended: how it ended decides the status line
+ * and whether the output counts as a failure's (which is given more room).
+ * `display` is the same text with its colours, for the screen.
+ */
+function endedItem(
+  record: CommandRecord,
+  code: number | null,
+  timedOut: boolean,
+) {
+  let status: string;
+  let failed = true;
+  if (record.stoppedFor && record.stoppedFor !== "stopped") {
+    status = "Command stopped: its output looked like a runaway";
+  } else if (timedOut) {
+    status = "Command timed out";
+  } else if (!code) {
+    status = "Command completed";
+    failed = false;
+  } else {
+    status = `Command failed with exit code ${code}`;
+  }
+  return terminalItem(
+    finalContent(record, failed),
+    status,
+    record,
+    finalContent(record, failed, true),
+  );
+}
+
 /** The result of a command the lint stopped: nothing ran. */
 function commandNotRun(message: string) {
   return [
@@ -509,43 +539,7 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
             // read_command_output, not sent into a message already sent
             if (!waitForCompletion || returned) return;
             returned = true;
-            if (record.stoppedFor && record.stoppedFor !== "stopped") {
-              resolve([
-                terminalItem(
-                  finalContent(record, true),
-                  "Command stopped: its output looked like a runaway",
-                  record,
-                  finalContent(record, true, true),
-                ),
-              ]);
-            } else if (timedOut) {
-              resolve([
-                terminalItem(
-                  finalContent(record, true),
-                  "Command timed out",
-                  record,
-                  finalContent(record, true, true),
-                ),
-              ]);
-            } else if (!code || code === 0) {
-              resolve([
-                terminalItem(
-                  finalContent(record, false),
-                  "Command completed",
-                  record,
-                  finalContent(record, false, true),
-                ),
-              ]);
-            } else {
-              resolve([
-                terminalItem(
-                  finalContent(record, true),
-                  `Command failed with exit code ${code}`,
-                  record,
-                  finalContent(record, true, true),
-                ),
-              ]);
-            }
+            resolve([endedItem(record, code, timedOut)]);
           };
 
           childProc.on("close", onDone);

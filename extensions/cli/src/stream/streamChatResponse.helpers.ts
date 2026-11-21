@@ -1532,9 +1532,9 @@ export async function executeStreamedToolCalls(
               durMs: Date.now() - startedAt,
               ...(bashEnd
                 ? {
-                    ...(bashEnd.exit !== undefined
-                      ? { exit: bashEnd.exit }
-                      : {}),
+                    ...(bashEnd.exit === undefined
+                      ? {}
+                      : { exit: bashEnd.exit }),
                     ...(bashEnd.signal ? { signal: bashEnd.signal } : {}),
                     ...(bashEnd.timedOut ? { timedOut: true as const } : {}),
                     ...(bashEnd.exit === 0

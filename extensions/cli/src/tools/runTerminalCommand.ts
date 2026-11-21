@@ -9,8 +9,8 @@ import {
 import { resolveRequestedCwd } from "core/tools/implementations/terminalCwd.js";
 import { commandLintGate } from "core/tools/permissions/commandLint.js";
 import { missingBinaryGate } from "core/tools/permissions/missingBinaryGate.js";
-import { getCommandExecutor } from "core/util/commandExecutor.js";
 import { stripAnsi } from "core/util/ansi.js";
+import { getCommandExecutor } from "core/util/commandExecutor.js";
 import { decodeCommandOutput } from "core/util/commandOutput.js";
 import {
   COMMAND_STDIO,
