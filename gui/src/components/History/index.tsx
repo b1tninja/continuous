@@ -371,15 +371,19 @@ export function History() {
           onChange={(e) => setSearchTerm(e.target.value)}
         />
         {searchTerm && (
-          <XMarkIcon
-            className="absolute top-1/2 right-3 h-5 w-5 -translate-y-1/2 transform cursor-pointer rounded-full p-0.5 text-vsc-foreground transition-colors duration-50 hover:bg-vsc-background"
+          <button
+            type="button"
+            aria-label="Clear search"
+            className="absolute top-1/2 right-3 flex h-6 w-6 -translate-y-1/2 transform cursor-pointer items-center justify-center rounded-full border-none bg-transparent p-0.5 text-vsc-foreground transition-colors duration-50 hover:bg-vsc-background"
             onClick={() => {
               setSearchTerm("");
               if (searchInputRef.current) {
                 searchInputRef.current.focus();
               }
             }}
-          />
+          >
+            <XMarkIcon className="h-5 w-5" aria-hidden="true" />
+          </button>
         )}
       </div>
 

@@ -44,24 +44,40 @@ export function SimpleToolCallUI({
     }
   }
 
+  const rowClass =
+    "flex min-w-0 flex-row items-center justify-between gap-1.5 text-xs text-description transition-colors duration-200 ease-in-out";
+  const row = (
+    <>
+      <ToggleWithIcon
+        icon={Icon}
+        isToggleable={isToggleable}
+        open={shouldShowContent}
+        isClickable={isSingleItem}
+      />
+      <ToolCallStatusMessage tool={tool} toolCallState={toolCallState} />
+    </>
+  );
+
   return (
     <div className="mt-1 flex flex-col px-4">
       <div className="flex min-w-0 flex-row items-center justify-between gap-2">
-        <div
-          className={`flex min-w-0 flex-row items-center justify-between gap-1.5 text-xs text-description transition-colors duration-200 ease-in-out ${
-            isClickable ? "cursor-pointer hover:brightness-125" : ""
-          }`}
-          onClick={isClickable ? handleClick : undefined}
-          data-testid="context-items-peek"
-        >
-          <ToggleWithIcon
-            icon={Icon}
-            isToggleable={isToggleable}
-            open={shouldShowContent}
-            isClickable={isSingleItem}
-          />
-          <ToolCallStatusMessage tool={tool} toolCallState={toolCallState} />
-        </div>
+        {isClickable ? (
+          // A row that opens its results is a button; one with nothing to
+          // open stays plain text
+          <button
+            type="button"
+            aria-expanded={isToggleable ? open : undefined}
+            className={`${rowClass} cursor-pointer border-none bg-transparent p-0 text-left [font-family:inherit] hover:brightness-125`}
+            onClick={handleClick}
+            data-testid="context-items-peek"
+          >
+            {row}
+          </button>
+        ) : (
+          <div className={rowClass} data-testid="context-items-peek">
+            {row}
+          </div>
+        )}
 
         {!!toolCallState.output?.length && (
           <ToolTruncateHistoryIcon historyIndex={historyIndex} />

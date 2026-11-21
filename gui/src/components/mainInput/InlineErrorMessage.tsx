@@ -29,6 +29,9 @@ export default function InlineErrorMessage() {
     (state) => state.session.inlineErrorMessage,
   );
   const detail = outOfContextDetail(inlineErrorMessage);
+  // Buttons that look like the links they replace
+  const linkButton =
+    "cursor-pointer border-none bg-transparent p-0 [font-family:inherit] text-xs text-inherit hover:underline";
   if (detail) {
     return (
       <div
@@ -41,8 +44,10 @@ export default function InlineErrorMessage() {
           {detail}
         </p>
         <div className="flex flex-row items-center justify-center gap-1.5 px-3 text-description">
-          <div
-            className="cursor-pointer text-xs hover:underline"
+          <button
+            type="button"
+            aria-label="Open config"
+            className={linkButton}
             onClick={() => {
               ideMessenger.post("config/openProfile", {
                 profileId: undefined,
@@ -51,16 +56,17 @@ export default function InlineErrorMessage() {
           >
             <span className="hidden xs:flex">Open config</span>
             <span className="xs:hidden">Config</span>
-          </div>
+          </button>
           |
-          <span
-            className="cursor-pointer text-xs hover:underline"
+          <button
+            type="button"
+            className={linkButton}
             onClick={() => {
               dispatch(setInlineErrorMessage(undefined));
             }}
           >
             Hide
-          </span>
+          </button>
         </div>
       </div>
     );
