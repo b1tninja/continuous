@@ -91,6 +91,7 @@ import {
   selectPendingToolCalls,
 } from "../selectors/selectToolCalls";
 import { callToolById } from "./callToolById";
+import { holdForHeadsUp } from "./headsUp";
 import { cancelStream } from "./cancelStream";
 import {
   buildReviewHistory,
@@ -815,8 +816,17 @@ export const streamNormalInput = createAsyncThunk<
       await dispatch(cancelStream({ loop: "keep" }));
       return;
     }
+    // A heads-up window holds an allowed call for a countdown (headsUp.ts): it
+    // waits like an ask, in the same toolbar, and runs when the window ends
+    const heldForHeadsUp = holdForHeadsUp(
+      getState(),
+      dispatch,
+      policies.filter(({ policy }) => policy === "allowedWithoutPermission"),
+    );
     const autoApprovedPolicies = policies.filter(
-      ({ policy }) => policy === "allowedWithoutPermission",
+      ({ policy, toolCallState }) =>
+        policy === "allowedWithoutPermission" &&
+        !heldForHeadsUp.has(toolCallState.toolCallId),
     );
     const needsApprovalPolicies = policies.filter(
       ({ policy }) => policy === "allowedWithPermission",
@@ -849,7 +859,7 @@ export const streamNormalInput = createAsyncThunk<
       // A reply without tool calls ends the agent's turn: messages queued
       // while it worked can go now (waiting for approval is not an end)
       dispatch(requestQueuedMessagesSend());
-    } else if (needsApprovalPolicies.length > 0) {
+    } else if (needsApprovalPolicies.length > 0 || heldForHeadsUp.size > 0) {
       // What needs no approval runs now; only the rest waits for the person
       if (autoApprovedPolicies.length > 0) {
         const state4 = getState();

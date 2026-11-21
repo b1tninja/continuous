@@ -156,6 +156,7 @@ export const WEBVIEW_TO_CORE_PASS_THROUGH: (keyof ToCoreFromWebviewProtocol)[] =
     "web/closeSession",
     "tools/autoReview",
     "audit/answer",
+    "audit/timer",
     "audit/autoAnswer",
     "audit/status",
     "audit/list",

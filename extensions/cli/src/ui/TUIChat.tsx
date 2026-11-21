@@ -11,6 +11,7 @@ import React, {
 import { ToolPermissionServiceState } from "src/services/ToolPermissionService.js";
 
 import { useServices } from "../hooks/useService.js";
+import { setCountdownAvailable } from "../permissions/askCountdown.js";
 import {
   AuthServiceState,
   ConfigServiceState,
@@ -271,6 +272,12 @@ const TUIChat: React.FC<TUIChatProps> = ({
   useEffect(() => {
     resetChatHistoryRef.current = resetChatHistory;
   }, [resetChatHistory]);
+
+  // This screen draws the decision timer's countdown, so a timer may run
+  useEffect(() => {
+    setCountdownAvailable(true);
+    return () => setCountdownAvailable(false);
+  }, []);
 
   // Memoize the chat history conversion to avoid expensive recalculation on every render
 

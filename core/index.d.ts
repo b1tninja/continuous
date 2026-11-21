@@ -1580,6 +1580,17 @@ interface ToolCallState {
   /** The rule (as written in config.yaml) and the kind of check that made the call wait. */
   policyRule?: string;
   policySource?: string;
+  /**
+   * The decision timer for a call that is waiting (decisionTimer.ts): when the
+   * window started and how long it is, and what happens when it ends. `kept`
+   * is set when the person chose to keep waiting, which stops the countdown.
+   */
+  askTimer?: {
+    startedAt: number;
+    seconds: number;
+    proposed: "allow" | "refuse";
+    kept?: boolean;
+  };
   /** Why the call ran or was refused, for the decision chip. Set by the policy check. */
   decision?: ToolCallDecision;
   output?: ContextItem[];

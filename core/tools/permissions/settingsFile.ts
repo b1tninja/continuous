@@ -18,6 +18,11 @@ import {
 } from "./policy.js";
 import { validateRuleText } from "./ruleAnalysis.js";
 import { builtinForDegree } from "./safetyDegrees.js";
+import {
+  HEADS_UP_SECONDS,
+  parseTimerSettings,
+  type TimerSettings,
+} from "./decisionTimer.js";
 import { storedWebLevel } from "./webPolicy.js";
 
 /**
@@ -50,6 +55,19 @@ export interface PolicyFileSettings extends PolicySettings {
   /** The person's custom set of levels and the preset it started from (`levels.custom`). */
   custom?: StoredCustomSet;
   /**
+   * The decision timer: a window in seconds per level (`levels.timer`), the
+   * time a decision is held as a proposal before it takes effect
+   * (decisionTimer.ts). Absent is off. Stored inside `levels`, as the custom
+   * set is, so an older build ignores it instead of reading the file as broken.
+   */
+  timer?: TimerSettings;
+  /**
+   * A heads-up on a call the policy allows (`levels.headsUp`): a window per
+   * level, 5 or 10 s, during which the call is held and can be denied. Separate
+   * from `timer`, which governs asks. Absent is none.
+   */
+  headsUp?: TimerSettings;
+  /**
    * Skip the editor dialog that asks before a permission change is saved.
    * Absent or off: the dialog appears. On: that dialog is skipped. It does
    * not change an ask or a refusal before a command runs.
@@ -76,6 +94,12 @@ export interface StoredCustomSet {
 
 /** Where the custom set lives in the file. */
 export const CUSTOM_SET_PATH = ["levels", "custom"] as const;
+
+/** Where the decision timer lives in the file. */
+export const TIMER_PATH = ["levels", "timer"] as const;
+
+/** Where the heads-up windows live in the file. */
+export const HEADS_UP_PATH = ["levels", "headsUp"] as const;
 
 export interface PolicyFileRead {
   settings: PolicyFileSettings;
@@ -223,6 +247,26 @@ export function parsePolicyFile(text: string | undefined): PolicyFileRead {
       );
     }
   }
+  const rawTimer = raw.levels?.timer;
+  if (rawTimer !== undefined) {
+    const timer = parseTimerSettings(rawTimer);
+    if (Object.keys(timer).length > 0) settings.timer = timer;
+    else if (JSON.stringify(rawTimer) !== "{}") {
+      notices.push(
+        "levels.timer: no level has a window of 5, 10, 15 or 30 seconds, so there is no timer.",
+      );
+    }
+  }
+  const rawHeadsUp = raw.levels?.headsUp;
+  if (rawHeadsUp !== undefined) {
+    const headsUp = parseTimerSettings(rawHeadsUp, HEADS_UP_SECONDS);
+    if (Object.keys(headsUp).length > 0) settings.headsUp = headsUp;
+    else if (JSON.stringify(rawHeadsUp) !== "{}") {
+      notices.push(
+        "levels.headsUp: no level has a window of 5 or 10 seconds, so allowed calls are not held.",
+      );
+    }
+  }
   return { settings, notices };
 }
 
@@ -283,6 +327,10 @@ export interface PolicyFileUpdate {
   planAllowTerminal?: boolean;
   /** `levels.custom`: the set to keep for recall; null removes it, absent keeps what the file has */
   custom?: StoredCustomSet | null;
+  /** `levels.timer`: a window per level; null or an empty object removes it, absent keeps what the file has */
+  timer?: TimerSettings | null;
+  /** `levels.headsUp`: a window per level; null or an empty object removes it, absent keeps what the file has */
+  headsUp?: TimerSettings | null;
 }
 
 /** Why an update cannot be written, or undefined. Nothing is written when it cannot. */
@@ -305,6 +353,24 @@ export function policyUpdateProblem(
   }
   if (update.custom && !readCustomSet(update.custom)) {
     return "levels.custom: a custom set needs all five levels, none of them IDGAF, and a preset name in from.";
+  }
+  if (update.timer) {
+    const given = Object.keys(update.timer);
+    const kept = Object.keys(parseTimerSettings(update.timer));
+    const bad = given.filter((k) => !kept.includes(k));
+    if (bad.length > 0) {
+      return `levels.timer: ${bad.join(", ")} cannot be set. Use manual, cautious, automatic or permissive, with 5, 10, 15 or 30 seconds (IDGAF has no timer).`;
+    }
+  }
+  if (update.headsUp) {
+    const given = Object.keys(update.headsUp);
+    const kept = Object.keys(
+      parseTimerSettings(update.headsUp, HEADS_UP_SECONDS),
+    );
+    const bad = given.filter((k) => !kept.includes(k));
+    if (bad.length > 0) {
+      return `levels.headsUp: ${bad.join(", ")} cannot be set. Use manual, cautious, automatic or permissive, with 5 or 10 seconds (IDGAF has none).`;
+    }
   }
   return undefined;
 }
@@ -449,6 +515,32 @@ export function applyPolicyUpdate(
         }),
       );
     }
+  }
+  if (
+    update.timer === null ||
+    (update.timer && Object.keys(update.timer).length === 0)
+  ) {
+    if (doc.hasIn([...TIMER_PATH])) doc.deleteIn([...TIMER_PATH]);
+    dropEmptyMap(doc, "levels");
+  } else if (update.timer) {
+    doc.setIn(
+      [...TIMER_PATH],
+      doc.createNode({ ...parseTimerSettings(update.timer) }),
+    );
+  }
+  if (
+    update.headsUp === null ||
+    (update.headsUp && Object.keys(update.headsUp).length === 0)
+  ) {
+    if (doc.hasIn([...HEADS_UP_PATH])) doc.deleteIn([...HEADS_UP_PATH]);
+    dropEmptyMap(doc, "levels");
+  } else if (update.headsUp) {
+    doc.setIn(
+      [...HEADS_UP_PATH],
+      doc.createNode({
+        ...parseTimerSettings(update.headsUp, HEADS_UP_SECONDS),
+      }),
+    );
   }
   if (update.trustedMcpServers) {
     const wanted = new Set(update.trustedMcpServers.map((n) => n.trim()));

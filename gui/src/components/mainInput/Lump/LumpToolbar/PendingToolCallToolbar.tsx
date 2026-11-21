@@ -1,9 +1,11 @@
 import { BuiltInToolNames } from "core/tools/builtIn";
+import { countdownLabel } from "core/tools/permissions/decisionTimer";
 import { useRef } from "react";
 
 import { useAppDispatch, useAppSelector } from "../../../../redux/hooks";
 import { selectPendingToolCalls } from "../../../../redux/selectors/selectToolCalls";
 import { callToolById } from "../../../../redux/thunks/callToolById";
+import { setToolCallTimer } from "../../../../redux/slices/sessionSlice";
 import { cancelToolCallThunk } from "../../../../redux/thunks/cancelToolCall";
 import { useApprovalFocus } from "../../../a11y/useApprovalFocus";
 import { useRestoreFocusOnResolve } from "../../../a11y/useRestoreFocusOnResolve";
@@ -12,6 +14,7 @@ import { Button } from "../../../ui";
 import { useMainEditor } from "../../TipTapEditor";
 import { AlwaysAllowButton } from "./AlwaysAllowButton";
 import { PendingActionSummary } from "./PendingActionSummary";
+import { useToolTimers } from "./useToolTimers";
 
 export const generateToolCallButtonTestId = (
   action: "accept" | "reject",
@@ -32,6 +35,8 @@ export function PendingToolCallToolbar() {
   const dispatch = useAppDispatch();
   const metaKey = getMetaKeyLabel() === "⌘" ? "Meta" : "Control";
   const pendingToolCalls = useAppSelector(selectPendingToolCalls);
+  // The decision timer's countdowns, for the asks that have one
+  const now = useToolTimers();
   const editor = useMainEditor();
   // "command" only when every waiting call is one: an edit, a fetch or an MCP
   // tool is not a command, and the card above already names each kind.
@@ -113,6 +118,49 @@ export function PendingToolCallToolbar() {
             />
 
             <div className="ml-auto flex flex-wrap items-center justify-end gap-x-1">
+              {toolCall.askTimer && !toolCall.askTimer.kept && (
+                <span
+                  role="timer"
+                  aria-live="off"
+                  className="text-2xs text-description"
+                  data-testid={`ask-timer-${toolCall.toolCallId}`}
+                >
+                  {toolCall.askTimer.proposed === "refuse"
+                    ? "Refused in "
+                    : "Runs in "}
+                  {countdownLabel(
+                    Math.ceil(
+                      Math.max(
+                        0,
+                        toolCall.askTimer.startedAt +
+                          toolCall.askTimer.seconds * 1000 -
+                          now,
+                      ) / 1000,
+                    ),
+                  )}{" "}
+                  unless you answer
+                </span>
+              )}
+              {toolCall.askTimer && !toolCall.askTimer.kept && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="my-0.5 min-h-6 min-w-6 font-medium text-description"
+                  title="Stop the countdown; this call waits for you"
+                  aria-describedby={actionId(toolCall.toolCallId)}
+                  onClick={() =>
+                    dispatch(
+                      setToolCallTimer({
+                        toolCallId: toolCall.toolCallId,
+                        timer: { ...toolCall.askTimer!, kept: true },
+                      }),
+                    )
+                  }
+                  data-testid={`keep-waiting-${toolCall.toolCallId}`}
+                >
+                  <span>Keep waiting</span>
+                </Button>
+              )}
               {!isJetBrains() && (
                 <AlwaysAllowButton
                   toolCallId={toolCall.toolCallId}

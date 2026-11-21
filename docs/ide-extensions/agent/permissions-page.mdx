@@ -107,6 +107,23 @@ Rules are shown grouped as Never, Ask and Always (the files keep the names `deny
 
 A rule that is **Ignored** is struck through with the reason: an `allow` rule that came with the workspace is ignored (a repository can add deny and ask rules, not allow rules), allow rules are not consulted while an area is Manual (file edits excepted), and every rule, the locked rules included, is ignored while an area is at IDGAF. A rule the page can warn about says so: a pattern after an MCP tool name never matches, and an allow rule written with `host:`, `net:` or `effect:` never allows anything.
 
+## Decision timer
+
+A decision timer holds a decision for a short, visible countdown before it takes effect, so you can allow or deny it without a refusal and a retry. The policy decides exactly as it does without the timer. The timer only shows what it decided and gives you the window to answer differently.
+
+- **Asks.** A call that would ask shows "Refused in 12 s unless you answer" with **Keep waiting**. If nobody answers, the ask is refused, which is what the policy does when no one can be asked. Windows are 5, 10, 15 or 30 seconds.
+- **Allowed calls.** A call the policy allows shows "Runs in 5 s unless you answer". Reject stops it, Accept runs it now, and if nobody answers it runs. Windows are 5 or 10 seconds.
+
+Set a window for each level in **Decision timer** on the Approval card, or under `levels.timer` and `levels.headsUp` in [`permissions.yaml`](/reference/permissions-yaml). Both are off until you set them.
+
+Some decisions never get a countdown: a refusal from a rule you wrote, a floor or a guard, an ask that a rule or a guard raised (an ask rule, a protected path, a taint or egress check), anything at IDGAF, and any run with no one at the screen. They wait or refuse as they always did.
+
+The agent is told who decided. If the window ran out it hears that no one answered and that you did not refuse the call; if you declined it hears that you did. It is not told to try another way round.
+
+A countdown adds to the wait before the next request to the model, and a prompt cache entry lasts five minutes by default. That is why no window is longer than 30 seconds, and why an allowed call is held for at most 10. The asks waiting together share one clock, so a turn adds at most the longest window. The audit trail records a choice you made as yours and a window that ran out as the system's.
+
+The terminal agent shows the same countdown on an ask, with `w` to keep waiting. It does not hold allowed calls, and it holds nothing in `cn serve`, the editor link or a headless run, where no one sees a screen.
+
 ## Files outside the workspace
 
 At **File edits = IDGAF** (the top level), the agent can create, edit and write files outside the workspace without asking, in the editor, the terminal UI, headless runs and `serve`. The audit trail lists the call as allowed by the level with the absolute path, and the tool result says `Wrote outside the workspace: <path>`.

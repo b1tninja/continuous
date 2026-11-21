@@ -40,6 +40,8 @@ Most of this is written for you: the toolbar and **Settings, Tools** in the exte
 | `levels.questions`       | level                                  | `cautious`                               | extension, `/policy`                         |
 | `levels.web`             | level, or `off` / `listed`             | none: follows `levels.tools`             | `/policy`, by hand                           |
 | `levels.custom`          | `from:` a preset, `levels:` the five levels | none                                | extension (Custom policy)                    |
+| `levels.timer`           | a window per level: 5, 10, 15 or 30 seconds | none (off)                          | extension (Decision timer), by hand          |
+| `levels.headsUp`         | a window per level: 5 or 10 seconds    | none (off)                               | extension (Decision timer), by hand          |
 | `plan.maxNewItems`       | whole number, 0 or more                | `5`                                      | extension                                    |
 | `plan.allowTerminal`     | `true` / `false` (or `on` / `off`)     | `false`                                  | by hand, extension (Custom policy) |
 | `plan.mcpTools`          | list of `server/tool`, `server/*` or `server` | none                              | by hand, extension (Custom policy) |
@@ -79,6 +81,19 @@ levels:
 ```
 
 It sits under `levels` rather than at the top of the file on purpose: every terminal agent and extension version reads `levels` and only the five area names inside it, so an older one ignores `custom`. An unknown top-level key would make an older terminal agent skip the whole file's `allow`, `ask` and `exclude` lists.
+
+`levels.timer` and `levels.headsUp` are the [decision timer](/ide-extensions/agent/permissions-page#decision-timer), and sit under `levels` for the same reason. Each is a window in seconds per level; a level that is absent has none, and IDGAF cannot have one. `timer` is for calls that would ask, and `headsUp` is for calls the policy allows. They are separate so that a window for asks never starts to delay every allowed call.
+
+```yaml
+levels:
+  tools: cautious
+  timer:
+    cautious: 15
+  headsUp:
+    permissive: 5
+```
+
+A window that is not offered (7, or 30 for `headsUp`) is ignored, and a notice says so when no usable window is left.
 
 ### `plan`
 
