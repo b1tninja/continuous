@@ -607,7 +607,7 @@ export const sessionSlice = createSlice({
     },
     clearDanglingMessages: (
       state,
-      action: PayloadAction<TurnInterruption | undefined>,
+      action: PayloadAction<TurnInterruption | "steered" | undefined>,
     ) => {
       // This is used during cancellation
       // After the last user or tool message, we can have thinking and or valid assitant message (content or generated tool calls) OR nothing.
@@ -618,7 +618,16 @@ export const sessionSlice = createSlice({
       }
       // Stop or a failed request (not a retry or a steer) marks the turn it
       // ended, so the chat can offer Resume
-      const interruption = action?.payload;
+      //
+      // "steered" is "Steer now": the reply ends where it is and the person's
+      // next message goes after it. It is not stored, and it marks nothing. What
+      // is in flight stays: the message they sent and any thought. A retry
+      // (undefined) is the opposite: the turn restarts, so the message is
+      // dropped and sent again. Both used to pass no marker, so a steer was
+      // treated as a retry and took the person's message out of the history.
+      const steered = action?.payload === "steered";
+      const interruption =
+        action?.payload === "steered" ? undefined : action?.payload;
 
       const lastUserOrToolIdx = findLastIndex(
         state.history,
@@ -666,14 +675,19 @@ export const sessionSlice = createSlice({
               item.reasoning?.text?.trim()
             ),
         );
-        if (interruption && lastThinkingIdx > lastUserOrToolIdx) {
+        if ((interruption || steered) && lastThinkingIdx > lastUserOrToolIdx) {
           state.history = state.history.slice(0, lastThinkingIdx + 1);
           const thinking = state.history[lastThinkingIdx];
-          thinking.interrupted = interruption;
+          if (interruption) thinking.interrupted = interruption;
           if (thinking.reasoning?.active) {
             thinking.reasoning.active = false;
             thinking.reasoning.endAt = Date.now();
           }
+          return;
+        }
+        if (steered) {
+          // Nothing was written yet: keep the message that was sent
+          state.history = state.history.slice(0, lastUserOrToolIdx + 1);
           return;
         }
         const lastMsg = state.history[lastUserOrToolIdx];
