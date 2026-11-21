@@ -1,0 +1,11 @@
+[
+  {
+    "number": 1,
+    "state": "MERGED",
+    "isDraft": false,
+    "mergedAt": "2026-11-13T10:00:00Z"
+  },
+  { "number": 2, "state": "OPEN", "isDraft": false, "mergedAt": null },
+  { "number": 3, "state": "OPEN", "isDraft": true, "mergedAt": null },
+  { "number": 4, "state": "CLOSED", "isDraft": false, "mergedAt": null }
+]

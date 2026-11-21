@@ -55,6 +55,10 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.pull_request.draft != true
     timeout-minutes: 10
+    # pull-requests: read is for the roadmap state step, which lists pull request states.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -78,3 +82,13 @@ jobs:
         run: |
           node scripts/ci/check-bench-boundary.mjs
           node --test scripts/ci/check-bench-boundary.test.mjs bench/lab/test/contract.test.mjs
+      # Not blocking yet: plans/ROADMAP.md had 130 stale claims on 2026-11-21. Remove
+      # continue-on-error once the sweep brings the count to 0. No other job runs
+      # roadmap-ids.js, so this step is the first roadmap check in CI.
+      - name: Roadmap state (claims about pull requests against GitHub; not blocking)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --test scripts/ci/roadmap-state.test.js
+          node scripts/ci/roadmap-state.js
