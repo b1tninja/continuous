@@ -69,7 +69,7 @@ export function ApplyActions(props: ApplyActionsProps) {
           >
             <button
               data-testid="codeblock-toolbar-apply"
-              className="flex cursor-pointer items-center border-none bg-transparent pl-0 text-xs text-lightgray outline-hidden hover:brightness-125"
+              className="flex cursor-pointer items-center border-none bg-transparent pl-0 text-xs text-lightgray hover:brightness-125"
               onClick={props.onClickApply}
             >
               <div className="flex items-center gap-1 text-lightgray">

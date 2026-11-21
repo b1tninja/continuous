@@ -34,24 +34,35 @@ export function ToolCallDisplay({
       openContextItem(shownContextItems[0], ideMessenger);
     }
   }
+  const rowClass =
+    "flex min-w-0 flex-row items-center gap-2 transition-colors duration-200 ease-in-out";
+  const row = (
+    <>
+      <div className="mt-[1px] h-4 w-4 shrink-0 font-semibold">{icon}</div>
+      {tool?.faviconUrl && (
+        <img src={tool.faviconUrl} className="h-4 w-4 rounded-xs" />
+      )}
+      <ToolCallStatusMessage tool={tool} toolCallState={toolCallState} />
+    </>
+  );
+
   return (
     <div className="flex flex-col justify-center px-4">
       <div className="mb-2 flex flex-col">
         <div className="flex flex-row items-start justify-between gap-1.5">
-          <div
-            className={`flex min-w-0 flex-row items-center gap-2 transition-colors duration-200 ease-in-out ${
-              isClickable ? "cursor-pointer hover:brightness-125" : ""
-            }`}
-            onClick={isClickable ? handleClick : undefined}
-          >
-            <div className="mt-[1px] h-4 w-4 shrink-0 font-semibold">
-              {icon}
-            </div>
-            {tool?.faviconUrl && (
-              <img src={tool.faviconUrl} className="h-4 w-4 rounded-xs" />
-            )}
-            <ToolCallStatusMessage tool={tool} toolCallState={toolCallState} />
-          </div>
+          {isClickable ? (
+            // A row that opens its result is a button; one with nothing to
+            // open stays plain text
+            <button
+              type="button"
+              className={`${rowClass} cursor-pointer border-none bg-transparent p-0 text-left text-inherit [font:inherit] hover:brightness-125`}
+              onClick={handleClick}
+            >
+              {row}
+            </button>
+          ) : (
+            <div className={rowClass}>{row}</div>
+          )}
           {!!toolCallState.output?.length && (
             <ToolTruncateHistoryIcon historyIndex={historyIndex} />
           )}

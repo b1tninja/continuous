@@ -18,20 +18,18 @@ export function GroupedToolCallHeader({
 }: GroupedToolCallHeaderProps) {
   return (
     <div className="mb-2">
-      <div
-        className="flex cursor-pointer items-center gap-1.5 text-description transition-colors duration-200 ease-in-out hover:brightness-125"
+      <button
+        type="button"
+        aria-expanded={open}
+        className="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent p-0 text-left text-description transition-colors duration-200 ease-in-out [font:inherit] hover:brightness-125"
         data-testid="performing-actions"
         onClick={onToggle}
       >
-        <ToggleWithIcon
-          isToggleable
-          icon={FolderIcon}
-          open={open}
-          onClick={onToggle}
-        />
+        {/* The button takes the click, so the icon needs no handler */}
+        <ToggleWithIcon isToggleable icon={FolderIcon} open={open} />
         {getGroupActionVerb(toolCallStates)} {activeCalls.length}{" "}
         {activeCalls.length === 1 ? "action" : "actions"}
-      </div>
+      </button>
     </div>
   );
 }
