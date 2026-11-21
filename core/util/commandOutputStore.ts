@@ -51,6 +51,8 @@ export interface CommandRecord {
 }
 
 const records = new Map<string, CommandRecord>();
+/** Callers waiting for a command to end; finishCommand answers them. */
+const waiters = new Map<CommandRecord, Array<() => void>>();
 const streams = new Map<string, fs.WriteStream>();
 let folderReady: string | undefined;
 let nextId = 1;
@@ -208,10 +210,50 @@ export function finishCommand(
   record.process = undefined;
   closeFile(record);
   pruneFinished();
+  const waiting = waiters.get(record);
+  if (waiting) {
+    waiters.delete(record);
+    for (const wake of waiting) wake();
+  }
+}
+
+/**
+ * Waits for a command to end, for at most `ms`. Resolves true when it has
+ * ended (at once when it already had) and false when the time ran out. It
+ * waits on the end itself, which finishCommand reports after the shell's own
+ * exit and its grace for the output streams, so it does not poll and does not
+ * answer before the last output is written.
+ */
+export function waitForEnd(
+  record: CommandRecord,
+  ms: number,
+): Promise<boolean> {
+  if (record.endedAt !== undefined) return Promise.resolve(true);
+  if (!(ms > 0)) return Promise.resolve(false);
+  return new Promise<boolean>((resolve) => {
+    let timer: NodeJS.Timeout | undefined;
+    const wake = () => {
+      if (timer) clearTimeout(timer);
+      resolve(true);
+    };
+    const list = waiters.get(record) ?? [];
+    list.push(wake);
+    waiters.set(record, list);
+    timer = setTimeout(() => {
+      const now = waiters.get(record);
+      if (now) {
+        const rest = now.filter((w) => w !== wake);
+        if (rest.length) waiters.set(record, rest);
+        else waiters.delete(record);
+      }
+      resolve(false);
+    }, ms);
+  });
 }
 
 export function clearCommandsForTests(): void {
   for (const r of records.values()) closeFile(r);
+  waiters.clear();
   records.clear();
   nextId = 1;
 }

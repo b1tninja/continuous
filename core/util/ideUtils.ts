@@ -1,6 +1,5 @@
 import * as path from "node:path";
 import { IDE } from "..";
-
 import {
   findUriInDirs,
   joinEncodedUriPathSegmentToUri,
@@ -130,6 +129,19 @@ export async function resolveRelativePathInDir(
     if (!staysInDir(fullUri, dirUri)) continue;
     if (await ide.fileExists(fullUri)) {
       return fullUri;
+    }
+  }
+
+  // An absolute path (or file URI) that lies inside a workspace folder names
+  // that file itself. Joining it onto a folder can build a path that never
+  // exists (a drive path with backslashes, or a different drive-letter case
+  // than the folder's), so the file was reported missing.
+  const absolute = absoluteLocalUri(path);
+  if (absolute) {
+    for (const dirUri of dirs) {
+      if (staysInDir(absolute, dirUri) && (await ide.fileExists(absolute))) {
+        return absolute;
+      }
     }
   }
 

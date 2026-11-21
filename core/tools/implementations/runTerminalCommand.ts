@@ -7,6 +7,7 @@ import {
   spawnAgentCommand,
 } from "../../util/commandSpawn";
 import { ContinueError, ContinueErrorReason } from "../../util/errors";
+import { resolveRequestedCwd } from "./terminalCwd";
 
 // Default timeout for terminal commands (2 minutes)
 const DEFAULT_TOOL_TIMEOUT_MS = 120_000;
@@ -85,6 +86,31 @@ import { terminalEnvironment } from "../../util/terminalEnvironment";
 import { getBooleanArg, getStringArg } from "../parseArgs";
 import { commandLintGate } from "../permissions/commandLint";
 import { missingBinaryGate } from "../permissions/missingBinaryGate";
+
+/**
+ * Where a call runs: the folder asked for with `cwd` when it is a workspace
+ * folder or inside one, otherwise the workspace's first folder. The same
+ * facts the permission layer reads (effectiveCwdForPolicy).
+ */
+export function workingDirectoryFor(
+  workspaceDirs: string[],
+  requested: unknown,
+) {
+  const defaultCwd = resolveWorkingDirectory(workspaceDirs);
+  const roots = workspaceDirs
+    .filter((d) => d.startsWith("file:/"))
+    .flatMap((d) => {
+      try {
+        return [fileURLToPath(d)];
+      } catch {
+        return [];
+      }
+    });
+  return resolveRequestedCwd(requested, {
+    defaultCwd,
+    workspaceRoots: roots.length ? roots : [defaultCwd],
+  });
+}
 
 /**
  * Resolves the working directory from workspace dirs.
@@ -255,7 +281,9 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
     if (extras.onPartialOutput) {
       try {
         const workspaceDirs = await extras.ide.getWorkspaceDirs();
-        const cwd = resolveWorkingDirectory(workspaceDirs);
+        const where = workingDirectoryFor(workspaceDirs, args.cwd);
+        if (!where.ok) return commandNotRun(where.error);
+        const cwd = where.cwd;
 
         if (!waitForCompletion) {
           const status = "Command is running in the background...";
@@ -538,7 +566,9 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
     } else {
       // Fallback to non-streaming for older clients
       const workspaceDirs = await extras.ide.getWorkspaceDirs();
-      const cwd = resolveWorkingDirectory(workspaceDirs);
+      const where = workingDirectoryFor(workspaceDirs, args.cwd);
+      if (!where.ok) return commandNotRun(where.error);
+      const cwd = where.cwd;
 
       if (waitForCompletion) {
         // Standard execution, waiting for completion
@@ -750,6 +780,11 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
     }
   }
 
+  if (typeof args.cwd === "string" && args.cwd.trim() !== "") {
+    return commandNotRun(
+      "cwd is not supported in a remote window: start the command with cd instead.",
+    );
+  }
   return runInRemoteTerminal(extras.ide, command);
 };
 

@@ -4,8 +4,8 @@ import * as path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import type { IDE } from "..";
-import { resolveRelativePathInDir } from "./ideUtils";
 import { tryLink } from "../tools/permissions/testLinks";
+import { resolveRelativePathInDir } from "./ideUtils";
 import { resolveInputPath } from "./pathResolver";
 
 const roots: string[] = [];
@@ -32,7 +32,9 @@ afterEach(() => {
 
 describe("resolveInputPath workspace boundary", () => {
   it("treats a relative path that climbs out as outside the workspace", async () => {
-    const parent = fs.mkdtempSync(path.join(os.tmpdir(), "cn-path-"));
+    const parent = fs.realpathSync.native(
+      fs.mkdtempSync(path.join(os.tmpdir(), "cn-path-")),
+    );
     roots.push(parent);
     const workspace = path.join(parent, "proj");
     const outside = path.join(parent, "secret.txt");

@@ -8,16 +8,27 @@ import { selectApprovalSettings } from "../redux/selectors/selectAutoApproval";
 import type { RootState } from "../redux/store";
 
 /**
- * True while File edits is IDGAF: the file tools may then name a path
- * outside the workspace. The decision was already made by the permission
- * layer (core's tools/evaluatePolicy), which lets such a call through only at
- * that level; this lets the tool resolve the path instead of treating it as
- * not a target.
+ * True while the outside-paths check is off (the IDGAF preset leaves no check
+ * on): the file tools may then name a path outside the workspace. The
+ * decision was already made by the permission layer (core's
+ * tools/evaluatePolicy); this lets the tool resolve the path instead of
+ * treating it as not a target.
  */
 export function allowOutsideWorkspaceOf(state: RootState | undefined): boolean {
   // A host without the settings (a partial state) allows nothing extra
   if (!state?.ui?.policyLevels) return false;
   return editsAllowOutsideWorkspace(selectApprovalSettings(state));
+}
+
+/**
+ * True while the protect-secrets check is off: the file tools may then read
+ * and write a file that looks like a secret. Like the outside-paths stop, the
+ * permission layer has already decided the call; this only lifts the tool's
+ * own refusal.
+ */
+export function allowSecretFilesOf(state: RootState | undefined): boolean {
+  if (!state?.ui?.policyLevels) return false;
+  return selectApprovalSettings(state).builtin?.["protect-secrets"] === false;
 }
 
 /**

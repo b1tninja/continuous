@@ -4,6 +4,7 @@ import { commandCandidateSet } from "./candidates";
 import { fetchAndRunHit } from "./fetchAndRun";
 import { ProtectedHit, ProtectedKind, protectedPathHit } from "./protected";
 import {
+  credentialCommandLabel,
   isNetworkPath,
   jqEnvironmentLabel,
   secretWordLabel,
@@ -78,7 +79,7 @@ export function protectedCommandHit(
     }
   }
   for (const words of skip.includes("secret") ? [] : wordsOf(list)) {
-    const jq = jqEnvironmentLabel(words);
+    const jq = jqEnvironmentLabel(words) ?? credentialCommandLabel(words);
     if (jq) return { kind: "secret", path: jq };
     for (let i = 0; i < words.length; i++) {
       const label = secretWordLabel(

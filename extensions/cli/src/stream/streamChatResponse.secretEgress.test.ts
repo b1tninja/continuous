@@ -151,10 +151,10 @@ describe("B92 in the CLI, taintedSessionRule off", () => {
     },
   );
 
-  it("IDGAF refuses the upload when safety checks are on", async () => {
+  it("IDGAF refuses the upload when protect-secrets is turned back on", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cn-safety-"));
     const file = path.join(dir, "permissions.yaml");
-    fs.writeFileSync(file, "safetyChecks: on\n");
+    fs.writeFileSync(file, "builtin:\n  protect-secrets: on\n");
     loadPolicyFile(file);
     setPolicyLevels(POLICY_PRESETS.idgaf.levels);
     readNpmrc();

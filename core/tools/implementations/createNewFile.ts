@@ -62,7 +62,9 @@ export const createNewFileImpl: ToolImpl = async (args, extras) => {
     { allowOutside: extras.allowOutsideWorkspace },
   );
   if (resolvedFileUri) {
-    throwIfFileIsSecurityConcern(getCleanUriPath(resolvedFileUri));
+    if (!extras.allowSecretFiles) {
+      throwIfFileIsSecurityConcern(getCleanUriPath(resolvedFileUri));
+    }
     const exists = await extras.ide.fileExists(resolvedFileUri);
     if (exists && !append) {
       throw new ContinueError(

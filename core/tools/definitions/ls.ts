@@ -3,7 +3,10 @@ import { Tool } from "../..";
 import { ToolPolicy } from "@continuedev/terminal-security";
 import { ResolvedPath, resolveInputPath } from "../../util/pathResolver";
 import { BUILT_IN_GROUP_NAME, BuiltInToolNames } from "../builtIn";
-import { evaluateFileAccessPolicy } from "../policies/fileAccess";
+import {
+  evaluateFileAccessPolicy,
+  type ToolPolicyContext,
+} from "../policies/fileAccess";
 
 export const lsTool: Tool = {
   type: "function",
@@ -57,11 +60,16 @@ export const lsTool: Tool = {
     basePolicy: ToolPolicy,
     _: Record<string, unknown>,
     processedArgs?: Record<string, unknown>,
+    context?: ToolPolicyContext,
   ): ToolPolicy => {
     const resolvedPath = processedArgs?.resolvedPath as
       ResolvedPath | null | undefined;
     if (!resolvedPath) return basePolicy;
 
-    return evaluateFileAccessPolicy(basePolicy, resolvedPath.isWithinWorkspace);
+    return evaluateFileAccessPolicy(
+      basePolicy,
+      resolvedPath.isWithinWorkspace,
+      context,
+    );
   },
 };

@@ -46,7 +46,9 @@ export const readFileRangeImpl: ToolImpl = async (args, extras) => {
   }
 
   // Security check on the resolved display path
-  throwIfFileIsSecurityConcern(resolvedPath.displayPath);
+  if (!extras.allowSecretFiles) {
+    throwIfFileIsSecurityConcern(resolvedPath.displayPath);
+  }
 
   // Use the IDE's readRangeInFile method with 0-based range (IDE expects 0-based internally)
   const content = await extras.ide.readRangeInFile(resolvedPath.uri, {

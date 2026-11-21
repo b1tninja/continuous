@@ -1,5 +1,4 @@
-import type { ToolPolicyResult, EvaluateInput } from "../evaluate";
-import { safetyChecksApply } from "../policy";
+import type { EvaluateInput, ToolPolicyResult } from "../evaluate";
 import { sinkOfCall, type Sink, type SinkClass } from "./taintSinks";
 import type { SecretRead, TaintFact } from "./taintState";
 
@@ -153,8 +152,7 @@ export function applySecretEgressRule(
   // A tool the person switched off stays off, as it would anyway
   if (input.basePolicy === "disabled") return result;
   const idgaf = atIdgaf();
-  // The shield, or protect-secrets, is the person's choice
-  if (!safetyChecksApply(input.approval, idgaf)) return result;
+  // The protect-secrets check is the person's choice (a preset sets it)
   if (input.approval?.builtin?.["protect-secrets"] === false) return result;
   const sink = taintSinkFor(input, SECRET_ONLY);
   if (!sink || !EGRESS_SINKS.has(sink.class)) return result;

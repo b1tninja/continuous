@@ -4,13 +4,14 @@ import { describe, expect, it } from "vitest";
 import { evaluateToolPolicyWithRules } from "./evaluate";
 import {
   DEFAULT_POLICY_LEVELS,
+  QUESTION_TYPES,
   questionDecider,
   questionsAutoAnswer,
   questionsNeverAsk,
   type PolicyLevel,
   type PolicySettings,
 } from "./policy";
-import { QUESTION_TYPES } from "./policy";
+import { builtinForPreset } from "./safetyDegrees";
 
 const settings = (
   questions: PolicyLevel,
@@ -75,19 +76,40 @@ describe("a call a guard would hold at a IDGAF area runs, whatever Questions is"
       parsedArgs: { command: "rm -rf $DIR" },
       permissions: undefined,
       shell: "bash",
-      approval: { levels: { ...DEFAULT_POLICY_LEVELS, tools, questions } },
+      approval: {
+        levels: { ...DEFAULT_POLICY_LEVELS, tools, questions },
+        // The IDGAF preset leaves no safety check on
+        ...(tools === "idgaf" ? { builtin: builtinForPreset("idgaf") } : {}),
+      },
     });
 
   it.each(["cautious", "idgaf"] as const)(
-    "IDGAF tools with Questions %s runs it, never asks or refuses, and records the guard",
+    "IDGAF tools with Questions %s runs it and never asks or refuses",
     (questions) => {
       const r = run("idgaf", questions);
       expect(r.policy).toBe(ALLOW);
       expect(r.source).toBe("idgaf");
-      expect(r.idgafOverride?.policy).toBe(ASK);
-      expect(r.idgafOverride?.reason).toContain("built when it runs");
     },
   );
+
+  it("IDGAF levels with the check left on still ask, whatever Questions is", () => {
+    const r = evaluateToolPolicyWithRules({
+      tool: terminalTool as any,
+      toolName: "run_terminal_command",
+      basePolicy: ASK,
+      parsedArgs: { command: "rm -rf $DIR" },
+      permissions: undefined,
+      shell: "bash",
+      approval: {
+        levels: {
+          ...DEFAULT_POLICY_LEVELS,
+          tools: "idgaf",
+          questions: "idgaf",
+        },
+      },
+    });
+    expect(r.policy).toBe(ASK);
+  });
 
   it("a tool area below IDGAF keeps its own asking: that is not a question", () => {
     expect(run("cautious", "idgaf").policy).toBe(ASK);

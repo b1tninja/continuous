@@ -13,7 +13,10 @@ import {
 import { ContinueError, ContinueErrorReason } from "core/util/errors";
 
 import { callClientTool } from "../../util/clientTools/callClientTool";
-import { allowOutsideWorkspaceOf } from "../../util/outsideEdits";
+import {
+  allowOutsideWorkspaceOf,
+  allowSecretFilesOf,
+} from "../../util/outsideEdits";
 import { runawayActionForLevel } from "../../util/runawayAction";
 import { selectSelectedChatModel } from "../slices/configSlice";
 import {
@@ -108,6 +111,8 @@ export const callToolById = createAsyncThunk<
       ...(allowOutsideWorkspaceOf(getState())
         ? { allowOutsideWorkspace: true }
         : {}),
+      // protect-secrets off: the file tools may touch a secret-looking file
+      ...(allowSecretFilesOf(getState()) ? { allowSecretFiles: true } : {}),
       // Output that looks like a runaway: stopped, unless Tools lets it run
       runawayAction: runawayActionForLevel(getState().ui?.policyLevels?.tools),
       // The session whose fetched pages the web tools read

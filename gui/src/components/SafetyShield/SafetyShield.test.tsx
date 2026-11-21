@@ -1,136 +1,215 @@
 import { act, screen } from "@testing-library/react";
+import { POLICY_PRESETS } from "core/tools/permissions/policy";
+import { builtinForPreset } from "core/tools/permissions/safetyDegrees";
 import { describe, expect, it } from "vitest";
 import { MockIdeMessenger } from "../../context/MockIdeMessenger";
-import { setPolicyExtras, setPolicyLevels } from "../../redux/slices/uiSlice";
+import { setPolicyExtras } from "../../redux/slices/uiSlice";
 import { setupStore } from "../../redux/store";
-import { changePolicyLevel } from "../../redux/thunks/policySettings";
+import {
+  applyPolicyPreset,
+  changePolicyLevel,
+  loadPolicySettings,
+} from "../../redux/thunks/policySettings";
 import { renderWithProviders } from "../../util/test/render";
 import { SafetyShield } from "./SafetyShield";
-import { safetyShieldOn } from "./safetyChecks";
 
-describe("safetyShieldOn", () => {
-  it("follows the mode until the person chooses", () => {
-    expect(safetyShieldOn(undefined, false)).toBe(true);
-    expect(safetyShieldOn(undefined, true)).toBe(false);
-    expect(safetyShieldOn(true, true)).toBe(true);
-    expect(safetyShieldOn(false, false)).toBe(false);
+function messenger(sessionAreas: string[] = []) {
+  const ideMessenger = new MockIdeMessenger();
+  const saves: any[] = [];
+  ideMessenger.responseHandlers["policy/save"] = async (update: unknown) => {
+    saves.push(update);
+  };
+  ideMessenger.responseHandlers["policy/sessionIdgaf"] = async () => ({
+    areas: sessionAreas,
   });
-});
+  return { ideMessenger, saves };
+}
 
 describe("SafetyShield", () => {
   async function setup() {
-    const ideMessenger = new MockIdeMessenger();
+    const { ideMessenger, saves } = messenger();
     const store = setupStore({ ideMessenger });
     const view = await renderWithProviders(<SafetyShield />, {
       store,
       mockIdeMessenger: ideMessenger,
     });
-    return { ...view, store };
+    return { ...view, store, saves };
   }
 
-  it("is on below IDGAF, and a click turns it off", async () => {
-    const { store, user } = await setup();
+  it("says All on by default, and None on after the IDGAF preset", async () => {
+    const { store } = await setup();
     const badge = screen.getByTestId("safety-shield-toggle");
-    expect(badge.getAttribute("data-on")).toBe("true");
-    await user.click(badge);
-    await user.click(
-      screen
-        .getByTestId("safety-shield-master")
-        .querySelector(".rounded-full")!,
-    );
-    expect(store.getState().ui.policyExtras.safetyChecks).toBe(false);
+    expect(badge.getAttribute("aria-label")).toBe("Safety checks: All on");
+    expect(badge.getAttribute("data-degree")).toBe("all");
+    await act(async () => {
+      await store.dispatch(applyPolicyPreset(POLICY_PRESETS.idgaf.levels));
+    });
+    expect(badge.getAttribute("aria-label")).toBe("Safety checks: None on");
     expect(badge.getAttribute("data-on")).toBe("false");
   });
 
-  it("is off at IDGAF until the person turns it on", async () => {
+  it("names the degree of each preset", async () => {
+    const { store } = await setup();
+    const badge = screen.getByTestId("safety-shield-toggle");
+    const expected = {
+      careful: "All on",
+      acceptEdits: "All on",
+      reviewer: "Some on",
+      handsOff: "A few on",
+      idgaf: "None on",
+    } as const;
+    for (const [name, label] of Object.entries(expected)) {
+      await act(async () => {
+        await store.dispatch(
+          applyPolicyPreset(
+            POLICY_PRESETS[name as keyof typeof POLICY_PRESETS].levels,
+          ),
+        );
+      });
+      expect(badge.getAttribute("aria-label"), name).toBe(
+        `Safety checks: ${label}`,
+      );
+    }
+  });
+
+  it("None on and All on set every check at once", async () => {
+    const { store, user } = await setup();
+    await user.click(screen.getByTestId("safety-shield-toggle"));
+    await user.click(screen.getByTestId("safety-shield-none"));
+    expect(store.getState().ui.policyExtras.builtin).toEqual(
+      builtinForPreset("idgaf"),
+    );
+    expect(screen.getByTestId("safety-shield-label").textContent).toBe(
+      "None on",
+    );
+    await user.click(screen.getByTestId("safety-shield-all"));
+    expect(store.getState().ui.policyExtras.builtin).toEqual({});
+    expect(screen.getByTestId("safety-shield-label").textContent).toBe(
+      "All on",
+    );
+  });
+
+  it("one check can be switched on its own, and the label counts", async () => {
+    const { store, user } = await setup();
+    await act(async () => {
+      await store.dispatch(applyPolicyPreset(POLICY_PRESETS.idgaf.levels));
+    });
+    await user.click(screen.getByTestId("safety-shield-toggle"));
+    await user.click(
+      screen
+        .getByTestId("shield-protect-secrets")
+        .querySelector(".rounded-full")!,
+    );
+    expect(store.getState().ui.policyExtras.builtin?.["protect-secrets"]).toBe(
+      true,
+    );
+    expect(screen.getByTestId("safety-shield-label").textContent).toBe(
+      "1 of 11 on",
+    );
+  });
+
+  it("shows each check as on or off by its own switch", async () => {
     const { store, user } = await setup();
     await act(async () => {
       store.dispatch(
-        setPolicyLevels({
-          context: "idgaf",
-          tools: "idgaf",
-          edits: "idgaf",
-          plan: "idgaf",
-          questions: "idgaf",
-        }),
+        setPolicyExtras({ builtin: { "ask-large-change": false } }),
       );
     });
-    const badge = screen.getByTestId("safety-shield-toggle");
-    expect(badge.getAttribute("aria-label")).toBe("Safety checks off at IDGAF");
-    await user.click(badge);
-    await user.click(
+    await user.click(screen.getByTestId("safety-shield-toggle"));
+    const thumb = (id: string) =>
       screen
-        .getByTestId("safety-shield-master")
-        .querySelector(".rounded-full")!,
-    );
-    expect(store.getState().ui.policyExtras.safetyChecks).toBe(true);
-    expect(badge.getAttribute("data-on")).toBe("true");
-  });
-
-  it("shows the individual checks off, and does not change them, while the shield is off", async () => {
-    const { store, user } = await setup();
-    await act(async () => {
-      store.dispatch(setPolicyExtras({ safetyChecks: false }));
-    });
-    await user.click(screen.getByTestId("safety-shield-toggle"));
-    const row = screen.getByTestId("shield-protect-secrets");
-    const thumb = row.querySelector(".rounded-full .rounded-full")!;
-    expect(thumb.className).toContain("-translate-x-1/2");
-    await user.click(row.querySelector(".rounded-full")!);
-    expect(
-      store.getState().ui.policyExtras.builtin?.["protect-secrets"],
-    ).not.toBe(false);
-  });
-
-  it("shows an individual check as on when the shield is on", async () => {
-    const { user } = await setup();
-    await user.click(screen.getByTestId("safety-shield-toggle"));
-    const thumb = screen
-      .getByTestId("shield-protect-secrets")
-      .querySelector(".rounded-full .rounded-full")!;
-    expect(thumb.className).toContain("translate-x-1/2");
-    expect(thumb.className).not.toContain("-translate-x-1/2");
+        .getByTestId(`shield-${id}`)
+        .querySelector(".rounded-full .rounded-full")!.className;
+    expect(thumb("protect-secrets")).not.toContain("-translate-x-1/2");
+    expect(thumb("ask-large-change")).toContain("-translate-x-1/2");
   });
 });
 
-describe("switching to IDGAF", () => {
-  async function setupWithSaves() {
-    const ideMessenger = new MockIdeMessenger();
-    const saves: unknown[] = [];
-    ideMessenger.responseHandlers["policy/save"] = async (update: unknown) => {
-      saves.push(update);
-    };
-    ideMessenger.responseHandlers["policy/sessionIdgaf"] = async () => ({
-      areas: [],
+describe("a preset sets every knob", () => {
+  it("the IDGAF preset turns every check off and writes none of that to the file", async () => {
+    const { ideMessenger, saves } = messenger();
+    const store = setupStore({ ideMessenger });
+    // The file had one check off
+    store.dispatch(setPolicyExtras({ builtin: { "ask-large-change": false } }));
+    await store.dispatch(applyPolicyPreset(POLICY_PRESETS.idgaf.levels));
+    const extras = store.getState().ui.policyExtras;
+    expect(extras.builtin).toEqual(builtinForPreset("idgaf"));
+    expect(extras.savedBuiltin).toEqual({ "ask-large-change": false });
+    // The file keeps what it had
+    expect(saves.at(-1).builtin).toEqual({ "ask-large-change": false });
+  });
+
+  it("leaving IDGAF for Careful puts all the checks on, and that is what is saved", async () => {
+    const { ideMessenger, saves } = messenger();
+    const store = setupStore({ ideMessenger });
+    await store.dispatch(applyPolicyPreset(POLICY_PRESETS.idgaf.levels));
+    await store.dispatch(applyPolicyPreset(POLICY_PRESETS.careful.levels));
+    const extras = store.getState().ui.policyExtras;
+    expect(extras.builtin).toEqual({});
+    expect(extras.savedBuiltin).toBeUndefined();
+    expect(saves.at(-1).builtin).toEqual({});
+  });
+
+  it("Hands off saves its own checks", async () => {
+    const { ideMessenger, saves } = messenger();
+    const store = setupStore({ ideMessenger });
+    await store.dispatch(applyPolicyPreset(POLICY_PRESETS.handsOff.levels));
+    expect(saves.at(-1).builtin).toEqual(builtinForPreset("handsOff"));
+  });
+
+  it("changing one area leaves the checks as they are", async () => {
+    const { ideMessenger } = messenger();
+    const store = setupStore({ ideMessenger });
+    await store.dispatch(applyPolicyPreset(POLICY_PRESETS.handsOff.levels));
+    await store.dispatch(changePolicyLevel({ area: "tools", level: "idgaf" }));
+    expect(store.getState().ui.policyExtras.builtin).toEqual(
+      builtinForPreset("handsOff"),
+    );
+  });
+});
+
+describe("reloading the webview in the middle of an IDGAF run", () => {
+  const file = (builtin: Record<string, boolean>) => async () => ({
+    settings: { levels: POLICY_PRESETS.careful.levels, builtin },
+    notices: [],
+  });
+
+  it("brings the checks back off when every area was at IDGAF", async () => {
+    const { ideMessenger } = messenger([
+      "context",
+      "tools",
+      "edits",
+      "plan",
+      "questions",
+    ]);
+    ideMessenger.responseHandlers["policy/load"] = file({
+      "ask-large-change": false,
     });
     const store = setupStore({ ideMessenger });
-    return { store, saves };
-  }
-
-  it("clears an explicit shield choice, and removes the line from the file", async () => {
-    const { store, saves } = await setupWithSaves();
-    store.dispatch(setPolicyExtras({ safetyChecks: true }));
-    await store.dispatch(changePolicyLevel({ area: "tools", level: "idgaf" }));
-    expect(store.getState().ui.policyExtras.safetyChecks).toBeUndefined();
-    expect(saves.at(-1)).toMatchObject({ safetyChecks: null });
+    await store.dispatch(loadPolicySettings());
+    const extras = store.getState().ui.policyExtras;
+    expect(extras.builtin).toEqual(builtinForPreset("idgaf"));
+    expect(extras.savedBuiltin).toEqual({ "ask-large-change": false });
   });
 
-  it("leaves a choice alone when no area enters IDGAF", async () => {
-    const { store, saves } = await setupWithSaves();
-    store.dispatch(setPolicyExtras({ safetyChecks: true }));
-    await store.dispatch(
-      changePolicyLevel({ area: "tools", level: "permissive" }),
-    );
-    expect(store.getState().ui.policyExtras.safetyChecks).toBe(true);
-    expect(saves.at(-1)).toMatchObject({ safetyChecks: true });
+  it("reads the file's checks when only some areas were at IDGAF", async () => {
+    const { ideMessenger } = messenger(["tools"]);
+    ideMessenger.responseHandlers["policy/load"] = file({
+      "ask-large-change": false,
+    });
+    const store = setupStore({ ideMessenger });
+    await store.dispatch(loadPolicySettings());
+    expect(store.getState().ui.policyExtras.builtin).toEqual({
+      "ask-large-change": false,
+    });
+    expect(store.getState().ui.policyExtras.savedBuiltin).toBeUndefined();
   });
 
-  it("keeps the choice made after entering IDGAF", async () => {
-    const { store } = await setupWithSaves();
-    await store.dispatch(changePolicyLevel({ area: "tools", level: "idgaf" }));
-    store.dispatch(setPolicyExtras({ safetyChecks: true }));
-    await store.dispatch(changePolicyLevel({ area: "edits", level: "idgaf" }));
-    // IDGAF was already on: this is not a switch into it
-    expect(store.getState().ui.policyExtras.safetyChecks).toBe(true);
+  it("reads the file's checks in a new session", async () => {
+    const { ideMessenger } = messenger([]);
+    ideMessenger.responseHandlers["policy/load"] = file({});
+    const store = setupStore({ ideMessenger });
+    await store.dispatch(loadPolicySettings());
+    expect(store.getState().ui.policyExtras.builtin).toEqual({});
   });
 });

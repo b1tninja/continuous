@@ -31,7 +31,7 @@ export const readCommandOutputTool: Tool = {
   function: {
     name: CommandOutputToolNames.ReadCommandOutput,
     description:
-      "Read more of the output of a command started with run_terminal_command: the end of it, or the lines matching a pattern, with line numbers. Use it for a command running in the background, or when a result says its output was cut. Also says whether the command is still running.",
+      "Read more of the output of a command started with run_terminal_command: the end of it, or the lines matching a pattern, with line numbers. Use it for a command running in the background, or when a result says its output was cut. Also says whether the command is still running. To wait for a background command, pass waitSeconds instead of running a sleep command: the call returns as soon as the command ends, or after that many seconds.",
     parameters: {
       type: "object",
       properties: {
@@ -45,6 +45,11 @@ export const readCommandOutputTool: Tool = {
           type: "number",
           description:
             "How many lines: the last N without grep (default 100), or at most N matches with it (default 200). At most 1000.",
+        },
+        waitSeconds: {
+          type: "number",
+          description:
+            "Wait up to this many seconds for the command to end before reading (at most 60). Returns at once when it has already ended. Default 0: read now.",
         },
       },
     },
