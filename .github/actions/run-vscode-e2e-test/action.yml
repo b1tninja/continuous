@@ -29,6 +29,8 @@ runs:
       id: node
       with:
         node-version-file: ".nvmrc"
+        # packageManager in package.json would turn the npm cache on here
+        package-manager-cache: false
 
     # Cache policy (docs/ci-caching.md). Pull requests restore; only main saves the big entries
     # (the VS Code download is 700 MB, and every pull request ref used to keep its own copy).

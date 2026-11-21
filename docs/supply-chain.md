@@ -9,6 +9,7 @@ Scope: what the fork adds. The existing monorepo keeps its ranges and its Depend
 | `bench`, `bench/research`, `bench/lab`               | Zero dependencies. Plain Node and the standard library only.                                                                                                                 | `scripts/ci/check-pins.mjs` and its test                      |
 | `bench/screenshots`                                  | One dependency, `playwright-core` at an exact version, `package-lock.json` committed, every lockfile entry with an `integrity` hash. Install with `npm ci --ignore-scripts`. | `check-pins.mjs` (exact version, lockfile, integrity)         |
 | `@anthropic-ai/sandbox-runtime`, wherever it appears | Exact version, never a range. Install with `--omit=optional --ignore-scripts`. The lockfile carries the integrity hash. Update by pull request with the changelog read.      | `check-pins.mjs` (any `package.json` naming it must be exact) |
+| npm                                                  | One exact version in the root `packageManager`, the npm of the CI runners. Lockfiles are written with that major; move the pin and the lockfiles together.                   | `scripts/ci/check-npm-pin.mjs` and its test                   |
 | GitHub Actions added by the fork                     | Full commit SHA with the tag in a comment.                                                                                                                                   | review                                                        |
 
 For reference, `npm view @anthropic-ai/sandbox-runtime` on 2026-11-10 gave version 0.0.82 with integrity `sha512-SCPWkuhLw4ieL+06Jp72yFevltS0s2GD1kMOZdSJ6XxeuqTcoyAa1EDwiLxuONp6szNEOD7x02+vYxPa0oAWwg==`. It is a beta package, hence the exact pin. It is not a dependency yet.
@@ -19,6 +20,10 @@ Run the checks from the repository root, no install needed:
 
     node scripts/ci/check-pins.mjs
     node --test scripts/ci/check-pins.test.mjs
+    node scripts/ci/check-npm-pin.mjs
+    node --test scripts/ci/check-npm-pin.test.mjs
+
+Limit of the npm check: a lockfile records `lockfileVersion`, not the npm that wrote it, and npm 9, 10 and 11 all write 3. A lockfile written by npm 11 passes this check; `npm ci` under npm 10 in the build jobs is what fails on it. Every `setup-node` step without a `cache` input sets `package-manager-cache: false`, because the action turns its npm cache on when it finds the field.
 
 Out of scope for now: pinning the existing actions that use tags (`actions/checkout@v7` and so on) and moving the existing ranges to exact versions. Both are separate changes with a large diff.
 

@@ -16,6 +16,8 @@ runs:
       id: node
       with:
         node-version-file: ".nvmrc"
+        # packageManager in package.json would turn the npm cache on here
+        package-manager-cache: false
 
     # Cache policy (docs/ci-caching.md). node_modules is restored, never saved, here: prepackage
     # edits core/node_modules and the extension's, so the clean copies come from the

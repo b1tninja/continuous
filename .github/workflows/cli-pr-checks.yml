@@ -94,6 +94,8 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
+          # packageManager in package.json would turn the npm cache on here
+          package-manager-cache: false
 
       - name: Setup packages
         uses: ./.github/actions/setup-packages

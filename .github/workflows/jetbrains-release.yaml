@@ -162,6 +162,8 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version-file: ".nvmrc"
+          # packageManager in package.json would turn the npm cache on here
+          package-manager-cache: false
 
       # No node_modules caches in this release build (docs/ci-caching.md): the ones that were here
       # were restored and then deleted by the `npm ci` steps below, and a restored node_modules is a
@@ -365,6 +367,8 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version-file: ".nvmrc"
+          # packageManager in package.json would turn the npm cache on here
+          package-manager-cache: false
 
       # No node_modules caches in this release build (see the build job above).
       - name: Install Core Dependencies
