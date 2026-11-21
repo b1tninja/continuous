@@ -261,6 +261,7 @@ describe("Keyboard Shortcuts", () => {
         return JSON.stringify({
           editor: document.body.dataset.editor || "",
           highlighted: document.body.dataset.highlighted || "",
+          inserted: document.body.dataset.inserted || "",
           text: (document.body.innerText || "").slice(0, 240)
         });
       `);
