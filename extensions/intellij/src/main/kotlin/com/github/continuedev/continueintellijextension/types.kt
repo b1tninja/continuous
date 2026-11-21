@@ -196,7 +196,8 @@ interface IDE {
 
     suspend fun getContinueDir(): String
 
-    suspend fun openFile(path: String)
+    /** [preserveFocus]: show the file without moving the keyboard to it (what the agent does on its own) */
+    suspend fun openFile(path: String, preserveFocus: Boolean = false)
 
     suspend fun openUrl(url: String)
 

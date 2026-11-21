@@ -80,7 +80,8 @@ export const createNewFileImpl: ToolImpl = async (args, extras) => {
     }
     const before = append ? await extras.ide.readFile(resolvedFileUri) : "";
     await extras.ide.writeFile(resolvedFileUri, before + contents);
-    await extras.ide.openFile(resolvedFileUri);
+    // Shown so the person can see it, never focused: they may be typing
+    await extras.ide.openFile(resolvedFileUri, { preserveFocus: true });
     await extras.ide.saveFile(resolvedFileUri);
     if (extras.codeBaseIndexer) {
       void extras.codeBaseIndexer?.refreshCodebaseIndexFiles([resolvedFileUri]);

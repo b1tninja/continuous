@@ -13,6 +13,26 @@ import { VsCodeIde } from "../VsCodeIde";
 
 import { VerticalDiffManager } from "./vertical/manager";
 
+/**
+ * Closes the draft editor of a new file, without taking the keyboard and
+ * without discarding anyone's work. The draft is shown without focus, so the
+ * revert-and-close command has an editor to act on. That command reverts what
+ * it closes, so it runs only when the active editor really is the draft: if
+ * something else is active (the person switched tabs), the draft is left open
+ * rather than reverting their file.
+ */
+async function closeDraft(doc: vscode.TextDocument): Promise<void> {
+  await vscode.window.showTextDocument(doc, {
+    preview: false,
+    preserveFocus: true,
+  });
+  const active = vscode.window.activeTextEditor?.document;
+  if (active?.uri.toString() !== doc.uri.toString()) return;
+  await vscode.commands.executeCommand(
+    "workbench.action.revertAndCloseActiveEditor",
+  );
+}
+
 export async function processDiff(
   action: "accept" | "reject",
   sidebar: ContinueGUIWebviewViewProvider,
@@ -46,15 +66,7 @@ export async function processDiff(
     await verticalDiffManager.finishDiff(pendingEditor, action === "accept");
     forgetPendingNewFile(newOrCurrentUri);
     if (action !== "accept") {
-      if (doc) {
-        await vscode.window.showTextDocument(doc, {
-          preview: false,
-          preserveFocus: false,
-        });
-        await vscode.commands.executeCommand(
-          "workbench.action.revertAndCloseActiveEditor",
-        );
-      }
+      if (doc) await closeDraft(doc);
       core.invoke("cancelApply", undefined);
       if (streamId) {
         await sidebar.webviewProtocol.request("updateApplyState", {
@@ -76,16 +88,11 @@ export async function processDiff(
     }
     const content = doc.getText();
     await ide.writeFile(newOrCurrentUri, content);
-    await vscode.window.showTextDocument(doc, {
-      preview: false,
-      preserveFocus: false,
-    });
-    await vscode.commands.executeCommand(
-      "workbench.action.revertAndCloseActiveEditor",
-    );
-    await ide.openFile(newOrCurrentUri);
+    await closeDraft(doc);
+    await ide.openFile(newOrCurrentUri, { preserveFocus: true });
   } else {
-    await ide.openFile(newOrCurrentUri);
+    // An agent edit that finishes on its own passes through here too
+    await ide.openFile(newOrCurrentUri, { preserveFocus: true });
   }
 
   // If streamId is not provided, try to get it from the VerticalDiffManager

@@ -6,15 +6,23 @@ vi.mock("../../util/ideUtils", async (importOriginal) => ({
   inferResolvedUriFromRelativePath: async (path: string) => `file:///w/${path}`,
 }));
 
-function extrasWith(files: Record<string, string>) {
+function extrasWith(
+  files: Record<string, string>,
+  opened: Array<[string, unknown]> = [],
+  saved: string[] = [],
+) {
   const ide = {
     fileExists: async (uri: string) => uri in files,
     readFile: async (uri: string) => files[uri],
     writeFile: async (uri: string, contents: string) => {
       files[uri] = contents;
     },
-    openFile: async () => {},
-    saveFile: async () => {},
+    openFile: async (uri: string, options?: unknown) => {
+      opened.push([uri, options]);
+    },
+    saveFile: async (uri: string) => {
+      saved.push(uri);
+    },
   };
   return { ide } as any;
 }
@@ -29,6 +37,38 @@ describe("create_new_file", () => {
       extrasWith(files),
     );
     expect(files[URI]).toBe("one\n");
+  });
+
+  test("shows the new file without taking the keyboard, then saves it", async () => {
+    const files: Record<string, string> = {};
+    const opened: Array<[string, unknown]> = [];
+    const saved: string[] = [];
+    await createNewFileImpl(
+      { filepath: "report.md", contents: "one\n" },
+      extrasWith(files, opened, saved),
+    );
+    expect(opened).toEqual([[URI, { preserveFocus: true }]]);
+    expect(saved).toEqual([URI]);
+  });
+
+  test("an appended-to file is shown without focus too", async () => {
+    const files = { [URI]: "one\n" };
+    const opened: Array<[string, unknown]> = [];
+    await createNewFileImpl(
+      { filepath: "report.md", contents: "two\n", append: true },
+      extrasWith(files, opened),
+    );
+    expect(opened).toEqual([[URI, { preserveFocus: true }]]);
+  });
+
+  test("never asks for focus", async () => {
+    const files: Record<string, string> = {};
+    const opened: Array<[string, { preserveFocus?: boolean } | undefined]> = [];
+    await createNewFileImpl(
+      { filepath: "report.md", contents: "x" },
+      extrasWith(files, opened as any),
+    );
+    for (const [, options] of opened) expect(options?.preserveFocus).toBe(true);
   });
 
   test("refuses a file that exists, without append", async () => {

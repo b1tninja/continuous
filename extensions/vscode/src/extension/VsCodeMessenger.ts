@@ -368,7 +368,10 @@ export class VsCodeMessenger {
       return ide.showVirtualFile(msg.data.name, msg.data.content);
     });
     this.onWebviewOrCore("openFile", async (msg) => {
-      return ide.openFile(msg.data.path);
+      return ide.openFile(
+        msg.data.path,
+        msg.data.preserveFocus ? { preserveFocus: true } : undefined,
+      );
     });
     this.onWebview("runCommand", async (msg) => {
       if (!runCommandFromWebviewOk(msg.data)) {

@@ -122,7 +122,10 @@ export class ReverseMessageIde {
     });
 
     this.on("openFile", (data) => {
-      return this.ide.openFile(data.path);
+      return this.ide.openFile(
+        data.path,
+        data.preserveFocus ? { preserveFocus: true } : undefined,
+      );
     });
 
     this.on("runCommand", (data) => {

@@ -14,7 +14,7 @@ data class ShowVirtualFileParams(
 )
 
 
-data class OpenFileParams(val path: String)
+data class OpenFileParams(val path: String, val preserveFocus: Boolean? = null)
 
 typealias OpenUrlParam = String
 

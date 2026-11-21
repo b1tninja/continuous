@@ -181,8 +181,14 @@ export class MessageIde implements IDE {
     await this.request("showVirtualFile", { name: title, content: contents });
   }
 
-  async openFile(fileUri: string): Promise<void> {
-    await this.request("openFile", { path: fileUri });
+  async openFile(
+    fileUri: string,
+    options?: { preserveFocus?: boolean },
+  ): Promise<void> {
+    await this.request("openFile", {
+      path: fileUri,
+      ...(options?.preserveFocus ? { preserveFocus: true } : {}),
+    });
   }
 
   async openUrl(url: string): Promise<void> {
