@@ -68,7 +68,6 @@ export function CompactionPreparedNotice() {
   const hold = useAppSelector((s) => s.session.compactionHold);
   const model = useAppSelector(selectSelectedChatModel);
   const offNoted = useAppSelector((s) => s.session.prewarmOffNoted);
-  const estimate = useCompactionEstimate();
   const compact = useCompactConversation();
 
   const visible =
@@ -78,6 +77,8 @@ export function CompactionPreparedNotice() {
     !isStreaming &&
     !hold &&
     !!usablePreparedCompaction(store.getState(), history.length - 1);
+  // Always mounted, so the estimate is worked out only while the line shows
+  const estimate = useCompactionEstimate({ enabled: visible });
   const local = !!model && isLocalModel(model);
   const prewarmOff = local && !!model && prewarmSetting(model) === "off";
   const sayOff =
