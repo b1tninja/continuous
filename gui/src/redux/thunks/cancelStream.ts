@@ -85,6 +85,9 @@ export const interruptStream = createAsyncThunk<void, undefined, ThunkApiType>(
     noteStreamCancelled("steer");
     dispatch(setInactive());
     dispatch(abortStream());
-    dispatch(clearDanglingMessages());
+    // "steered": the person's message and any thought stay, and nothing is
+    // marked for Resume. A bare clearDanglingMessages() is a retry, which drops
+    // the message so it can be sent again, and is wrong here.
+    dispatch(clearDanglingMessages("steered"));
   },
 );
