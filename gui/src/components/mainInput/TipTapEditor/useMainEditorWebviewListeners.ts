@@ -128,57 +128,43 @@ export function useMainEditorWebviewListeners({
   useWebviewListener(
     "highlightedCode",
     async (data) => {
-      document.body.dataset.editor = !editor
-        ? "no"
-        : editor.isDestroyed
-          ? "destroyed"
-          : "yes";
-      document.body.dataset.highlighted = String(
-        data.rangeInFileWithContents?.contents ?? "",
-      ).slice(0, 40);
-      if (!editor || editor.isDestroyed) return;
+      if (!editor) return;
 
-      try {
-        const contextItem = rifWithContentsToContextItem(
-          data.rangeInFileWithContents,
-        );
+      const contextItem = rifWithContentsToContextItem(
+        data.rangeInFileWithContents,
+      );
 
-        let index = 0;
-        for (const el of editor.getJSON()?.content ?? []) {
-          if (el.attrs?.item?.name === contextItem.name) {
-            document.body.dataset.inserted = "duplicate";
-            return;
-          }
-
-          if (el.type === CodeBlock.name || el.type === PromptBlock.name) {
-            index += 2;
-          } else {
-            break;
-          }
+      let index = 0;
+      for (const el of editor.getJSON()?.content ?? []) {
+        // Prevent exact duplicate code blocks
+        if (el.attrs?.item?.name === contextItem.name) {
+          return;
         }
 
-        editor
-          .chain()
-          .insertContentAt(index, {
-            type: CodeBlock.name,
-            attrs: {
-              item: contextItem,
-              inputId,
-            },
-          })
-          .run();
-        document.body.dataset.inserted = "yes";
-
-        dispatch(
-          setNewestToolbarPreviewForInput({
-            inputId,
-            contextItemId: contextItem.id.itemId,
-          }),
-        );
-      } catch (e) {
-        document.body.dataset.inserted = String(e).slice(0, 180);
-        return;
+        if (el.type === CodeBlock.name || el.type === PromptBlock.name) {
+          index += 2;
+        } else {
+          break;
+        }
       }
+
+      editor
+        .chain()
+        .insertContentAt(index, {
+          type: CodeBlock.name,
+          attrs: {
+            item: contextItem,
+            inputId,
+          },
+        })
+        .run();
+
+      dispatch(
+        setNewestToolbarPreviewForInput({
+          inputId,
+          contextItemId: contextItem.id.itemId,
+        }),
+      );
 
       if (data.prompt) {
         editor.commands.focus("end");
