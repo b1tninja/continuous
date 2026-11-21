@@ -110,6 +110,11 @@ export interface ToolCall {
   argumentsStr: string;
   startNotified: boolean;
   extra_content?: Record<string, unknown>;
+  /**
+   * Set when `argumentsStr` did not parse: the result the model gets in
+   * place of a run. `arguments` is then `{}` and must not be used.
+   */
+  unparsedArguments?: string;
 }
 
 export interface PreprocessedToolCall extends ToolCall {

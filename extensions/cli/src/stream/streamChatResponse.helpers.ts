@@ -1249,6 +1249,10 @@ export async function preprocessStreamedToolCalls(
   for (const toolCall of toolCalls) {
     const startTime = Date.now();
     try {
+      // Arguments that did not parse: the call is answered, never run
+      if (toolCall.unparsedArguments) {
+        throw new Error(toolCall.unparsedArguments);
+      }
       const availableTools: Tool[] = await getAllAvailableTools(isHeadless);
       const tool =
         availableTools.find((t) => t.name === toolCall.name) ??
