@@ -80,6 +80,23 @@ describe("renderWebviewDocument", () => {
     expect(script).not.toContain("</script>");
     expect(script).toContain("\\u003c");
   });
+
+  it("still builds the page when the theme could not be loaded", () => {
+    const script = webviewBootstrapScript({
+      vsCodeUriScheme: "vscode",
+      extensionVersion: "1",
+      windowId: "w",
+      machineId: "m",
+      vscMediaUrl: "https://webview.example",
+      theme: undefined,
+      workspacePaths: [],
+      isFullScreen: false,
+    });
+    expect(script).toContain("window.fullColorTheme = undefined;");
+    expect(
+      () => new Function("acquireVsCodeApi", "localStorage", "window", script),
+    ).not.toThrow();
+  });
 });
 
 describe("GUI_WEBVIEW_ENABLE_COMMAND_URIS", () => {

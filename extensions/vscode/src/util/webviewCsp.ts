@@ -39,7 +39,10 @@ export function webviewContentSecurityPolicy(options: {
 }
 
 function jsLiteral(value: unknown): string {
-  return JSON.stringify(value).replace(/</g, "\\u003c");
+  // JSON.stringify returns undefined for undefined, a function or a symbol.
+  // A theme that failed to load is such a value, and it must not stop the page.
+  const json: string | undefined = JSON.stringify(value);
+  return json === undefined ? "undefined" : json.replace(/</g, "\\u003c");
 }
 
 export interface WebviewBootstrapInput {

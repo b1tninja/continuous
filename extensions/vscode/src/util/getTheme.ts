@@ -5,45 +5,7 @@ import mergeJson from "core/util/merge";
 import { convertTheme } from "monaco-vscode-textmate-theme-converter/lib/cjs";
 import * as vscode from "vscode";
 
-/**
- * Strip comments from theme
- */
-
-function stripInLineComment(line: string): string {
-  let inString = false;
-  let pCh = "";
-
-  for (let i = 0; i < line.length - 1; i++) {
-    const ch = line[i];
-    const nCh = line[i + 1];
-
-    // If we're not in a string and we see '//' this is a comment.
-    if (!inString && ch === "/" && nCh === "/") {
-      // Stop processing this line from here.
-      return line.substring(0, i);
-    }
-
-    // Toggle inString state if we see a double quote not escaped by a backslash.
-    if (ch === '"' && pCh !== "\\") {
-      inString = !inString;
-    }
-
-    pCh = ch;
-  }
-
-  return line;
-}
-
-function parseThemeString(themeString: string | undefined): any {
-  themeString = themeString
-    ?.split("\n")
-    .filter((line) => {
-      return !line.trim().startsWith("//");
-    })
-    .map(stripInLineComment)
-    .join("\n");
-  return JSON.parse(themeString ?? "{}");
-}
+import { parseThemeJson } from "./parseThemeJson";
 
 export function getThemeString(): string {
   const workbenchConfig = vscode.workspace.getConfiguration();
@@ -113,7 +75,7 @@ export function getTheme() {
             const themePath = path.join(extension.extensionPath, theme.path);
             currentTheme = fs.readFileSync(themePath).toString();
 
-            parsed = parseThemeString(currentTheme);
+            parsed = parseThemeJson(currentTheme);
 
             // Handle nested includes
             let currentParsedTheme = parsed;
@@ -132,7 +94,7 @@ export function getTheme() {
                   .readFileSync(includeThemePath)
                   .toString();
 
-                const includeTheme = parseThemeString(includeThemeString);
+                const includeTheme = parseThemeJson(includeThemeString);
                 // Merge with base theme taking precedence, then overlay current customizations
                 mergedTheme = mergeJson(
                   mergeJson({}, includeTheme), // Start with base
