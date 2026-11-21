@@ -6,7 +6,11 @@ import type {
   ToolCallState,
 } from "core";
 import { ToCoreProtocol } from "core/protocol";
-import { EXPLORE_AGENT, SubagentDefinition } from "core/subagents/definitions";
+import {
+  DEFAULT_SUBAGENT_MAX_TURNS,
+  EXPLORE_AGENT,
+  SubagentDefinition,
+} from "core/subagents/definitions";
 import { serializeTool } from "core/tools";
 import { BuiltInToolNames } from "core/tools/builtIn";
 import {
@@ -413,6 +417,56 @@ describe("runSubagentTool", () => {
     expect(result.output![0].content).toContain(
       "reason: Stopped after 1 model calls; the report was written from what it had found",
     );
+  });
+
+  it("an agent with no limit of its own runs to the default and then writes its report", async () => {
+    const { store, messenger } = makeStore(["s1"]);
+    // EXPLORE_AGENT sets no maxTurns, so the default is what stops it
+    expect(EXPLORE_AGENT.maxTurns).toBeUndefined();
+    messenger.responses["subagents/list"] = {
+      agents: [EXPLORE_AGENT],
+      errors: [],
+    };
+    const turns = Array.from({ length: DEFAULT_SUBAGENT_MAX_TURNS }, (_, i) => [
+      toolCallChunk(`c${i}`, BuiltInToolNames.GrepSearch, { query: `q${i}` }),
+    ]);
+    const requests = script(messenger, [
+      ...turns,
+      [{ role: "assistant", content: "The report" }],
+    ]);
+    const result = await runSubagentTool(
+      args(),
+      "s1",
+      extras(store, messenger),
+    );
+    expect(runOf(store, "s1")!.status).toBe("partial");
+    expect(result.output![0].content).toContain(
+      `reason: Stopped after ${DEFAULT_SUBAGENT_MAX_TURNS} model calls; the report was written from what it had found`,
+    );
+    expect(result.output![0].content).toContain("The report");
+    // the default calls, plus the one that asks for the report
+    expect(requests.length).toBe(DEFAULT_SUBAGENT_MAX_TURNS + 1);
+  });
+
+  it("a run that finishes before the default is not stopped", async () => {
+    const { store, messenger } = makeStore(["s1"]);
+    messenger.responses["subagents/list"] = {
+      agents: [EXPLORE_AGENT],
+      errors: [],
+    };
+    // 40 calls: more than the old limit of 30, fewer than the default
+    const turns = Array.from({ length: 40 }, (_, i) => [
+      toolCallChunk(`c${i}`, BuiltInToolNames.GrepSearch, { query: `q${i}` }),
+    ]);
+    script(messenger, [...turns, [{ role: "assistant", content: "All done" }]]);
+    const result = await runSubagentTool(
+      args(),
+      "s1",
+      extras(store, messenger),
+    );
+    expect(runOf(store, "s1")!.status).toBe("completed");
+    expect(result.output![0].content).toContain("All done");
+    expect(result.output![0].content).not.toContain("Stopped after");
   });
 
   it("at its turn limit asks for the report in one more call, from what it found", async () => {

@@ -36,8 +36,18 @@ export interface SubagentDefinition {
   path?: string;
 }
 
-/** Model calls a run may make when its definition does not say. */
-export const DEFAULT_SUBAGENT_MAX_TURNS = 30;
+/**
+ * Model calls a run may make when its definition does not say.
+ *
+ * Was 30. In one machine's sessions, 6 of 16 subagent runs (all Explore) hit
+ * it. The ten that finished made a median of 26 tool calls, one as many as 67;
+ * a model call can issue several tool calls, so 30 calls cut research off at 42
+ * to 83 tool calls. Three of those returned no report at all (before the
+ * report-at-the-limit fix). 50 lets that research finish and still bounds a run:
+ * it stops, and writes its report from what it found. A definition sets its
+ * own limit with `maxTurns` in its frontmatter.
+ */
+export const DEFAULT_SUBAGENT_MAX_TURNS = 50;
 
 /**
  * The built-in read-only explorer. Search and read tools only: no terminal,
