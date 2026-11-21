@@ -1,5 +1,9 @@
-import * as path from "node:path";
 import { IDE } from "..";
+import {
+  isAbsoluteAnyStyle,
+  posixPathInside,
+  windowsPathInside,
+} from "./pathInside";
 import {
   findUriInDirs,
   joinEncodedUriPathSegmentToUri,
@@ -12,22 +16,13 @@ function hasScheme(value: string): boolean {
   return /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value);
 }
 
-/** A relative result that did not climb out of the directory it was measured from. */
-function contained(rel: string): boolean {
-  return (
-    rel === "" ||
-    (rel !== ".." &&
-      !rel.startsWith("..\\") &&
-      !rel.startsWith("../") &&
-      !path.win32.isAbsolute(rel) &&
-      !path.posix.isAbsolute(rel))
-  );
-}
-
-/** A filesystem path is `parent` or inside it. Used when a caller has no URI. */
+/**
+ * A filesystem path is `parent` or inside it. Used when a caller has no URI.
+ * Compared as strings: this runs in the chat webview, which has no Node `path`
+ * and no working directory (util/pathInside.ts).
+ */
 function plainInside(parent: string, child: string): boolean {
-  const rel = path.relative(path.resolve(parent), path.resolve(child));
-  return contained(rel);
+  return posixPathInside(parent, child);
 }
 
 /**
@@ -57,7 +52,7 @@ function windowsPathOf(value: string): string | undefined {
  * case and a trailing separator are the same path. `..` is resolved first.
  */
 function windowsInside(parent: string, child: string): boolean {
-  return contained(path.win32.relative(parent, child));
+  return windowsPathInside(parent, child);
 }
 
 /**
@@ -99,7 +94,7 @@ export function absoluteLocalUri(value: string): string | undefined {
   const drive = /^[a-zA-Z]:[\\/]/.test(text);
   if (!drive && /^[a-zA-Z][a-zA-Z0-9+.-]+:/.test(text)) return undefined;
   const unc = /^(\\\\|\/\/)[^\\/]/.test(text);
-  if (!drive && !unc && !path.isAbsolute(text)) return undefined;
+  if (!drive && !unc && !isAbsoluteAnyStyle(text)) return undefined;
   const encoded = encodeURI(text.replace(/\\/g, "/")).replace(/#/g, "%23");
   if (drive) return `file:///${encoded}`;
   return unc ? `file:${encoded}` : `file://${encoded}`;
