@@ -6,15 +6,7 @@
       "importer": "core/tools/permissions/auto/state.ts"
     },
     {
-      "module": "node:path/posix",
-      "importer": "core/tools/permissions/names.ts"
-    },
-    {
       "module": "node:os",
-      "importer": "core/tools/permissions/protected.ts"
-    },
-    {
-      "module": "node:path/posix",
       "importer": "core/tools/permissions/protected.ts"
     },
     {
