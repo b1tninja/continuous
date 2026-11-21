@@ -2,6 +2,8 @@ import type { ChatMessage, RuleWithSource } from "core";
 import type { ConfigHandler } from "core/config/ConfigHandler";
 import * as vscode from "vscode";
 
+import { warnOptionalStartup } from "../util/warnOptionalStartup";
+
 import { runAgentTurn } from "./agentLoop";
 import {
   agentSessionApproval,
@@ -195,7 +197,9 @@ export function registerAgentSessions(
     refresh();
     return true;
   } catch (e) {
-    console.warn("Continuous: the Agents window integration is unavailable", e);
+    // VS Code throws here when the proposed API is not enabled for this
+    // extension, which is every build but the "agents" one.
+    warnOptionalStartup("the Agents window integration is unavailable", e);
     return false;
   }
 }
