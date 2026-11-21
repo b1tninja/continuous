@@ -18,10 +18,14 @@ function parseWithChatParser(markdown: string) {
 
 function nodeTypes(markdown: string): string[] {
   const types: string[] = [];
-  visit(parseWithChatParser(markdown), (node: { type: string; lang?: string }) => {
-    if (node.type === "inlineMath") types.push("inlineMath");
-    if (node.type === "code" && node.lang === "math") types.push("displayMath");
-  });
+  visit(
+    parseWithChatParser(markdown),
+    (node: { type: string; lang?: string }) => {
+      if (node.type === "inlineMath") types.push("inlineMath");
+      if (node.type === "code" && node.lang === "math")
+        types.push("displayMath");
+    },
+  );
   return types;
 }
 

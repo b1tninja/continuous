@@ -22,9 +22,7 @@ describe("rehypeElementStyleObjects", () => {
   });
 
   it("parses multiple declarations like katex html output", () => {
-    expect(
-      run(el({ style: "position:absolute; width:0; height:0" })),
-    ).toEqual([
+    expect(run(el({ style: "position:absolute; width:0; height:0" }))).toEqual([
       { style: { position: "absolute", width: "0", height: "0" } },
     ]);
   });
