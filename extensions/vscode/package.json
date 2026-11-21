@@ -140,7 +140,7 @@
     "grammars": [
       {
         "language": "promptLanguage",
-        "scopeName": "source.prompt",
+        "scopeName": "source.continuous-prompt",
         "path": "./media/prompt.tmLanguage.json"
       }
     ],

@@ -1,6 +1,6 @@
 {
   "name": "Prompt",
-  "scopeName": "source.prompt",
+  "scopeName": "source.continuous-prompt",
   "patterns": [
     {
       "include": "#at-references"
