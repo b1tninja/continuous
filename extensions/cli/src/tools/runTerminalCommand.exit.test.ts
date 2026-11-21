@@ -27,7 +27,7 @@ describe("Bash notes the exit code for the audit", () => {
       { command: `node -e "process.exit(3)"` },
       ctx("fail-quiet"),
     );
-    expect(typeof out).toBe("string");
+    expect(out).toBe("Exit code 3.");
     expect(takeBashEnd("fail-quiet")).toEqual({ exit: 3 });
   });
 
@@ -39,7 +39,7 @@ describe("Bash notes the exit code for the audit", () => {
         },
         ctx("fail-loud"),
       ),
-    ).rejects.toContain("exit code 7");
+    ).rejects.toContain("Exit code 7.");
     expect(takeBashEnd("fail-loud")).toEqual({ exit: 7 });
   });
 

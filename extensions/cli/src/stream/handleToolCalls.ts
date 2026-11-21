@@ -86,6 +86,15 @@ function setLocalToolResult(
 }
 
 /**
+ * The argument text kept on the stored turn. For a call whose arguments did
+ * not parse it is the text the model sent, so the session shows what was
+ * received; the request sends `{}` in its place (requestBody.ts).
+ */
+function storedArguments(tc: ToolCall): string {
+  return tc.unparsedArguments ? tc.argumentsStr : JSON.stringify(tc.arguments);
+}
+
+/**
  * The repeat guard's first pass: calls identical to the ones before them are
  * answered with a refusal (written as a canceled tool result) and left out
  * of `toRun`; `endTurn` says the repeats have reached the cap.
@@ -103,6 +112,12 @@ function refuseRepeatedCalls(
   let endTurn = false;
   const toRun: ToolCall[] = [];
   for (const tc of toolCalls) {
+    // Calls whose arguments did not parse all look alike (`{}`) and are
+    // answered in preprocessing, which counts them as an invalid round
+    if (tc.unparsedArguments) {
+      toRun.push(tc);
+      continue;
+    }
     const verdict = checkRepeatedCall(tc);
     endTurn ||= verdict.endTurn;
     if (!verdict.refusal) {
@@ -270,7 +285,7 @@ export async function handleToolCalls(
       type: "function" as const,
       function: {
         name: tc.name,
-        arguments: JSON.stringify(tc.arguments),
+        arguments: storedArguments(tc),
       },
     },
     status: "generated" as ToolStatus,
@@ -286,7 +301,7 @@ export async function handleToolCalls(
       type: "function" as const,
       function: {
         name: tc.name,
-        arguments: JSON.stringify(tc.arguments),
+        arguments: storedArguments(tc),
       },
       ...(tc.extra_content && { extra_content: tc.extra_content }),
     })),

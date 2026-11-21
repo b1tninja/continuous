@@ -88,6 +88,7 @@ import {
   holdRequestTools,
   noteHeldToolsUsage,
 } from "./toolListHoldStep.js";
+import { markUnparsedArguments } from "./unparsedArguments.js";
 
 function updateFinalResponse(
   content: string,
@@ -664,6 +665,7 @@ export async function processStreamingResponse(
     }
     return true;
   });
+  markUnparsedArguments(validToolCalls, finishReason, model);
 
   // Always preserve the content - it should be displayed regardless of tool calls
   finalContent = aiResponse;
