@@ -33,22 +33,22 @@ Correction first: the chat is already windowed. `ChatTranscript` and `chatWindow
 
 **Rendering and per-token cost, in a test (`chatWindowScale.measure.test.tsx`, `chatCost.measure.test.ts`).** Mounted rows and the cost of one streamed token, with the viewport faked:
 
-| Rows  | Rows mounted | Re-render per token | `history.filter` | Window maths (stuck to end) | Whole-session JSON |
-| ----- | ------------ | ------------------- | ---------------- | -------------------------- | ------------------ |
-| 1,000  | 14          | 1.7 ms              | 0.03 ms          | 0.03 ms                    | 2 ms, 0.5 MB       |
-| 5,000  | 14          | 1.7 ms              | 0.16 ms          | 0.13 ms                    | 10 ms, 2.5 MB      |
-| 20,000 | 14          | 2.0 ms              | 0.62 ms          | 0.22 ms                    | 47 ms, 10 MB       |
+| Rows   | Rows mounted | Re-render per token | `history.filter` | Window maths (stuck to end) | Whole-session JSON |
+| ------ | ------------ | ------------------- | ---------------- | --------------------------- | ------------------ |
+| 1,000  | 14           | 1.7 ms              | 0.03 ms          | 0.03 ms                     | 2 ms, 0.5 MB       |
+| 5,000  | 14           | 1.7 ms              | 0.16 ms          | 0.13 ms                     | 10 ms, 2.5 MB      |
+| 20,000 | 14           | 2.0 ms              | 0.62 ms          | 0.22 ms                     | 47 ms, 10 MB       |
 
 So the DOM does not grow with history and the JavaScript that runs per token is small. The reducer (`streamUpdate`) touches only the last item, the tool-call selectors walk from the end and return early, `useAutoScroll` is memoised on the length, and `redux-persist` keeps a filtered subset of `session` that excludes `history`. **This does not explain a chat that gets slower over a long session.** What it could not measure is a real webview: heap size, garbage-collection pauses, and the cost of a mounted row (markdown, code blocks, diffs).
 
 **Where the bytes are (real sessions in `~/.continuous/sessions`, `.jsonl`: 21 files, 59.5 MB; the four largest 27, 18, 7 and 3 MB).** In the largest session (5,244 items, 27 MB of item JSON):
 
-| Share | Bytes   | What                                                       |
-| ----- | ------- | ---------------------------------------------------------- |
-| 52%   | 14.0 MB | `toolCallStates` (2,353 of them, 6 KB each)                |
-| 27%   | 7.2 MB  | `message` (text of every role)                             |
-| 19%   | 5.2 MB  | `promptLogs`                                               |
-| 1.4%  | 0.4 MB  | `appliedRules`                                             |
+| Share | Bytes   | What                                        |
+| ----- | ------- | ------------------------------------------- |
+| 52%   | 14.0 MB | `toolCallStates` (2,353 of them, 6 KB each) |
+| 27%   | 7.2 MB  | `message` (text of every role)              |
+| 19%   | 5.2 MB  | `promptLogs`                                |
+| 1.4%  | 0.4 MB  | `appliedRules`                              |
 
 Inside a tool-call state: the tool's own definition is 39% (2.4 KB per state), `toolCall` 20%, `parsedArgs` 17%, the output only 12%, `processedArgs` 9%. The same **13 tool definitions are stored 2,038 times** (the terminal tool's 3.5 KB schema 1,285 times), and the arguments appear three times (`toolCall`, `parsedArgs`, `processedArgs`). The other three sessions look the same (54 to 64% in tool-call state and prompt-log fields). Tool outputs are 4 to 7% of the bytes, not the main weight. The largest 1% of items hold only 8 to 12% of the bytes, so the weight is spread evenly, not in a few huge items.
 
