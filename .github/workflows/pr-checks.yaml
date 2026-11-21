@@ -205,6 +205,15 @@ jobs:
           npx tsc --noEmit
           npm run lint
 
+      # The chat page is a browser build, where Node's path, fs and os are empty
+      # stubs. Code that calls into one throws in the page only, and the unit
+      # tests (Node) cannot see it (multi_edit failed on Windows in 2.38.4 and
+      # 2.38.5 this way). Fails when a file newly imports such a module.
+      - name: Check the webview for new Node module stubs
+        run: |
+          node --test scripts/ci/check-webview-node-imports.test.mjs
+          node scripts/ci/check-webview-node-imports.mjs
+
       - name: Run tests
         run: node scripts/ci/affected-tests.mjs --suite gui
         env:
