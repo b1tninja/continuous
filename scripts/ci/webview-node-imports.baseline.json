@@ -1,0 +1,105 @@
+{
+  "comment": "Node modules the chat webview build replaces with an empty stub, from our own sources. Existing pairs are not reviewed one by one: each is a place where the page gets an empty module, and calling into it throws there. Regenerate with --update after removing one.",
+  "pairs": [
+    {
+      "module": "node:crypto",
+      "importer": "core/tools/permissions/auto/state.ts"
+    },
+    {
+      "module": "node:path/posix",
+      "importer": "core/tools/permissions/names.ts"
+    },
+    {
+      "module": "node:os",
+      "importer": "core/tools/permissions/protected.ts"
+    },
+    {
+      "module": "node:path/posix",
+      "importer": "core/tools/permissions/protected.ts"
+    },
+    {
+      "module": "node:fs",
+      "importer": "core/tools/permissions/readOnlyCommand.ts"
+    },
+    {
+      "module": "node:os",
+      "importer": "core/tools/permissions/readOnlyCommand.ts"
+    },
+    {
+      "module": "node:path",
+      "importer": "core/tools/permissions/readOnlyCommand.ts"
+    },
+    {
+      "module": "node:url",
+      "importer": "core/util/checkpoints.ts"
+    },
+    {
+      "module": "node:child_process",
+      "importer": "core/util/containerStatus.ts"
+    },
+    {
+      "module": "node:path",
+      "importer": "core/util/uri.ts"
+    },
+    {
+      "module": "node:url",
+      "importer": "core/util/uri.ts"
+    },
+    {
+      "module": "node:http",
+      "importer": "packages/fetch/dist/agent.js"
+    },
+    {
+      "module": "node:https",
+      "importer": "packages/fetch/dist/agent.js"
+    },
+    {
+      "module": "https",
+      "importer": "packages/fetch/dist/certs.js"
+    },
+    {
+      "module": "node:fs",
+      "importer": "packages/fetch/dist/certs.js"
+    },
+    {
+      "module": "node:tls",
+      "importer": "packages/fetch/dist/certs.js"
+    },
+    {
+      "module": "node:buffer",
+      "importer": "packages/fetch/dist/node-fetch-patch.js"
+    },
+    {
+      "module": "node:http",
+      "importer": "packages/fetch/dist/node-fetch-patch.js"
+    },
+    {
+      "module": "node:https",
+      "importer": "packages/fetch/dist/node-fetch-patch.js"
+    },
+    {
+      "module": "node:stream",
+      "importer": "packages/fetch/dist/node-fetch-patch.js"
+    },
+    {
+      "module": "node:zlib",
+      "importer": "packages/fetch/dist/node-fetch-patch.js"
+    },
+    {
+      "module": "node:net",
+      "importer": "packages/fetch/dist/util.js"
+    },
+    {
+      "module": "node:http",
+      "importer": "packages/fetch/dist/webFetch.js"
+    },
+    {
+      "module": "node:https",
+      "importer": "packages/fetch/dist/webFetch.js"
+    },
+    {
+      "module": "node:stream",
+      "importer": "packages/fetch/dist/webFetch.js"
+    }
+  ]
+}
