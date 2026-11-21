@@ -1,11 +1,6 @@
 import * as path from "node:path";
 import { IDE } from "..";
 import {
-  readUserAdditionalFolders,
-  withAdditionalFolders,
-} from "../tools/permissions/additionalFolders";
-
-import {
   findUriInDirs,
   joinEncodedUriPathSegmentToUri,
   joinPathsToUri,
@@ -110,14 +105,9 @@ export function absoluteLocalUri(value: string): string | undefined {
   return unc ? `file:${encoded}` : `file://${encoded}`;
 }
 
-/**
- * True when the URI is not inside any of the workspace folders or the folders
- * the person added (additionalFolders.ts). Only this question widens: how a
- * relative path is resolved still uses the workspace folders alone.
- */
+/** True when the URI is not inside any of the workspace folders. */
 export function isOutsideDirs(uri: string, dirs: readonly string[]): boolean {
-  const all = withAdditionalFolders(dirs, readUserAdditionalFolders());
-  return !all.some((dir) => staysInDir(uri, dir));
+  return !dirs.some((dir) => staysInDir(uri, dir));
 }
 
 /*
