@@ -27,6 +27,7 @@ import { CompactionPreparedNotice } from "../../components/mainInput/CompactionP
 import { CachingOffNotice } from "../../components/mainInput/CachingOffNotice";
 import { ToolDialectNotice } from "../../components/mainInput/ToolDialectNotice";
 import { ColdCacheNotice } from "../../components/mainInput/ColdCacheNotice";
+import { NoModelNotice } from "../../components/mainInput/NoModelNotice";
 import { SessionLoadNotice } from "../../components/mainInput/SessionLoadNotice";
 import { EditUndoLine } from "../../components/mainInput/EditUndoLine";
 import { IdgafNotice } from "../../components/mainInput/IdgafNotice";
@@ -172,6 +173,14 @@ export function Chat() {
     (store) => store.config.config.ui?.showSessionTabs,
   );
   const isStreaming = useAppSelector((state) => state.session.isStreaming);
+  // A send found no model: said above the input until one is selected
+  const [sentWithNoModel, setSentWithNoModel] = useState(false);
+  const hasChatModel = useAppSelector(
+    (state) => !!state.config.config.selectedModelByRole.chat,
+  );
+  useEffect(() => {
+    if (hasChatModel) setSentWithNoModel(false);
+  }, [hasChatModel]);
   const [stepsOpen] = useState<(boolean | undefined)[]>([]);
   const mainTextInputRef = useRef<HTMLInputElement>(null);
   const stepsDivRef = useRef<HTMLDivElement>(null);
@@ -301,6 +310,8 @@ export function Chat() {
         : selectedModelByRole.chat;
 
       if (!model) {
+        // The editor is left as it is, so the message is not lost
+        setSentWithNoModel(true);
         return;
       }
 
@@ -665,6 +676,9 @@ export function Chat() {
         <CacheMissNotice />
         <ColdCacheNotice />
         <SessionLoadNotice />
+        {sentWithNoModel && !hasChatModel && (
+          <NoModelNotice onDismiss={() => setSentWithNoModel(false)} />
+        )}
         <EditUndoLine />
         <InstructionFileNotice />
         <CachingOffNotice />
