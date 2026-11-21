@@ -30,7 +30,9 @@ import { SyntaxHighlightedPre } from "./SyntaxHighlightedPre";
 import { isSymbolNotRif, matchCodeToSymbolOrFile } from "./utils";
 import { safeMarkdownHref } from "./utils/safeMarkdownHref";
 import { fixDoubleDollarNewLineLatex } from "./utils/fixDoubleDollarLatex";
+import { normalizeDisplayMathBlocks } from "./utils/normalizeDisplayMathBlocks";
 import { patchNestedMarkdown } from "./utils/patchNestedMarkdown";
+import { rehypeElementStyleObjects } from "./utils/rehypeElementStyleObjects";
 import { rehypeTableCellAlign } from "./utils/rehypeTableCellAlign";
 import { remarkTables } from "./utils/remarkTables";
 
@@ -245,7 +247,9 @@ const StyledMarkdownPreview = memo(function StyledMarkdownPreview(
       [
         remarkMath,
         {
-          singleDollarTextMath: false,
+          // Inline $…$ (e.g. $x^2$). Currency like "$5 today" is left alone when
+          // there is no closing pair on the same token run.
+          singleDollarTextMath: true,
         },
       ],
       () => (tree: any) => {
@@ -292,7 +296,7 @@ const StyledMarkdownPreview = memo(function StyledMarkdownPreview(
           });
         };
       },
-      {},
+      rehypeElementStyleObjects,
     ],
     rehypeReactOptions: {
       components: {
@@ -398,7 +402,9 @@ const StyledMarkdownPreview = memo(function StyledMarkdownPreview(
   useEffect(() => {
     setMarkdownSource(
       // some patches to source markdown are applied here:
-      fixDoubleDollarNewLineLatex(patchNestedMarkdown(props.source ?? "")),
+      normalizeDisplayMathBlocks(
+        fixDoubleDollarNewLineLatex(patchNestedMarkdown(props.source ?? "")),
+      ),
     );
   }, [props.source, allSymbols]);
 
