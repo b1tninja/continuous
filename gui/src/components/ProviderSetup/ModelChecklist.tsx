@@ -53,7 +53,11 @@ function Row({
       />
       <span className="flex min-w-0 flex-col">
         <span
-          className={`truncate${row.accessNote ? "text-description-muted" : ""}`}
+          // Two whole strings: the class sorter removes a leading space inside
+          // a template expression, which joined the two names into one.
+          className={
+            row.accessNote ? "truncate text-description-muted" : "truncate"
+          }
         >
           {row.title}
           {row.configured && (
