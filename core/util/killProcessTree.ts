@@ -3,24 +3,41 @@ import childProcess from "node:child_process";
 /**
  * Ends a process and everything it started. `kill` on Windows ends only the
  * shell, so its children go on running and holding the pipes; taskkill /T
- * takes the whole tree.
+ * takes the whole tree. taskkill finds the tree through the shell, so it has
+ * to run while the shell is still there: after `kill` it finds nothing and
+ * the children are left. `kill` is what remains when taskkill cannot do it.
  */
 export function killProcessTree(
   child: childProcess.ChildProcess,
   signal: NodeJS.Signals,
 ): void {
-  child.kill(signal);
-  if (process.platform === "win32" && child.pid) {
+  const killShell = () => {
     try {
-      const killer = childProcess.spawn(
-        "taskkill",
-        ["/pid", String(child.pid), "/T", "/F"],
-        { stdio: "ignore", windowsHide: true },
-      );
-      killer?.on?.("error", () => undefined);
+      child.kill(signal);
     } catch {
-      // The shell is already killed; the caller's forced finish covers the rest
+      // already gone
     }
+  };
+  if (process.platform !== "win32" || !child.pid) {
+    killShell();
+    return;
+  }
+  try {
+    const killer = childProcess.spawn(
+      "taskkill",
+      ["/pid", String(child.pid), "/T", "/F"],
+      { stdio: "ignore", windowsHide: true },
+    );
+    if (!killer?.on) {
+      killShell();
+      return;
+    }
+    killer.on("error", killShell);
+    killer.on("exit", (code) => {
+      if (code !== 0) killShell();
+    });
+  } catch {
+    killShell();
   }
 }
 

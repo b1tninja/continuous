@@ -312,12 +312,13 @@ describe("the IDE terminal tool starts commands through the executor", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("a timeout sends SIGTERM, then SIGKILL, and on Windows takes the tree with taskkill /T", async () => {
+  it("a timeout on Windows takes the tree with taskkill /T, and kills the shell itself only when taskkill fails", async () => {
     vi.useFakeTimers();
     const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
     Object.defineProperty(process, "platform", { value: "win32" });
     try {
-      nodeSpawn.mockReturnValue(new EventEmitter());
+      const killer = new EventEmitter();
+      nodeSpawn.mockReturnValue(killer);
       const child = fakeChild();
       executorBox.current = fakeExecutor(child).executor;
       const pending = runTerminalCommandImpl(
@@ -326,13 +327,18 @@ describe("the IDE terminal tool starts commands through the executor", () => {
       );
       await vi.advanceTimersByTimeAsync(0);
       await vi.advanceTimersByTimeAsync(120_000);
-      expect(child.kill).toHaveBeenCalledWith("SIGTERM");
       expect(nodeSpawn).toHaveBeenCalledWith(
         "taskkill",
         ["/pid", "4321", "/T", "/F"],
         expect.objectContaining({ windowsHide: true }),
       );
+      // Not before taskkill: it finds the tree through the shell
+      expect(child.kill).not.toHaveBeenCalled();
+      killer.emit("exit", 1);
+      expect(child.kill).toHaveBeenCalledWith("SIGTERM");
       await vi.advanceTimersByTimeAsync(5_000);
+      expect(nodeSpawn).toHaveBeenCalledTimes(2);
+      killer.emit("exit", 1);
       expect(child.kill).toHaveBeenCalledWith("SIGKILL");
       await vi.advanceTimersByTimeAsync(3_000);
       expect((await pending)[0].status).toBe("Command timed out");
