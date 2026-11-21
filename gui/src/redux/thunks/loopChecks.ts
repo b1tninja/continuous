@@ -1,4 +1,4 @@
-import type { IDE, LoopCheckResult, ToolCallState } from "core";
+import type { LoopCheckResult, ToolCallState } from "core";
 import { BuiltInToolNames } from "core/tools/builtIn";
 import {
   consumeLoopGrant,
@@ -21,11 +21,9 @@ import { evaluateToolPolicy } from "./evaluateToolPolicies";
  * action. The command is decided as a run_terminal_command call with that
  * command would be, so the person's rules, protected paths and approval mode
  * apply; one that would ask is held as an approval question in the inbox and
- * runs once allowed. Then it runs in the first workspace folder.
+ * runs once allowed. Then core runs it in the first workspace folder, through
+ * the command executor (loop/runCheck), as it runs a terminal command.
  */
-
-/** A check that runs longer than this counts as failed. */
-export const LOOP_CHECK_TIMEOUT_MS = 10 * 60_000;
 
 export type CheckPermission =
   | { kind: "run" }
@@ -43,6 +41,8 @@ export async function checkPermission(
   state: RootState,
   ideMessenger: IIdeMessenger,
   command: string,
+  /** The id the decision is audited under; the run is sent with the same one */
+  callId: string = `loop-check-${Date.now()}`,
 ): Promise<CheckPermission> {
   const name = BuiltInToolNames.RunTerminalCommand;
   const tool = state.config.config.tools.find((t) => t.function.name === name);
@@ -62,9 +62,9 @@ export async function checkPermission(
   }
   const parsedArgs = { command };
   const call: ToolCallState = {
-    toolCallId: `loop-check-${Date.now()}`,
+    toolCallId: callId,
     toolCall: {
-      id: `loop-check-${Date.now()}`,
+      id: callId,
       type: "function",
       function: { name, arguments: JSON.stringify(parsedArgs) },
     },
@@ -126,48 +126,63 @@ function tail(text: string): string {
 }
 
 /**
- * Runs the command through the IDE. VS Code's subprocess resolves with
- * [stdout, stderr] on exit 0 and rejects with stderr otherwise, so that is
- * passed or failed; the exit code itself is not known.
+ * Asks core to run the command. Core starts it where a terminal command
+ * starts (the person's shell, WSL or a container, with the scrubbed
+ * environment), stops it and what it started when its time is up, and writes
+ * the outcome to the audit trail under `callId`. A check that was not started
+ * (the executor is not available, the lint stopped it) is "refused": it did
+ * not run, so the item is not done.
  */
 export async function runCheckCommand(
-  ide: IDE,
+  ideMessenger: IIdeMessenger,
   command: string,
-  cwd: string | undefined,
-  timeoutMs: number = LOOP_CHECK_TIMEOUT_MS,
+  callId: string,
 ): Promise<Omit<LoopCheckResult, "at">> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<"timeout">((resolve) => {
-    timer = setTimeout(() => resolve("timeout"), timeoutMs);
-  });
+  let run;
   try {
-    const result = await Promise.race([ide.subprocess(command, cwd), timeout]);
-    if (result === "timeout") {
+    const response = await ideMessenger.request("loop/runCheck", {
+      command,
+      callId,
+    });
+    if (response.status !== "success") {
       return {
         status: "failed",
         command,
         exitCode: null,
-        output: `The check timed out after ${Math.round(timeoutMs / 60_000)} minutes.`,
+        output: tail(response.error) || "(no output)",
       };
     }
-    const [stdout, stderr] = result;
-    return {
-      status: "passed",
-      command,
-      exitCode: 0,
-      output: tail([stdout, stderr].filter((s) => s?.trim()).join("\n")),
-    };
+    run = response.content;
   } catch (e) {
-    const output = e instanceof Error ? e.message : String(e ?? "");
     return {
       status: "failed",
       command,
       exitCode: null,
-      output: tail(output) || "(no output)",
+      output:
+        tail(e instanceof Error ? e.message : String(e ?? "")) || "(no output)",
     };
-  } finally {
-    clearTimeout(timer);
   }
+  if (run.notRun) {
+    return { status: "refused", command, output: run.output };
+  }
+  if (run.timedOut) {
+    return {
+      status: "failed",
+      command,
+      exitCode: null,
+      output: tail(
+        [run.output, "The check timed out and was stopped."]
+          .filter(Boolean)
+          .join("\n"),
+      ),
+    };
+  }
+  return {
+    status: run.exitCode === 0 ? "passed" : "failed",
+    command,
+    exitCode: run.exitCode,
+    output: tail(run.output) || (run.exitCode === 0 ? "" : "(no output)"),
+  };
 }
 
 /**
@@ -189,7 +204,13 @@ export async function runLoopCheck(
   commitLoop(dispatch, getState, loop);
   const startedAt = loop.current?.startedAt;
 
-  const permission = await checkPermission(getState(), ideMessenger, command);
+  const callId = `loop-check-${itemId}-${Date.now()}`;
+  const permission = await checkPermission(
+    getState(),
+    ideMessenger,
+    command,
+    callId,
+  );
   loop = getState().session.loop ?? loop;
   if (!isThisCheck(loop, itemId, startedAt)) return;
 
@@ -248,12 +269,7 @@ export async function runLoopCheck(
   }
   commitLoop(dispatch, getState, loop);
 
-  const dirs = await ideMessenger.ide.getWorkspaceDirs().catch(() => []);
-  const result = await runCheckCommand(
-    ideMessenger.ide,
-    command,
-    workspacePath(dirs[0]),
-  );
+  const result = await runCheckCommand(ideMessenger, command, callId);
   // Stopped meanwhile: the item stays checking, and its check runs again
   const after = getState().session.loop;
   if (!after || !isThisCheck(after, itemId, startedAt)) return;

@@ -15,6 +15,8 @@ const SITES = [
   "extensions/cli/src/tools/runTerminalCommand.ts",
   "extensions/cli/src/services/BackgroundJobService.ts",
   "extensions/cli/src/loop/loopChecks.ts",
+  "core/util/loopCheckRun.ts",
+  "gui/src/redux/thunks/loopChecks.ts",
 ];
 
 /** Process starts that do not go through an executor, with their first argument. */
@@ -38,6 +40,15 @@ describe("agent commands start only through the executor", () => {
   it.each(SITES)("%s starts no process of its own", (file) => {
     const source = readFileSync(path.join(repo, file), "utf8");
     expect(directStarts(source)).toEqual([]);
+  });
+
+  it("the editor's Loop checks are sent to core, not to the editor's subprocess", () => {
+    const source = readFileSync(
+      path.join(repo, "gui/src/redux/thunks/loopChecks.ts"),
+      "utf8",
+    );
+    expect(source).toContain('"loop/runCheck"');
+    expect(source).not.toMatch(/subprocess\(|runCommand\(/);
   });
 
   it("the check sees a direct start, and lets executor.spawn and taskkill through", () => {

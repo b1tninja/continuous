@@ -82,6 +82,7 @@ import {
 import { EditAggregator } from "./nextEdit/context/aggregateEdits";
 import { createNewPromptFileV2 } from "./promptFiles/createNewPromptFile";
 import { BuiltInToolNames } from "./tools/builtIn";
+import { workingDirectoryFor } from "./tools/implementations/runTerminalCommand";
 import { effectiveCwdForPolicy } from "./tools/implementations/terminalCwd";
 import {
   readUserAdditionalFolders,
@@ -182,6 +183,7 @@ import {
 } from "./util/retirementStartup";
 import { SESSION_LOG_STORAGE_DEFAULT } from "./util/sessionLog";
 import { searchSessions, titlesOf } from "./util/sessionSearch";
+import { runAuditedLoopCheck } from "./util/loopCheckRun";
 import { executionShell } from "./util/shell";
 import {
   credentialUrlNames,
@@ -1056,6 +1058,25 @@ export class Core {
     on("loop/dirtyFiles", async ({ data: { repo } }) =>
       dirtyFiles(repo, worktreeDeps),
     );
+    // An item's check starts where a terminal command starts, not in the
+    // editor's `subprocess`
+    on("loop/runCheck", async ({ data: { command, callId } }) => {
+      const where = workingDirectoryFor(
+        await this.ide.getWorkspaceDirs(),
+        undefined,
+      );
+      if (!where.ok) {
+        return { exitCode: null, output: where.error, notRun: true as const };
+      }
+      return runAuditedLoopCheck(
+        { command, callId },
+        {
+          trail: getAuditTrail(),
+          cwd: where.cwd,
+          remoteName: (await this.ide.getIdeInfo()).remoteName,
+        },
+      );
+    });
   }
 
   /**
