@@ -67,7 +67,7 @@ export default function AcceptRejectAllButtons({
         >
           <div className="flex flex-row items-center gap-1">
             <XMarkIcon className="h-4 w-4 text-error" />
-            <span className="hidden sm:inline">Reject</span>
+            <span className="sr-only sm:not-sr-only">Reject</span>
             <span className="-ml-1.5 hidden scale-75 text-xs text-lightgray md:inline">
               {rejectShortcut}
             </span>
@@ -83,7 +83,7 @@ export default function AcceptRejectAllButtons({
         >
           <div className="flex flex-row items-center gap-1">
             <CheckIcon className="h-4 w-4 text-success" />
-            <span className="hidden sm:inline">Accept</span>
+            <span className="sr-only sm:not-sr-only">Accept</span>
             <span className="-ml-1.5 hidden scale-75 text-xs text-lightgray md:inline">
               {acceptShortcut}
             </span>

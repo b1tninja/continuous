@@ -140,8 +140,15 @@ function fallbackRender({ error, resetErrorBoundary }: any) {
       style={{ backgroundColor: vscBackground }}
     >
       <p>Something went wrong:</p>
-      <pre style={{ color: "red" }}>{error.message}</pre>
-      <pre style={{ color: lightGray }}>{error.stack}</pre>
+      <pre className="break-words whitespace-pre-wrap" style={{ color: "red" }}>
+        {error.message}
+      </pre>
+      <pre
+        className="break-words whitespace-pre-wrap"
+        style={{ color: lightGray }}
+      >
+        {error.stack}
+      </pre>
 
       <div className="text-center">
         <Button onClick={resetErrorBoundary}>Restart</Button>
