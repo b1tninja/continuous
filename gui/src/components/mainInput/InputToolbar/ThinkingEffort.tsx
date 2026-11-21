@@ -118,7 +118,7 @@ export function ThinkingEffort() {
           data-testid="thinking-effort"
           value={value}
           onChange={(e) => void onChange(e.target.value)}
-          className="h-6 cursor-pointer border-none bg-transparent py-0 pr-0 pl-0.5 [font-size:inherit] text-description outline-none"
+          className="h-6 cursor-pointer border-none bg-transparent py-0 pr-0 pl-0.5 [font-size:inherit] text-description"
         >
           {THINKING_EFFORTS.map((o) => (
             <option key={o.value || "default"} value={o.value}>

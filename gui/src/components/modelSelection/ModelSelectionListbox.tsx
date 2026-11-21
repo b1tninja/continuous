@@ -106,7 +106,7 @@ function ModelSelectionListbox({
       }}
     >
       <div className="relative mt-1 mb-2">
-        <ListboxButton className="relative m-0 grid h-full w-full cursor-pointer grid-cols-[1fr_auto] items-center rounded-lg border border-solid border-border bg-background py-2 pr-10 pl-3 text-left text-foreground hover:bg-input focus:outline-hidden">
+        <ListboxButton className="relative m-0 grid h-full w-full cursor-pointer grid-cols-[1fr_auto] items-center rounded-lg border border-solid border-border bg-background py-2 pr-10 pl-3 text-left text-foreground hover:bg-input">
           <span className="flex items-center">
             {window.vscMediaUrl && selectedProvider.icon && (
               <img
