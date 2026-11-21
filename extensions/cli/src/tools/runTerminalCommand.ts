@@ -6,9 +6,8 @@ import {
   evaluateTerminalCommandSecurity,
   type ToolPolicy,
 } from "@continuedev/terminal-security";
-import { commandLintGate } from "core/tools/permissions/commandLint.js";
 import { resolveRequestedCwd } from "core/tools/implementations/terminalCwd.js";
-import { noteBashEnd } from "../audit/bashExit.js";
+import { commandLintGate } from "core/tools/permissions/commandLint.js";
 import { missingBinaryGate } from "core/tools/permissions/missingBinaryGate.js";
 import { getCommandExecutor } from "core/util/commandExecutor.js";
 import { decodeCommandOutput } from "core/util/commandOutput.js";
@@ -23,6 +22,7 @@ import {
   terminalEnvironment,
 } from "core/util/terminalEnvironment.js";
 
+import { noteBashEnd } from "../audit/bashExit.js";
 import { shellChildEnv } from "../childEnv.js";
 import { backgroundJobService } from "../services/BackgroundJobService.js";
 import { services } from "../services/index.js";
