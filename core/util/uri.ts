@@ -88,8 +88,11 @@ export function findUriInDirs(
   relativePathOrBasename: string;
   foundInDir: string | null;
 } {
+  // This file is bundled into the webview, which has no `process`.
+  // Node still defaults to case-insensitive names on Windows.
   const caseInsensitive =
-    options.caseInsensitive ?? process.platform === "win32";
+    options.caseInsensitive ??
+    (typeof process !== "undefined" && process.platform === "win32");
   const same = (a: string, b: string) =>
     caseInsensitive ? a.toLowerCase() === b.toLowerCase() : a === b;
   const uriComps = URI.parse(uri);
