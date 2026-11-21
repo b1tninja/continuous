@@ -9,6 +9,7 @@ import {
 import { resolveRequestedCwd } from "core/tools/implementations/terminalCwd.js";
 import { commandLintGate } from "core/tools/permissions/commandLint.js";
 import { missingBinaryGate } from "core/tools/permissions/missingBinaryGate.js";
+import { stripAnsi } from "core/util/ansi.js";
 import { getCommandExecutor } from "core/util/commandExecutor.js";
 import { decodeCommandOutput } from "core/util/commandOutput.js";
 import {
@@ -324,7 +325,7 @@ IMPORTANT: To edit files, use Edit/MultiEdit tools instead of bash commands (sed
         );
 
         if (job) {
-          const truncationResult = truncateOutputFromStart(stdout, {
+          const truncationResult = truncateOutputFromStart(stripAnsi(stdout), {
             maxChars,
             maxLines,
           });
@@ -336,7 +337,7 @@ IMPORTANT: To edit files, use Edit/MultiEdit tools instead of bash commands (sed
           );
         } else {
           resolve(
-            `Failed to move to background (job limit reached). Command continues in foreground.\nOutput so far: ${stdout}`,
+            `Failed to move to background (job limit reached). Command continues in foreground.\nOutput so far: ${stripAnsi(stdout)}`,
           );
         }
       };
@@ -351,10 +352,15 @@ IMPORTANT: To edit files, use Edit/MultiEdit tools instead of bash commands (sed
           if (isResolved) return;
           isResolved = true;
           child.kill();
+          // For the audit trail: it ended by our time limit, with no code
+          noteBashEnd(context?.toolCallId, {
+            signal: "SIGTERM",
+            timedOut: true,
+          });
           let output = stdout + (stderr ? `\nStderr: ${stderr}` : "");
           output += `\n\n[Command timed out after ${TIMEOUT_MS / 1000} seconds of no output]`;
 
-          const truncationResult = truncateOutputFromStart(output, {
+          const truncationResult = truncateOutputFromStart(stripAnsi(output), {
             maxChars,
             maxLines,
           });
@@ -406,7 +412,7 @@ IMPORTANT: To edit files, use Edit/MultiEdit tools instead of bash commands (sed
       // full pipe) but no longer collected, and the pipes no longer keep this
       // process alive.
       const EXIT_GRACE_MS = 100;
-      child.on("exit", (code) => {
+      child.on("exit", (code, signal) => {
         setTimeout(() => {
           if (isResolved) return;
           for (const stream of [child.stdout, child.stderr]) {
@@ -417,19 +423,28 @@ IMPORTANT: To edit files, use Edit/MultiEdit tools instead of bash commands (sed
             stream.resume();
             (stream as { unref?: () => void }).unref?.();
           }
-          finish(code);
+          finish(code, signal);
         }, EXIT_GRACE_MS);
       });
 
-      child.on("close", (code) => finish(code));
+      child.on("close", (code, signal) => finish(code, signal));
 
-      function finish(code: number | null) {
+      function finish(
+        code: number | null,
+        signal: NodeJS.Signals | null = null,
+      ) {
         if (isResolved) return;
         isResolved = true;
-        // For the audit trail: the code the command chose, which the string
-        // this tool returns or throws does not carry
+        // For the audit trail: how it ended, which the string this tool
+        // returns or throws does not carry. A code if the command chose one;
+        // otherwise the signal that ended it.
         if (typeof code === "number") {
-          noteBashEnd(context?.toolCallId, { exit: code });
+          noteBashEnd(context?.toolCallId, {
+            exit: code,
+            ...(signal ? { signal } : {}),
+          });
+        } else if (signal) {
+          noteBashEnd(context?.toolCallId, { signal });
         }
 
         if (timeoutId) {
@@ -443,7 +458,9 @@ IMPORTANT: To edit files, use Edit/MultiEdit tools instead of bash commands (sed
 
         // Only reject on non-zero exit code if there's also stderr
         if (code !== 0 && stderr) {
-          reject(`Error (exit code ${code}): ${stderr}`);
+          reject(
+            `Error (exit code ${code === null ? (signal ?? "unknown") : code}): ${stripAnsi(stderr)}`,
+          );
           return;
         }
 
@@ -461,7 +478,7 @@ IMPORTANT: To edit files, use Edit/MultiEdit tools instead of bash commands (sed
           output = stdout + `\nStderr: ${stderr}`;
         }
 
-        const truncationResult = truncateOutputFromStart(output, {
+        const truncationResult = truncateOutputFromStart(stripAnsi(output), {
           maxChars,
           maxLines,
         });

@@ -2953,7 +2953,8 @@ export class Core {
       throw e;
     }
     // A terminal command that ran and exited non-zero returns an ordinary
-    // result, so its code is read from the command's record
+    // result, so how it ended is read from the command's record: its exit
+    // code, or the signal that ended it and whether that was the time limit
     const end = result.errorMessage
       ? undefined
       : terminalEndOf(result.contextItems);
@@ -2966,7 +2967,10 @@ export class Core {
         ? { exit: 1, error: result.errorMessage }
         : end
           ? {
-              exit: end.exit,
+              // A command ended by a signal has no exit code: none is recorded
+              ...(end.exit !== undefined ? { exit: end.exit } : {}),
+              ...(end.signal ? { signal: end.signal } : {}),
+              ...(end.timedOut ? { timedOut: true as const } : {}),
               ...(end.error ? { error: end.error } : {}),
             }
           : {}),

@@ -40,6 +40,11 @@ function Outcome({ outcome }: { outcome: CallDetail["outcome"] }) {
       {outcome.exit !== undefined && (
         <Field label="Exit code">{String(outcome.exit)}</Field>
       )}
+      {/* A command a signal ended has no exit code: say how it ended instead */}
+      {outcome.signal && <Field label="Ended by">{outcome.signal}</Field>}
+      {outcome.timedOut && (
+        <Field label="Time limit">The command hit its time limit</Field>
+      )}
       {outcome.durMs !== undefined && (
         <Field label="Took">{`${outcome.durMs} ms`}</Field>
       )}

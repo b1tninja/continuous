@@ -177,6 +177,13 @@ export interface OutcomeEvent extends AuditEnvelope {
   tool: string;
   ran: boolean;
   exit?: number;
+  /**
+   * The signal that ended a command (SIGTERM, SIGKILL). Such a command has no
+   * exit code. Absent for a command that exited by itself.
+   */
+  signal?: string;
+  /** A terminal command ended by the foreground time limit */
+  timedOut?: true;
   durMs?: number;
   outBytes?: number;
   /**
@@ -476,6 +483,8 @@ export interface OutcomeInput {
   tool: string;
   ran: boolean;
   exit?: number;
+  signal?: string;
+  timedOut?: true;
   durMs?: number;
   outBytes?: number;
   /** The call's output. It is hashed after masking and never stored. */

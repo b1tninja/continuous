@@ -1,3 +1,5 @@
+import { stripAnsi } from "core/util/ansi.js";
+
 import type { BackgroundJob } from "../services/BackgroundJobService.js";
 import { services } from "../services/index.js";
 
@@ -75,7 +77,7 @@ To wait for a job, pass wait_seconds instead of running a sleep command: the cal
       job_id: job.id,
       status: job.status,
       command: job.command,
-      output: job.output,
+      output: stripAnsi(job.output),
       started_at: job.startTime.toISOString(),
     };
 

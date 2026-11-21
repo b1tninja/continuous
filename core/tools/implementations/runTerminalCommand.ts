@@ -67,6 +67,7 @@ import {
   RunawayReason,
   viewText,
 } from "../../util/commandOutputBuffer";
+import { hasAnsi, stripAnsi } from "../../util/ansi";
 import {
   CommandRecord,
   finishCommand,
@@ -208,19 +209,28 @@ function runawayActionOf(value: string | undefined): RunawayAction {
     : RunawayAction.Stop;
 }
 
-/** The terminal item, with the meter's numbers and where the full output is. */
+/**
+ * The terminal item, with the meter's numbers and where the full output is.
+ * `content` is what the model reads, so it has no terminal escape sequences.
+ * `display` is the coloured text for the screen, present only when there was
+ * colour to show.
+ */
 function terminalItem(
   content: string,
   status: string | undefined,
   record: CommandRecord,
+  display?: string,
 ) {
+  const plain = stripAnsi(content);
+  const coloured = display ?? content;
   return {
     name: "Terminal",
     description: "Terminal command output",
-    content,
+    content: plain,
     ...(status === undefined ? {} : { status }),
     commandOutput: {
       id: record.id,
+      ...(hasAnsi(coloured) ? { display: coloured } : {}),
       ...outputStats(record.capture),
       ...(record.outputPath
         ? {
@@ -232,10 +242,18 @@ function terminalItem(
   };
 }
 
-/** What the model gets for a command that has finished. */
-function finalContent(record: CommandRecord, failed: boolean): string {
+/**
+ * What the model gets for a command that has finished. `keepAnsi` is the same
+ * text with its colours, for the screen.
+ */
+function finalContent(
+  record: CommandRecord,
+  failed: boolean,
+  keepAnsi = false,
+): string {
   const text = modelText(record.capture, {
     failed,
+    keepAnsi,
     outputPath: record.outputPath,
     commandId: record.id,
     limits: record.limits,
@@ -245,6 +263,36 @@ function finalContent(record: CommandRecord, failed: boolean): string {
       ? `[Stopped by Continuous: ${runawayMessage(record.stoppedFor, record.capture, record.limits)}. The command and what it started were ended. If the output was expected, write it to a file or filter it instead of printing it all.]\n`
       : "";
   return stopped + text;
+}
+
+/**
+ * The item for a command that has ended: how it ended decides the status line
+ * and whether the output counts as a failure's (which is given more room).
+ * `display` is the same text with its colours, for the screen.
+ */
+function endedItem(
+  record: CommandRecord,
+  code: number | null,
+  timedOut: boolean,
+) {
+  let status: string;
+  let failed = true;
+  if (record.stoppedFor && record.stoppedFor !== "stopped") {
+    status = "Command stopped: its output looked like a runaway";
+  } else if (timedOut) {
+    status = "Command timed out";
+  } else if (!code) {
+    status = "Command completed";
+    failed = false;
+  } else {
+    status = `Command failed with exit code ${code}`;
+  }
+  return terminalItem(
+    finalContent(record, failed),
+    status,
+    record,
+    finalContent(record, failed, true),
+  );
 }
 
 /** The result of a command the lint stopped: nothing ran. */
@@ -366,10 +414,13 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
             extras.onPartialOutput?.({
               toolCallId,
               contextItems: [
+                // The chat view draws colour, so it gets the escape sequences;
+                // content, which a saved session keeps, does not have them
                 terminalItem(
                   viewText(record.capture, record.limits),
                   status,
                   record,
+                  viewText(record.capture, record.limits),
                 ),
               ],
             });
@@ -469,7 +520,10 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
             if (forceTimeoutId) clearTimeout(forceTimeoutId);
             if (exitTimeoutId) clearTimeout(exitTimeoutId);
             if (viewTimeoutId) clearTimeout(viewTimeoutId);
-            finishCommand(record, code);
+            finishCommand(record, code, undefined, {
+              signal: childProc.signalCode,
+              timedOut,
+            });
 
             // Clean up process tracking
             if (toolCallId) {
@@ -485,39 +539,7 @@ export const runTerminalCommandImpl: ToolImpl = async (args, extras) => {
             // read_command_output, not sent into a message already sent
             if (!waitForCompletion || returned) return;
             returned = true;
-            if (record.stoppedFor && record.stoppedFor !== "stopped") {
-              resolve([
-                terminalItem(
-                  finalContent(record, true),
-                  "Command stopped: its output looked like a runaway",
-                  record,
-                ),
-              ]);
-            } else if (timedOut) {
-              resolve([
-                terminalItem(
-                  finalContent(record, true),
-                  "Command timed out",
-                  record,
-                ),
-              ]);
-            } else if (!code || code === 0) {
-              resolve([
-                terminalItem(
-                  finalContent(record, false),
-                  "Command completed",
-                  record,
-                ),
-              ]);
-            } else {
-              resolve([
-                terminalItem(
-                  finalContent(record, true),
-                  `Command failed with exit code ${code}`,
-                  record,
-                ),
-              ]);
-            }
+            resolve([endedItem(record, code, timedOut)]);
           };
 
           childProc.on("close", onDone);
