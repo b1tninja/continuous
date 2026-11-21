@@ -10,9 +10,8 @@ import React, {
 
 import { ToolPermissionServiceState } from "src/services/ToolPermissionService.js";
 
-import { setCountdownAvailable } from "../permissions/askCountdown.js";
-
 import { useServices } from "../hooks/useService.js";
+import { setCountdownAvailable } from "../permissions/askCountdown.js";
 import {
   AuthServiceState,
   ConfigServiceState,

@@ -8,6 +8,12 @@ import {
   type CostBreakdown,
 } from "core/llm/utils/calculateRequestCost.js";
 import {
+  modelNote,
+  type Proposal,
+  type Resolved,
+} from "core/tools/permissions/decisionTimer.js";
+import { holdProposal } from "core/tools/permissions/holdProposal.js";
+import {
   flagToolText,
   stripsHiddenCharacters,
 } from "core/tools/permissions/injection.js";
@@ -27,17 +33,17 @@ import {
   type ApprovalTrace,
 } from "../audit/cliAudit.js";
 import { startShadowReview } from "../audit/shadowHook.js";
-import {
-  modelNote,
-  type Proposal,
-  type Resolved,
-} from "core/tools/permissions/decisionTimer.js";
-import { holdProposal } from "core/tools/permissions/holdProposal.js";
-
 import { firePermissionRequest } from "../hooks/fireHook.js";
 import { notifyAttention } from "../hooks/lifecycleHooks.js";
 import { itemBudgetNoteNow } from "../loop/loopBudget.js";
 import { holdLoopCall, loopRepeatGuard } from "../loop/loopHolds.js";
+import {
+  forgetRequest,
+  onKeepWaiting,
+  proposalForAsk,
+  publishCountdown,
+  spendTurnBudget,
+} from "../permissions/askCountdown.js";
 import { noteCliToolResult } from "../permissions/cliTaint.js";
 import {
   evaluateWithCoreRules,
@@ -57,14 +63,6 @@ import {
 } from "../permissions/headlessPolicy.js";
 import { announceIdgaf } from "../permissions/idgafNotices.js";
 import { checkToolPermission } from "../permissions/permissionChecker.js";
-import {
-  clearCountdown,
-  forgetRequest,
-  onKeepWaiting,
-  proposalForAsk,
-  publishCountdown,
-  spendTurnBudget,
-} from "../permissions/askCountdown.js";
 import { toolPermissionManager } from "../permissions/permissionManager.js";
 import {
   effectiveLevels,
@@ -138,6 +136,26 @@ export function policyDenialContent(
   }
   if (!denialMessage) return `Command blocked by security policy`;
   return `Command blocked by security policy: ${denialMessage} Do not retry it or reach the same result another way. Do what else the request needs, then say what you could not do and why.`;
+}
+
+function deniedToolMessage(
+  denialReason: string,
+  denialMessage: string | undefined,
+  denialSource: string | undefined,
+): string {
+  if (denialReason === "loop") {
+    return denialMessage ?? "Held for the person.";
+  }
+  if (denialReason === "timer") {
+    return (
+      denialMessage ??
+      "No answer within the time allowed, so the call was refused."
+    );
+  }
+  if (denialReason === "policy") {
+    return policyDenialContent(denialMessage, denialSource);
+  }
+  return "Permission denied by user";
 }
 
 // Helper function to handle permission denied
@@ -1442,18 +1460,11 @@ export async function executeStreamedToolCalls(
       if (!permissionResult.approved) {
         // Permission denied: create entry with canceled status
         const denialReason = permissionResult.denialReason || "user";
-        const deniedMessage =
-          denialReason === "loop"
-            ? (permissionResult.denialMessage ?? "Held for the person.")
-            : denialReason === "timer"
-              ? (permissionResult.denialMessage ??
-                "No answer within the time allowed, so the call was refused.")
-              : denialReason === "policy"
-                ? policyDenialContent(
-                    permissionResult.denialMessage,
-                    permissionResult.denialSource,
-                  )
-                : `Permission denied by user`;
+        const deniedMessage = deniedToolMessage(
+          denialReason,
+          permissionResult.denialMessage,
+          permissionResult.denialSource,
+        );
 
         const deniedEntry: ToolResultWithStatus = {
           role: "tool",
