@@ -326,6 +326,14 @@ const StyledMarkdownPreview = memo(function StyledMarkdownPreview(
           const relativeFilePath = preChildProps["data-relativefilepath"];
           const codeBlockContent = preChildProps["data-codeblockcontent"];
 
+          const isMathBlock =
+            typeof className === "string" &&
+            (className.includes("language-math") ||
+              className.includes("math-display"));
+          if (isMathBlock) {
+            return <SyntaxHighlightedPre {...preProps} />;
+          }
+
           if (!props.isRenderingInStepContainer) {
             return <SyntaxHighlightedPre {...preProps} />;
           }
@@ -359,6 +367,15 @@ const StyledMarkdownPreview = memo(function StyledMarkdownPreview(
           );
         },
         code: ({ ...codeProps }) => {
+          const className =
+            typeof codeProps.className === "string" ? codeProps.className : "";
+          if (
+            className.includes("language-math") ||
+            className.includes("math-inline")
+          ) {
+            return <code {...codeProps}>{codeProps.children}</code>;
+          }
+
           const content = getCodeChildrenContent(codeProps.children);
 
           if (content) {

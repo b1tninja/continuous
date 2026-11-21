@@ -1,45 +1,52 @@
+import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-import remarkMath from "remark-math";
-import remarkParse from "remark-parse";
-import { unified } from "unified";
 import { visit } from "unist-util-visit";
+import remarkMath from "remark-math";
 import { normalizeDisplayMathBlocks } from "./normalizeDisplayMathBlocks";
+import { fixDoubleDollarNewLineLatex } from "./fixDoubleDollarLatex";
 
-function mathNodeTypes(markdown: string): string[] {
-  const tree = unified()
+const require = createRequire(import.meta.url);
+const unified = require("react-remark/node_modules/unified");
+const remarkParse = require("react-remark/node_modules/remark-parse");
+
+function parseWithChatParser(markdown: string) {
+  return unified()
     .use(remarkParse)
     .use(remarkMath, { singleDollarTextMath: true })
     .parse(markdown);
+}
+
+function nodeTypes(markdown: string): string[] {
   const types: string[] = [];
-  visit(tree, (node) => {
-    if (node.type === "math" || node.type === "inlineMath") {
-      types.push(node.type);
-    }
+  visit(parseWithChatParser(markdown), (node: { type: string; lang?: string }) => {
+    if (node.type === "inlineMath") types.push("inlineMath");
+    if (node.type === "code" && node.lang === "math") types.push("displayMath");
   });
   return types;
 }
 
+const sample =
+  "The equation $x^2 + y^2 = 1$ defines $y$ implicitly as a function of $x$ near suitable points.\nAlso show a display equation:\n$$\\int_0^1 x\\,dx = \\frac{1}{2}$$";
+
 describe("normalizeDisplayMathBlocks", () => {
-  it("turns a one-line $$ block into flow math", () => {
-    const source = "Also show a display equation:\n\n$$\\int_0^1 x\\,dx = \\frac{1}{2}$$";
-    const normalized = normalizeDisplayMathBlocks(source);
-    expect(mathNodeTypes(normalized)).toEqual(["math"]);
-  });
-
-  it("leaves multiline display math as flow math", () => {
-    const source = "$$\n\\int_0^1\n$$";
-    expect(mathNodeTypes(normalizeDisplayMathBlocks(source))).toEqual(["math"]);
-  });
-
-  it("parses the standard inline + display sample", () => {
+  it("turns $$...$$ into a math fence the chat parser can read", () => {
     const source = normalizeDisplayMathBlocks(
-      "The equation $x^2 + y^2 = 1$ defines $y$ implicitly as a function of $x$ near suitable points.\n\nAlso show a display equation:\n\n$$\\int_0^1 x\\,dx = \\frac{1}{2}$$",
+      fixDoubleDollarNewLineLatex(sample),
     );
-    expect(mathNodeTypes(source)).toEqual([
+    expect(source).toContain("```math");
+    expect(source).toContain("\\int_0^1");
+    expect(nodeTypes(source)).toEqual([
       "inlineMath",
       "inlineMath",
       "inlineMath",
-      "math",
+      "displayMath",
     ]);
+  });
+
+  it("does not throw on the react-remark parser", () => {
+    const source = normalizeDisplayMathBlocks(
+      fixDoubleDollarNewLineLatex(sample),
+    );
+    expect(() => parseWithChatParser(source)).not.toThrow();
   });
 });
