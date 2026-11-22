@@ -1,6 +1,15 @@
 import { createAsyncThunk } from "@reduxjs/toolkit";
-import { ApplyState, ApplyToFilePayload, ContextItem } from "core";
+import {
+  ApplyState,
+  ApplyToFilePayload,
+  ContextItem,
+  ToolCallState,
+} from "core";
 import { EDIT_MODE_STREAM_ID } from "core/edit/constants";
+import {
+  editFailureResult,
+  type EditNotAppliedReason,
+} from "core/edit/editFailure";
 import { logAgentModeEditOutcome } from "../../util/editOutcomeLogger";
 import {
   allowOutsideWorkspaceOf,
@@ -17,6 +26,7 @@ import {
 import { updateEditStateApplyState } from "../slices/editState";
 import {
   acceptToolCall,
+  cancelToolCall,
   errorToolCall,
   updateApplyState,
   updateToolCallOutput,
@@ -25,6 +35,18 @@ import { ThunkApiType } from "../store";
 import { findToolCallById, logToolUsage } from "../util";
 import { exitEdit } from "./edit";
 import { streamResponseAfterToolCall } from "./streamResponseAfterToolCall";
+
+/**
+ * The file as the model named it: the result must name the path the model
+ * can use again, and the apply state carries a URI.
+ */
+function editedPath(
+  toolCallState: ToolCallState,
+  fallback: string | undefined,
+): string | undefined {
+  const given = toolCallState.parsedArgs?.filepath;
+  return typeof given === "string" && given ? given : fallback;
+}
 
 export const handleApplyStateUpdate = createAsyncThunk<
   void,
@@ -75,7 +97,14 @@ export const handleApplyStateUpdate = createAsyncThunk<
 
         if (applyState.status === "closed") {
           if (toolCallState) {
-            const accepted = toolCallState.status !== "canceled";
+            // A diff rejected in the editor (its own Reject, not the chat's)
+            // arrives with the call still running. It is a cancelled call
+            // like any other rejection, not an edit that succeeded.
+            if (applyState.rejected && toolCallState.status === "calling") {
+              dispatch(cancelToolCall({ toolCallId: applyState.toolCallId }));
+            }
+            const accepted =
+              toolCallState.status !== "canceled" && !applyState.rejected;
 
             logToolUsage(toolCallState, accepted, true, extra.ideMessenger);
 
@@ -151,21 +180,20 @@ export const handleApplyStateUpdate = createAsyncThunk<
                   }),
                 );
               } else if (!toolCallState.output?.length) {
-                // An apply error already says why (applyForEditTool); only
-                // fill in a generic line when nothing does. The closed event
-                // carries no filepath, so fall back to the call's own.
-                const failedPath =
-                  applyState.filepath ??
-                  (typeof toolCallState.parsedArgs?.filepath === "string"
-                    ? toolCallState.parsedArgs.filepath
-                    : "the file");
+                // An apply error already says why (applyForEditTool). This
+                // is a call that failed and said nothing: no cause is known,
+                // and the result says so.
                 dispatch(
                   updateToolCallOutput({
                     toolCallId: applyState.toolCallId,
                     contextItems: [
                       {
                         name: "Edit Failed",
-                        content: `Failed to edit ${failedPath}. To continue working with the file, read it again to see the most up-to-date contents`,
+                        content: editFailureResult({
+                          tool: toolCallState.toolCall.function.name,
+                          file: editedPath(toolCallState, applyState.filepath),
+                          cause: "apply-failed",
+                        }),
                         description: "",
                         hidden: true,
                       },
@@ -211,14 +239,18 @@ export const applyForEditTool = createAsyncThunk<
   }
 
   let didError = false;
-  // The IDE's reason, when it gave one ("The file changed in the editor
-  // while the edit was being applied..."), so the model knows what to do
+  // Why the apply stopped: the IDE's reason when it gave one (the file
+  // changed under the edit), otherwise the error's own message
+  let notApplied: EditNotAppliedReason | undefined;
   let reason: string | undefined;
   try {
     const response = await extra.ideMessenger.request("applyToFile", payload);
     if (response.status === "error") {
       didError = true;
       reason = response.error;
+    } else if (response.content?.notApplied) {
+      didError = true;
+      notApplied = response.content.notApplied;
     }
   } catch (e) {
     didError = true;
@@ -248,9 +280,13 @@ export const applyForEditTool = createAsyncThunk<
               icon: "problems",
               name: "Apply Error",
               description: "Failed to apply changes",
-              content: reason
-                ? `Error editing file: ${reason}`
-                : `Error editing file: failed to apply changes to file.\n\nPlease try again with correct args or notify the user and request further instructions.`,
+              content: editFailureResult({
+                tool: toolCallState.toolCall.function.name,
+                file: editedPath(toolCallState, payload.filepath),
+                cause: "apply-failed",
+                ...(notApplied ? { notApplied } : {}),
+                ...(reason ? { detail: reason } : {}),
+              }),
               hidden: false,
             },
           ],

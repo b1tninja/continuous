@@ -63,7 +63,11 @@ export async function processDiff(
     const doc = vscode.workspace.textDocuments.find(
       (open) => open.uri.toString() === pendingEditor,
     );
-    await verticalDiffManager.finishDiff(pendingEditor, action === "accept");
+    await verticalDiffManager.finishDiff(
+      pendingEditor,
+      action === "accept",
+      action === "reject",
+    );
     forgetPendingNewFile(newOrCurrentUri);
     if (action !== "accept") {
       if (doc) await closeDraft(doc);
@@ -76,6 +80,7 @@ export async function processDiff(
           status: "closed",
           numDiffs: 0,
           toolCallId,
+          rejected: true,
         });
       }
       return;
@@ -101,7 +106,11 @@ export async function processDiff(
   }
 
   // Clear vertical diffs depending on action
-  verticalDiffManager.clearForfileUri(newOrCurrentUri, action === "accept");
+  verticalDiffManager.clearForfileUri(
+    newOrCurrentUri,
+    action === "accept",
+    action === "reject",
+  );
   if (action === "reject") {
     // this is so that IDE reject diff command can also cancel apply
     core.invoke("cancelApply", undefined);
@@ -154,6 +163,7 @@ export async function processDiff(
       numDiffs: 0,
       toolCallId,
       autoFormattingDiff, // Include autoformatting diff
+      ...(action === "reject" ? { rejected: true } : {}),
     });
   } else {
     // Save the file even if no streamId

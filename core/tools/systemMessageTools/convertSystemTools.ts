@@ -4,6 +4,7 @@ import {
   ToolCallState,
   UserChatMessage,
 } from "../..";
+import { cancelledEditResult } from "../../edit/editFailure";
 import {
   normalizeToMessageParts,
   renderContextItems,
@@ -19,7 +20,9 @@ function toolCallStateToSystemToolOutput(state: ToolCallState): string {
   // TODO - include tool call id for parallel. Confuses dumb models
   // let output = `Tool output for tool call ${state.toolCallId} (${state.toolCall.function.name}):\n\n`;
   if (state.status === "canceled") {
-    output += CANCELLED_TOOL_CALL_MESSAGE;
+    output +=
+      cancelledEditResult(state.toolCall.function.name, state.parsedArgs) ??
+      CANCELLED_TOOL_CALL_MESSAGE;
   } else if (state.output?.length) {
     output += renderContextItems(state.output);
   } else {

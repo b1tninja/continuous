@@ -1,5 +1,10 @@
 import { createAsyncThunk, unwrapResult } from "@reduxjs/toolkit";
 import { ContextItem, IDE, McpUiState, ToolCallState } from "core";
+import {
+  editFailureCauseOf,
+  editFailureResult,
+  isIdeEditTool,
+} from "core/edit/editFailure";
 import { CLIENT_TOOLS_IMPLS } from "core/tools/builtIn";
 import {
   flagToolOutput,
@@ -149,6 +154,7 @@ export const callToolById = createAsyncThunk<
   }
 
   if (error) {
+    const toolName = toolCallState.toolCall.function.name;
     dispatch(
       updateToolCallOutput({
         toolCallId,
@@ -157,7 +163,16 @@ export const callToolById = createAsyncThunk<
             icon: "problems",
             name: "Tool Call Error",
             description: "Tool Call Failed",
-            content: `${toolCallState.toolCall.function.name} failed with the message: ${error.message}\n\nPlease try something else or request further instructions.`,
+            // An edit tool that throws here has written nothing yet: the
+            // result names the cause the error carries
+            content: isIdeEditTool(toolName)
+              ? editFailureResult({
+                  tool: toolName,
+                  file: toolCallState.parsedArgs?.filepath,
+                  cause: editFailureCauseOf(error.reason),
+                  detail: error.message,
+                })
+              : `${toolName} failed with the message: ${error.message}\n\nPlease try something else or request further instructions.`,
             hidden: false,
           },
         ],

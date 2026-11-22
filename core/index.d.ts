@@ -2901,6 +2901,8 @@ export interface ApplyState {
   originalFileContent?: string;
   toolCallId?: string;
   autoFormattingDiff?: string;
+  /** With status "closed": the person rejected the diff, so the file is as it was. */
+  rejected?: boolean;
 }
 
 export type StreamDiffLinesType = "edit" | "apply";

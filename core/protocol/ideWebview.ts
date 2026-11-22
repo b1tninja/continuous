@@ -13,6 +13,7 @@ import {
   ShowFilePayload,
 } from "../";
 import type { InstructionFilesState } from "../config/markdown/instructionFiles";
+import type { EditNotAppliedReason } from "../edit/editFailure";
 
 export type ToIdeFromWebviewProtocol = ToIdeFromWebviewOrCoreProtocol & {
   /**
@@ -28,7 +29,12 @@ export type ToIdeFromWebviewProtocol = ToIdeFromWebviewOrCoreProtocol & {
    */
   "instructionFiles/state": [{ load?: boolean }, InstructionFilesState];
   openUrl: [string, void];
-  applyToFile: [ApplyToFilePayload, void];
+  // An apply that stopped without writing answers with the reason (VS Code);
+  // any other failure is an error response
+  applyToFile: [
+    ApplyToFilePayload,
+    void | { notApplied: EditNotAppliedReason },
+  ];
   overwriteFile: [{ filepath: string; prevFileContent: string | null }, void];
   showTutorial: [undefined, void];
   showFile: [ShowFilePayload, void];
