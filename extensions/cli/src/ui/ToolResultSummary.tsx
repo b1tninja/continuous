@@ -1,5 +1,6 @@
 import path from "path";
 
+import { refusalText } from "core/tools/refusalText.js";
 import { Box, Text } from "ink";
 import React from "react";
 
@@ -179,7 +180,7 @@ const ToolResultBody: React.FC<ToolResultSummaryProps> = ({
   // Handle all other cases with text summary
   const getSummary = () => {
     // Check if this is a user cancellation first
-    if (content === "Permission denied by user") {
+    if (refusalText.isDeclined(content)) {
       return "Cancelled by user";
     }
 

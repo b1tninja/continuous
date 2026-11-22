@@ -1,3 +1,4 @@
+import { refusalText } from "core/tools/refusalText.js";
 import { render } from "ink-testing-library";
 import React from "react";
 import { vi } from "vitest";
@@ -146,7 +147,7 @@ describe("TUIChat - Stream Stopping on Tool Rejection", () => {
     };
 
     // Simulate the rejection handling logic
-    const deniedMessage = "Permission denied by user";
+    const deniedMessage = refusalText.declined("Edit");
     const rejectedToolCall = mockMultipleToolCalls[0];
 
     // First tool call gets denied
@@ -167,7 +168,7 @@ describe("TUIChat - Stream Stopping on Tool Rejection", () => {
     expect(mockCallbacks.onToolResult).toHaveBeenCalledTimes(3);
     expect(mockCallbacks.onToolResult).toHaveBeenNthCalledWith(
       1,
-      "Permission denied by user",
+      refusalText.declined("Edit"),
       "Edit",
       "errored",
     );

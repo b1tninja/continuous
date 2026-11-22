@@ -9,6 +9,7 @@ import { getRuleId } from "core/llm/rules/getSystemMessageWithRules";
 import { totalInputTokens } from "core/llm/utils/cacheStats";
 import { ToCoreProtocol } from "core/protocol";
 import { renderChatMessage } from "core/util/messageContent";
+import { interruptedToolCallResult } from "core/util/truncatedJson";
 import { buildLedgerEntry } from "../../util/cacheLedger";
 import {
   noteCompiledRequest,
@@ -685,7 +686,7 @@ export const streamNormalInput = createAsyncThunk<
                 {
                   name: "Tool Call Error",
                   description: "Premature Close",
-                  content: `"Premature Close" error: this tool call was aborted mid-stream because the arguments took too long to stream or there were network issues. Please re-attempt by breaking the operation into smaller chunks or trying something else`,
+                  content: interruptedToolCallResult(tc.toolCall.function.name),
                   icon: "problems",
                 },
               ],

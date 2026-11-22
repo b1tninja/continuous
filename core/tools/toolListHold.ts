@@ -1,3 +1,5 @@
+import { refusalText } from "./refusalText";
+
 /**
  * Changing tools while the prompt cache is warm (ROADMAP C80 and C88).
  *
@@ -136,10 +138,6 @@ export function functionFingerprint(tool: { function?: unknown }): string {
   return JSON.stringify(tool.function ?? tool);
 }
 
-/** The second half of the refusal: the same as the other refusals'. */
-const CARRY_ON =
-  "Do not retry this call or reach the same result another way. Do what else the request needs, then say what you could not do and why.";
-
 /**
  * The tool result for a call to a withheld tool. `gone` is a tool whose MCP
  * server disconnected or stopped offering it, rather than one turned off.
@@ -148,7 +146,7 @@ export function withheldToolRefusal(name: string, gone = false): string {
   const why = gone
     ? `${name} is no longer available in this session (its MCP server disconnected or stopped offering it); the tool list updates when the prompt cache goes cold.`
     : `${name} is turned off for this session; the change applies when the prompt cache goes cold.`;
-  return `${why}\n\n${CARRY_ON}`;
+  return `${why}\n\n${refusalText.carryOn}`;
 }
 
 /**

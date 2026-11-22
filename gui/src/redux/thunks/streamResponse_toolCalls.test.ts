@@ -30,6 +30,7 @@ import {
   grepSearchTool,
   runTerminalCommandTool,
 } from "core/tools/definitions";
+import { interruptedToolCallResult } from "core/util/truncatedJson";
 import { resolveEditorContent } from "../../components/mainInput/TipTapEditor/utils/resolveEditorContent";
 import { MockIdeMessenger } from "../../context/MockIdeMessenger";
 import { RootState } from "../store";
@@ -2467,6 +2468,60 @@ describe("streamResponseThunk - tool calls", () => {
       expect(requestSpy).not.toHaveBeenCalledWith(
         "tools/evaluatePolicy",
         expect.objectContaining({ toolName: "open_terminal" }),
+      );
+    });
+
+    it("a stream that closes mid-call says so and what to send, with no 'try something else' (AG6)", async () => {
+      const initialState = getRootStateWithClaude();
+      initialState.session.history = [
+        {
+          message: { id: "1", role: "user", content: "Run echo hello" },
+          contextItems: [],
+        },
+      ];
+      initialState.config.config.tools = [terminalTool];
+      const mockStore = createMockStore(initialState);
+      const mockIdeMessenger = mockStore.mockIdeMessenger;
+      mockIdeMessenger.responses["llm/compileChat"] = {
+        compiledChatMessages: [{ role: "user", content: "Run echo hello" }],
+        didPrune: false,
+        contextPercentage: 0.5,
+      };
+      async function* closes(): AsyncGenerator<
+        AssistantChatMessage[],
+        PromptLog
+      > {
+        yield [
+          {
+            role: "assistant",
+            content: "",
+            toolCalls: [
+              {
+                id: "tool-cut",
+                type: "function",
+                function: { name: terminalName, arguments: '{"command": "ec' },
+              },
+            ],
+          },
+        ];
+        throw new Error("Premature close");
+      }
+      mockIdeMessenger.llmStreamChat = vi.fn().mockReturnValue(closes());
+      await mockStore.dispatch(
+        streamResponseThunk({
+          editorState: mockEditorState,
+          modifiers: mockModifiers,
+        }) as any,
+      );
+      const call = (mockStore.getState() as RootState).session.history
+        .flatMap((item) => item.toolCallStates ?? [])
+        .find((c) => c.toolCallId === "tool-cut");
+      expect(call?.status).toBe("errored");
+      expect(call?.output?.[0].content).toBe(
+        interruptedToolCallResult(terminalName),
+      );
+      expect(call?.output?.[0].content).not.toMatch(
+        /please|something else|Premature Close/i,
       );
     });
 

@@ -1,3 +1,4 @@
+import { refusalText } from "core/tools/refusalText.js";
 import { render } from "ink-testing-library";
 import React from "react";
 import { vi } from "vitest";
@@ -318,7 +319,10 @@ describe("TUIChat - Tool Permission Tests", () => {
 
     // Test the ToolResultSummary component directly
     const { lastFrame: summaryFrame } = render(
-      <ToolResultSummary toolName="Edit" content="Permission denied by user" />,
+      <ToolResultSummary
+        toolName="Edit"
+        content={refusalText.declined("Edit")}
+      />,
     );
 
     const summary = summaryFrame();
@@ -340,7 +344,7 @@ describe("TUIChat - Tool Permission Tests", () => {
       output: [
         {
           name: "tool_result",
-          content: "Permission denied by user",
+          content: refusalText.declined("Edit"),
           description: "Tool execution denied",
         },
       ],

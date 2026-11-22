@@ -1,4 +1,5 @@
 import { BuiltInToolNames } from "./builtIn";
+import { refusalText } from "./refusalText";
 
 /**
  * The role by tool table (plans/ROADMAP.md, Track TR, row TR1; plans/research/
@@ -382,8 +383,7 @@ export function roleRefusal(
   if (isToolAllowedForRole(role, tool, options)) return undefined;
   const where = ROLE_LABEL[role];
   const lead = `The ${tool.name} tool is not available in ${where}, so it was not run.`;
-  const tail =
-    "Do not retry it or reach the same result another way. Use the tools you were given, then say what you could not do.";
+  const tail = refusalText.carryOnOtherTools;
   const gate = mcpGate(role, tool, options);
   if (gate === "pending") {
     const what =

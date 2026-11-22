@@ -287,8 +287,11 @@ describe("modelNote", () => {
     for (const outcome of ["confirmed", "overridden"] as const) {
       const note =
         modelNote({ outcome, final: "refuse" }, "create_new_file", 10) ?? "";
-      expect(note, outcome).toContain("The person declined create_new_file");
-      expect(note).toContain("Do not retry it unchanged");
+      // The same line as a decline with no timer, and it does not send the
+      // model back to the person
+      expect(note, outcome).toBe(
+        "The person declined create_new_file, so it was not run. Do not retry this call or reach the same result another way. Do what else the request needs, then say what you could not do and why.",
+      );
       expect(note).not.toContain("No answer");
     }
   });

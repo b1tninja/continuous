@@ -22,6 +22,7 @@ import {
 } from "core/tools/permissions/injection.js";
 import { hostAllowRules } from "core/tools/permissions/webHostRules.js";
 import { effectiveWebLevel } from "core/tools/permissions/webPolicy.js";
+import { refusalText } from "core/tools/refusalText.js";
 import { resolveToolAlias, unknownToolResult } from "core/tools/unknownTool.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
 import { getWebConfig } from "core/util/webConfig.js";
@@ -133,6 +134,7 @@ export interface ToolResultWithStatus extends ChatCompletionToolMessageParam {
 export function policyDenialContent(
   denialMessage: string | undefined,
   source?: string,
+  toolName = "This tool",
 ): string {
   if (
     source === "shell-hint" ||
@@ -140,11 +142,13 @@ export function policyDenialContent(
   ) {
     return denialMessage ?? "";
   }
-  if (!denialMessage) return `Command blocked by security policy`;
-  return `Command blocked by security policy: ${denialMessage} Do not retry it or reach the same result another way. Do what else the request needs, then say what you could not do and why.`;
+  // No reason given: the tool is excluded for the run
+  if (!denialMessage) return refusalText.excluded(toolName);
+  return refusalText.blockedByPolicy(denialMessage);
 }
 
 function deniedToolMessage(
+  toolName: string,
   denialReason: string,
   denialMessage: string | undefined,
   denialSource: string | undefined,
@@ -159,9 +163,9 @@ function deniedToolMessage(
     );
   }
   if (denialReason === "policy") {
-    return policyDenialContent(denialMessage, denialSource);
+    return policyDenialContent(denialMessage, denialSource, toolName);
   }
-  return "Permission denied by user";
+  return refusalText.declined(toolName);
 }
 
 // Helper function to handle permission denied
@@ -173,8 +177,8 @@ export function handlePermissionDenied(
 ): void {
   const deniedMessage =
     reason === "policy"
-      ? `Command blocked by security policy`
-      : `Permission denied by user`;
+      ? refusalText.excluded(toolCall.name)
+      : refusalText.declined(toolCall.name);
 
   logger.info("Tool call denied", {
     name: toolCall.name,
@@ -1531,6 +1535,7 @@ export async function executeStreamedToolCalls(
         // Permission denied: create entry with canceled status
         const denialReason = permissionResult.denialReason || "user";
         const deniedMessage = deniedToolMessage(
+          call.name,
           denialReason,
           permissionResult.denialMessage,
           permissionResult.denialSource,

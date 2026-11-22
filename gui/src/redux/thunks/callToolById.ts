@@ -172,7 +172,9 @@ export const callToolById = createAsyncThunk<
                   cause: editFailureCauseOf(error.reason),
                   detail: error.message,
                 })
-              : `${toolName} failed with the message: ${error.message}\n\nPlease try something else or request further instructions.`,
+              : // The tool's own message says what went wrong; no tail
+                // tells the model to "try something else"
+                `${toolName} failed with the message: ${error.message}`,
             hidden: false,
           },
         ],

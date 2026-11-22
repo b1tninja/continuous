@@ -1,3 +1,5 @@
+import { refusalText } from "../refusalText";
+
 import { POLICY_LEVELS, type PolicyLevel } from "./levelText";
 
 /**
@@ -195,10 +197,11 @@ export function resolve(
 
 /**
  * What the model is told, or undefined when it needs no note (the call runs).
- * A refusal says who decided: nobody answered, or the person declined. It
- * never calls a default a verdict on the command, and never tells the model
- * to try another approach; a model that reads a refusal as a hint to route
- * around starts doing exactly that.
+ * A refusal says who decided: nobody answered, or the person declined (the
+ * same line as a decline with no timer, core/tools/refusalText). It never
+ * calls a default a verdict on the command, and never tells the model to try
+ * another approach; a model that reads a refusal as a hint to route around
+ * starts doing exactly that.
  */
 export function modelNote(
   r: Resolved,
@@ -214,8 +217,5 @@ export function modelNote(
       `needed; do not change the approach to avoid this prompt.`
     );
   }
-  return (
-    `The person declined ${toolName}. Do not retry it unchanged; ask what they ` +
-    `would like instead.`
-  );
+  return refusalText.declined(toolName);
 }

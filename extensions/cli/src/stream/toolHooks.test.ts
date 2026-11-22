@@ -8,6 +8,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
+import { refusalText } from "core/tools/refusalText.js";
 import {
   afterAll,
   beforeAll,
@@ -279,9 +280,7 @@ describe("PreToolUse: against the permission policy", () => {
     hooksConfig = pre(decide("allow"));
     const { chatHistoryEntries } = await run();
     expect(executeToolCall).not.toHaveBeenCalled();
-    expect(chatHistoryEntries[0].content).toBe(
-      "Command blocked by security policy",
-    );
+    expect(chatHistoryEntries[0].content).toBe(refusalText.excluded("Bash"));
   });
 
   it("ask turns an allowed call into one that needs a person", async () => {

@@ -56,6 +56,15 @@ export function incompleteToolCallResult(toolName: string): string {
   return `Your ${toolName} call's arguments arrived incomplete, so it was not run and nothing was written. This was not the output limit: the reply ended normally. Send the same call again.`;
 }
 
+/**
+ * What the model sees when the connection closed while its tool call's
+ * arguments were still arriving. Not the output limit, and not a reply that
+ * ended: the same call may well go through.
+ */
+export function interruptedToolCallResult(toolName: string): string {
+  return `Your ${toolName} call was cut off: the connection closed while its arguments were arriving, so it was not run and nothing was written. Send the same call again. If it is cut off again, send it in smaller pieces, each in its own call.`;
+}
+
 /** What the model sees when its tool call was cut off and not run. */
 export function truncatedToolCallResult(
   toolName: string,

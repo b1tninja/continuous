@@ -1,6 +1,7 @@
 import { ModelConfig } from "@continuedev/config-yaml";
 import { BaseLlmApi } from "@continuedev/openai-adapters";
 import type { ChatHistoryItem } from "core/index.js";
+import { refusalText } from "core/tools/refusalText.js";
 import type { ChatCompletionChunk } from "openai/resources/chat/completions.mjs";
 import { vi } from "vitest";
 
@@ -762,7 +763,7 @@ describe.skip("executeStreamedToolCalls", () => {
     // Verify results
     expect(hasRejection).toEqual(true);
     expect(chatHistoryEntries).toHaveLength(2);
-    expect(chatHistoryEntries[0].content).toBe("Permission denied by user");
+    expect(chatHistoryEntries[0].content).toBe(refusalText.declined("Write"));
     expect(chatHistoryEntries[1].content).toBe(
       "Cancelled due to previous tool rejection",
     );
@@ -771,7 +772,7 @@ describe.skip("executeStreamedToolCalls", () => {
       content: "data",
     });
     expect(callbacks.onToolResult).toHaveBeenCalledWith(
-      "Permission denied by user",
+      refusalText.declined("Write"),
       "Write",
       "canceled",
     );

@@ -1,4 +1,5 @@
 import type { ChatHistoryItem, ToolCallState } from "core/index.js";
+import { refusalText } from "core/tools/refusalText.js";
 import { render } from "ink-testing-library";
 import React from "react";
 import { describe, expect, it } from "vitest";
@@ -72,13 +73,16 @@ describe("reasons are shown whole", () => {
 
   it("leaves a result with no hook output as it was", () => {
     const { lastFrame } = render(
-      <ToolResultSummary toolName="Edit" content="Permission denied by user" />,
+      <ToolResultSummary
+        toolName="Edit"
+        content={refusalText.declined("Edit")}
+      />,
     );
     expect(lastFrame()).toContain("Cancelled by user");
   });
 
   it("prints a policy refusal in full", () => {
-    const refusal = `Command blocked by security policy: ${LONG_REASON} Do not retry it or reach the same result another way.`;
+    const refusal = refusalText.blockedByPolicy(LONG_REASON);
     const { lastFrame } = render(
       <MemoizedMessage item={historyWith("canceled", refusal)} index={0} />,
     );

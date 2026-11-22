@@ -1,3 +1,4 @@
+import { refusalText } from "core/tools/refusalText";
 import { describe, expect, it } from "vitest";
 
 import { MockIdeMessenger } from "../../context/MockIdeMessenger";
@@ -231,12 +232,34 @@ describe("rejecting a call the timer was holding", () => {
     ]);
   });
 
-  it("a call with no timer is recorded and worded as before", async () => {
+  it("a call with no timer is recorded as an answer", async () => {
     const { store, sent } = setup([call("a")]);
     await store.dispatch(cancelToolCallThunk({ toolCallId: "a" }));
     expect(sent).toEqual([
       { type: "audit/answer", data: { callId: "a", approved: false } },
     ]);
+  });
+
+  it("with or without a timer, the stored note is core's declined line", async () => {
+    for (const extra of [
+      {},
+      { askTimer: { startedAt: 0, seconds: 15, proposed: "refuse" as const } },
+    ]) {
+      const { store } = setup([call("a", extra)]);
+      store.dispatch({
+        type: "config/updateConfig",
+        payload: { ui: { continueAfterToolRejection: true } },
+      } as never);
+      await store.dispatch(cancelToolCallThunk({ toolCallId: "a" }));
+      const held = store
+        .getState()
+        .session.history.flatMap((i) => i.toolCallStates ?? [])
+        .find((c) => c.toolCallId === "a");
+      expect(held?.output?.[0].content).toBe(
+        refusalText.declined(held!.toolCall.function.name),
+      );
+      expect(held?.output?.[0].content).not.toMatch(/alternative approach/);
+    }
   });
 
   it("a countdown the person stopped is a plain rejection", async () => {

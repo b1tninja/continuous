@@ -134,7 +134,9 @@ export async function preprocessToolCalls(
                       errorMessage
                     ? // A wrong name, not wrong arguments: core's text as it is
                       errorMessage
-                    : `${toolName} failed because the arguments were invalid, with the following message: ${errorMessage}\n\nPlease try something else or request further instructions.`,
+                    : // Not always the arguments' fault (a missing file, a
+                      // path outside the workspace): the message says which
+                      `${toolName} did not run: ${errorMessage}`,
                 hidden: false,
               },
             ],

@@ -26,9 +26,15 @@ describe("policyDenialContent", () => {
     expect(text).toMatch(/Do not retry/);
   });
 
-  it("uses the short sentence when a policy denial has no reason", () => {
-    expect(policyDenialContent(undefined)).toBe(
-      "Command blocked by security policy",
+  it("says the tool is excluded, and what to do next, when a policy denial has no reason", () => {
+    expect(policyDenialContent(undefined, undefined, "Write")).toBe(
+      "Write is excluded for this run, so it was not run. Do not retry this call or reach the same result another way. Do what else the request needs, then say what you could not do and why.",
+    );
+  });
+
+  it("ends a refusal with a reason in core's tail, word for word", () => {
+    expect(policyDenialContent("Blocked by your rule rm*.")).toBe(
+      "Command blocked by security policy: Blocked by your rule rm*. Do not retry this call or reach the same result another way. Do what else the request needs, then say what you could not do and why.",
     );
   });
 });
