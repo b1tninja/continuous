@@ -236,7 +236,7 @@ function MCPServerPreview({
   };
 
   return (
-    <div className="">
+    <div className="" data-testid={`mcp-server-${server.name}`}>
       <div className="flex items-center justify-between py-1">
         <div className="flex items-center gap-3">
           <div className="flex-1">
@@ -279,7 +279,7 @@ function MCPServerPreview({
             </ToolTip>
           )}
           <Listbox>
-            <ListboxButton>
+            <ListboxButton aria-label={`Actions for ${server.name}`}>
               <EllipsisVerticalIcon className="h-4 w-4 shrink-0" />
             </ListboxButton>
             <ListboxOptions className="min-w-fit" anchor="bottom end">
@@ -378,6 +378,7 @@ function MCPServerPreview({
           displayName={"Tools"}
           allToolsOff={allToolsOff}
           duplicateDetection={duplicateDetection}
+          setAllPolicy
         />
         {pendingTools.length > 0 && (
           <div
@@ -400,7 +401,7 @@ function MCPServerPreview({
                     <span className="ml-1 text-warning">changed</span>
                   )}
                   {tool.function.description && (
-                    <div className="mt-0.5 line-clamp-3 text-gray-500">
+                    <div className="mt-0.5 line-clamp-3 text-description">
                       {tool.function.description}
                     </div>
                   )}

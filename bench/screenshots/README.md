@@ -44,7 +44,7 @@ repository.
 Views: `chat` (empty chat with the input and toolbar), `conversation`,
 `streaming`, `tool-call` (a terminal command waiting for approval),
 `approval` (three calls waiting: a long command, a path outside the workspace, an MCP tool), `tool-call-done`, `status-row`, `usage-open` and `context-open` (the row under the prompt after a reply: context meter, cost, reasoning, prompt cache; its usage breakdown open; and what the context holds, opened from the meter), `loop` (plan card, per-item budgets, loop controls), `loop-plan-tile`, `loop-plan-running`, `loop-plan-waiting`, `loop-plan-failed` and `loop-plan-finished` (the plan tile and its tree in each state; shoot them with `--height 1500` so the chat above the loop panel is visible),
-`settings-tools` (Settings, Tools, scrolled to "Commands and secrets"),
+`settings-tools` (Settings, Tools, scrolled to "Commands and secrets"), `settings-tools-mcp` (the same page at its MCP server, tools listed),
 `permissions-editor` (Settings, Permissions, with the add-rule form open on a
 rule that allows every command: the typed confirmation, diff and verdict). `audit-list` and `audit-inbox` (Settings, Permissions, the Recent calls and Inbox views, with fake audit answers). The
 policy chips are in every chat view, below the input. `catalogue` is OpenRouter provider setup with the one-time "Pull the latest model information" card.

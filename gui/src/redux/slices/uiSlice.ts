@@ -230,6 +230,19 @@ export const uiSlice = createSlice({
     ) => {
       state.toolSettings[action.payload.toolName] = action.payload.policy;
     },
+    // One write per tool, not a standing rule for the group: a tool set by
+    // hand afterwards keeps its own value.
+    setToolPolicies: (
+      state,
+      action: PayloadAction<{
+        toolNames: string[];
+        policy: ToolPolicy;
+      }>,
+    ) => {
+      for (const toolName of action.payload.toolNames) {
+        state.toolSettings[toolName] = action.payload.policy;
+      }
+    },
     clearToolPolicy: (state, action: PayloadAction<string>) => {
       delete state.toolSettings[action.payload];
     },
@@ -411,6 +424,7 @@ export const {
   setIsExploreDialogOpen,
   toggleToolSetting,
   setToolPolicy,
+  setToolPolicies,
   clearToolPolicy,
   toggleToolGroupSetting,
   addTool,
