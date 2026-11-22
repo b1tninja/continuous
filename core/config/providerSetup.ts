@@ -113,6 +113,55 @@ export interface SaveProviderModelsRequest {
    * own connection. `name` is the account name to use for a new account.
    */
   account?: { name?: string };
+  /**
+   * The roles the added models get in the config. Absent writes no `roles`
+   * key, which means chat, edit, apply and summarize.
+   */
+  roles?: string[];
+  /**
+   * Once saved, the first added model becomes the selected model of these
+   * roles (what the "Use for" step showed as "will be").
+   */
+  selectFor?: SetupSelectRole[];
+  /**
+   * What the person set under "More". Only the keys given are written (to
+   * the account, or to each added model that carries its own connection).
+   */
+  requestOptions?: SetupRequestOptions;
+}
+
+/** The roles the setup flow's "Use for" step offers. */
+export const SETUP_SELECT_ROLES = [
+  "chat",
+  "edit",
+  "apply",
+  "autocomplete",
+] as const;
+export type SetupSelectRole = (typeof SETUP_SELECT_ROLES)[number];
+
+/** The request options the setup flow's "More" fold can set. */
+export interface SetupRequestOptions {
+  /** Seconds for the whole response. */
+  timeout?: number;
+  /** Seconds to wait for the connection. */
+  connectTimeout?: number;
+  proxy?: string;
+  verifySsl?: boolean;
+  useSystemCa?: boolean;
+  caBundlePath?: string[];
+}
+
+/** `requestOptions` with only the keys the person set, or undefined for none. */
+export function setRequestOptions(
+  options: SetupRequestOptions | undefined,
+): Record<string, unknown> | undefined {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(options ?? {})) {
+    if (value === undefined || value === "") continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 export interface SaveProviderModelsResult {
@@ -232,6 +281,20 @@ export function validateSaveRequest(
     }
     if (!model.model || !model.title) return "A model needs a name and an id";
   }
+  for (const role of req.selectFor ?? []) {
+    if (!(SETUP_SELECT_ROLES as readonly string[]).includes(role)) {
+      return `${role} is not a role this setup can choose a model for`;
+    }
+    if (req.roles && !req.roles.includes(role)) {
+      return `The model cannot be chosen for ${role} without that role`;
+    }
+  }
+  for (const key of ["timeout", "connectTimeout"] as const) {
+    const seconds = req.requestOptions?.[key];
+    if (seconds !== undefined && !(Number.isFinite(seconds) && seconds > 0)) {
+      return "A timeout must be a number of seconds above 0";
+    }
+  }
   return undefined;
 }
 
@@ -341,6 +404,14 @@ export function applyProviderModels(
   config: ConfigYaml,
   req: SaveProviderModelsRequest,
 ): ConfigYaml {
+  return applyProviderModelsNamed(config, req).config;
+}
+
+/** applyProviderModels, with the names the added models ended up with. */
+export function applyProviderModelsNamed(
+  config: ConfigYaml,
+  req: SaveProviderModelsRequest,
+): { config: ConfigYaml; added: string[] } {
   const connectionId = requestConnectionKey(req.provider, req.connection);
   let models: YamlModel[] = [...((config.models ?? []) as YamlModel[])];
   if (req.from) {
@@ -386,6 +457,8 @@ export function applyProviderModels(
 
   // 3. Additions.
   const taken = new Set(remaining.map((m) => m?.name).filter(Boolean));
+  const added: string[] = [];
+  const requestOptions = setRequestOptions(req.requestOptions);
   for (const description of req.add ?? []) {
     const incoming = modelDescriptionToYamlModel({
       ...description,
@@ -394,11 +467,17 @@ export function applyProviderModels(
     const already = remaining.find(
       (m) => inConnection(m) && m.model === incoming.model,
     );
-    if (already) continue; // merged: key handled above
+    if (already) {
+      added.push(already.name);
+      continue; // merged: key handled above
+    }
     incoming.name = dedupeName(taken, incoming.name);
     taken.add(incoming.name);
     if (apiKey) incoming.apiKey = apiKey;
+    if (req.roles) incoming.roles = [...req.roles];
+    if (requestOptions) incoming.requestOptions = requestOptions;
     remaining.push(incoming);
+    added.push(incoming.name);
   }
 
   for (const window of req.contextWindows ?? []) {
@@ -410,7 +489,7 @@ export function applyProviderModels(
   }
 
   const next = { ...config, models: remaining } as ConfigYaml;
-  return removeFromModeModels(next, removed);
+  return { config: removeFromModeModels(next, removed), added };
 }
 
 /**
@@ -418,15 +497,26 @@ export function applyProviderModels(
  * Returns false when it is not a YAML file this can edit.
  */
 export function saveProviderModels(req: SaveProviderModelsRequest): boolean {
-  let edited = false;
+  return saveProviderModelsNamed(req) !== undefined;
+}
+
+/**
+ * saveProviderModels, returning the names the added models have in the
+ * config; undefined when it is not a YAML file this can edit.
+ */
+export function saveProviderModelsNamed(
+  req: SaveProviderModelsRequest,
+): string[] | undefined {
+  let added: string[] | undefined;
   editConfigFile(
     (config) => config, // config.json is not edited
     (config) => {
-      edited = true;
-      return applyProviderModels(config, req);
+      const result = applyProviderModelsNamed(config, req);
+      added = result.added;
+      return result.config;
     },
   );
-  return edited;
+  return added;
 }
 
 /**

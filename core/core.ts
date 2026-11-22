@@ -17,7 +17,7 @@ import {
 } from "./config/modelEdit/modelBlockEdit";
 import {
   convertConnectionToAccount,
-  saveProviderModelsToAccount,
+  saveAccountSetup,
 } from "./config/providers/accountSetup";
 import {
   getGlobalModelsPath,
@@ -278,7 +278,7 @@ import {
   ProviderSetupError,
   readProviderConnections,
   removeProviderConnection,
-  saveProviderModels,
+  saveProviderModelsNamed,
   validateSaveRequest,
 } from "./config/providerSetup";
 import {
@@ -1866,23 +1866,23 @@ export class Core {
               key: { storage: key.storage, secretName: key.secretName },
             }
           : req;
-      let saved: boolean;
+      let added: string[] | undefined;
       try {
         // A setup that names an account becomes an account, catalog models
         // and `from:` entries; one without keeps writing models inline
-        saved = toSave.account
-          ? saveProviderModelsToAccount({
+        added = toSave.account
+          ? saveAccountSetup({
               ...toSave,
               accountName: toSave.account.name,
-            }) !== undefined
-          : saveProviderModels(toSave);
+            })?.added
+          : saveProviderModelsNamed(toSave);
       } catch (e) {
         if (e instanceof ProviderSetupError) {
           return { saved: false, error: e.message };
         }
         throw e;
       }
-      if (!saved) {
+      if (!added) {
         void this.ide.showToast(
           "warning",
           "Models can only be saved to a local YAML config, and the selected config is not one.",
@@ -1891,6 +1891,15 @@ export class Core {
           saved: false,
           error: "The selected config is not a local YAML file",
         };
+      }
+      // "Use for": the first added model becomes the pick for the roles the
+      // person ticked. Set before the reload, which resolves picks by name.
+      const profileId =
+        this.configHandler.currentProfile?.profileDescription.id;
+      if (profileId && added[0]) {
+        for (const role of toSave.selectFor ?? []) {
+          this.globalContext.updateSelectedModel(profileId, role, added[0]);
+        }
       }
       await this.configHandler.reloadConfig(
         "Provider models changed (config/saveProviderModels message)",

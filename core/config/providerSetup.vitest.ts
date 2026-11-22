@@ -726,3 +726,58 @@ models:
     );
   });
 });
+
+describe("roles, the pick and request options from the setup flow", () => {
+  it("names the added models and writes roles and request options only when given", async () => {
+    const { applyProviderModelsNamed } = await import("./providerSetup");
+    const plain = applyProviderModelsNamed(base([]), {
+      provider: "anthropic",
+      add: [desc("anthropic", "claude-sonnet", { title: "Sonnet" })],
+    });
+    expect(plain.added).toEqual(["Sonnet"]);
+    expect(plain.config.models?.[0]).not.toHaveProperty("roles");
+    expect(plain.config.models?.[0]).not.toHaveProperty("requestOptions");
+
+    const chosen = applyProviderModelsNamed(
+      base([{ name: "Sonnet", provider: "openai", model: "x" }]),
+      {
+        provider: "anthropic",
+        add: [desc("anthropic", "claude-sonnet", { title: "Sonnet" })],
+        roles: ["chat", "edit"],
+        requestOptions: { connectTimeout: 5 },
+      },
+    );
+    // The name was taken, so the pick must use the name it was saved under
+    expect(chosen.added).toEqual(["Sonnet (1)"]);
+    expect(chosen.config.models?.[1]).toMatchObject({
+      name: "Sonnet (1)",
+      roles: ["chat", "edit"],
+      requestOptions: { connectTimeout: 5 },
+    });
+  });
+
+  it("refuses a pick for a role the model does not get, and a timeout of 0", () => {
+    expect(
+      validateSaveRequest({
+        provider: "anthropic",
+        roles: ["edit"],
+        selectFor: ["chat"],
+      }),
+    ).toMatch(/without that role/);
+    expect(
+      validateSaveRequest({
+        provider: "anthropic",
+        selectFor: ["embed" as never],
+      }),
+    ).toMatch(/not a role/);
+    expect(
+      validateSaveRequest({
+        provider: "anthropic",
+        requestOptions: { timeout: 0 },
+      }),
+    ).toMatch(/above 0/);
+    expect(
+      validateSaveRequest({ provider: "anthropic", selectFor: ["chat"] }),
+    ).toBeUndefined();
+  });
+});
