@@ -58,6 +58,12 @@ import {
 import { withExponentialBackoff } from "../util/withExponentialBackoff.js";
 import { learnedFactsFor, learnedKey } from "./learnedLimits.js";
 import {
+  connectionFailureKind,
+  heldLocalServerError,
+  localServerAddress,
+  localServerError,
+} from "./localServerError.js";
+import {
   promptProgressOf,
   reportsFullPromptTokens,
   strataRequestCache,
@@ -662,6 +668,34 @@ export abstract class BaseLLM implements ILLM {
     return notice?.severity === "retired" ? `\n\n${notice.message}` : "";
   }
 
+  /**
+   * A connection to a local or private-range `apiBase` that got no answer,
+   * as one sentence with the host and port and what to check. Any other
+   * error comes back as it is.
+   */
+  private async asLocalServerError(e: unknown): Promise<unknown> {
+    if (!connectionFailureKind(e)) return e;
+    const held = heldLocalServerError(e);
+    if (held) return held;
+    const target = { provider: this.providerName, apiBase: this.apiBase };
+    const address = localServerAddress(target);
+    if (!address) return e;
+    // Only worth saying for a server that would run on this machine. On
+    // Linux and macOS the Lemonade check asks whether it is running, not
+    // whether it is installed, so it is not used there.
+    let installed: boolean | undefined;
+    if (address.loopback && this.providerName === "ollama") {
+      installed = await isOllamaInstalled();
+    } else if (
+      address.loopback &&
+      this.providerName === "lemonade" &&
+      process.platform === "win32"
+    ) {
+      installed = await isLemonadeInstalled();
+    }
+    return localServerError(e, target, { installed }) ?? e;
+  }
+
   fetch(url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     // Custom Node.js fetch
     const customFetch = async (input: URL | RequestInfo, init: any) => {
@@ -706,33 +740,7 @@ export abstract class BaseLLM implements ILLM {
               `${e.message}\n\nCode: ${e.code}\nError number: ${e.errno}\nSyscall: ${e.erroredSysCall}\nType: ${e.type}\n\n${e.stack}`,
             );
           }
-          if (
-            e.code === "ECONNREFUSED" &&
-            e.message.includes("http://127.0.0.1:11434")
-          ) {
-            const message = (await isOllamaInstalled())
-              ? "Unable to connect to local Ollama instance. Ollama may not be running."
-              : "Unable to connect to local Ollama instance. Ollama may not be installed or may not running.";
-            throw new Error(message);
-          }
-          if (
-            e.code === "ECONNREFUSED" &&
-            e.message.includes("http://localhost:8000")
-          ) {
-            const isInstalled = await isLemonadeInstalled();
-            let message: string;
-            if (process.platform === "linux") {
-              // On Linux, isLemonadeInstalled checks if it's running (via health endpoint)
-              message =
-                "Unable to connect to local Lemonade instance. Please ensure Lemonade is running. Visit http://lemonade-server.ai for setup instructions.";
-            } else {
-              // On Windows, we can check if it's installed
-              message = isInstalled
-                ? "Unable to connect to local Lemonade instance. Lemonade server may not be running."
-                : "Unable to connect to local Lemonade instance. Lemonade may not be installed or may not be running.";
-            }
-            throw new Error(message);
-          }
+          throw await this.asLocalServerError(e);
         }
         throw e;
       }
@@ -896,7 +904,7 @@ export abstract class BaseLLM implements ILLM {
         undefined,
         e,
       );
-      throw e;
+      throw await this.asLocalServerError(e);
     } finally {
       if (status === "in_progress") {
         this._logEnd(
@@ -1028,7 +1036,7 @@ export abstract class BaseLLM implements ILLM {
         undefined,
         e,
       );
-      throw e;
+      throw await this.asLocalServerError(e);
     } finally {
       if (status === "in_progress") {
         this._logEnd(
@@ -1136,7 +1144,7 @@ export abstract class BaseLLM implements ILLM {
         undefined,
         e,
       );
-      throw e;
+      throw await this.asLocalServerError(e);
     } finally {
       if (status === "in_progress") {
         this._logEnd(
@@ -1789,7 +1797,7 @@ export abstract class BaseLLM implements ILLM {
         e,
         timer.finish(usage, { stopped: true }),
       );
-      throw e;
+      throw await this.asLocalServerError(e);
     } finally {
       if (status === "in_progress") {
         this._logEnd(

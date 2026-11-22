@@ -1,3 +1,9 @@
+import {
+  connectionFailureKind,
+  describeLocalServerFailure,
+  isLocalServerFailureMessage,
+} from "core/llm/localServerError";
+
 /**
  * A failure that is likely to pass on its own: a rate limit, an overloaded
  * or unavailable server, or a lost connection. Core has already retried it
@@ -39,7 +45,8 @@ export function transientFailure(
   } else if (
     /closed before the response arrived|timed out|econnrefused|econnreset|enotfound|etimedout|fetch failed|socket hang up|network/.test(
       text,
-    )
+    ) ||
+    isLocalServerFailureMessage(message ?? "")
   ) {
     kind = "connection";
   }
@@ -63,6 +70,23 @@ export function describeTransientFailure(
     case "connection":
       return `The connection to ${modelTitle} failed, so no reply arrived. Check the network, proxy or local server.`;
   }
+}
+
+/**
+ * For a connection to a server on this machine or the local network that got
+ * no answer: which host and port, and what to check. Core writes the sentence
+ * when it knows the address; when only the raw error arrived ("fetch failed"),
+ * it is written here from the selected model's address.
+ */
+export function localServerFailureText(
+  message: string | undefined,
+  model: { provider?: string; apiBase?: string } | null | undefined,
+): string | undefined {
+  if (!message) return undefined;
+  if (isLocalServerFailureMessage(message)) return message;
+  if (!model) return undefined;
+  const kind = connectionFailureKind({ message });
+  return kind ? describeLocalServerFailure(model, kind) : undefined;
 }
 
 /** "45 s", "3 min", "1 h 5 min". */
