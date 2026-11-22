@@ -363,7 +363,7 @@ export function History() {
     >
       <div className="relative my-2 mt-4 flex justify-center space-x-2">
         <input
-          className="flex-1 rounded-md border border-none bg-vsc-input-background py-1 pr-8 pl-2 text-sm text-vsc-foreground"
+          className="min-w-0 flex-1 rounded-md border border-none bg-vsc-input-background py-1 pr-8 pl-2 text-sm text-vsc-foreground"
           ref={searchInputRef}
           placeholder="Search past sessions"
           type="text"

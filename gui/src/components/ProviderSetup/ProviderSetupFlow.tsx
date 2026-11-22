@@ -672,7 +672,7 @@ export function ProviderSetupFlow({
   if (envCopy) {
     return (
       <div
-        className="mx-auto flex w-full max-w-md min-w-0 flex-col gap-4 p-4"
+        className="mx-auto box-border flex w-full max-w-[30rem] min-w-0 flex-col gap-4 p-4"
         data-testid="env-copy-prompt"
       >
         <h2 className="m-0 text-center text-lg">Key saved</h2>
@@ -704,7 +704,7 @@ export function ProviderSetupFlow({
 
   return (
     <div
-      className="mx-auto flex w-full max-w-md min-w-0 flex-col gap-4 p-4"
+      className="mx-auto box-border flex w-full max-w-[30rem] min-w-0 flex-col gap-4 p-4"
       data-testid="provider-setup-flow"
     >
       <h2 className="m-0 text-center text-lg">

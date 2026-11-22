@@ -3,37 +3,26 @@
   "note": "Known findings per view and width: \"<kind> <element>\" -> CSS pixels (outside: beyond the viewport edge; clipped, scroll-x, squeezed: content wider than the box). A finding is new when it is not listed or is more than 2 px larger; amounts up to 1 px are ignored. Taken with Windows fonts. Fix and tighten with --update; never add by hand.",
   "views": {
     "agents-ended": {
-      "200": {
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
     },
     "agents-running": {
-      "200": {
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
     },
     "approval": {
-      "200": {
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
     },
     "attach-open": {
-      "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "250": {
-        "clipped div[data-testid=editor-input-main]": 14
-      },
+      "200": {},
+      "250": {},
       "300": {},
       "340": {}
     },
@@ -79,201 +68,112 @@
       "340": {}
     },
     "catalogue": {
-      "200": {
-        "outside div[data-testid=provider-setup-flow]": 24
-      },
-      "250": {
-        "outside div[data-testid=provider-setup-flow]": 24
-      },
-      "300": {
-        "outside div[data-testid=provider-setup-flow]": 24
-      },
-      "340": {
-        "outside div[data-testid=provider-setup-flow]": 24
-      }
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
     },
     "chat": {
-      "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "250": {
-        "clipped div[data-testid=editor-input-main]": 14
-      },
+      "200": {},
+      "250": {},
       "300": {},
       "340": {}
     },
     "chat-first-run": {
-      "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "250": {
-        "clipped div[data-testid=editor-input-main]": 14
-      },
+      "200": {},
+      "250": {},
       "300": {},
       "340": {}
     },
     "context-60": {
-      "200": {
-        "outside button[data-testid=compact-button-1]": 28
-      },
-      "250": {
-        "outside button[data-testid=compact-button-1] > div.flex.items-center.space-x-1": 16
-      },
-      "300": {
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "340": {
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      }
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
     },
     "context-open": {
-      "200": {
-        "outside button[data-testid=compact-button-3]": 28,
-        "outside div[data-testid=context-details]": 18
-      },
-      "250": {
-        "outside div[data-testid=context-details]": 18
-      },
-      "300": {
-        "outside div[data-testid=context-details]": 6,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "340": {
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      }
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
     },
     "conversation": {
-      "200": {
-        "outside button[data-testid=compact-button-1]": 28,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
     },
     "dialect": {
-      "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "250": {
-        "clipped div[data-testid=editor-input-main]": 14
-      },
+      "200": {},
+      "250": {},
       "300": {},
       "340": {}
     },
     "drop-refused": {
-      "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "250": {
-        "clipped div[data-testid=editor-input-main]": 14
-      },
+      "200": {},
+      "250": {},
       "300": {},
       "340": {}
     },
     "drop-snapshot": {
-      "200": {
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
     },
     "drop-target": {
-      "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "250": {
-        "clipped div[data-testid=editor-input-main]": 14
-      },
+      "200": {},
+      "250": {},
       "300": {},
       "340": {}
     },
     "held": {
-      "200": {
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
     },
     "history": {
-      "200": {
-        "clipped div#root > ... > div > div > div.flex.flex-1.flex-col.overflow-auto > div.flex.flex-1.flex-col.overflow-auto": 5,
-        "outside div#root > ... > div.flex.flex-1.flex-col.overflow-auto > div.flex.flex-1.flex-col.overflow-auto > div.relative.my-2.mt-4.flex > input.flex-1.rounded-md.border.border-none": 5
-      },
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
     },
     "long-prompt": {
-      "200": {
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
     },
     "loop": {
-      "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "clipped div#root > div > div > div > div.flex.min-h-0.w-screen.flex-row": 6,
-        "outside div[data-testid=session-controls]": 7,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "250": {
-        "clipped div[data-testid=editor-input-main]": 14
-      },
+      "200": {},
+      "250": {},
       "300": {},
       "340": {}
     },
     "loop-blocked-open": {
       "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "clipped div#root > div > div > div > div.flex.min-h-0.w-screen.flex-row": 36,
-        "outside div[data-testid=session-controls]": 33,
         "scroll-x details[data-testid=loop-controls] > ul.m-0.mt-1.max-h-48.list-none": 38,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73,
         "squeezed div[data-testid=blocked-1] > div.flex.items-center.gap-1 > code.min-w-0.flex-1.truncate": 85,
         "squeezed div[data-testid=blocked-3] > div.flex.items-center.gap-1 > code.min-w-0.flex-1.truncate": 85,
         "squeezed div[data-testid=blocked-5] > div.flex.items-center.gap-1 > code.min-w-0.flex-1.truncate": 85,
         "squeezed div[data-testid=loop-item-2] > span.min-w-0.flex-1.truncate.text-foreground": 254
       },
       "250": {
-        "clipped div[data-testid=editor-input-main]": 14,
         "squeezed div[data-testid=loop-item-2] > span.min-w-0.flex-1.truncate.text-foreground": 242
       },
       "300": {},
       "340": {}
     },
     "loop-failed": {
-      "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "clipped div#root > div > div > div > div.flex.min-h-0.w-screen.flex-row": 6,
-        "outside div[data-testid=session-controls]": 7,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "250": {
-        "clipped div[data-testid=editor-input-main]": 14
-      },
+      "200": {},
+      "250": {},
       "300": {},
       "340": {}
     },
     "loop-finished": {
-      "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "clipped div#root > div > div > div > div.flex.min-h-0.w-screen.flex-row": 6,
-        "outside div[data-testid=session-controls]": 7,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "250": {
-        "clipped div[data-testid=editor-input-main]": 14
-      },
+      "200": {},
+      "250": {},
       "300": {},
       "340": {}
     },
@@ -309,35 +209,23 @@
     },
     "loop-idgaf": {
       "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "clipped div#root > div > div > div > div.flex.min-h-0.w-screen.flex-row": 36,
-        "outside div[data-testid=session-controls]": 33,
         "scroll-x details[data-testid=loop-controls] > ul.m-0.mt-1.max-h-48.list-none": 38,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73,
         "squeezed div[data-testid=loop-item-2] > span.min-w-0.flex-1.truncate.text-foreground": 254
       },
       "250": {
-        "clipped div[data-testid=editor-input-main]": 14,
         "squeezed div[data-testid=loop-item-2] > span.min-w-0.flex-1.truncate.text-foreground": 242
       },
       "300": {},
       "340": {}
     },
     "loop-plan-failed": {
-      "200": {
-        "clipped div#root > div > div > div > div.flex.min-h-0.w-screen.flex-row": 6,
-        "outside div[data-testid=session-controls]": 7,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
     },
     "loop-plan-finished": {
       "200": {
-        "clipped div#root > div > div > div > div.flex.min-h-0.w-screen.flex-row": 6,
-        "outside div[data-testid=session-controls]": 7,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73,
         "squeezed span[data-testid=loop-title]": 242
       },
       "250": {},
@@ -345,140 +233,78 @@
       "340": {}
     },
     "loop-plan-running": {
-      "200": {
-        "clipped div#root > div > div > div > div.flex.min-h-0.w-screen.flex-row": 6,
-        "outside div[data-testid=session-controls]": 7,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
     },
     "loop-plan-tile": {
-      "200": {
-        "clipped div#root > div > div > div > div.flex.min-h-0.w-screen.flex-row": 6,
-        "outside div[data-testid=session-controls]": 7,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
     },
     "loop-plan-waiting": {
-      "200": {
-        "clipped div#root > div > div > div > div.flex.min-h-0.w-screen.flex-row": 6,
-        "outside div[data-testid=session-controls]": 7,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
     },
     "loop-questions": {
-      "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "clipped div#root > div > div > div > div.flex.min-h-0.w-screen.flex-row": 6,
-        "outside div[data-testid=session-controls]": 7,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "250": {
-        "clipped div[data-testid=editor-input-main]": 14
-      },
+      "200": {},
+      "250": {},
       "300": {},
       "340": {}
     },
     "loop-replan": {
-      "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "clipped div#root > div > div > div > div.flex.min-h-0.w-screen.flex-row": 6,
-        "outside div[data-testid=session-controls]": 7,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "250": {
-        "clipped div[data-testid=editor-input-main]": 14
-      },
+      "200": {},
+      "250": {},
       "300": {},
       "340": {}
     },
     "loop-running": {
-      "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "clipped div#root > div > div > div > div.flex.min-h-0.w-screen.flex-row": 6,
-        "outside div[data-testid=session-controls]": 7,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "250": {
-        "clipped div[data-testid=editor-input-main]": 14
-      },
+      "200": {},
+      "250": {},
       "300": {},
       "340": {}
     },
     "loop-settings-open": {
       "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "clipped div#root > div > div > div > div.flex.min-h-0.w-screen.flex-row": 6,
-        "outside div[data-testid=session-controls]": 7,
-        "scroll-x ... > div > div > div[role=dialog].relative.z-50 > div.fixed.inset-0.flex.items-start": 23,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "250": {
-        "clipped div[data-testid=editor-input-main]": 14
-      },
-      "300": {},
-      "340": {}
-    },
-    "loop-stopped": {
-      "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "clipped div#root > div > div > div > div.flex.min-h-0.w-screen.flex-row": 6,
-        "outside div[data-testid=session-controls]": 7,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73,
-        "squeezed span[data-testid=loop-title]": 27
-      },
-      "250": {
-        "clipped div[data-testid=editor-input-main]": 14
-      },
-      "300": {},
-      "340": {}
-    },
-    "message-error": {
-      "200": {
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
+        "scroll-x ... > div > div > div[role=dialog].relative.z-50 > div.fixed.inset-0.flex.items-start": 23
       },
       "250": {},
       "300": {},
       "340": {}
     },
-    "onboarding-local": {
+    "loop-stopped": {
       "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
+        "squeezed span[data-testid=loop-title]": 27
       },
-      "250": {
-        "clipped div[data-testid=editor-input-main]": 14
-      },
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "message-error": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "onboarding-local": {
+      "200": {},
+      "250": {},
       "300": {},
       "340": {}
     },
     "onboarding-local-chooser": {
-      "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "250": {
-        "clipped div[data-testid=editor-input-main]": 14
-      },
+      "200": {},
+      "250": {},
       "300": {},
       "340": {}
     },
     "onboarding-local-server": {
-      "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "250": {
-        "clipped div[data-testid=editor-input-main]": 14
-      },
+      "200": {},
+      "250": {},
       "300": {},
       "340": {}
     },
@@ -532,12 +358,9 @@
     },
     "preset-open": {
       "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "outside div > div > div[role=listbox].flex.w-max.flex-col.overflow-auto": 2,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
+        "outside div > div > div[role=listbox].flex.w-max.flex-col.overflow-auto": 2
       },
       "250": {
-        "clipped div[data-testid=editor-input-main]": 14,
         "outside div > div > div[role=listbox].flex.w-max.flex-col.overflow-auto": 2
       },
       "300": {
@@ -667,113 +490,57 @@
       "340": {}
     },
     "setup-dialog": {
-      "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "scroll-x div#root > div > div > div > div.no-scrollbar.max-h-[95%].w-[92%].max-w-[600px]": 32,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "250": {
-        "clipped div[data-testid=editor-input-main]": 14,
-        "scroll-x div#root > div > div > div > div.no-scrollbar.max-h-[95%].w-[92%].max-w-[600px]": 32
-      },
-      "300": {
-        "scroll-x div#root > div > div > div > div.no-scrollbar.max-h-[95%].w-[92%].max-w-[600px]": 32
-      },
-      "340": {
-        "scroll-x div#root > div > div > div > div.no-scrollbar.max-h-[95%].w-[92%].max-w-[600px]": 32
-      }
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
     },
     "setup-long-model": {
-      "200": {
-        "clipped div[data-testid=editor-input-main]": 64,
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "250": {
-        "clipped div[data-testid=editor-input-main]": 14
-      },
+      "200": {},
+      "250": {},
       "300": {},
       "340": {}
     },
     "status-row": {
-      "200": {
-        "outside button[data-testid=compact-button-1]": 28
-      },
+      "200": {},
       "250": {},
-      "300": {
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "340": {
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      }
+      "300": {},
+      "340": {}
     },
     "streaming": {
-      "200": {
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
     },
     "thinking-menu": {
-      "200": {
-        "outside button[data-testid=compact-button-1]": 28
-      },
+      "200": {},
       "250": {},
-      "300": {
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 196
-      },
-      "340": {
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 196
-      }
+      "300": {},
+      "340": {}
     },
     "tool-call": {
-      "200": {
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
     },
     "tool-call-done": {
-      "200": {
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
     },
     "usage-open": {
-      "200": {
-        "outside button[data-testid=compact-button-1]": 28
-      },
+      "200": {},
       "250": {},
-      "300": {
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      },
-      "340": {
-        "squeezed button[data-testid=model-select-button] > span.truncate.hover:brightness-110": 73
-      }
+      "300": {},
+      "340": {}
     },
     "zoom-150": {
-      "200": {
-        "clipped div[data-testid=editor-input-main]": 27,
-        "clipped div#root > div > div > div > div.flex.min-h-0.w-screen.flex-row": 64,
-        "outside button[aria-label=\"Continue generation\"]": 39,
-        "outside button[data-testid=compact-button-1]": 95,
-        "outside button[data-testid=delete-button-1]": 11,
-        "outside button[data-testid=fork-from-here-button-1]": 67,
-        "outside div[data-testid=session-controls]": 65
-      },
-      "250": {
-        "clipped div#root > div > div > div > div.flex.min-h-0.w-screen.flex-row": 30,
-        "outside button[aria-label=\"Continue generation\"]": 5,
-        "outside button[data-testid=compact-button-1]": 61,
-        "outside button[data-testid=fork-from-here-button-1]": 33,
-        "outside div[data-testid=session-controls]": 31
-      },
-      "300": {
-        "outside button[data-testid=compact-button-1]": 28
-      },
+      "200": {},
+      "250": {},
+      "300": {},
       "340": {}
     }
   }

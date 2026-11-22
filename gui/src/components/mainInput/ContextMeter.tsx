@@ -621,7 +621,7 @@ export function ContextMeter() {
                 aria-label="What the context holds"
                 onMouseEnter={onEnter}
                 onMouseLeave={onLeave}
-                className="z-[200000] max-w-[90vw] rounded border border-solid border-border bg-vsc-input-background p-2 text-xs text-foreground shadow-md"
+                className="z-[200000] box-border max-w-[90vw] rounded border border-solid border-border bg-vsc-input-background p-2 text-xs text-foreground shadow-md"
               >
                 <ContextPanel
                   close={close}
