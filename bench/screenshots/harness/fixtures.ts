@@ -568,6 +568,21 @@ export const FIXTURES: Record<string, Fixture> = {
       ),
     );
   },
+  /**
+   * One reply whose markdown the render check supplies: render.mjs sets
+   * window.__renderMarkdown before the page loads
+   */
+  "render-markdown": ({ store }) => {
+    const markdown = (window as { __renderMarkdown?: string }).__renderMarkdown;
+    store.dispatch(
+      newSession(
+        session(
+          [user("Render this."), assistant(markdown ?? MARKDOWN_REPLY)],
+          "Render check",
+        ),
+      ),
+    );
+  },
   /** A reply that is still arriving */
   streaming: async ({ store }) => {
     store.dispatch(
