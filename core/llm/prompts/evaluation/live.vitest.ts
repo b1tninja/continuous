@@ -2,11 +2,7 @@ import { writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { PROMPT_PROFILES, type PromptProfile } from "../turns";
 import type { ReasoningEffort } from "./runner";
-import {
-  anthropicMessages,
-  bedrockConverse,
-  openAiCompatible,
-} from "./adapters";
+import { modelFromEnv } from "./adapters";
 import { formatReport, PROFILES, runTurnsEval, summarize } from "./runner";
 import { TURN_SCENARIOS } from "./scenarios";
 import { oracleModel, textOnlyModel } from "./stubs";
@@ -55,30 +51,7 @@ function pickModel() {
       model: stub === "oracle" ? oracleModel(TURN_SCENARIOS) : textOnlyModel,
     };
   }
-  const provider = process.env.TURNS_EVAL_PROVIDER ?? "openai";
-  const apiKey = process.env.TURNS_EVAL_API_KEY ?? "";
-  return {
-    label: `${provider}:${model}`,
-    model:
-      provider === "bedrock"
-        ? bedrockConverse({
-            model: model!,
-            region: process.env.TURNS_EVAL_REGION ?? "us-east-1",
-            profile: process.env.TURNS_EVAL_AWS_PROFILE,
-          })
-        : provider === "anthropic"
-          ? anthropicMessages({
-              model: model!,
-              apiKey,
-              baseUrl: process.env.TURNS_EVAL_BASE_URL,
-            })
-          : openAiCompatible({
-              model: model!,
-              apiKey: apiKey || undefined,
-              baseUrl:
-                process.env.TURNS_EVAL_BASE_URL ?? "https://api.openai.com/v1",
-            }),
-  };
+  return modelFromEnv();
 }
 
 function pickReasoning(): ReasoningEffort | undefined {

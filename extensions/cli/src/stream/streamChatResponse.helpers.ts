@@ -41,7 +41,11 @@ import { startShadowReview } from "../audit/shadowHook.js";
 import { firePermissionRequest } from "../hooks/fireHook.js";
 import { notifyAttention } from "../hooks/lifecycleHooks.js";
 import { itemBudgetNoteNow } from "../loop/loopBudget.js";
-import { holdLoopCall, loopRepeatGuard } from "../loop/loopHolds.js";
+import {
+  holdLoopCall,
+  loopRepeatGuard,
+  loopRunEndedResult,
+} from "../loop/loopHolds.js";
 import {
   forgetRequest,
   onKeepWaiting,
@@ -1474,7 +1478,8 @@ export async function executeStreamedToolCalls(
     let call = originalCall;
 
     try {
-      const repeated = loopRepeat.check(call);
+      // A run ended at the question cap by an earlier call runs nothing more
+      const repeated = loopRunEndedResult(call) ?? loopRepeat.check(call);
       if (repeated) {
         callbacks?.onToolStart?.(call.name, call.arguments, call.id);
         entriesByIndex.set(index, {

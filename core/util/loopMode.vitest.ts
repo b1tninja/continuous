@@ -24,6 +24,7 @@ import {
   itemTurnState,
   itemTurnLimitReport,
   LOOP_AUTONOMY,
+  LOOP_LIMITS,
   type LoopControlResult,
   loopReplanSetting,
   maxRoundsForReplan,
@@ -45,6 +46,7 @@ import {
   repairDecision,
   setLoopStrategy,
   approvalHeldResult,
+  endRunAtQuestionCap,
   finishItemReport,
   finishItemRun,
   formatLoopStatus,
@@ -78,6 +80,7 @@ import {
   taskPlanWithLoop,
   withLoopPlanBlock,
 } from "./loopMode.js";
+import { refusalText } from "../tools/refusalText";
 
 const T0 = new Date("2026-11-07T10:00:00Z");
 const at = (minutes: number) => new Date(T0.getTime() + minutes * 60_000);
@@ -2212,4 +2215,128 @@ test("an Allow once grant covers the file or command, not every argument", () =>
     loopGrantKey("create_new_file", { filepath: "b.md" }),
   );
   expect(loopGrantKey("mcp", { q: 1 })).not.toBe(loopGrantKey("mcp", { q: 2 }));
+});
+
+describe("a held call at the question cap ends the run", () => {
+  /** Item 1 running with `count` calls held for approval. */
+  function withHeld(count: number): LoopState {
+    let loop = startItemRun(loopOn(), "1", 0, T0);
+    for (let i = 0; i < count; i++) {
+      const held = holdQuestion(
+        loop,
+        { itemId: "1", question: `Allow call ${i}?`, kind: "approval" },
+        T0,
+      );
+      if (!held.ok) throw new Error(held.error);
+      loop = held.loop;
+    }
+    return loop;
+  }
+  const one = (loop: LoopState) =>
+    holdQuestion(
+      loop,
+      { itemId: "1", question: "Allow one more?", kind: "approval" },
+      T0,
+    );
+
+  test("holdQuestion names the cap it refused at, and nothing below it", () => {
+    const below = one(withHeld(LOOP_LIMITS.maxOpenQuestionsPerItem - 1));
+    expect(below.ok).toBe(true);
+    const over = one(withHeld(LOOP_LIMITS.maxOpenQuestionsPerItem));
+    expect(over).toMatchObject({ ok: false, cap: "item" });
+    const empty = holdQuestion(
+      withHeld(0),
+      { itemId: "1", question: " ", kind: "approval" },
+      T0,
+    );
+    expect(empty).toEqual({ ok: false, error: "question is empty" });
+
+    const full: LoopState = {
+      ...withHeld(0),
+      questions: Array.from({ length: LOOP_LIMITS.maxQuestions }, (_, i) => ({
+        id: `q${i + 1}`,
+        itemId: "2",
+        question: `Q${i}?`,
+        kind: "assumption" as const,
+        assumption: "yes",
+        askedAt: T0.toISOString(),
+      })),
+    };
+    expect(one(full)).toMatchObject({ ok: false, cap: "loop" });
+  });
+
+  test("the run ends as waiting, and the item waits on the questions it holds", () => {
+    const held = withHeld(LOOP_LIMITS.maxOpenQuestionsPerItem);
+    const ended = endRunAtQuestionCap(held, "Bash");
+    expect(ended.result).toBe(refusalText.questionCapWaiting("Bash", 4));
+    expect(ended.loop.current).toMatchObject({
+      questionCap: true,
+      report: {
+        outcome: "waiting",
+        summary:
+          "Stopped at the question limit: 4 questions are open for the person.",
+      },
+    });
+    // Nothing was held for the call that ended it
+    expect(ended.loop.questions).toHaveLength(4);
+    const finished = releaseEmptyWait(
+      finishItemRun(ended.loop, ended.loop.current?.report),
+      "1",
+    );
+    expect(status(finished, "1")).toBe("waiting");
+    expect(finished.current).toBeUndefined();
+  });
+
+  test("answering the questions puts the item back in line, with its grants", () => {
+    const ended = endRunAtQuestionCap(withHeld(4), "Bash").loop;
+    let loop = finishItemRun(ended, ended.current?.report);
+    for (const q of loop.questions) {
+      expect(status(loop, "1")).toBe("waiting");
+      const answered = answerLoop(
+        loop,
+        { questionId: q.id, text: "", approve: true },
+        T0,
+      );
+      if (!answered.ok) throw new Error(answered.error);
+      loop = answered.loop;
+    }
+    expect(status(loop, "1")).toBe("pending");
+    expect(answersToDeliver(loop, "1")).toHaveLength(4);
+  });
+
+  test("with no question of the item open for the person it ends as stuck, since nothing would wake a wait", () => {
+    const full: LoopState = {
+      ...withHeld(0),
+      questions: Array.from({ length: LOOP_LIMITS.maxQuestions }, (_, i) => ({
+        id: `q${i + 1}`,
+        itemId: "2",
+        question: `Q${i}?`,
+        kind: "assumption" as const,
+        assumption: "yes",
+        askedAt: T0.toISOString(),
+      })),
+    };
+    const ended = endRunAtQuestionCap(full, "Bash");
+    expect(ended.result).toBe(refusalText.questionCapStuck("Bash"));
+    expect(ended.loop.current?.report).toMatchObject({
+      outcome: "stuck",
+      blocker: "answer",
+    });
+    const finished = finishItemRun(ended.loop, ended.loop.current?.report);
+    expect(status(finished, "1")).toBe("failed");
+  });
+
+  test("a report the run already made stands", () => {
+    const held = withHeld(4);
+    const reported: LoopState = {
+      ...held,
+      current: { ...held.current!, report: { outcome: "done", summary: "x" } },
+    };
+    const ended = endRunAtQuestionCap(reported, "Bash");
+    expect(ended.loop.current?.report).toEqual({
+      outcome: "done",
+      summary: "x",
+    });
+    expect(ended.loop.current?.questionCap).toBe(true);
+  });
 });

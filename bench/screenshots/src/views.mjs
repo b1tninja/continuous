@@ -222,6 +222,10 @@ export const VIEWS = {
     fixture: "settings-tools",
     note: "Settings, Tools tab, with Commands and secrets",
   },
+  "settings-tools-mcp": {
+    fixture: "settings-tools-mcp",
+    note: "Settings, Tools tab, at an MCP server with its tools listed and the control that sets them all",
+  },
   "drop-target": {
     fixture: "drop-target",
     note: "the chat input while a file is dragged over it: the drop target and the VS Code Shift hint",

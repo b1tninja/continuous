@@ -898,6 +898,11 @@ export interface LoopState {
       /** What a later item should know (finish_item notes) */
       notes?: string;
     };
+    /**
+     * The run ended at a question cap (endRunAtQuestionCap): the host ends
+     * the turn and runs no further call of it
+     */
+    questionCap?: boolean;
     /** A re-plan: the to-dos it started from, to tell whether it adds scope */
     planTexts?: string[];
     /**
