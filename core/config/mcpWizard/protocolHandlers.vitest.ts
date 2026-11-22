@@ -704,6 +704,7 @@ describe("mcp/scopes", () => {
     expect(r.defaults).toEqual({
       connectionTimeoutMs: 20_000,
       probeTimeoutMs: 20_000,
+      toolCallTimeoutMs: 60_000,
       inheritedEnv: [
         "PATH",
         "HOME",
@@ -883,6 +884,12 @@ describe("mcp/move", () => {
   });
 
   it("needs a yes to bring a folder's server to all projects", async () => {
+    const loosened: unknown[] = [];
+    register({
+      onLoosened: async (change) => {
+        loosened.push(change);
+      },
+    });
     await call("mcp/move", {
       target: { name: "inline-token", scope: "user" },
       to: { scope: "project" },
@@ -909,6 +916,10 @@ describe("mcp/move", () => {
       sourceFileDeleted: true,
     });
     expect(fs.existsSync(projectFile())).toBe(false);
+    // Only the move out of the folder loosens; the host is told once, after the write
+    expect(loosened).toEqual([
+      { name: "inline-token", from: projectFile(), to: configPath },
+    ]);
   });
 
   it("refuses a copy whose name the destination has, and says which file", async () => {

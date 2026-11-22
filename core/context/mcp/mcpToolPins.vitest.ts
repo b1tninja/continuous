@@ -107,6 +107,21 @@ describe("FileToolPinStore", () => {
     expect(store.recoveredFrom).toBeDefined();
   });
 
+  it("forgets one server's approvals, so its tools are new again", async () => {
+    const store = new FileToolPinStore(file());
+    await recordApproval("a@user", [tool("search")], store, "search");
+    await recordApproval("b@user", [tool("search")], store, "search");
+    expect(await store.delete("a@user")).toBe(true);
+    expect(await store.delete("a@user")).toBe(false);
+    const again = new FileToolPinStore(file());
+    expect(
+      (await evaluatePins("a@user", [tool("search")], again)).report.status,
+    ).toBe("new");
+    expect(
+      (await evaluatePins("b@user", [tool("search")], again)).report.status,
+    ).toBe("unchanged");
+  });
+
   it("a different key does not inherit another server's pin", async () => {
     const store = new FileToolPinStore(file());
     await recordApproval(pinKey(server()), [tool("search")], store, "search");

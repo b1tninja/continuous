@@ -223,6 +223,7 @@ import {
   ContextItemId,
   ContextItemWithId,
   IdeSettings,
+  InternalMcpOptions,
   McpOauthSettings,
   ModelDescription,
   Position,
@@ -294,6 +295,7 @@ import {
   createNewWorkspaceBlockFile,
 } from "./config/workspace/workspaceBlocks";
 import { MCPManagerSingleton } from "./context/mcp/MCPManagerSingleton";
+import { getToolPinStore, pinKey } from "./context/mcp/mcpToolPins";
 import { performAuth, removeMCPAuth } from "./context/mcp/MCPOauth";
 import { oauthOptionsFromSettings } from "./context/mcp/mcpOauthSettings";
 import { myersDiff } from "./diff/myers";
@@ -1203,6 +1205,30 @@ export class Core {
       projectDirs: async () =>
         (await this.ide.getWorkspaceDirs()).map(localPathOrUriToPath),
       globalMcpDir: () => getGlobalFolderWithName("mcpServers"),
+      onLoosened: async ({ name, from, to }) => {
+        // Approvals kept from an earlier server of this name do not carry
+        // over: every tool waits for approval again
+        const pins = getToolPinStore() as {
+          delete?: (key: string) => Promise<boolean>;
+        };
+        await pins.delete?.(
+          pinKey({ name, configSource: "user" } as InternalMcpOptions),
+        );
+        recordSettingChanges(
+          getAuditTrail(),
+          [
+            {
+              kind: "mcp-trust",
+              op: "grant",
+              name,
+              from: `workspace file ${from}`,
+              to: `all projects, ${to}`,
+              loosens: true,
+            },
+          ],
+          { source: "gui-settings", confirmed: "prompt" },
+        );
+      },
       ide: this.ide,
       probeIde: this.ide,
       secretStorage: async () =>

@@ -3,6 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { DEFAULT_REQUEST_TIMEOUT_MSEC } from "@modelcontextprotocol/sdk/shared/protocol.js";
+
 import type { IDE } from "../..";
 import { maskCommandForDisplay } from "../../tools/permissions/displayMask";
 import { readSecretFromEnvFile } from "../../util/secretsFile";
@@ -176,6 +178,11 @@ export interface McpWizardScopesResponse {
     connectionTimeoutMs: number;
     /** The limit of the dialog's Test. */
     probeTimeoutMs: number;
+    /**
+     * The limit of one tool call when no connection timeout is set (the MCP
+     * library's own). A set `connectionTimeout` is used for tool calls too.
+     */
+    toolCallTimeoutMs: number;
     /** A local server's environment besides its own `env`. */
     inheritedEnv: string[];
     /** Where a local server starts when `cwd` is not set; none when no folder is open. */
@@ -303,6 +310,17 @@ export interface McpWizardHost {
   globalMcpDir?: () => string;
   /** For tests: whether a folder's MCP files are trusted. */
   folderTrust?: (dir: string) => McpFolderTrust;
+  /**
+   * Called after a folder's server was written to "all my projects": from
+   * then on it starts without the folder's trust and its tools' read-only
+   * claims are believed. The host writes the audit line and forgets the
+   * approvals kept under that name, so its tools wait for approval again.
+   */
+  onLoosened?: (change: {
+    name: string;
+    from: string;
+    to: string;
+  }) => Promise<void>;
   ide: Pick<IDE, "readSecrets" | "writeSecrets">;
   /** For the probe's working folder and a stored sign-in, as in a real run. */
   probeIde?: IDE;
@@ -998,6 +1016,7 @@ export function registerMcpWizardHandlers(
       defaults: {
         connectionTimeoutMs: DEFAULT_MCP_TIMEOUT,
         probeTimeoutMs: DEFAULT_PROBE_TIMEOUT_MS,
+        toolCallTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MSEC,
         inheritedEnv: ["PATH", ...COMMONS_ENV_VARS],
         ...(dirs[0] ? { cwd: dirs[0] } : {}),
       },
@@ -1198,6 +1217,13 @@ async function move(
     },
   );
   if (!r.ok) return r;
+  if (server.scope === "project" && scope === "user") {
+    try {
+      await host.onLoosened?.({ name: r.name, from: r.from, to: r.to });
+    } catch {
+      // the record never undoes a move that is already written
+    }
+  }
   await host.reload(
     copy
       ? "MCP server copied (mcp/move message)"

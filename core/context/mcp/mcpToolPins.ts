@@ -237,6 +237,22 @@ export class FileToolPinStore implements ToolPinStore {
   async set(record: PersistedPin): Promise<void> {
     const data = this.load();
     data.servers[record.serverId] = record;
+    await this.write(data);
+  }
+
+  /**
+   * Forget one server's approvals, so its tools wait for approval again.
+   * Returns whether there was a record.
+   */
+  async delete(key: string): Promise<boolean> {
+    const data = this.load();
+    if (!(key in data.servers)) return false;
+    delete data.servers[key];
+    await this.write(data);
+    return true;
+  }
+
+  private async write(data: PinFile): Promise<void> {
     const text = JSON.stringify(data, null, 2);
     const run = async () => {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
