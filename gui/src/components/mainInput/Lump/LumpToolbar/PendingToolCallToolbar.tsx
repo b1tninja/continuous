@@ -1,6 +1,6 @@
 import { BuiltInToolNames } from "core/tools/builtIn";
 import { proposalLine } from "core/tools/permissions/decisionTimer";
-import { useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 
 import { useAppDispatch, useAppSelector } from "../../../../redux/hooks";
 import { selectPendingToolCalls } from "../../../../redux/selectors/selectToolCalls";
@@ -61,6 +61,29 @@ export function PendingToolCallToolbar() {
     () => editor.mainEditor?.commands.focus(),
   );
 
+  // In a short panel the first call can be taller than the list, and its
+  // buttons stay in sight (below). Then show what is being approved above
+  // them: the end of the call, or from the start of its command when that
+  // would be cut. Once per call, so the person's own scrolling is left alone.
+  const listRef = useRef<HTMLDivElement>(null);
+  const firstId = pendingToolCalls[0]?.toolCallId;
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const call = list?.firstElementChild;
+    if (!list || !call) return;
+    const over = call.getBoundingClientRect().height - list.clientHeight;
+    if (over <= 0) return;
+    // The text itself, not its label: under a pinned reason a line may be
+    // all there is room for
+    const what =
+      call.querySelector('[data-testid^="pending-action-block-"]') ??
+      call.querySelector('[data-testid^="pending-action-what-"]');
+    const start = what
+      ? what.getBoundingClientRect().top - call.getBoundingClientRect().top
+      : 0;
+    list.scrollTop = Math.min(over, start);
+  }, [firstId]);
+
   if (pendingToolCalls.length === 0) {
     return null;
   }
@@ -109,7 +132,15 @@ export function PendingToolCallToolbar() {
           </Button>
         )}
       </div>
-      <div className="flex max-h-[50vh] flex-col overflow-y-auto">
+      {/* In a short panel the list takes what the chat (100 px), the prompt
+          with its rows (153 px at 300 wide) and the lines above (35 px)
+          leave, and never under 96 px, a call with a one-line command. A
+          sum, not a measurement: with more above the prompt the chat gets
+          less. */}
+      <div
+        ref={listRef}
+        className="flex max-h-[min(50vh,max(96px,calc(100vh_-_288px)))] flex-col overflow-y-auto"
+      >
         {pendingToolCalls.map((toolCall, index) => (
           <div
             key={toolCall.toolCallId}
@@ -123,9 +154,18 @@ export function PendingToolCallToolbar() {
               tool={toolCall.tool}
               note={toolCall.policyNote}
               rule={toolCall.policyRule}
+              pinNote={index === 0}
             />
 
-            <div className="ml-auto flex flex-wrap items-center justify-end gap-x-1">
+            {/* The first call's buttons stay in sight when the list is
+                shorter than the call: its text scrolls under them */}
+            <div
+              className={
+                index === 0
+                  ? "sticky bottom-0 ml-auto flex basis-full flex-wrap items-center justify-end gap-x-1 bg-input"
+                  : "ml-auto flex flex-wrap items-center justify-end gap-x-1"
+              }
+            >
               {toolCall.askTimer && !toolCall.askTimer.kept && (
                 <span
                   role="timer"

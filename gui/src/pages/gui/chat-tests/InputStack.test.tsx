@@ -51,12 +51,19 @@ describe("The stack above the prompt", () => {
     const prompt = await getElementByTestId("editor-input-main");
     for (const part of [notices, queue]) {
       expect(part.className).toContain("overflow-y-auto");
-      // It shrinks long before the chat does, and both are laid out by the
-      // page: the stack's own box is gone ("contents")
-      expect(part.className).toContain("shrink-[9999]");
+      // It starts from one row and grows to its content, no further, long
+      // before the chat grows; both are laid out by the page: the stack's own
+      // box is gone ("contents")
+      expect(part.className).toContain("basis-[22px]");
+      expect(part.className).toContain("grow-[9999]");
+      expect(part.className).toContain("max-h-max");
       expect(part.parentElement!.className).toBe("contents");
       expect(part).not.toContainElement(prompt);
     }
+    // Under one row each, the queue gives way before the notices, and both
+    // long before the chat
+    expect(notices.className).toContain("shrink-[9999]");
+    expect(queue.className).toContain("shrink-[9999999]");
     const chat = document.querySelector('[aria-label="Conversation"]')!;
     expect(chat.className).toContain("flex-[1_1_96px]");
   });

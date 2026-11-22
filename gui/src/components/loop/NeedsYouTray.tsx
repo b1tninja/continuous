@@ -164,7 +164,11 @@ export function NeedsYouTray() {
     <section
       data-testid="needs-you-tray"
       aria-label="Needs you"
-      className="mx-1 mb-1 rounded border border-solid border-warning px-2 py-1 text-xs"
+      // Under the page's height budget (Chat.tsx) the tray gives up its height
+      // down to 160 px, then the chat gives up its 96: the heading, the pager,
+      // a line of the question and two rows of choices at 300 wide. It
+      // grows back before the notices and the queue do.
+      className="mx-1 mb-1 box-border flex max-h-max min-h-0 shrink-0 grow-[9999999] basis-[160px] flex-col rounded border border-solid border-warning px-2 py-1 text-xs"
     >
       <div className="flex items-center gap-1 text-description">
         <QuestionMarkCircleIcon
@@ -229,7 +233,10 @@ export function NeedsYouTray() {
         </div>
       )}
       {current && (
-        <div data-testid="needs-you-question" className="mt-1">
+        <div
+          data-testid="needs-you-question"
+          className="mt-1 flex min-h-0 flex-col"
+        >
           <div className="flex items-center gap-1 text-description">
             <span data-testid="needs-you-pager" aria-label="Question">
               {Math.min(index, waiting.length - 1) + 1} of {waiting.length}
@@ -261,7 +268,7 @@ export function NeedsYouTray() {
               </span>
             )}
           </div>
-          <ul className="m-0 list-none p-0">
+          <ul className="m-0 flex min-h-0 list-none flex-col p-0">
             {current.kind === "decision" ? (
               <PlanDecisionRow
                 key={current.decision.question}

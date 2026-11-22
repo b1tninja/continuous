@@ -17,6 +17,7 @@ export const VIEWS = {
   },
   approval: {
     fixture: "approval",
+    stack: true,
     note: "three calls waiting for approval: a long command, a path outside the workspace, an MCP tool",
   },
   "crowded-stack": {
@@ -67,6 +68,16 @@ export const VIEWS = {
   "loop-questions": {
     fixture: "loop-questions",
     note: "Loop mode with three questions waiting: the Needs you tray shows one at a time",
+  },
+  "tall-question": {
+    fixture: "tall-question",
+    stack: true,
+    note: "a plan's three long decisions in the Questions panel, after a conversation; shoot it with --height 400 (measured: src/stack.mjs)",
+  },
+  "loop-tall-question": {
+    fixture: "loop-tall-question",
+    stack: true,
+    note: "Loop mode after a conversation, with one long question in the Needs you tray; shoot it with --height 440 (measured: src/stack.mjs)",
   },
   "loop-replan": {
     fixture: "loop-replan",

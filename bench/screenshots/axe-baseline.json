@@ -140,6 +140,14 @@
     },
     "settings-models-connections": {
       "color-contrast": 1
+    },
+    "loop-tall-question": {
+      "color-contrast": 14,
+      "scrollable-region-focusable": 1
+    },
+    "tall-question": {
+      "color-contrast": 14,
+      "scrollable-region-focusable": 1
     }
   }
 }
