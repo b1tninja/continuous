@@ -42,8 +42,8 @@ export function sideBySideMessage(
   const sentences = ["Continuous: the Continue extension is also installed."];
   if (!env.CONTINUOUS_GLOBAL_DIR && !env.CONTINUE_GLOBAL_DIR) {
     sentences.push(
-      "On its first start Continuous copies ~/.continue to ~/.continuous, unless ~/.continuous already exists, and keeps its configuration there.",
-      "The two folders are separate from here on: a change in one does not reach the other.",
+      "Continuous keeps its own configuration: on its first start it copies ~/.continue to ~/.continuous, unless that folder already exists.",
+      "After that a change in one does not reach the other.",
     );
   }
   sentences.push(
