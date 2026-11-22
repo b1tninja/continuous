@@ -1,7 +1,7 @@
 import { act, screen, within } from "@testing-library/react";
 import type { ChatHistoryItem } from "core";
 import { renderChatMessage } from "core/util/messageContent";
-import { expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { newSession } from "../../../redux/slices/sessionSlice";
 import { addAndSelectMockLlm } from "../../../util/test/config";
 import { renderWithProviders } from "../../../util/test/render";
@@ -12,6 +12,14 @@ import { messageErrorLine, plainTextOfItem } from "../MessageErrorFallback";
  * One message whose render throws must cost only that message: the others
  * stay, its text can still be read, and no button leaves the conversation.
  */
+
+// A click on a fallback button blurs the prompt, which starts a 100 ms timer.
+// Let it run before the test's document is taken down.
+afterEach(async () => {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  });
+});
 
 const BROKEN = "BROKEN-RENDER $$\\frac{1}{0}$$\nsecond line of the reply";
 
