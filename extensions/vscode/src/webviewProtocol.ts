@@ -1,10 +1,15 @@
 import { FromWebviewProtocol, ToWebviewProtocol } from "core/protocol";
 import { Message } from "core/protocol/messenger";
+import { getAuditTrail } from "core/tools/permissions/audit/global";
 import { v4 as uuidv4 } from "uuid";
 import * as vscode from "vscode";
 
 import { IMessenger } from "../../../core/protocol/messenger";
 
+import {
+  DENIED_FROM_WEBVIEW,
+  refuseFromWebview,
+} from "./extension/webviewMessageGuard";
 import { handleLLMError } from "./util/errorHandling";
 
 export class VsCodeWebviewProtocol implements IMessenger<
@@ -32,6 +37,10 @@ export class VsCodeWebviewProtocol implements IMessenger<
       message: Message<FromWebviewProtocol[T][0]>,
     ) => Promise<FromWebviewProtocol[T][1]> | FromWebviewProtocol[T][1],
   ): void {
+    // A handler here would be reachable from the panel
+    if (DENIED_FROM_WEBVIEW.includes(messageType)) {
+      throw new Error(`"${messageType}" is not handled from the webview.`);
+    }
     if (!this.listeners.has(messageType)) {
       this.listeners.set(messageType, []);
     }
@@ -56,6 +65,17 @@ export class VsCodeWebviewProtocol implements IMessenger<
 
       const respond = (message: any) =>
         this.send(msg.messageType, message, msg.messageId);
+
+      const refusal = refuseFromWebview(
+        msg.messageType,
+        msg.data,
+        getAuditTrail(),
+      );
+      if (refusal) {
+        console.warn(`Refused webview message: ${msg.messageType}`);
+        respond({ done: true, error: refusal, status: "error" });
+        return;
+      }
 
       const handlers =
         this.listeners.get(msg.messageType as keyof FromWebviewProtocol) || [];

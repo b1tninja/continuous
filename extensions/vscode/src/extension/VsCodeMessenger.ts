@@ -35,7 +35,6 @@ import {
   openUrlFromWebviewOk,
   policySavePayloadOk,
   runCommandFromWebviewOk,
-  subprocessFromWebviewOk,
   writeFileFromWebviewOk,
 } from "./webviewMessageGuard";
 
@@ -388,19 +387,8 @@ export class VsCodeMessenger {
     this.onWebviewOrCore("getFileResults", async (msg) => {
       return ide.getFileResults(msg.data.pattern, msg.data.maxResults);
     });
-    this.onWebview("subprocess", async (msg) => {
-      if (
-        !subprocessFromWebviewOk(msg.data) ||
-        typeof msg.data.cwd !== "string"
-      ) {
-        throw new Error("The command was not accepted.");
-      }
-      const dirs = await ide.getWorkspaceDirs();
-      if (!isInsideWorkspace(msg.data.cwd, dirs)) {
-        throw new Error("The command was not accepted.");
-      }
-      return ide.subprocess(msg.data.command, msg.data.cwd);
-    });
+    // Core only: from the webview it is refused before any handler
+    // (webviewProtocol.ts, DENIED_FROM_WEBVIEW)
     this.onCore("subprocess", async (msg) => {
       return ide.subprocess(msg.data.command, msg.data.cwd);
     });

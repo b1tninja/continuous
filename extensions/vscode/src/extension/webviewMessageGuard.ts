@@ -1,3 +1,4 @@
+import type { AuditTrail } from "core/tools/permissions/audit/trail";
 import {
   POLICY_AREAS,
   POLICY_LEVELS,
@@ -53,15 +54,50 @@ export function writeFileFromWebviewOk(
   return typeof body.path === "string" && typeof body.contents === "string";
 }
 
-export function subprocessFromWebviewOk(
+/**
+ * IDE messages the panel may not send: they are core's alone. `subprocess`
+ * starts a process on the host with no policy decision. JetBrains keeps the
+ * same list (WebviewIdeGate.DENIED_FROM_PANEL).
+ */
+export const DENIED_FROM_WEBVIEW: readonly string[] = ["subprocess"];
+
+const MAX_AUDITED_ARGS = 4_000;
+
+/**
+ * The refusal for a message the panel may not send, or undefined for any
+ * other. A refusal is written to the audit trail with what was asked for.
+ */
+export function refuseFromWebview(
+  messageType: unknown,
   data: unknown,
-): data is { command: string; cwd?: string } {
-  if (!data || typeof data !== "object" || Array.isArray(data)) return false;
-  const body = data as { command?: unknown; cwd?: unknown };
-  if (typeof body.command !== "string" || body.command.trim() === "") {
-    return false;
+  trail: Pick<AuditTrail, "decision" | "outcome">,
+  now: () => number = Date.now,
+): string | undefined {
+  if (
+    typeof messageType !== "string" ||
+    !DENIED_FROM_WEBVIEW.includes(messageType)
+  ) {
+    return undefined;
   }
-  return body.cwd === undefined || typeof body.cwd === "string";
+  const reason = `The panel may not send "${messageType}": nothing was run.`;
+  let args = "";
+  try {
+    args = (JSON.stringify(data) ?? "").slice(0, MAX_AUDITED_ARGS);
+  } catch {
+    // what was asked for could not be written; the refusal still is
+  }
+  const callId = `webview-${messageType}-${now()}`;
+  trail.decision({
+    callId,
+    tool: messageType,
+    args,
+    policy: "deny",
+    by: "system",
+    source: "webview-message",
+    reason,
+  });
+  trail.outcome({ callId, ran: false, error: reason });
+  return reason;
 }
 
 function fileUriPath(uri: string): string | undefined {

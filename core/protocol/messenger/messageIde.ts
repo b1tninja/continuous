@@ -1,5 +1,5 @@
 import { FromIdeProtocol } from "..";
-import { ToIdeFromWebviewOrCoreProtocol } from "../ide";
+import { ToIdeFromCoreProtocol } from "../ideCore";
 
 import type {
   DocumentSymbol,
@@ -21,10 +21,10 @@ import type {
 
 export class MessageIde implements IDE {
   constructor(
-    private readonly request: <T extends keyof ToIdeFromWebviewOrCoreProtocol>(
+    private readonly request: <T extends keyof ToIdeFromCoreProtocol>(
       messageType: T,
-      data: ToIdeFromWebviewOrCoreProtocol[T][0],
-    ) => Promise<ToIdeFromWebviewOrCoreProtocol[T][1]>,
+      data: ToIdeFromCoreProtocol[T][0],
+    ) => Promise<ToIdeFromCoreProtocol[T][1]>,
     private readonly on: <T extends keyof FromIdeProtocol>(
       messageType: T,
       callback: (data: FromIdeProtocol[T][0]) => FromIdeProtocol[T][1],

@@ -1676,13 +1676,10 @@ describe("Loop mode's checks and dependencies", () => {
   /**
    * Core's check run (loop/runCheck): each call takes the next result, a
    * string for exit 0 and an Error for exit 1; all are recorded. The editor's
-   * `subprocess` must not be asked: it throws if it is.
+   * `subprocess` is not a message the webview can send.
    */
   function checkRuns(h: Setup, ...results: (string | Error | LoopCheckRun)[]) {
     const ran: { command: string; callId: string; requests: number }[] = [];
-    h.ideMessenger.responseHandlers["subprocess"] = async () => {
-      throw new Error("a Loop check went to ide.subprocess");
-    };
     h.ideMessenger.responseHandlers["loop/runCheck"] = async (data: any) => {
       ran.push({ ...data, requests: h.requests.length });
       const result = results.shift() ?? "ok";

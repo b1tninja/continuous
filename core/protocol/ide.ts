@@ -19,6 +19,10 @@ export interface GetGhTokenArgs {
   force?: boolean;
 }
 
+/**
+ * What both the webview and core may ask of the IDE. `subprocess`, which
+ * starts a process on the host, is core's alone (ideCore.ts).
+ */
 export type ToIdeFromWebviewOrCoreProtocol = {
   // Methods from IDE type
   getIdeInfo: [undefined, IdeInfo];
@@ -31,7 +35,6 @@ export type ToIdeFromWebviewOrCoreProtocol = {
   runCommand: [{ command: string; options?: TerminalOptions }, void];
   getSearchResults: [{ query: string; maxResults?: number }, string];
   getFileResults: [{ pattern: string; maxResults?: number }, string[]];
-  subprocess: [{ command: string; cwd?: string }, [string, string]];
   saveFile: [{ filepath: string }, void];
   fileExists: [{ filepath: string }, boolean];
   readFile: [{ filepath: string }, string];

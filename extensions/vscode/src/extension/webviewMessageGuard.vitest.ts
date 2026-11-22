@@ -1,12 +1,20 @@
+import { readFileSync } from "node:fs";
+import * as path from "node:path";
+
 import { describe, expect, it } from "vitest";
+
 import {
   isInsideWorkspace,
   openUrlFromWebviewOk,
   policySavePayloadOk,
+  DENIED_FROM_WEBVIEW,
+  refuseFromWebview,
   runCommandFromWebviewOk,
-  subprocessFromWebviewOk,
   writeFileFromWebviewOk,
 } from "./webviewMessageGuard";
+
+import type { FromWebviewProtocol } from "core/protocol";
+import type { ToIdeFromCoreProtocol } from "core/protocol/ideCore";
 
 const WORKSPACE = ["file:///home/u/proj"];
 
@@ -86,16 +94,83 @@ describe("writeFileFromWebviewOk and isInsideWorkspace", () => {
   });
 });
 
-describe("subprocessFromWebviewOk", () => {
-  it("requires a command and a workspace working directory", () => {
-    expect(
-      subprocessFromWebviewOk({ command: "npm test", cwd: "/home/u/proj" }),
-    ).toBe(true);
-    expect(subprocessFromWebviewOk({ command: "   " })).toBe(false);
-    expect(subprocessFromWebviewOk({ command: "npm test", cwd: 1 })).toBe(
-      false,
+describe("the webview cannot send subprocess", () => {
+  const src = (file: string) =>
+    readFileSync(path.resolve(__dirname, "..", file), "utf8");
+
+  function fakeTrail() {
+    const decisions: Record<string, unknown>[] = [];
+    const outcomes: Record<string, unknown>[] = [];
+    return {
+      decisions,
+      outcomes,
+      decision: (d: Record<string, unknown>) => void decisions.push(d),
+      outcome: (o: Record<string, unknown>) => void outcomes.push(o),
+    };
+  }
+
+  it("is refused whatever it carries, and the refusal is written to the audit trail", () => {
+    const trail = fakeTrail();
+    const refusal = refuseFromWebview(
+      "subprocess",
+      { command: "npm test", cwd: "/home/u/proj" },
+      trail,
+      () => 42,
     );
-    expect(isInsideWorkspace("/home/u/proj", WORKSPACE)).toBe(true);
-    expect(isInsideWorkspace("/tmp", WORKSPACE)).toBe(false);
+    expect(refusal).toBe(
+      'The panel may not send "subprocess": nothing was run.',
+    );
+    expect(trail.decisions).toEqual([
+      {
+        callId: "webview-subprocess-42",
+        tool: "subprocess",
+        args: '{"command":"npm test","cwd":"/home/u/proj"}',
+        policy: "deny",
+        by: "system",
+        source: "webview-message",
+        reason: refusal,
+      },
+    ]);
+    expect(trail.outcomes).toEqual([
+      { callId: "webview-subprocess-42", ran: false, error: refusal },
+    ]);
+  });
+
+  it("leaves every other message alone and writes nothing for it", () => {
+    const trail = fakeTrail();
+    for (const type of ["runCommand", "readFile", "loop/runCheck", 1, null]) {
+      expect(refuseFromWebview(type, {}, trail)).toBeUndefined();
+    }
+    expect(trail.decisions).toEqual([]);
+  });
+
+  it("is not a message of the webview's protocol, and still is one of core's", () => {
+    // Fails to compile if `subprocess` becomes something the webview may send
+    const notFromWebview: Exclude<"subprocess", keyof FromWebviewProtocol> =
+      "subprocess";
+    const fromCore: Extract<"subprocess", keyof ToIdeFromCoreProtocol> =
+      "subprocess";
+    expect([notFromWebview, fromCore]).toEqual(["subprocess", "subprocess"]);
+    expect(DENIED_FROM_WEBVIEW).toContain("subprocess");
+  });
+
+  it("the messenger answers it for core only", () => {
+    const messenger = src("extension/VsCodeMessenger.ts");
+    expect(messenger).toContain('this.onCore("subprocess"');
+    expect(messenger).not.toMatch(/onWebview(OrCore)?\(\s*"subprocess"/);
+  });
+
+  it("JetBrains refuses the same messages from its panel", () => {
+    const gate = readFileSync(
+      path.resolve(
+        __dirname,
+        "../../../intellij/src/main/kotlin/com/github/continuedev/continueintellijextension/constants/WebviewIdeGate.kt",
+      ),
+      "utf8",
+    );
+    const denied = /DENIED_FROM_PANEL = setOf\(([^)]*)\)/.exec(gate)?.[1] ?? "";
+    for (const type of DENIED_FROM_WEBVIEW) {
+      expect(denied).toContain(`"${type}"`);
+    }
   });
 });
