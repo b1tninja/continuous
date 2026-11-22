@@ -1,11 +1,13 @@
 import type { ModelDescription } from "core";
+import type { ResolvedValue } from "core/config/modelEdit/valueState";
 import { DEFAULT_CONTEXT_LENGTH } from "core/llm/constants";
+import { ValueState } from "./ValueState";
 
 const SLIDER_MIN = 4_096;
 const SLIDER_STEP = 1_024;
 
 const inputClass =
-  "w-full rounded-default border border-solid border-input-border bg-input px-2 py-1 text-xs text-input-foreground placeholder:text-input-placeholder focus:outline focus:outline-1 focus:outline-border-focus aria-[invalid=true]:border-error";
+  "box-border w-full rounded-default border border-solid border-input-border bg-input px-2 py-1 text-xs text-input-foreground placeholder:text-input-placeholder focus:outline focus:outline-1 focus:outline-border-focus aria-[invalid=true]:border-error";
 
 function sliderCeiling(tokens: number): number {
   return Math.max(2_000_000, tokens * 2);
@@ -43,6 +45,8 @@ export function ContextLengthControl({
   source,
   inputId = "context-length-number",
   testId = "context-length-slider",
+  state,
+  onGo,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -51,6 +55,10 @@ export function ContextLengthControl({
   source?: ModelDescription["contextLengthSource"];
   inputId?: string;
   testId?: string;
+  /** The window's value state: shown in place of the "default" texts, with Reset. */
+  state?: ResolvedValue;
+  /** Opens the layer an inherited window comes from. */
+  onGo?: () => void;
 }) {
   const written = parseTokens(value);
   const fallback =
@@ -63,9 +71,12 @@ export function ContextLengthControl({
       <label htmlFor={inputId} className="text-xs font-medium">
         Context length (tokens)
       </label>
-      <span className="text-2xs text-description-muted">
-        {windowNote(source, fallback)}
-      </span>
+      {/* "Set in your configuration" is wrong for a window a layer under the entry wrote: the state line names that layer */}
+      {!(state && source === "config" && !state.setByUser) && (
+        <span className="text-2xs text-description-muted">
+          {windowNote(source, fallback)}
+        </span>
+      )}
       <input
         type="range"
         data-testid={testId}
@@ -85,11 +96,12 @@ export function ContextLengthControl({
           inputMode="numeric"
           className={inputClass}
           aria-invalid={error ? true : undefined}
+          aria-describedby={state ? `${inputId}-state` : undefined}
           value={value}
           placeholder={String(fallback)}
           onChange={(e) => onChange(e.target.value)}
         />
-        {!usingDefault && (
+        {!state && !usingDefault && (
           <button
             type="button"
             className="cursor-pointer border-none bg-transparent p-0 text-2xs whitespace-nowrap text-link underline"
@@ -99,7 +111,17 @@ export function ContextLengthControl({
           </button>
         )}
       </div>
-      {usingDefault && (
+      {state && (
+        <ValueState
+          id={`${inputId}-state`}
+          testId="context-length-state"
+          state={state}
+          label="Context length"
+          onReset={() => onChange("")}
+          onGo={onGo}
+        />
+      )}
+      {!state && usingDefault && (
         <span className="text-2xs text-description-muted">
           {`Showing ${fallback.toLocaleString()} tokens. Move the slider or type a number to save your own.`}
         </span>

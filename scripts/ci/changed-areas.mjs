@@ -41,7 +41,8 @@ export function isDocsPath(f) {
 //  - gui/ is bundled into the VS Code extension (and so into the e2e tests) and into the plugin.
 //  - binary/ is bundled into the plugin.
 //  - extensions/vscode, extensions/cli, extensions/intellij feed only themselves.
-//  - bench/ feeds nothing here but prettier (see its rule).
+//  - bench/ feeds nothing here but prettier (see its rule), except bench/screenshots, whose
+//    production render check is a step of the gui job.
 const EVERYTHING = [...AREAS];
 const RULES = [
   { prefix: "packages/", touches: EVERYTHING },
@@ -54,8 +55,11 @@ const RULES = [
   { prefix: "extensions/vscode/", touches: ["vscode", "e2e"] },
   { prefix: "extensions/cli/", touches: ["cli"] },
   { prefix: "extensions/intellij/", touches: ["jetbrains"] },
-  // bench/ consumes the product; nothing in the PR or CLI checks builds or tests it (its own tests run
-  // in Supply Chain, which has its own trigger). Prettier still covers its source.
+  // The gui job runs the production render check of bench/screenshots (render.mjs), so a change to
+  // that harness has to run it. Before the bench/ rule: the first matching prefix wins.
+  { prefix: "bench/screenshots/", touches: ["prettier", "gui"] },
+  // The rest of bench/ consumes the product; nothing in the PR or CLI checks builds or tests it (its
+  // own tests run in Supply Chain, which has its own trigger). Prettier still covers its source.
   { prefix: "bench/", touches: ["prettier"] },
 ];
 

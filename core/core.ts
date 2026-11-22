@@ -11,7 +11,7 @@ import {
 } from "./autocomplete/util/openedFilesLruCache";
 import { ConfigHandler } from "./config/ConfigHandler";
 import {
-  getModelBlock,
+  getModelBlockWithLayers,
   previewModelEdit,
   saveModelEdit,
 } from "./config/modelEdit/modelBlockEdit";
@@ -1515,7 +1515,9 @@ export class Core {
       return { saved };
     });
 
-    on("config/getModelBlock", async (msg) => getModelBlock(msg.data.title));
+    on("config/getModelBlock", async (msg) =>
+      getModelBlockWithLayers(msg.data.title, this.ide),
+    );
     on("config/previewModelEdit", async (msg) =>
       previewModelEdit(msg.data.title, msg.data.ops),
     );

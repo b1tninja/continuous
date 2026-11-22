@@ -7,6 +7,7 @@ import { selectModelUse } from "../../../redux/selectors/selectModelUse";
 import { updateConfig } from "../../../redux/slices/configSlice";
 import { setHasReasoningEnabled } from "../../../redux/slices/sessionSlice";
 import { setReasoningSetting } from "../../../redux/slices/uiSlice";
+import { modelSettingLabel } from "../../../util/modeNotSet";
 import { sessionReasoningAfterConfig } from "../../../util/sessionReasoning";
 import {
   applyThinkingEffort,
@@ -122,7 +123,13 @@ export function ThinkingEffort() {
         >
           {THINKING_EFFORTS.map((o) => (
             <option key={o.value || "default"} value={o.value}>
-              {o.label}
+              {o.value === ""
+                ? modelSettingLabel(
+                    model,
+                    hasReasoningEnabled,
+                    tier === "narrow",
+                  )
+                : o.label}
             </option>
           ))}
         </select>

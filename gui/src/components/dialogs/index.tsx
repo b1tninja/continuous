@@ -64,7 +64,7 @@ const TextDialog = (props: TextDialogProps) => {
           e.stopPropagation();
         }}
       >
-        <CloseButton onClick={props.onClose}>
+        <CloseButton onClick={props.onClose} aria-label="Close">
           <XMarkIcon className="z-50 h-5 w-5 hover:brightness-125" />
         </CloseButton>
 
