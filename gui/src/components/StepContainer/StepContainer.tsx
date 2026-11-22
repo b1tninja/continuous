@@ -108,7 +108,7 @@ export default function StepContainer(props: StepContainerProps) {
 
       {showResponseActions && (
         <div
-          className={`mt-2 h-7 transition-opacity duration-300 ease-in-out ${isBeforeLatestSummary || isStreaming ? "opacity-35" : ""} ${isStreaming && "pointer-events-none cursor-not-allowed"}`}
+          className={`mt-2 min-h-7 transition-opacity duration-300 ease-in-out ${isBeforeLatestSummary || isStreaming ? "opacity-35" : ""} ${isStreaming && "pointer-events-none cursor-not-allowed"}`}
         >
           <ResponseActions
             isTruncated={isTruncated}
