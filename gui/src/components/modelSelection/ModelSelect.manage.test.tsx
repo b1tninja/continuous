@@ -122,6 +122,26 @@ describe("model picker: the window a local server reported", () => {
   });
 });
 
+describe("model picker: Add a model", () => {
+  it("opens the setup flow at its start screen, whatever the current model", async () => {
+    const m = model("Daybreak");
+    const { user, store } = await setup([m], m, [
+      {
+        provider: "bedrock-mantle",
+        connection: { region: "us-east-2" },
+        models: [{ name: "Daybreak", model: "openai.gpt-daybreak" }],
+      },
+    ]);
+    await user.click(screen.getByText("Add a model..."));
+    await waitFor(() => expect(store.getState().ui.showDialog).toBe(true));
+    // No provider, connection or step: the flow asks what the person has
+    const props = store.getState().ui.dialogMessage?.props;
+    expect(props.initialProvider).toBeUndefined();
+    expect(props.initialConnection).toBeUndefined();
+    expect(props.initialStep).toBeUndefined();
+  });
+});
+
 describe("model picker: Manage models", () => {
   const connection = {
     provider: "bedrock-mantle",

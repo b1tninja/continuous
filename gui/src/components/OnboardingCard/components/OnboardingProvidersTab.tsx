@@ -8,8 +8,9 @@ interface OnboardingProvidersTabProps {
 }
 
 /**
- * The API key tab: the shared provider setup flow (credentials, model
- * checklist, review) instead of a fixed list of models per provider.
+ * The card's content: the shared "Add a model" flow, from its start screen
+ * (what the person has), then the connection, the models, what to use them
+ * for and the review.
  */
 export function OnboardingProvidersTab({
   isDialog,
@@ -21,10 +22,7 @@ export function OnboardingProvidersTab({
 
   return (
     <div className="flex h-full w-full items-center justify-center">
-      <ProviderSetupFlow
-        initialProvider="anthropic"
-        onDone={finishOnboarding}
-      />
+      <ProviderSetupFlow onDone={finishOnboarding} />
     </div>
   );
 }

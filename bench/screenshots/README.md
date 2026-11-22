@@ -53,6 +53,16 @@ Views: `chat` (empty chat with the input and toolbar), `conversation`,
 rule that allows every command: the typed confirmation, diff and verdict). `audit-list` and `audit-inbox` (Settings, Permissions, the Recent calls and Inbox views, with fake audit answers). The
 policy chips are in every chat view, below the input. `catalogue` is OpenRouter provider setup with the one-time "Pull the latest model information" card.
 
+"Add a model", the setup flow: `setup-start-found` and `setup-start-none` (its
+start screen, "What do you have?", in the app dialog, with two servers found on
+this computer and with none), `setup-models-local` (the models step of a found
+server: context, price and tools, with a long model id), `setup-use-for` (what
+the new model is used for, with what each role uses now) and `setup-test-failed`
+(the connection step after a test that got no answer). The same flow in the
+first-run card: `onboarding-local-chooser` (the start screen with two servers
+found), `onboarding-local` ("Nothing yet") and `onboarding-local-server` ("A
+server on my network", with More open).
+
 Views made for narrow panels: `setup-long-model` (the provider setup form in the
 onboarding card, at its model list, with long model ids) and `setup-dialog` (the
 same list in the app dialog), `history` (a few sessions with long titles, and

@@ -79,6 +79,8 @@ export function seedMessenger(messenger: MockIdeMessenger): void {
   messenger.responses["config/getSerializedProfileInfo"] = info;
   Object.assign(messenger.responses, {
     "models/fetch": [],
+    // The setup flow's start screen asks; nothing is running unless a fixture says so
+    "models/detectLocal": [],
     "config/getTerminalEnvironment": {
       mode: "scrub",
       source: "default",
@@ -1415,19 +1417,71 @@ Object.assign(FIXTURES, {
   },
 });
 
-/** The onboarding card on its Local tab, with Ollama running and one model installed. */
-function onboardingLocal(
+/** What core's search of this computer answers: Ollama and LM Studio, one model id long. */
+const FOUND_SERVERS = [
+  {
+    title: "Ollama",
+    apiBase: "http://127.0.0.1:11434/v1/",
+    models: [
+      {
+        name: "llama3.1:8b",
+        modelId: "llama3.1:8b",
+        contextLength: 131072,
+        supportsTools: true,
+      },
+      { name: "qwen3:8b", modelId: "qwen3:8b" },
+    ],
+  },
+  {
+    title: "LM Studio",
+    apiBase: "http://127.0.0.1:1234/v1/",
+    models: [
+      {
+        name: "lmstudio-community/Qwen2.5-Coder-32B-Instruct-GGUF/qwen2.5-coder-32b-instruct-q4_k_m.gguf",
+        modelId:
+          "lmstudio-community/Qwen2.5-Coder-32B-Instruct-GGUF/qwen2.5-coder-32b-instruct-q4_k_m.gguf",
+        contextLength: 32768,
+      },
+    ],
+  },
+];
+
+/** What the search of this computer answers, for the start screen. */
+function foundServers(messenger: MockIdeMessenger, servers: unknown[]): void {
+  (messenger.responses as any)["models/detectLocal"] = servers;
+}
+
+/** The onboarding card on its start screen, after `servers` were found. */
+function onboardingStart(
+  servers: unknown[],
   steps: (ctx: FixtureContext) => Promise<void> | void = () => {},
 ): Fixture {
   return async (ctx) => {
-    ctx.messenger.responseHandlers["llm/listModels"] = (async () => [
-      "llama3.1:8b",
-      "qwen3:8b",
-    ]) as never;
-    ctx.store.dispatch(
-      setOnboardingCard({ show: true, activeTab: "Local" as never }),
-    );
+    foundServers(ctx.messenger, servers);
+    ctx.store.dispatch(setOnboardingCard({ show: true }));
     await sleep(700);
+    await steps(ctx);
+  };
+}
+
+/** "Add a model" in the app dialog, from its start screen. */
+function addModelDialog(
+  servers: unknown[],
+  steps: (ctx: FixtureContext) => Promise<void> | void = () => {},
+): Fixture {
+  return async (ctx) => {
+    foundServers(ctx.messenger, servers);
+    ctx.store.dispatch(newSession());
+    ctx.store.dispatch(setShowDialog(true));
+    ctx.store.dispatch(
+      setDialogMessage(
+        createElement(ProviderSetupFlow, {
+          onDone: () => {},
+          onCancel: () => {},
+        }),
+      ),
+    );
+    await sleep(600);
     await steps(ctx);
   };
 }
@@ -1438,31 +1492,54 @@ const clickButton = (name: string) => {
     ?.click();
 };
 
+const clickTestId = (id: string) =>
+  document.querySelector<HTMLElement>(`[data-testid="${id}"]`)?.click();
+
 Object.assign(FIXTURES, {
-  /** Onboarding, Local tab: the suggested model and the two buttons */
-  "onboarding-local": onboardingLocal(),
-  /** The Configure model chooser, open on Ollama with an installed model picked */
-  "onboarding-local-chooser": onboardingLocal(async () => {
-    clickButton("Configure model");
+  /** Onboarding, "Nothing yet": Ollama running with the suggested model, and the key links */
+  "onboarding-local": onboardingStart([FOUND_SERVERS[0]], async () => {
+    clickTestId("door-nothing");
     await sleep(400);
   }),
-  /** The chooser on an OpenAI-compatible server, with More open */
-  "onboarding-local-server": onboardingLocal(async () => {
-    clickButton("Configure model");
-    await sleep(300);
-    const select = document.querySelector<HTMLSelectElement>(
-      '[data-testid="local-model-chooser"] select',
-    )!;
-    const setter = Object.getOwnPropertyDescriptor(
-      HTMLSelectElement.prototype,
-      "value",
-    )!.set!;
-    setter.call(select, "openai");
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-    await sleep(300);
-    clickButton("More");
+  /** Onboarding, the start screen with two servers found on this computer */
+  "onboarding-local-chooser": onboardingStart(FOUND_SERVERS),
+  /** Onboarding, "A server on my network": the connection step with More open */
+  "onboarding-local-server": onboardingStart([], async () => {
+    clickTestId("door-network");
+    await sleep(400);
+    document
+      .querySelector<HTMLDetailsElement>('[data-testid="connection-more"]')
+      ?.setAttribute("open", "");
     await sleep(300);
   }),
+  /** "Add a model" in the dialog: what do you have, with two servers found */
+  "setup-start-found": addModelDialog(FOUND_SERVERS),
+  /** The same with nothing answering on this computer */
+  "setup-start-none": addModelDialog([]),
+  /** The models step of a found server: the three columns, one long model id */
+  "setup-models-local": addModelDialog(FOUND_SERVERS, async () => {
+    clickTestId("found-1234");
+    await sleep(500);
+  }),
+  /** "Use for": what the new model is used for, and what each role uses now */
+  "setup-use-for": addModelDialog(FOUND_SERVERS, async () => {
+    clickTestId("found-11434");
+    await sleep(500);
+    clickButton("Next");
+    await sleep(400);
+  }),
+  /** The connection step after a test that got no answer from a local server */
+  "setup-test-failed": async (ctx: FixtureContext) => {
+    (ctx.messenger.responses as any)["openaiCompat/testConnection"] = {
+      ok: false,
+      error: "Could not reach http://127.0.0.1:8080/v1/models: fetch failed.",
+    };
+    await addModelDialog([])(ctx);
+    clickTestId("door-this-computer");
+    await sleep(400);
+    clickButton("Test connection");
+    await sleep(500);
+  },
 });
 
 Object.assign(FIXTURES, AUDIT_FIXTURES);
@@ -1593,10 +1670,10 @@ Object.assign(FIXTURES, {
   "setup-long-model": async ({ store, messenger }: FixtureContext) => {
     (messenger.responses as any)["config/getProviderSetup"] =
       longModelSetup("anthropic");
-    store.dispatch(
-      setOnboardingCard({ show: true, activeTab: "API Key" as never }),
-    );
+    store.dispatch(setOnboardingCard({ show: true }));
     await sleep(700);
+    clickTestId("door-api-key");
+    await sleep(400);
     // the key is already stored, so the first step has nothing to ask for
     clickButton("Next");
     await sleep(500);

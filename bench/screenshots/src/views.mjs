@@ -219,15 +219,15 @@ export const VIEWS = {
   },
   "onboarding-local": {
     fixture: "onboarding-local",
-    note: "Onboarding, Local tab: the suggested model with Connect and Configure model",
+    note: 'Onboarding, "Nothing yet": Ollama running with the suggested model, and the links to get a key',
   },
   "onboarding-local-chooser": {
     fixture: "onboarding-local-chooser",
-    note: "Onboarding, Local tab, with the Configure model chooser open",
+    note: "Onboarding, the start screen (What do you have?) with two servers found on this computer",
   },
   "onboarding-local-server": {
     fixture: "onboarding-local-server",
-    note: "The chooser on an OpenAI-compatible server, with More open",
+    note: 'Onboarding, "A server on my network": the connection step with More open',
   },
   "loop-frame-running": {
     fixture: "loop-frame-running",
@@ -308,6 +308,26 @@ export const VIEWS = {
   "setup-dialog": {
     fixture: "setup-dialog",
     note: "the same model list in the app dialog, as Manage models opens it",
+  },
+  "setup-start-found": {
+    fixture: "setup-start-found",
+    note: '"Add a model" in the app dialog: What do you have?, with two servers found on this computer',
+  },
+  "setup-start-none": {
+    fixture: "setup-start-none",
+    note: '"Add a model" start screen when nothing answers on this computer',
+  },
+  "setup-models-local": {
+    fixture: "setup-models-local",
+    note: "the models step of a found server: context, price and tools, with a long model id",
+  },
+  "setup-use-for": {
+    fixture: "setup-use-for",
+    note: '"Use for": the roles the new model gets, with what each role uses now',
+  },
+  "setup-test-failed": {
+    fixture: "setup-test-failed",
+    note: "the connection step after a test that got no answer from a server on this computer",
   },
   history: {
     fixture: "history",

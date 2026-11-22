@@ -5,6 +5,7 @@ import { resetCatalogueAnswers } from "../../pages/AddNewModel/configs/fetchProv
 import { MockIdeMessenger } from "../../context/MockIdeMessenger";
 import { renderWithProviders } from "../../util/test/render";
 import { ProviderSetupFlow } from "./ProviderSetupFlow";
+import { toReview } from "./testSteps";
 
 const EMPTY_SETUP: ProviderSetupInfo = {
   connections: [],
@@ -72,7 +73,7 @@ describe("ProviderSetupFlow: local server", () => {
     // No key is needed.
     await user.click(screen.getByRole("button", { name: "Next" }));
     await checkModel(STRATA_MODEL.name);
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await toReview(user);
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(onDone).toHaveBeenCalled());
@@ -111,7 +112,7 @@ describe("ProviderSetupFlow: local server", () => {
     expect(screen.getByTestId("model-checklist").textContent).toContain(
       "1 model selected",
     );
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await toReview(user);
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     expect(saves[0].add.map((m: any) => m.model)).toEqual([
@@ -131,7 +132,7 @@ describe("ProviderSetupFlow: local server", () => {
     );
     await user.click(screen.getByRole("button", { name: "Next" }));
     await checkModel(STRATA_MODEL.name);
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await toReview(user);
     expect((await screen.findByTestId("review-account")).textContent).toContain(
       'the account "Strata"',
     );
@@ -216,7 +217,7 @@ describe("ProviderSetupFlow: local server", () => {
     await user.type(screen.getByLabelText("API key"), "local-secret");
     await user.click(screen.getByRole("button", { name: "Next" }));
     await checkModel(STRATA_MODEL.name);
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await toReview(user);
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(saves).toHaveLength(1));
     expect(saves[0].key).toMatchObject({

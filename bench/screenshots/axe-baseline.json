@@ -96,18 +96,9 @@
       "color-contrast": 1,
       "label-content-name-mismatch": 1
     },
-    "onboarding-local": {
-      "button-name": 1,
-      "select-name": 1
-    },
-    "onboarding-local-chooser": {
-      "button-name": 1,
-      "select-name": 1
-    },
-    "onboarding-local-server": {
-      "button-name": 1,
-      "select-name": 1
-    },
+    "onboarding-local": {},
+    "onboarding-local-chooser": {},
+    "onboarding-local-server": {},
     "status-row": {
       "color-contrast": 13,
       "scrollable-region-focusable": 1

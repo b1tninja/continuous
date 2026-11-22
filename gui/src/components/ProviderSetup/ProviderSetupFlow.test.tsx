@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { MockIdeMessenger } from "../../context/MockIdeMessenger";
 import { renderWithProviders } from "../../util/test/render";
 import { ProviderSetupFlow } from "./ProviderSetupFlow";
+import { toReview } from "./testSteps";
 
 const EMPTY_SETUP: ProviderSetupInfo = {
   connections: [],
@@ -55,7 +56,7 @@ describe("ProviderSetupFlow", () => {
     expect(checkedBefore.length).toBeLessThanOrEqual(3);
     await user.click(checkedBefore[0]);
 
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await toReview(user);
     expect(screen.getByTestId("review-key-plan").textContent).toMatch(
       /CONTINUOUS_ANTHROPIC_API_KEY/,
     );
@@ -96,7 +97,7 @@ describe("ProviderSetupFlow", () => {
 
     await user.type(screen.getByLabelText("API key"), "k");
     await user.click(screen.getByRole("button", { name: "Next" }));
-    await user.click(await screen.findByRole("button", { name: "Review" }));
+    await toReview(user);
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(saves).toHaveLength(1));
     expect(saves[0].key.storage).toBe("env");
@@ -109,8 +110,12 @@ describe("ProviderSetupFlow", () => {
       { mockIdeMessenger: messenger },
     );
     await user.type(screen.getByLabelText("API key"), "k");
-    const name = screen.getByLabelText("Name");
-    await user.clear(name);
+    // The name is under "More"; until one is typed the built-in one is used
+    await user.click(screen.getByText("More"));
+    expect(screen.getByTestId("more-state-secretName").textContent).toBe(
+      "Not set: CONTINUOUS_ANTHROPIC_API_KEY (built from the provider's name)",
+    );
+    const name = screen.getByLabelText("Name the key is saved under");
     await user.type(name, "bad name");
     expect(
       (screen.getByRole("button", { name: "Next" }) as HTMLButtonElement)
@@ -148,8 +153,8 @@ describe("ProviderSetupFlow", () => {
     )) as HTMLInputElement;
     expect(key.value).toBe("");
     await waitFor(() =>
-      expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
-        "ANTHROPIC_API_KEY",
+      expect(screen.getByTestId("more-state-secretName").textContent).toBe(
+        "Not set: ANTHROPIC_API_KEY (the name this connection already uses)",
       ),
     );
     await user.click(screen.getByRole("button", { name: "Next" }));
@@ -160,7 +165,7 @@ describe("ProviderSetupFlow", () => {
     expect(keep.checked && drop.checked).toBe(true);
     await user.click(drop);
 
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await toReview(user);
     expect(screen.getByTestId("review-removals").textContent).toContain(
       "Drop me",
     );
@@ -218,7 +223,7 @@ describe("ProviderSetupFlow", () => {
       />,
       { mockIdeMessenger: messenger },
     );
-    expect(screen.getByText("Step 1 of 3")).toBeTruthy();
+    expect(screen.getByText("Step 1 of 4")).toBeTruthy();
   });
 
   it("shows an error from core and does not close", async () => {
@@ -234,7 +239,7 @@ describe("ProviderSetupFlow", () => {
     );
     await user.type(screen.getByLabelText("API key"), "k");
     await user.click(screen.getByRole("button", { name: "Next" }));
-    await user.click(await screen.findByRole("button", { name: "Review" }));
+    await toReview(user);
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect((await screen.findByRole("alert")).textContent).toBe("disk full");
     expect(onDone).not.toHaveBeenCalled();
@@ -251,7 +256,7 @@ describe("ProviderSetupFlow", () => {
       />,
       { mockIdeMessenger: messenger },
     );
-    expect(screen.queryByText(/Step 1 of 3/)).toBeNull();
+    expect(screen.queryByText(/Step 1 of/)).toBeNull();
     const save = screen.getByRole("button", { name: "Save key" });
     expect((save as HTMLButtonElement).disabled).toBe(true);
 
@@ -320,7 +325,7 @@ describe("ProviderSetupFlow", () => {
     );
     await user.type(screen.getByLabelText("API key"), "k");
     await user.click(screen.getByRole("button", { name: "Next" }));
-    await user.click(await screen.findByRole("button", { name: "Review" }));
+    await toReview(user);
     await user.click(screen.getByRole("button", { name: "Save" }));
     await user.click(await screen.findByRole("button", { name: "Keep it" }));
     expect(onDone).toHaveBeenCalled();
@@ -366,7 +371,7 @@ describe("ProviderSetupFlow", () => {
     const two = screen.getByLabelText("Mine 2") as HTMLInputElement;
     expect(one.checked && two.checked).toBe(true);
 
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await toReview(user);
     expect(screen.getByTestId("review-connection-change").textContent).toMatch(
       /http:\/\/localhost:8000\/api\/v1 becomes http:\/\/gpu-box:8000\/api\/v1.*2 existing models/,
     );
@@ -410,7 +415,7 @@ describe("ProviderSetupFlow", () => {
     )) as HTMLInputElement[];
     const extra = boxes.find((b) => !b.checked)!;
     await user.click(extra);
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await toReview(user);
     expect(screen.queryByTestId("review-connection-change")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(saves).toHaveLength(1));
