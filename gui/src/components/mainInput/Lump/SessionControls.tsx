@@ -23,7 +23,9 @@ export function SessionControls() {
     <RovingToolbar
       label="Session controls"
       testId="session-controls"
-      className="flex min-w-0 shrink-0 flex-wrap items-center gap-1 select-none xs:gap-1.5"
+      // May shrink, so that in a panel narrower than the chips they wrap
+      // instead of leaving the view.
+      className="flex max-w-full min-w-0 flex-wrap items-center gap-1 select-none xs:gap-1.5"
     >
       <ToolTip place="bottom" content="Select Mode">
         <HoverItem className="!p-0">
