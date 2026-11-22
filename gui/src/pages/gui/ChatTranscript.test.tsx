@@ -129,4 +129,16 @@ describe("ChatTranscript", () => {
     );
     expect(screen.getByText("row-0 again")).toBeTruthy();
   });
+
+  it("turns the browser's scroll anchoring off only while it keeps the view in place itself", () => {
+    installGeometry(250, 100);
+    const view = render(<List count={40} stickToEnd={false} scrollTop={0} />);
+    const scroller = document.querySelector(
+      "[data-chat-scroll]",
+    ) as HTMLDivElement;
+    expect(scroller.style.getPropertyValue("overflow-anchor")).toBe("none");
+    // Following the reply: the view is pinned to the end instead
+    view.rerender(<List count={40} stickToEnd />);
+    expect(scroller.style.getPropertyValue("overflow-anchor")).toBe("");
+  });
 });

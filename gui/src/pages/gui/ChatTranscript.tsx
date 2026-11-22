@@ -100,6 +100,20 @@ export function ChatTranscript<T>({
     [items.length, scrollTop, viewport, stickToEnd, suspend, version],
   );
 
+  // The browser keeps the view in place too when something above it changes
+  // height (scroll anchoring). onHeight below does that itself, and with both
+  // the view moved twice: each row measured for the first time shifted what
+  // the person was reading by the row's height less the estimate. So the
+  // browser's is off while ours is on.
+  useLayoutEffect(() => {
+    const el = scrollElement;
+    if (!el || stickToEnd || suspend) return;
+    el.style.setProperty("overflow-anchor", "none");
+    return () => {
+      el.style.removeProperty("overflow-anchor");
+    };
+  }, [scrollElement, stickToEnd, suspend]);
+
   const onHeight = useCallback(
     (index: number, height: number) => {
       const prevMeasured = heights.current[index];
