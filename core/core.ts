@@ -2722,6 +2722,7 @@ export class Core {
           agent,
           history,
           withheld,
+          planMode,
         },
       }) => {
         // Withheld while the prompt cache is warm (C88): refused whatever the
@@ -2788,6 +2789,8 @@ export class Core {
           trustedDomains: readUserTrustedDomains(),
           envNames: readUserEnvNames(),
           largeChangeLines: readUserLargeChangeLines(),
+          // Plan mode's hold is the engine's, so the audit trail records it
+          ...(planMode ? { planMode: true } : {}),
           ...(dirs[0]
             ? { cwd: terminalCwdForPolicy(toolName, parsedArgs, dirs) }
             : {}),
