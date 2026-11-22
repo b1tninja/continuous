@@ -72,7 +72,13 @@ function InputToolbar(props: InputToolbarProps) {
         }}
       >
         <div
-          className={`flex min-w-12 flex-1 basis-12 flex-row items-center ${tier === "wide" ? "max-w-[45%]" : ""}`}
+          // A grid, so the least this group takes is 48 px of model name (68
+          // with the button's padding and chevron) plus the Thinking menu and
+          // the chips at full size. The row wraps when the status group does
+          // not fit beside that, so the name is never squeezed to nothing.
+          // Below 180 px the name and the Thinking menu do not fit on a line
+          // of their own, so there the name may shrink.
+          className={`grid min-w-0 flex-1 basis-[min-content] grid-flow-col grid-cols-[minmax(0,auto)] items-center justify-start min-[180px]:grid-cols-[minmax(68px,auto)] ${tier === "wide" ? "max-w-[45%]" : ""}`}
         >
           <ToolTip place="top" content="Select Model">
             <HoverItem className="min-w-0 !p-0">
