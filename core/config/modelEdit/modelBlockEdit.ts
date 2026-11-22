@@ -25,7 +25,19 @@ import {
   getContinueGlobalPath,
   getEditableConfigYamlPath,
 } from "../../util/paths";
+import type { IDE } from "../..";
+import { localPathToUri } from "../../util/pathToUri";
 import { editYamlText } from "../../util/yamlEdit";
+import {
+  getGlobalModelsPath,
+  loadModelCatalog,
+  parseModelsFile,
+} from "../providers/modelsFile";
+import {
+  getGlobalProvidersPath,
+  loadProviderInstances,
+  parseProvidersFile,
+} from "../providers/providersFile";
 import { entryYamlText } from "./entryYaml";
 import {
   applyModelPatch,
@@ -38,6 +50,7 @@ import {
   type FieldError,
   type ModelPatchOp,
 } from "./modelEditFields";
+import { pickLayers, type ModelLayers } from "./valueState";
 
 export type ConfigScope = "user" | "workspace";
 
@@ -59,6 +72,14 @@ export interface ModelBlockInfo {
   entry?: Record<string, unknown>;
   /** The entry's own YAML lines (comments kept), credentials masked: the Advanced tab. */
   entryYaml?: string;
+  /**
+   * The catalog model and the provider account under the entry, credentials
+   * masked, so the dialog can say where an inherited value comes from.
+   */
+  layers?: Pick<
+    ModelLayers,
+    "catalogModel" | "catalogFile" | "account" | "accountFile"
+  >;
   credentials?: {
     apiKey: CredentialState;
     /** Only for header names that carry credentials. */
@@ -386,6 +407,73 @@ export function getModelBlock(title: string): ModelBlockInfo {
   const { file, text, reason } = readEditable();
   if (text === undefined) return { editable: false, reason, file };
   return { ...readModelBlock(text, title), file, scope: scopeOf(file!) };
+}
+
+/** The user's own file as a URI, when it defines `name`; else undefined. */
+function globalFileWith(
+  file: string,
+  names: (content: string, source: string) => string[],
+  name: unknown,
+): string | undefined {
+  try {
+    if (typeof name !== "string" || !fs.existsSync(file)) return undefined;
+    const uri = localPathToUri(file);
+    return names(fs.readFileSync(file, "utf8"), uri).includes(name)
+      ? uri
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The model entry with the layers under it: the catalog model its `from:`
+ * names and the account it connects through, read by the loader's own
+ * functions (so folder trust applies). A layer that cannot be read is left
+ * out; the entry is still returned.
+ */
+export async function getModelBlockWithLayers(
+  title: string,
+  ide: IDE,
+): Promise<ModelBlockInfo> {
+  const info = getModelBlock(title);
+  if (!info.entry) return info;
+  try {
+    const [catalog, accounts] = await Promise.all([
+      loadModelCatalog(ide),
+      loadProviderInstances(ide),
+    ]);
+    const picked = pickLayers(
+      info.entry,
+      catalog.models as unknown as Record<string, unknown>[],
+      accounts.providers as unknown as Record<string, unknown>[],
+    );
+    const layers: ModelBlockInfo["layers"] = {};
+    if (picked.catalogModel) {
+      layers.catalogModel = maskEntry(picked.catalogModel) as Record<
+        string,
+        unknown
+      >;
+      layers.catalogFile = globalFileWith(
+        getGlobalModelsPath(),
+        (content, source) =>
+          parseModelsFile(content, source).models.map((m) => m.name),
+        picked.catalogModel.name,
+      );
+    }
+    if (picked.account) {
+      layers.account = maskEntry(picked.account) as Record<string, unknown>;
+      layers.accountFile = globalFileWith(
+        getGlobalProvidersPath(),
+        (content, source) =>
+          parseProvidersFile(content, source).providers.map((p) => p.name),
+        picked.account.name,
+      );
+    }
+    return { ...info, layers };
+  } catch {
+    return info;
+  }
 }
 
 export function previewModelEdit(

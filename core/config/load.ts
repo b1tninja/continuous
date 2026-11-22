@@ -618,6 +618,7 @@ export function llmToSerializedModelDescription(llm: ILLM): ModelDescription {
     apiBase: llm.apiBase,
     contextLength: llm.contextLength,
     contextLengthSource: llm.contextLengthSource,
+    maxTokensSource: llm.maxTokensSource,
     template: llm.template,
     completionOptions: llm.completionOptions,
     baseAgentSystemMessage: llm.baseAgentSystemMessage,

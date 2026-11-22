@@ -90,9 +90,15 @@ test("cli-only and intellij-only", () => {
 });
 
 test("bench-only needs prettier only", () => {
-  const c = classify(["bench/screenshots/src/views.mjs", "bench/runner.mjs"]);
+  const c = classify(["bench/lab/lib/contract.mjs", "bench/runner.mjs"]);
   assert.deepEqual(on(c), ["prettier"]);
   assert.equal(jobCount(c), 2 + 1 + 2);
+});
+
+test("the screenshot harness runs the gui job, which has its render check", () => {
+  const c = classify(["bench/screenshots/src/render.mjs"]);
+  assert.deepEqual(on(c).sort(), ["gui", "prettier"]);
+  assert.equal(jobCount(c), 2 + 1 + 1 + 2);
 });
 
 test("unknown paths and workflow files turn everything on", () => {

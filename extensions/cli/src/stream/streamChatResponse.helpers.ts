@@ -595,7 +595,8 @@ async function coreRulesVerdict(
     // (Context Permissive lets a command that only reads run without asking).
     // A refusal, a floor rule or a protected path still tightens, including
     // in headless runs whose own policy would allow the call.
-    const levels = effectiveLevels(currentPermissionMode());
+    const mode = currentPermissionMode();
+    const levels = effectiveLevels(mode);
     const approval = { levels, ...approvalExtras(levels) };
     const defaultsOnly = policyIsDefault(levels);
     const mcpServer = toolCall.tool?.mcpServer;
@@ -618,6 +619,15 @@ async function coreRulesVerdict(
           ? getReviewer(assistant, modelState.authConfig)
           : null,
       isHeadless: !!isHeadless,
+      // Plan mode's hold is the engine's: what would run waits unless it only reads
+      ...(mode === "plan"
+        ? {
+            planTurn: {
+              planMode: true,
+              readOnlyTool: toolCall.tool?.readonly === true,
+            },
+          }
+        : {}),
       history: autoReview ? services.chatHistory.getHistory() : undefined,
       // WB45: web.enabled, the session's web grants, the URLs the person wrote
       web: webContextSafely(hostAllow),

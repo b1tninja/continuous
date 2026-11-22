@@ -242,6 +242,21 @@ jobs:
           # Unset: shadow mode (select, report, run everything). `on`: run the selection.
           AFFECTED_TESTS: ${{ vars.CI_AFFECTED_TESTS }}
 
+      # Every unit test above runs React's development build. The chat page has
+      # the production build, where the markdown pipeline behaved differently
+      # twice: a table and later any formula crashed the chat (React error 62),
+      # and code blocks lost their language. This builds the screenshot harness
+      # (production React), draws fixed markdown in the runner's Chrome and
+      # fails on a React error or a wrong result. Blocking: it loads nothing
+      # from the network and waits on the page, not on a clock.
+      - name: Render markdown in the production build
+        timeout-minutes: 5
+        run: |
+          cd bench/screenshots
+          npm ci --ignore-scripts
+          node --test test/render.test.mjs
+          npm run render -- --browser chrome
+
   binary-checks:
     if: inputs.run_binary != 'false'
     runs-on: ubuntu-latest

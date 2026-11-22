@@ -64,6 +64,7 @@ import {
   localServerError,
 } from "./localServerError.js";
 import {
+  isLocalApiBase,
   promptProgressOf,
   reportsFullPromptTokens,
   strataRequestCache,
@@ -75,6 +76,7 @@ import {
   resolveModelLimits,
   type ContextLengthSource,
   type LimitInputs,
+  type MaxTokensSource,
 } from "./providerModelLimits.js";
 import { RequestTimer, withTiming } from "./requestTiming.js";
 import { withServerTimings } from "./serverTimings.js";
@@ -88,7 +90,6 @@ import {
   modelSupportsImages,
 } from "./autodetect.js";
 import {
-  DEFAULT_ARGS,
   DEFAULT_CONTEXT_LENGTH,
   DEFAULT_MAX_BATCH_SIZE,
   DEFAULT_MAX_CHUNK_SIZE,
@@ -151,6 +152,8 @@ type InteractionStatus = "in_progress" | "success" | "error" | "cancelled";
 export abstract class BaseLLM implements ILLM {
   static providerName: string;
   static defaultOptions: Partial<LLMOptions> | undefined = undefined;
+  /** The class sends OpenAI-style chat requests (OpenAI and its subclasses). */
+  static openAICompatible = false;
   // Provider capabilities (overridable by subclasses)
   protected supportsReasoningField: boolean = false;
   protected supportsReasoningDetailsField: boolean = false;
@@ -251,6 +254,8 @@ export abstract class BaseLLM implements ILLM {
    * is a stand-in, not a published window.
    */
   contextLengthSource: ContextLengthSource = "unknown";
+  /** Where `completionOptions.maxTokens` came from; `none`: no cap is sent. */
+  maxTokensSource: MaxTokensSource = "fallback";
   /**
    * Names this model on the endpoint as configured, for what its server said
    * about it (core/llm/learnedLimits.ts). Fixed at construction, before a
@@ -358,6 +363,12 @@ export abstract class BaseLLM implements ILLM {
       llmInfo,
       defaultContextLength: DEFAULT_CONTEXT_LENGTH,
       defaultMaxTokens: DEFAULT_MAX_TOKENS,
+      // A server on this machine or network that takes OpenAI chat requests
+      // picks its own output limit when nobody knows a cap for the model
+      serverDecidesMaxTokens:
+        (this.constructor as typeof BaseLLM).openAICompatible &&
+        !!options.apiBase &&
+        isLocalApiBase(options.apiBase),
     };
     this.limitsKey = learnedKey(
       this.providerName,
@@ -379,6 +390,7 @@ export abstract class BaseLLM implements ILLM {
     });
     this._contextLength = limits.contextLength;
     this.contextLengthSource = limits.contextLengthSource;
+    this.maxTokensSource = limits.maxTokensSource;
     this.maxStopWords = options.maxStopWords ?? this.maxStopWords;
     this.completionOptions = {
       ...options.completionOptions,
@@ -469,6 +481,7 @@ export abstract class BaseLLM implements ILLM {
     const limits = resolveModelLimits({ ...this.limitInputs, provider: facts });
     this._contextLength = limits.contextLength;
     this.contextLengthSource = limits.contextLengthSource;
+    this.maxTokensSource = limits.maxTokensSource;
     this.completionOptions = {
       ...this.completionOptions,
       maxTokens: limits.maxTokens,
@@ -1574,14 +1587,15 @@ export abstract class BaseLLM implements ILLM {
     // The configured cap is what was asked for. The value that is sent has to
     // fit the model's published output limit and the room left in the window,
     // or the provider rejects the turn. A thinking raise may use the ceiling
-    // but not pass it (requestBudget.ts).
-    {
+    // but not pass it (requestBudget.ts). With no cap at all (a local server
+    // that decides for itself) none is sent, so there is nothing to fit.
+    if (completionOptions.maxTokens !== undefined) {
       const info = findLlmInfo(
         completionOptions.model,
         this.underlyingProviderName,
       );
       const budget = fitRequestMaxTokens({
-        configured: completionOptions.maxTokens ?? DEFAULT_MAX_TOKENS,
+        configured: completionOptions.maxTokens,
         modelMax: info?.maxCompletionTokens,
         window: correctedContextLength(
           this.contextLength,
@@ -1979,14 +1993,6 @@ export abstract class BaseLLM implements ILLM {
 
   countTokens(text: string): number {
     return countTokens(text, this.model);
-  }
-
-  protected collectArgs(options: CompletionOptions): any {
-    return {
-      ...DEFAULT_ARGS,
-      // model: this.model,
-      ...options,
-    };
   }
 
   public renderPromptTemplate(

@@ -297,66 +297,74 @@ export function LoopItemList({
           <li key={task.id} className="min-w-0">
             <div
               data-testid={`loop-item-${task.id}`}
-              className="flex min-w-0 items-center gap-1"
+              className="flex min-w-0 flex-wrap items-center gap-x-1"
             >
+              {/* The title keeps 64 px: when the rest does not fit beside that, it wraps below */}
               <span
-                className="min-w-0 flex-1 truncate text-foreground"
+                className="min-w-12 flex-1 basis-16 truncate text-foreground"
                 title={`${task.id}. ${task.text}`}
               >
                 {task.id}. {task.text}
               </span>
-              {dependency && (
-                <span
-                  data-testid={`loop-after-${task.id}`}
-                  className="shrink-0 text-description"
-                >
-                  {dependency}
+              <div
+                data-testid={`loop-item-side-${task.id}`}
+                className="ml-auto flex max-w-full min-w-0 flex-wrap items-center justify-end gap-x-1"
+              >
+                {dependency && (
+                  <span
+                    data-testid={`loop-after-${task.id}`}
+                    className="shrink-0 text-description"
+                  >
+                    {dependency}
+                  </span>
+                )}
+                <span className="shrink-0 text-description">
+                  {statusLabel(loop, task.id)}
                 </span>
-              )}
-              <span className="shrink-0 text-description">
-                {statusLabel(loop, task.id)}
-              </span>
-              {showUsage && state.attempts > 0 && (
-                <span
-                  data-testid={`loop-runs-${task.id}`}
-                  className="shrink-0 text-description"
-                >
-                  {state.attempts} run{state.attempts === 1 ? "" : "s"}
-                  {state.usage
-                    ? ` · ${formatTokenCount(state.usage.tokens)} tokens${
-                        state.usage.cost !== undefined
-                          ? ` · ${formatCostAmount(state.usage.cost)}`
-                          : ""
-                      } · ${formatDuration(state.usage.ms)}`
-                    : ""}
-                </span>
-              )}
-              {canSkip && (
-                <button
-                  type="button"
-                  data-testid={`loop-skip-${task.id}`}
-                  className={BUTTON}
-                  onClick={async () =>
-                    report(await dispatch(skipLoopItemThunk(task.id)).unwrap())
-                  }
-                >
-                  Skip
-                </button>
-              )}
-              {canAgain && (
-                <button
-                  type="button"
-                  data-testid={`loop-again-${task.id}`}
-                  className={BUTTON}
-                  onClick={async () =>
-                    report(
-                      await dispatch(runLoopItemAgainThunk(task.id)).unwrap(),
-                    )
-                  }
-                >
-                  Run again
-                </button>
-              )}
+                {showUsage && state.attempts > 0 && (
+                  <span
+                    data-testid={`loop-runs-${task.id}`}
+                    className="shrink-0 text-description"
+                  >
+                    {state.attempts} run{state.attempts === 1 ? "" : "s"}
+                    {state.usage
+                      ? ` · ${formatTokenCount(state.usage.tokens)} tokens${
+                          state.usage.cost !== undefined
+                            ? ` · ${formatCostAmount(state.usage.cost)}`
+                            : ""
+                        } · ${formatDuration(state.usage.ms)}`
+                      : ""}
+                  </span>
+                )}
+                {canSkip && (
+                  <button
+                    type="button"
+                    data-testid={`loop-skip-${task.id}`}
+                    className={BUTTON}
+                    onClick={async () =>
+                      report(
+                        await dispatch(skipLoopItemThunk(task.id)).unwrap(),
+                      )
+                    }
+                  >
+                    Skip
+                  </button>
+                )}
+                {canAgain && (
+                  <button
+                    type="button"
+                    data-testid={`loop-again-${task.id}`}
+                    className={BUTTON}
+                    onClick={async () =>
+                      report(
+                        await dispatch(runLoopItemAgainThunk(task.id)).unwrap(),
+                      )
+                    }
+                  >
+                    Run again
+                  </button>
+                )}
+              </div>
             </div>
             {worker && (
               <WorkerLine task={task} run={worker} model={state.model} />
