@@ -170,7 +170,7 @@ export function UserSetting(props: UserSettingProps) {
                     onChange={(e) => props.onChange(e.target.value)}
                     placeholder={props.placeholder}
                     disabled={disabled}
-                    className="flex-1 border-none bg-inherit px-1.5 py-1 text-vsc-foreground ring-0 outline-hidden focus:border-none focus:ring-0 focus:outline-hidden disabled:cursor-not-allowed"
+                    className="min-w-0 flex-1 border-none bg-inherit px-1.5 py-1 text-vsc-foreground ring-0 outline-hidden focus:border-none focus:ring-0 focus:outline-hidden disabled:cursor-not-allowed"
                   />
                 </div>
                 {props.isDirty && (
@@ -201,7 +201,7 @@ export function UserSetting(props: UserSettingProps) {
               aria-label={props.title}
               onChange={(e) => props.onChange(e.target.value)}
               disabled={disabled}
-              className="flex-1 border-none bg-inherit px-1.5 py-1 text-vsc-foreground ring-0 outline-hidden focus:border-none focus:ring-0 focus:outline-hidden disabled:cursor-not-allowed"
+              className="min-w-0 flex-1 border-none bg-inherit px-1.5 py-1 text-vsc-foreground ring-0 outline-hidden focus:border-none focus:ring-0 focus:outline-hidden disabled:cursor-not-allowed"
             />
           </div>
         );
@@ -227,8 +227,9 @@ export function UserSetting(props: UserSettingProps) {
   }
 
   return (
-    <div className="flex items-start justify-start gap-4">
-      <div className="flex flex-1 flex-col">
+    <div className="flex flex-wrap items-start justify-start gap-x-4 gap-y-2">
+      {/* The control moves under the text when less than 112 px is left for it: "Autocompletions" needs about that */}
+      <div className="flex min-w-0 flex-1 basis-28 flex-col break-words">
         <span className="text-sm font-medium">{title}</span>
         <div className="mt-0.5 text-xs text-gray-500">{description}</div>
       </div>
