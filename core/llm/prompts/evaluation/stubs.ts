@@ -1,4 +1,5 @@
 import type { ChatMessage, ILLM } from "../../..";
+import type { GuidanceCase } from "./guidanceCases";
 import { requestOf, type TurnScenario } from "./scenarios";
 
 type Chat = Pick<ILLM, "chat">;
@@ -58,5 +59,41 @@ export const textOnlyModel: Chat = {
           "Would you like me to proceed?",
         ].join("\n");
     return { role: "assistant", content };
+  },
+};
+
+/**
+ * Stand-ins for the guidance replay (guidanceReplay.ts). Neither reads the
+ * result's wording, so every arm scores the same under them.
+ */
+
+/** Makes the case's oracle call: the next call of a model that read the result well. */
+export function replayOracleModel(cases: GuidanceCase[]): Chat {
+  return {
+    chat: async (messages: ChatMessage[]) => {
+      const request = firstUserText(messages);
+      const hit = cases.find((c) => firstUserText(c.messages) === request);
+      if (!hit) {
+        return { role: "assistant", content: "I do not know this case." };
+      }
+      return hit.oracle;
+    },
+  };
+}
+
+/** The failure the replay exists to count: sends the failed call again, unchanged. */
+export const repeatModel: Chat = {
+  chat: async (messages: ChatMessage[]) => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === "assistant" && m.toolCalls?.length) {
+        return {
+          role: "assistant",
+          content: "",
+          toolCalls: m.toolCalls.map((c) => ({ ...c, id: `${c.id}-again` })),
+        };
+      }
+    }
+    return { role: "assistant", content: "There is no call to repeat." };
   },
 };
