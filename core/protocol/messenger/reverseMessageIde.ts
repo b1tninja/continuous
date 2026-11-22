@@ -1,16 +1,14 @@
 import { IDE } from "../../index";
-import { ToIdeFromWebviewOrCoreProtocol } from "../ide";
+import { ToIdeFromCoreProtocol } from "../ideCore";
 
 import { Message } from ".";
 
 export class ReverseMessageIde {
-  private on<T extends keyof ToIdeFromWebviewOrCoreProtocol>(
+  private on<T extends keyof ToIdeFromCoreProtocol>(
     messageType: T,
     handler: (
-      data: ToIdeFromWebviewOrCoreProtocol[T][0],
-    ) =>
-      | Promise<ToIdeFromWebviewOrCoreProtocol[T][1]>
-      | ToIdeFromWebviewOrCoreProtocol[T][1],
+      data: ToIdeFromCoreProtocol[T][0],
+    ) => Promise<ToIdeFromCoreProtocol[T][1]> | ToIdeFromCoreProtocol[T][1],
   ): void {
     this._on(messageType, (msg) => {
       const data = msg.data;
@@ -20,13 +18,11 @@ export class ReverseMessageIde {
   }
 
   constructor(
-    private readonly _on: <T extends keyof ToIdeFromWebviewOrCoreProtocol>(
+    private readonly _on: <T extends keyof ToIdeFromCoreProtocol>(
       messageType: T,
       handler: (
-        message: Message<ToIdeFromWebviewOrCoreProtocol[T][0]>,
-      ) =>
-        | Promise<ToIdeFromWebviewOrCoreProtocol[T][1]>
-        | ToIdeFromWebviewOrCoreProtocol[T][1],
+        message: Message<ToIdeFromCoreProtocol[T][0]>,
+      ) => Promise<ToIdeFromCoreProtocol[T][1]> | ToIdeFromCoreProtocol[T][1],
     ) => void,
     private readonly ide: IDE,
   ) {

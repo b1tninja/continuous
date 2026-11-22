@@ -3,6 +3,7 @@ import { BuiltInToolNames } from "../tools/builtIn";
 import type { AuditTrail } from "../tools/permissions/audit/trail";
 import { commandLintGate } from "../tools/permissions/commandLint";
 import { missingBinaryGate } from "../tools/permissions/missingBinaryGate";
+import type { RecordedDecisions } from "../tools/permissions/recordedDecisions";
 import { getCommandExecutor, type CommandExecutor } from "./commandExecutor";
 import { decodeCommandOutput } from "./commandOutput";
 import { spawnAgentCommand } from "./commandSpawn";
@@ -211,15 +212,21 @@ export async function runLoopCheckCommand(
  * Runs a check and writes how it ended to the audit trail, under the call id
  * of the decision the webview asked for (tools/evaluatePolicy), as a terminal
  * command's outcome is written.
+ *
+ * The message comes from the webview, which renders what models and web pages
+ * wrote, so its word that the check was allowed is not taken: core must hold
+ * a decision for this call id and this exact command that allows the run.
+ * Without one nothing starts, and the refusal is written to the trail.
  */
 export async function runAuditedLoopCheck(
   input: { command: string; callId: string },
   deps: LoopCheckOptions & {
-    trail: Pick<AuditTrail, "answer" | "outcome">;
+    trail: Pick<AuditTrail, "decision" | "outcome">;
+    decisions: Pick<RecordedDecisions, "takeTerminalRun">;
     run?: typeof runLoopCheckCommand;
   },
 ): Promise<LoopCheckRun> {
-  const { trail, run = runLoopCheckCommand, ...opts } = deps;
+  const { trail, decisions, run = runLoopCheckCommand, ...opts } = deps;
   const { command } = input;
   // The webview names the call; one it did not name is still written
   const callId =
@@ -233,8 +240,20 @@ export async function runAuditedLoopCheck(
       notRun: true,
     };
   }
-  // A check that reaches here was allowed, or asked and was approved
-  trail.answer(callId, true);
+  const taken = decisions.takeTerminalRun(input.callId, command);
+  if (!taken.ok) {
+    trail.decision({
+      callId,
+      tool: BuiltInToolNames.RunTerminalCommand,
+      args: JSON.stringify({ command }),
+      policy: "deny",
+      by: "system",
+      source: "recorded-decision",
+      reason: taken.reason,
+    });
+    trail.outcome({ callId, ran: false, error: taken.reason });
+    return { exitCode: null, output: taken.reason, notRun: true };
+  }
   const startedAt = Date.now();
   const result = await run(command, { ...opts, id: callId });
   trail.outcome({

@@ -59,7 +59,18 @@ class ContinueBrowser(
                 }
 
                 WebviewIdeGate.Route.IDE -> {
-                    if (msg != null) {
+                    // The panel's text is typed into the terminal, never run:
+                    // one line of plain text, and Enter is the person's
+                    val notTyped =
+                        if (messageType == "runCommand") WebviewIdeGate.typedCommandRefusal(data) else null
+                    if (notTyped != null) {
+                        log.warn("Rejected panel runCommand: $notTyped")
+                        sendError(
+                            messageType ?: "",
+                            "The command was not typed into the terminal: $notTyped.",
+                            messageId
+                        )
+                    } else if (msg != null) {
                         project.service<ContinuePluginService>().ideProtocolClient?.handleMessage(msg) { response ->
                             sendToWebview(
                                 messageType,

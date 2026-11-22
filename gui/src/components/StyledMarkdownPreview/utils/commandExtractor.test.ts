@@ -1,3 +1,4 @@
+import { typedCommandRefusal } from "core/util/typedCommand";
 import {
   collapseSpacesOutsideQuotes,
   COMMAND_SEPARATOR,
@@ -186,5 +187,23 @@ describe("collapseSpacesOutsideQuotes", () => {
 
   it("returns an empty string unchanged", () => {
     expect(collapseSpacesOutsideQuotes("")).toBe("");
+  });
+});
+
+// The editor types the Run button's text only when it is one line of plain
+// text (core/util/typedCommand.ts), so what a block gives must pass
+describe("the Run button's command is one the editor will type", () => {
+  it.each([
+    ["one command", "npm test"],
+    ["a prompt and a comment", "# install\n$ npm install\n$ npm test"],
+    ["Windows line endings", "npm install\r\nnpm test\r\n"],
+    ["a continued line", "docker run \\\n  -it \\\n  ubuntu"],
+    ["a pipe across lines", "cat a.txt |\n  grep x"],
+    ["tabs between words", "ls\t-la\t/tmp"],
+    ["PowerShell", "PS C:\\Users\\me> Get-ChildItem `\n  -Recurse"],
+  ])("%s", (_name, block) => {
+    const command = extractCommand(block);
+    expect(command).not.toBe("");
+    expect(typedCommandRefusal(command)).toBeUndefined();
   });
 });

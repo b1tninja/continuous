@@ -5,13 +5,13 @@ import {
   ToWebviewProtocol,
 } from "core/protocol";
 import { Message } from "core/protocol/messenger";
-import { MessageIde } from "core/protocol/messenger/messageIde";
 import {
   GeneratorReturnType,
   GeneratorYieldType,
   WebviewSingleProtocolMessage,
 } from "core/protocol/util";
 import { IIdeMessenger } from "./IdeMessenger";
+import { webviewIde } from "./webviewIde";
 
 type MockResponses = Partial<{
   [K in keyof FromWebviewProtocol]: FromWebviewProtocol[K][1];
@@ -169,18 +169,8 @@ export class MockIdeMessenger implements IIdeMessenger {
   ide: IDE;
 
   constructor() {
-    this.ide = new MessageIde(
-      async (messageType, data) => {
-        const response = await this.request.bind(this)(messageType, data);
-        if (response.status === "error") {
-          throw new Error(response.error);
-        } else {
-          return response.content;
-        }
-      },
-      (messageType, callback) => {
-        return;
-      },
+    this.ide = webviewIde((messageType, data) =>
+      this.request(messageType, data),
     );
   }
 

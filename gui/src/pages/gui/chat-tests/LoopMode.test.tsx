@@ -1676,13 +1676,10 @@ describe("Loop mode's checks and dependencies", () => {
   /**
    * Core's check run (loop/runCheck): each call takes the next result, a
    * string for exit 0 and an Error for exit 1; all are recorded. The editor's
-   * `subprocess` must not be asked: it throws if it is.
+   * `subprocess` is not a message the webview can send.
    */
   function checkRuns(h: Setup, ...results: (string | Error | LoopCheckRun)[]) {
     const ran: { command: string; callId: string; requests: number }[] = [];
-    h.ideMessenger.responseHandlers["subprocess"] = async () => {
-      throw new Error("a Loop check went to ide.subprocess");
-    };
     h.ideMessenger.responseHandlers["loop/runCheck"] = async (data: any) => {
       ran.push({ ...data, requests: h.requests.length });
       const result = results.shift() ?? "ok";
@@ -1856,6 +1853,12 @@ describe("Loop mode's checks and dependencies", () => {
     // The harness's Manual mode: run_terminal_command asks
     const h = await setup([]);
     const ran = checkRuns(h, "ok");
+    // Core runs an asked check only with the person's answer for its call id
+    const answers: { callId: string; approved: boolean; ranBefore: number }[] =
+      [];
+    h.ideMessenger.responseHandlers["audit/answer"] = async (data: any) => {
+      answers.push({ ...data, ranBefore: ran.length });
+    };
     h.turns.push(
       presentPlan(["Add a retry helper"], [{ todo: 1, check: CHECK }]),
       finish("done", "helper added"),
@@ -1864,6 +1867,7 @@ describe("Loop mode's checks and dependencies", () => {
 
     await waitFor(() => expect(h.loop().status).toBe("waiting"));
     expect(ran).toEqual([]);
+    expect(answers).toEqual([]);
     expect(h.itemStatus("1")).toBe("checking");
     expect(h.loop().current).toBeUndefined();
     expect(h.loop().questions[0]).toMatchObject({
@@ -1879,6 +1883,9 @@ describe("Loop mode's checks and dependencies", () => {
     await waitFor(() => expect(h.loop().status).toBe("stopped"));
     expect(h.loop().stopReason).toBe("done");
     expect(ran).toHaveLength(1);
+    expect(answers).toEqual([
+      { callId: ran[0].callId, approved: true, ranBefore: 0 },
+    ]);
     expect(h.itemStatus("1")).toBe("done");
     expect(h.loop().items[0].check?.status).toBe("passed");
     expect(h.loop().grants).toEqual([]);

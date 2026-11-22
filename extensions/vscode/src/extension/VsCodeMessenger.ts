@@ -10,6 +10,7 @@ import { ToWebviewFromCoreProtocol } from "core/protocol/coreWebview";
 import { ToIdeFromWebviewOrCoreProtocol } from "core/protocol/ide";
 import { ToIdeFromCoreProtocol } from "core/protocol/ideCore";
 import { InProcessMessenger, Message } from "core/protocol/messenger";
+import { getAuditTrail } from "core/tools/permissions/audit/global";
 import {
   CORE_TO_WEBVIEW_PASS_THROUGH,
   WEBVIEW_TO_CORE_PASS_THROUGH,
@@ -34,8 +35,7 @@ import {
   isInsideWorkspace,
   openUrlFromWebviewOk,
   policySavePayloadOk,
-  runCommandFromWebviewOk,
-  subprocessFromWebviewOk,
+  runCommandFromWebview,
   writeFileFromWebviewOk,
 } from "./webviewMessageGuard";
 
@@ -373,11 +373,15 @@ export class VsCodeMessenger {
         msg.data.preserveFocus ? { preserveFocus: true } : undefined,
       );
     });
+    // From the panel the text is typed, never run: one line of plain text,
+    // and Enter is the person's
     this.onWebview("runCommand", async (msg) => {
-      if (!runCommandFromWebviewOk(msg.data)) {
-        throw new Error("The command was not accepted.");
+      const typed = runCommandFromWebview(msg.data, getAuditTrail());
+      if (!typed.ok) {
+        void vscode.window.showWarningMessage(typed.reason);
+        throw new Error(typed.reason);
       }
-      await ide.runCommand(msg.data.command);
+      await ide.runCommand(typed.command);
     });
     this.onCore("runCommand", async (msg) => {
       await ide.runCommand(msg.data.command);
@@ -388,19 +392,8 @@ export class VsCodeMessenger {
     this.onWebviewOrCore("getFileResults", async (msg) => {
       return ide.getFileResults(msg.data.pattern, msg.data.maxResults);
     });
-    this.onWebview("subprocess", async (msg) => {
-      if (
-        !subprocessFromWebviewOk(msg.data) ||
-        typeof msg.data.cwd !== "string"
-      ) {
-        throw new Error("The command was not accepted.");
-      }
-      const dirs = await ide.getWorkspaceDirs();
-      if (!isInsideWorkspace(msg.data.cwd, dirs)) {
-        throw new Error("The command was not accepted.");
-      }
-      return ide.subprocess(msg.data.command, msg.data.cwd);
-    });
+    // Core only: from the webview it is refused before any handler
+    // (webviewProtocol.ts, DENIED_FROM_WEBVIEW)
     this.onCore("subprocess", async (msg) => {
       return ide.subprocess(msg.data.command, msg.data.cwd);
     });

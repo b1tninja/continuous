@@ -5,7 +5,6 @@ import type {
   ToWebviewProtocol,
 } from "core/protocol";
 import { Message } from "core/protocol/messenger";
-import { MessageIde } from "core/protocol/messenger/messageIde";
 import {
   GeneratorReturnType,
   GeneratorYieldType,
@@ -16,6 +15,7 @@ import {
 import { createContext } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { isJetBrains } from "../util";
+import { webviewIde } from "./webviewIde";
 
 interface vscode {
   postMessage(message: any): vscode;
@@ -63,15 +63,8 @@ export class IdeMessenger implements IIdeMessenger {
   ide: IDE;
 
   constructor() {
-    this.ide = new MessageIde(
-      async (messageType, data) => {
-        const result = await this.request(messageType, data);
-        if (result.status === "error") {
-          throw new Error(result.error);
-        }
-        return result.content;
-      },
-      () => {},
+    this.ide = webviewIde((messageType, data) =>
+      this.request(messageType, data),
     );
   }
 
