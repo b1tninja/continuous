@@ -16,19 +16,26 @@ import {
   TABLE_MODES,
   TableMode,
 } from "../../../util/modeModelsDraft";
+import {
+  EFFORT_NOT_SET,
+  promptNotSetLabel,
+  reminderNotSetLabel,
+} from "../../../util/modeNotSet";
 import { MODE_FALLBACK_HINT, MODE_LABEL, ModeCell } from "./ModeCell";
 
 const EFFORTS: { value: ModeReasoningEffort | ""; label: string }[] = [
-  { value: "", label: "Default" },
+  { value: "", label: EFFORT_NOT_SET },
   { value: "off", label: "Off" },
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium" },
   { value: "high", label: "High" },
 ];
 
-/** The two built-in turn texts; prompt blocks from config.yaml follow them. */
+/**
+ * The two built-in turn texts; prompt blocks from config.yaml follow them.
+ * The empty choice comes first, labelled with what it does for the mode.
+ */
 const PROMPT_PROFILES: { value: string; label: string }[] = [
-  { value: "", label: "Default" },
   { value: "full", label: "Full" },
   { value: "short", label: "Short" },
 ];
@@ -36,7 +43,6 @@ const PROMPT_PROFILES: { value: string; label: string }[] = [
 /** The select's value for "a text of my own": the text lives in the input below. */
 const TAIL_TEXT = "text";
 const TAILS: { value: string; label: string }[] = [
-  { value: "", label: "Default" },
   { value: "on", label: "On" },
   { value: "off", label: "Off" },
   { value: TAIL_TEXT, label: "Text..." },
@@ -137,7 +143,10 @@ export function ModeModelsTable() {
           model each; left blank, they use the Agent model, the Plan model and
           the starting turn's model. Prompt picks the system text of a mode
           (full, short, or a block from prompts), and Reminder the one-line note
-          added to your messages. Saved to config.yaml.
+          added to your messages. With no Prompt set, a Qwen model gets the
+          short text and every other model the full one; with no Reminder set,
+          it is on for Loop items and for a model on the short or tailored text.
+          Saved to config.yaml.
         </p>
       </div>
 
@@ -215,6 +224,15 @@ export function ModeModelsTable() {
               const prompt = draft[mode].prompt;
               // A hand-written name that is not a loaded block still shows
               const options = [
+                {
+                  value: "",
+                  label: promptNotSetLabel(
+                    mode,
+                    draft,
+                    config.modelsByRole.chat,
+                    promptBlocks,
+                  ),
+                },
                 ...PROMPT_PROFILES,
                 ...promptBlocks.map((name) => ({ value: name, label: name })),
               ];
@@ -273,6 +291,14 @@ export function ModeModelsTable() {
                     }}
                     className={SELECT_CLASS}
                   >
+                    <option value="">
+                      {reminderNotSetLabel(
+                        mode,
+                        draft,
+                        config.modelsByRole.chat,
+                        promptBlocks,
+                      )}
+                    </option>
                     {TAILS.map((o) => (
                       <option key={o.value} value={o.value}>
                         {o.label}

@@ -59,6 +59,41 @@ async function renderToolbar(model: typeof claude | typeof plain) {
   return { ...view, store, calls };
 }
 
+describe("the Thinking menu's choice for no effort", () => {
+  const labels = () =>
+    Array.from(
+      (screen.getByTestId("thinking-effort") as HTMLSelectElement).options,
+    ).map((o) => o.textContent);
+
+  it("says what the model's own setting sends, never Default", async () => {
+    const { store } = await renderToolbar(claude);
+    // A reasoning model with the 2,048 token budget reasons at medium. The
+    // toolbar measures as narrow here, where the label drops a word
+    // ("Model setting (medium)" with room: modeNotSet.test.ts)
+    expect(labels()).toEqual([
+      "Model (medium)",
+      "Off",
+      "Low",
+      "Medium",
+      "High",
+    ]);
+
+    // The bulb turned reasoning off for the session
+    await act(async () => {
+      store.dispatch(setHasReasoningEnabled(false));
+    });
+    expect(labels()[0]).toBe("Model (off)");
+  });
+
+  it("follows the model's own budget", async () => {
+    await renderToolbar({
+      ...claude,
+      completionOptions: { reasoningBudgetTokens: 16_000 },
+    } as typeof claude);
+    expect(labels()[0]).toBe("Model (high)");
+  });
+});
+
 describe("Thinking effort in the chat toolbar", () => {
   it("hides the menu when the model has no thinking setting", async () => {
     await renderToolbar(plain);
