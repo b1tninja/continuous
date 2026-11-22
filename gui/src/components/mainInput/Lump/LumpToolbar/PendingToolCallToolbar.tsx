@@ -1,5 +1,5 @@
 import { BuiltInToolNames } from "core/tools/builtIn";
-import { countdownLabel } from "core/tools/permissions/decisionTimer";
+import { proposalLine } from "core/tools/permissions/decisionTimer";
 import { useRef } from "react";
 
 import { useAppDispatch, useAppSelector } from "../../../../redux/hooks";
@@ -30,6 +30,14 @@ const itemNoun = (t: { toolCall: { function: { name: string } } }) =>
     : "action";
 
 const actionId = (toolCallId: string) => `pending-action-${toolCallId}`;
+
+/**
+ * A heads-up is counting down on the call: it runs when the window ends, so
+ * the buttons say "Run now" and "Don't run", not Accept and Reject.
+ */
+const runsByItself = (t: {
+  askTimer?: { proposed: "allow" | "refuse"; kept?: boolean };
+}) => !!t.askTimer && !t.askTimer.kept && t.askTimer.proposed === "allow";
 
 export function PendingToolCallToolbar() {
   const dispatch = useAppDispatch();
@@ -122,13 +130,14 @@ export function PendingToolCallToolbar() {
                 <span
                   role="timer"
                   aria-live="off"
-                  className="text-2xs text-description"
+                  className={`text-2xs text-description ${
+                    // What the level ran past is a sentence: it gets its own line
+                    toolCall.askTimer.override ? "min-w-0 basis-full" : ""
+                  }`}
                   data-testid={`ask-timer-${toolCall.toolCallId}`}
                 >
-                  {toolCall.askTimer.proposed === "refuse"
-                    ? "Refused in "
-                    : "Runs in "}
-                  {countdownLabel(
+                  {proposalLine(
+                    toolCall.askTimer.proposed,
                     Math.ceil(
                       Math.max(
                         0,
@@ -137,8 +146,8 @@ export function PendingToolCallToolbar() {
                           now,
                       ) / 1000,
                     ),
-                  )}{" "}
-                  unless you answer
+                    toolCall.askTimer.override,
+                  )}
                 </span>
               )}
               {toolCall.askTimer && !toolCall.askTimer.kept && (
@@ -173,7 +182,11 @@ export function PendingToolCallToolbar() {
                 variant="ghost"
                 size="sm"
                 className="my-0.5 min-h-6 min-w-6 font-medium text-description"
-                title={`Reject this ${itemNoun(toolCall)}`}
+                title={
+                  runsByItself(toolCall)
+                    ? `Do not run this ${itemNoun(toolCall)}. The agent is told you declined it`
+                    : `Reject this ${itemNoun(toolCall)}`
+                }
                 aria-describedby={actionId(toolCall.toolCallId)}
                 onClick={() => handleReject(toolCall.toolCallId)}
                 data-testid={generateToolCallButtonTestId(
@@ -181,7 +194,7 @@ export function PendingToolCallToolbar() {
                   toolCall.toolCallId,
                 )}
               >
-                <span>Reject</span>
+                <span>{runsByItself(toolCall) ? "Don't run" : "Reject"}</span>
               </Button>
 
               <Button
@@ -190,7 +203,11 @@ export function PendingToolCallToolbar() {
                 size="sm"
                 className="my-0.5 min-h-6 min-w-6 font-medium"
                 aria-keyshortcuts={`${metaKey}+Enter`}
-                title={`Run this ${itemNoun(toolCall)} once`}
+                title={
+                  runsByItself(toolCall)
+                    ? `Run this ${itemNoun(toolCall)} now, without waiting for the countdown`
+                    : `Run this ${itemNoun(toolCall)} once`
+                }
                 aria-describedby={actionId(toolCall.toolCallId)}
                 onClick={() => handleAccept(toolCall.toolCallId)}
                 data-testid={generateToolCallButtonTestId(
@@ -203,7 +220,7 @@ export function PendingToolCallToolbar() {
                     {getMetaKeyLabel()}⏎
                   </span>
                 )}
-                <span>Accept</span>
+                <span>{runsByItself(toolCall) ? "Run now" : "Accept"}</span>
               </Button>
             </div>
           </div>

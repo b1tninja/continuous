@@ -12,6 +12,7 @@ import {
 import { coerceStringArgsToSchema } from "core/tools/parseArgs.js";
 import {
   modelNote,
+  type LowerDecision,
   type Proposal,
   type Resolved,
 } from "core/tools/permissions/decisionTimer.js";
@@ -33,6 +34,7 @@ import type { ModelServiceState } from "src/services/types.js";
 
 import { takeBashEnd } from "../audit/bashExit.js";
 import {
+  idgafWouldHave,
   recordCliDecision,
   recordCliOutcome,
   type ApprovalTrace,
@@ -48,8 +50,10 @@ import {
 } from "../loop/loopHolds.js";
 import {
   forgetRequest,
+  markHeadsUp,
   onKeepWaiting,
   proposalForAsk,
+  proposalForRanPast,
   publishCountdown,
   spendTurnBudget,
 } from "../permissions/askCountdown.js";
@@ -87,7 +91,11 @@ import {
   serviceContainer,
   services,
 } from "../services/index.js";
-import { getCurrentSession, trackSessionUsage } from "../session.js";
+import {
+  getCurrentSession,
+  getSessionLoop,
+  trackSessionUsage,
+} from "../session.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
 import {
   executeToolCall,
@@ -223,6 +231,30 @@ interface TimedAskOptions {
   verdictSource?: string;
   /** Why the call asks and where that was decided, for the prompt to show */
   why?: AskWhy;
+  /**
+   * The prompt is a heads-up, not an ask: the call runs when this window ends
+   * unless the person answers (requestHeadsUp)
+   */
+  headsUp?: Proposal;
+}
+
+/**
+ * A heads-up on a call that runs only because of its level: IDGAF ran it past
+ * an ask or a refusal, and a window is set for that level. The prompt shows a
+ * countdown and what a lower level would have done; the call runs when the
+ * window ends, and "Don't run" declines it. No PermissionRequest hook and no
+ * "approval needed" notice: nothing is asked, and silence runs the call.
+ */
+export function requestHeadsUp(
+  toolCall: PreprocessedToolCall,
+  callbacks: StreamCallbacks,
+  proposal: Proposal,
+): Promise<TimedAsk> {
+  const prompt = permissionPrompts.then(() =>
+    promptTimed(toolCall, callbacks, { headsUp: proposal }),
+  );
+  permissionPrompts = prompt.catch(() => undefined);
+  return prompt;
 }
 
 /**
@@ -351,6 +383,8 @@ async function promptTimed(
     if (event.toolCall.name !== toolCall.name) return;
     toolPermissionManager.off("permissionRequested", onRequested);
     requestId = event.requestId;
+    const ranPast = options.headsUp?.decision.override;
+    if (ranPast) markHeadsUp(event.requestId, ranPast);
     callbacks.onToolPermissionRequest!(
       event.toolCall.name,
       event.toolCall.arguments,
@@ -358,15 +392,18 @@ async function promptTimed(
       event.toolCall.preview,
       toolCall.id,
     );
-    proposal = proposalForAsk(
-      {
-        name: toolCall.name,
-        arguments: toolCall.arguments,
-        readonly: toolCall.tool?.readonly,
-      },
-      options.mode,
-      options.verdictSource,
-    );
+    proposal = options.headsUp
+      ? // The window starts when the prompt is shown, as an ask's does
+        { ...options.headsUp, startedAt: Date.now() }
+      : proposalForAsk(
+          {
+            name: toolCall.name,
+            arguments: toolCall.arguments,
+            readonly: toolCall.tool?.readonly,
+          },
+          options.mode,
+          options.verdictSource,
+        );
     if (!proposal) return;
     const id = event.requestId;
     const p = proposal;
@@ -392,8 +429,11 @@ async function promptTimed(
           proposed: p.proposed,
         }),
     }).then((r) => {
-      if (r?.outcome === "default-applied" && r.final === "refuse") {
-        toolPermissionManager.rejectRequest(id);
+      // The window ended with no answer: the proposal applies, through the
+      // same manager calls a "no" and a "yes" use
+      if (r?.outcome === "default-applied") {
+        if (r.final === "refuse") toolPermissionManager.rejectRequest(id);
+        else toolPermissionManager.approveRequest(id);
       }
       return r;
     });
@@ -720,6 +760,20 @@ export function askResult(
   return { approved: false, denialReason: "user" };
 }
 
+/**
+ * What a lower level would have done with a call the top level ran: the
+ * audit trail's own record (the engine's, or a Never entry of the CLI's lists).
+ */
+function ranPastOf(trace: ApprovalTrace): LowerDecision | undefined {
+  const would = idgafWouldHave(trace);
+  if (!would) return undefined;
+  return {
+    policy: would.policy === "deny" ? "disabled" : "allowedWithPermission",
+    ...(would.source ? { source: would.source } : {}),
+    ...(would.reason ? { reason: would.reason } : {}),
+  };
+}
+
 /** What the person, the model and the audit trail are told when the rule check itself failed. */
 export const ENGINE_ERROR_REASON =
   "The permission rules could not be checked (internal error), so this call was not allowed automatically.";
@@ -809,6 +863,31 @@ async function decideToolApproval(
   }
   // IDGAF: the CLI's own ask and exclude do not stop the call (runsAtIdgaf)
   const idgaf = callRunsAtIdgaf(toolCall, mode);
+  // A call that is allowed runs. One the level ran past an ask or a refusal
+  // is shown first when that level has a heads-up window (0 unless set), and
+  // only where a person is looking: not headless, not while a Loop step runs
+  const run = async (): Promise<ReturnType<typeof askResult>> => {
+    if (isHeadless || !callbacks?.onToolPermissionRequest) {
+      return { approved: true };
+    }
+    if (getSessionLoop()?.current) return { approved: true };
+    const proposal = proposalForRanPast(
+      {
+        name: toolCall.name,
+        arguments: toolCall.arguments,
+        readonly: toolCall.tool?.readonly,
+      },
+      mode,
+      ranPastOf(trace),
+    );
+    if (!proposal) return { approved: true };
+    trace.headsUp = true;
+    return askResult(
+      toolCall,
+      await requestHeadsUp(toolCall, callbacks, proposal),
+      trace,
+    );
+  };
   const permissionCheck = liftAtIdgaf(
     withReadOnlyMcp(checkToolPermission(toolCall, permissions), toolCall.tool),
     idgaf,
@@ -850,7 +929,7 @@ async function decideToolApproval(
     );
     trace.verdict = verdict;
     if (verdict?.decision === "allow" && hookDecision !== "ask") {
-      return { approved: true };
+      return run();
     }
     // An allow over a hook's ask is the hook's to settle: it falls through to
     // the CLI's own ask below, with no reason of the engine's to quote
@@ -899,7 +978,7 @@ async function decideToolApproval(
   }
 
   if (permission === "allow") {
-    return { approved: true };
+    return run();
   } else if (permission === "ask") {
     const held = holdLoopCall(toolCall);
     if (held) {

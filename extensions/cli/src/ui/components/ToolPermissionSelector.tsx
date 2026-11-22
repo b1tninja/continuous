@@ -1,4 +1,5 @@
 import { maskCommandForDisplay } from "core/tools/permissions/displayMask.js";
+import { wouldHaveSentence } from "core/tools/permissions/levelText.js";
 import { hostAllowRuleFor } from "core/tools/permissions/webHostRules.js";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useState } from "react";
@@ -7,6 +8,7 @@ import { ToolCallTitle } from "src/tools/ToolCallTitle.js";
 
 import {
   getCountdown,
+  headsUpFor,
   keepWaitingFor,
   onCountdown,
 } from "../../permissions/askCountdown.js";
@@ -123,6 +125,27 @@ const getPermissionOptions = (rule: string): PermissionOption[] => {
   ];
 };
 
+/**
+ * A heads-up on a call that runs when its window ends: run it now, or do not
+ * run it. There is no "always allow": the level already allows the call.
+ */
+const HEADS_UP_OPTIONS: PermissionOption[] = [
+  { id: "approve", name: "Run now", color: "green", approved: true },
+  {
+    id: "deny",
+    name: "Don't run (the agent goes on without it)",
+    color: "yellow",
+    approved: false,
+  },
+  {
+    id: "deny_stop",
+    name: "Don't run, and tell Continue what to do differently (stops the response)",
+    color: "yellow",
+    approved: false,
+    stopStream: true,
+  },
+];
+
 /** The border and side padding of the prompt's box, in columns. */
 const BOX_CHROME_COLUMNS = 2 + 2 * Number(baseBoxStyles.paddingX ?? 0);
 
@@ -148,9 +171,13 @@ export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
   const alwaysRule = host
     ? undefined
     : maskCommandForDisplay(generatePolicyRule(toolName, toolArgs));
-  const permissionOptions = host
-    ? getWebOptions(host)
-    : getPermissionOptions(alwaysRule ?? "");
+  // A heads-up: the level ran the call past this, and it runs unless answered
+  const [ranPast] = useState(() => headsUpFor(requestId));
+  const permissionOptions = ranPast
+    ? HEADS_UP_OPTIONS
+    : host
+      ? getWebOptions(host)
+      : getPermissionOptions(alwaysRule ?? "");
   // r opens the whole reason and the rule that would allow the call
   const [showDetail, setShowDetail] = useState(false);
   const { columns } = useTerminalSize();
@@ -198,6 +225,7 @@ export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
   };
   const denyOption =
     permissionOptions.find((o) => o.id === "deny") ?? permissionOptions[2];
+  const alwaysOption = permissionOptions.find((o) => o.id === "approve_policy");
 
   useInput((input, key) => {
     if (confirm.current()) {
@@ -239,7 +267,8 @@ export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
 
     // "a" to continue and always allow; Shift+Tab cycles modes elsewhere
     if (input === "a" && !key.ctrl && !key.meta) {
-      choose(permissionOptions[1]);
+      // A heads-up has no "always allow"
+      if (alwaysOption) choose(alwaysOption);
       return;
     }
 
@@ -298,7 +327,9 @@ export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
           <Text color="yellow">{CONFIRM_TEXT[confirm.pending]}</Text>
         ) : (
           <Text color="dim">
-            Would you like to continue?
+            {ranPast
+              ? "This call runs by itself. Stop it here if you want to."
+              : "Would you like to continue?"}
             {why &&
               (showDetail
                 ? " (r: hide the detail)"
@@ -312,6 +343,7 @@ export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
             keep waiting.
           </Text>
         )}
+        {ranPast && <Text color="yellow">{wouldHaveSentence(ranPast)}</Text>}
         {showDynamicWarning && (
           <Box marginTop={1}>
             <Text color="yellow" dimColor>

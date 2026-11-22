@@ -1,6 +1,10 @@
 import type { PolicyLevels } from "core/tools/permissions/policy";
 import { levelOfCall } from "core/tools/permissions/approval";
-import { propose } from "core/tools/permissions/decisionTimer";
+import {
+  factOfDecision,
+  propose,
+  type LowerDecision,
+} from "core/tools/permissions/decisionTimer";
 
 import { setToolCallTimer } from "../slices/sessionSlice";
 import type { RootState } from "../store";
@@ -15,14 +19,21 @@ import type { RootState } from "../store";
  * runs now. A call that is held waits the way an ask waits, in the same
  * toolbar. The windows of calls shown together share one reading of the clock.
  *
- * Not held: no window at the call's level, IDGAF, and an unattended Loop run
- * (nobody is looking at a countdown).
+ * At the top level, IDGAF, the window is 0 unless set. When it is set, only a
+ * call that ran because of that level is held: one a lower level would have
+ * asked about or refused (the decision's `idgafOverride`). The countdown says
+ * what that was.
+ *
+ * Not held: no window at the call's level, a call at IDGAF that would have run
+ * lower down anyway, and an unattended Loop run (nobody is looking at a
+ * countdown).
  */
 export function holdForHeadsUp(
   state: RootState,
   dispatch: (action: ReturnType<typeof setToolCallTimer>) => unknown,
   allowed: ReadonlyArray<{
     source?: string;
+    idgafOverride?: LowerDecision;
     toolCallState: {
       toolCallId: string;
       parsedArgs?: unknown;
@@ -38,7 +49,7 @@ export function holdForHeadsUp(
   const now = Date.now();
   const levels: PolicyLevels = state.ui.policyLevels;
 
-  for (const { source, toolCallState } of allowed) {
+  for (const { source, idgafOverride, toolCallState } of allowed) {
     let found;
     try {
       found = levelOfCall(
@@ -52,7 +63,11 @@ export function holdForHeadsUp(
     }
     if (!found) continue;
     const proposal = propose(
-      { policy: "allowedWithoutPermission", source },
+      factOfDecision({
+        policy: "allowedWithoutPermission",
+        source,
+        idgafOverride,
+      }),
       {
         attended,
         level: found.level as never,
@@ -69,6 +84,9 @@ export function holdForHeadsUp(
           startedAt: proposal.startedAt,
           seconds: proposal.seconds,
           proposed: "allow",
+          ...(proposal.decision.override
+            ? { override: proposal.decision.override }
+            : {}),
         },
       }),
     );
