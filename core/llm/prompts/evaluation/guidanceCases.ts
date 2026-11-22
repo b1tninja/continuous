@@ -360,7 +360,10 @@ function questionCapCase(): GuidanceCase {
     project: { ...SEED },
     arms: {
       // The cap's wording was not part of the 2026-11-22 rewrite, so `old`
-      // and `new` read the same until loopMode.ts changes it
+      // and `new` read the same. Row AG7 ends the item's run at the cap
+      // instead of answering, so once that is in, no next call follows
+      // this text in the product: the class then records why (the old
+      // text against the proposed one), not what the loop does today
       old: `${CAP_PREFIX} This item already holds 4 open questions. Continue on your stated assumptions, or call finish_item with outcome "waiting".`,
       new: `${CAP_PREFIX} ${capError}`,
       // Section 5 of the review; not in the code

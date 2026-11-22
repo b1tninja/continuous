@@ -30,9 +30,10 @@ class and arm, each rate as count/N with its 95% Wilson interval (`wilson.ts`).
 
 Arms: `old` is the wording before 2026-11-22, written out in `guidanceCases.ts` because it is history. `new` is built
 by calling the code that words the result today (`editFailureResult`, `unknownToolResult`, `holdQuestion`), so it
-follows the code. The cap's wording was not part of that rewrite, so its `old` and `new` are the same text until
-`loopMode.ts` changes; it has a third arm, `proposed`, from section 5 of
-`plans/research/agent-guidance-review-2026-11-21.md`.
+follows the code. The cap's wording was not part of that rewrite, so its `old` and `new` are the same text; it has
+a third arm, `proposed`, from section 5 of `plans/research/agent-guidance-review-2026-11-21.md`. Roadmap row AG7
+ends an item's run at the cap instead of answering the call, so with that change no next call follows this text in
+the product, and the class compares two wordings of a result the loop no longer sends.
 
 ### Running it
 
