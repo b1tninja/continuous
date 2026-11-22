@@ -6,7 +6,7 @@ import {
 } from "@heroicons/react/24/outline";
 import type { SubagentRunState, ToolCallState } from "core";
 import type { SubagentRunStatus } from "core/subagents/result";
-import { useState } from "react";
+import { useKeptOpenState } from "../../../hooks/useKeptOpenState";
 import { Button } from "../../../components/ui";
 import {
   answerSubagentApproval,
@@ -99,8 +99,8 @@ export function SubagentCard({
     toolCalls: [],
     text: "",
   };
-  const [promptOpen, setPromptOpen] = useState(false);
-  const [answerOpen, setAnswerOpen] = useState(true);
+  const [promptOpen, setPromptOpen] = useKeptOpenState("prompt", false);
+  const [answerOpen, setAnswerOpen] = useKeptOpenState("answer", true);
   const id = toolCallState.toolCallId;
 
   const live = run.status === "running" || run.status === "queued";
@@ -181,7 +181,7 @@ export function SubagentCard({
           <Disclosure
             label="Prompt"
             open={promptOpen}
-            onToggle={() => setPromptOpen((o) => !o)}
+            onToggle={() => setPromptOpen(!promptOpen)}
             testId={`subagent-prompt-toggle-${id}`}
           />
           {promptOpen && (
@@ -293,7 +293,7 @@ export function SubagentCard({
             <Disclosure
               label={run.status === "completed" ? "Answer" : "Output so far"}
               open={answerOpen}
-              onToggle={() => setAnswerOpen((o) => !o)}
+              onToggle={() => setAnswerOpen(!answerOpen)}
               testId={`subagent-answer-toggle-${id}`}
             />
           ) : null}

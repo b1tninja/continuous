@@ -1,5 +1,5 @@
 import { configureStore } from "@reduxjs/toolkit";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Provider } from "react-redux";
@@ -13,9 +13,13 @@ import {
   history,
   setupForkStore,
 } from "../../redux/thunks/forkSession.fixture";
+import { UserSetting } from "../../pages/config/components/UserSetting";
 import { renderWithProviders } from "../../util/test/render";
 import ConfirmationDialog from "../dialogs/ConfirmationDialog";
+import { QueryInput } from "../mainInput/AtMentionDropdown";
 import InputToolbar from "../mainInput/InputToolbar";
+import ModelSelectionListbox from "../modelSelection/ModelSelectionListbox";
+import { ModelChecklist } from "../ProviderSetup/ModelChecklist";
 import ResponseActions from "../StepContainer/ResponseActions";
 
 // jsdom does not lay out or paint, so nothing here says an outline is seen.
@@ -209,5 +213,112 @@ describe("controls do not switch the focus outline off", () => {
     expect(focusable(container)).toHaveLength(2);
     expect(suppressedByClass(container)).toEqual([]);
     expect(suppressedByStylesheet(container)).toEqual([]);
+  });
+});
+
+// A text field inside a bordered wrapper keeps its own outline off, and the
+// wrapper takes the focus colour instead, so the whole field lights up.
+const LIGHTS_WRAPPER = /^focus-within:(border|ring|outline)-(?!none|hidden|0)/;
+
+/** Text fields whose outline is off and whose wrappers show no focus. */
+function fieldsWithNoFocusStyle(root: ParentNode): string[] {
+  return Array.from(
+    root.querySelectorAll<HTMLElement>(
+      "input:not([type='checkbox']), textarea",
+    ),
+  )
+    .filter((el) => {
+      if (!Array.from(el.classList).some((c) => SUPPRESSES.test(c))) {
+        return false;
+      }
+      for (let up = el.parentElement; up; up = up.parentElement) {
+        if (Array.from(up.classList).some((c) => LIGHTS_WRAPPER.test(c))) {
+          return false;
+        }
+      }
+      return true;
+    })
+    .map((el) => `${el.tagName.toLowerCase()}.${el.className}`);
+}
+
+describe("text fields in a bordered wrapper show focus on the wrapper", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("the model list's search box", () => {
+    const provider = { title: "OpenRouter" };
+    render(
+      <ModelSelectionListbox
+        selectedProvider={provider}
+        setSelectedProvider={() => {}}
+        topOptions={[provider]}
+        searchPlaceholder="Search providers..."
+      />,
+    );
+    fireEvent.click(screen.getByRole("button"));
+    const search = screen.getByPlaceholderText("Search providers...");
+    expect(search.className).toMatch(/outline-hidden/);
+    expect(fieldsWithNoFocusStyle(document.body)).toEqual([]);
+  });
+
+  it("the model checklist's search box", () => {
+    render(
+      <ModelChecklist
+        groups={{ top: [], other: [], configuredOnly: [] }}
+        checked={new Set()}
+        onToggle={() => {}}
+      />,
+    );
+    const search = screen.getByLabelText("Search models");
+    expect(search.className).toMatch(/outline-hidden/);
+    expect(fieldsWithNoFocusStyle(document.body)).toEqual([]);
+  });
+
+  it("a number setting and a text setting", () => {
+    render(
+      <>
+        <UserSetting
+          type="number"
+          title="Font size"
+          description=""
+          value={14}
+          onChange={() => {}}
+        />
+        <UserSetting
+          type="input"
+          title="Workspace prompt"
+          description=""
+          value=""
+          onChange={() => {}}
+        />
+      </>,
+    );
+    const fields = document.querySelectorAll("input");
+    expect(fields).toHaveLength(2);
+    fields.forEach((field) =>
+      expect(field.className).toMatch(/outline-hidden/),
+    );
+    expect(fieldsWithNoFocusStyle(document.body)).toEqual([]);
+  });
+
+  it("the @-mention query box colours its own border", () => {
+    render(<QueryInput data-testid="query" />);
+    const field = screen.getByTestId("query");
+    const focusRules = Array.from(document.styleSheets)
+      .flatMap((sheet) => Array.from(sheet.cssRules))
+      .filter(
+        (rule): rule is CSSStyleRule =>
+          "selectorText" in rule &&
+          /:focus(?![-\w])/.test((rule as CSSStyleRule).selectorText) &&
+          field.matches(
+            (rule as CSSStyleRule).selectorText.replace(/:focus(?![-\w])/g, ""),
+          ),
+      );
+    expect(focusRules).toHaveLength(1);
+    expect(focusRules[0].cssText).toMatch(/outline:\s*none/);
+    expect(focusRules[0].cssText).toMatch(
+      /border-color:\s*var\(--vscode-focusBorder/,
+    );
   });
 });

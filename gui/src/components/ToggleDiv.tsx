@@ -1,6 +1,7 @@
 import { ChevronDownIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
 import { ComponentType, useState } from "react";
 import { vscBackground } from ".";
+import { useKeptOpenState } from "../hooks/useKeptOpenState";
 
 interface ToggleProps {
   children: React.ReactNode;
@@ -8,6 +9,8 @@ interface ToggleProps {
   icon?: ComponentType<React.SVGProps<SVGSVGElement>>;
   testId?: string;
   defaultOpen?: boolean;
+  /** Names this toggle within its transcript row, so its state is kept. */
+  keptAs?: string;
 }
 
 function ToggleDiv({
@@ -16,8 +19,9 @@ function ToggleDiv({
   icon: Icon,
   testId = "context-items-peek",
   defaultOpen = false,
+  keptAs,
 }: ToggleProps) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = useKeptOpenState(keptAs, defaultOpen);
   const [isHovered, setIsHovered] = useState(false);
 
   return (
@@ -29,7 +33,7 @@ function ToggleDiv({
     >
       <div
         className="flex cursor-pointer items-center justify-start text-xs text-description hover:brightness-125"
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() => setOpen(!open)}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         data-testid={testId}

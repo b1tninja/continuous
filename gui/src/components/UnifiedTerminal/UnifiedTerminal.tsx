@@ -3,9 +3,10 @@ import Anser, { AnserJsonEntry } from "anser";
 import { ToolCallState } from "core";
 import { maskCommandForDisplay } from "core/tools/permissions/displayMask";
 import { escapeCarriageReturn } from "escape-carriage";
-import { type JSX, useContext, useMemo, useState } from "react";
+import { type JSX, useContext, useMemo } from "react";
 import styled, { keyframes } from "styled-components";
 import { IdeMessengerContext } from "../../context/IdeMessenger";
+import { useKeptOpenState } from "../../hooks/useKeptOpenState";
 import { useAppDispatch } from "../../redux/hooks";
 import { moveTerminalProcessToBackground } from "../../redux/thunks/moveTerminalProcessToBackground";
 import { getFontSize } from "../../util";
@@ -378,8 +379,11 @@ export function UnifiedTerminalCommand({
         : output,
     [displayOutput, output, rawOutput],
   );
-  const [isExpanded, setIsExpanded] = useState(true);
-  const [outputExpanded, setOutputExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useKeptOpenState("terminal", true);
+  const [outputExpanded, setOutputExpanded] = useKeptOpenState(
+    "terminal-output",
+    false,
+  );
 
   // Determine running state
   const isRunning = toolCallState?.status === "calling" || status === "running";
