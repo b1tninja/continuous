@@ -19,6 +19,7 @@ import styled from "styled-components";
 import {
   defaultBorderRadius,
   lightGray,
+  vscFocusBorder,
   vscForeground,
   vscListActiveBackground,
   vscListActiveForeground,
@@ -114,7 +115,7 @@ const ItemDiv = styled.div`
   }
 `;
 
-const QueryInput = styled.textarea`
+export const QueryInput = styled.textarea`
   background-color: #fff1;
   border: 1px solid ${lightGray};
   border-radius: ${defaultBorderRadius};
@@ -125,8 +126,10 @@ const QueryInput = styled.textarea`
 
   color: ${vscForeground};
 
+  /* The field has its own border, so focus colours that, not an outline */
   &:focus {
     outline: none;
+    border-color: ${vscFocusBorder};
   }
 
   font-family: inherit;
