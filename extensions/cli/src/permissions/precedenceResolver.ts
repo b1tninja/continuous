@@ -1,8 +1,10 @@
 import { getDefaultToolPolicies } from "./defaultPolicies.js";
 import {
   loadPermissionsYaml,
+  PERMISSIONS_YAML_PATH,
   yamlConfigToPolicies,
 } from "./permissionsYamlLoader.js";
+import { markPolicyOrigin } from "./policyOrigin.js";
 import { type ToolPermissionPolicy } from "./types.js";
 
 export interface PermissionSources {
@@ -38,6 +40,7 @@ export function resolvePermissionPrecedence(
   // Layer 1: Command line flags (highest precedence)
   if (sources.commandLineFlags) {
     const cliPolicies = commandLineFlagsToPolicies(sources.commandLineFlags);
+    markPolicyOrigin(cliPolicies, { kind: "flag" });
     policies.push(...cliPolicies);
   }
 
@@ -46,6 +49,10 @@ export function resolvePermissionPrecedence(
     const yamlConfig = loadPermissionsYaml();
     if (yamlConfig) {
       const yamlPolicies = yamlConfigToPolicies(yamlConfig);
+      markPolicyOrigin(yamlPolicies, {
+        kind: "permissions-file",
+        file: PERMISSIONS_YAML_PATH,
+      });
       policies.push(...yamlPolicies);
     }
   }
@@ -53,6 +60,7 @@ export function resolvePermissionPrecedence(
   // Layer 3: Default policies (lowest precedence)
   if (sources.useDefaults !== false) {
     const defaultPolicies = getDefaultToolPolicies(sources.isHeadless);
+    markPolicyOrigin(defaultPolicies, { kind: "default" });
     policies.push(...defaultPolicies);
   }
 

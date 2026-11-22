@@ -10,6 +10,7 @@ import { logger } from "src/util/logger.js";
 
 import { runTurnWithStopHooks } from "../../hooks/lifecycleHooks.js";
 import { notifyPerson } from "../../notify/attention.js";
+import { toolPermissionManager } from "../../permissions/permissionManager.js";
 import { services } from "../../services/index.js";
 import { getCurrentSession, updateSessionTitle } from "../../session.js";
 
@@ -255,6 +256,9 @@ export function createStreamCallbacks(
       // Check if this tool has dynamic evaluation
       const tool = ALL_BUILT_IN_TOOLS.find((t: any) => t.name === toolName);
       const hasDynamicEvaluation = !!tool?.evaluateToolCallPolicy;
+      // Why it asks travels with the pending request, not through this call
+      const why =
+        toolPermissionManager.getPendingRequest(requestId)?.toolCall.why;
 
       setActivePermissionRequest({
         toolName,
@@ -262,6 +266,7 @@ export function createStreamCallbacks(
         requestId,
         toolCallPreview,
         hasDynamicEvaluation,
+        ...(why ? { why } : {}),
       });
     },
 

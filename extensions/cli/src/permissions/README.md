@@ -59,6 +59,8 @@ The permission system integrates with the existing chat UI:
 - Users can approve/deny with y/n keys
 - The decision is shown in the chat history
 - The system handles the async nature of permission requests
+- The prompt says why it asks: a `Why:` line with the reason, and a `From:` line with the rule and the file it is in, or the check and its id. `explainAsk.ts` builds both where the decision is made; the prompt only shows them
+- `r` opens the whole reason and source, and the narrowest allow rule for the call: core's `suggestAllowRule`, the function behind the IDE's "Always allow". Looking saves nothing
 
 ## Future Enhancements
 
