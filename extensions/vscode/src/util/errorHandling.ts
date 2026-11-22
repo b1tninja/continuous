@@ -1,5 +1,6 @@
 import { ILLM } from "core";
 import { isModelInstaller } from "core/llm";
+import { localServerFixFor } from "core/llm/localServerError";
 import * as vscode from "vscode";
 
 /**
@@ -19,7 +20,7 @@ export async function handleLLMError(error: unknown): Promise<boolean> {
     // For Windows, offer to start Lemonade if it's installed but not running
     if (
       process.platform === "win32" &&
-      message.includes("Lemonade server may not be running")
+      localServerFixFor(message) === "start-lemonade"
     ) {
       options = ["Start Lemonade", "Setup Instructions"];
     } else {
@@ -44,9 +45,11 @@ export async function handleLLMError(error: unknown): Promise<boolean> {
   let message: string = error.message;
   let options: string[] | undefined;
   let modelName = undefined;
-  if (message.includes("Ollama may not be installed")) {
+  // Core's sentence for an Ollama on this machine that did not answer
+  const fix = localServerFixFor(message);
+  if (fix === "download-ollama") {
     options = ["Download Ollama"];
-  } else if (message.includes("Ollama may not be running")) {
+  } else if (fix === "start-ollama") {
     options = ["Start Ollama"]; // We want "Start" to be the only choice
   } else if (message.includes("ollama run") && "llm" in error) {
     //extract model name from error message matching the pattern "ollama run <model-name>"

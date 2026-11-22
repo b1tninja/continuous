@@ -15,7 +15,6 @@ import {
 } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 import styled from "styled-components";
-import { Button, lightGray, vscBackground } from "../../components";
 import { useFindWidget } from "../../components/find/FindWidget";
 import TimelineItem from "../../components/gui/TimelineItem";
 import { NewSessionButton } from "../../components/mainInput/belowMainInput/NewSessionButton";
@@ -104,6 +103,7 @@ import { ExploreDialogWatcher } from "./ExploreDialogWatcher";
 import { ChatDebugLog } from "./ChatDebugLog";
 import { ChatTranscript, useScrollBox } from "./ChatTranscript";
 import { JumpToLatest } from "./JumpToLatest";
+import { MessageErrorFallback } from "./MessageErrorFallback";
 import { TranscriptMessage } from "./TranscriptMessage";
 import { useAutoScroll } from "./useAutoScroll";
 
@@ -131,33 +131,6 @@ const StepsDiv = styled.div`
 `;
 
 export const MAIN_EDITOR_INPUT_ID = "main-editor-input";
-
-function fallbackRender({ error, resetErrorBoundary }: any) {
-  // Call resetErrorBoundary() to reset the error boundary and retry the render.
-
-  return (
-    <div
-      role="alert"
-      className="px-2"
-      style={{ backgroundColor: vscBackground }}
-    >
-      <p>Something went wrong:</p>
-      <pre className="break-words whitespace-pre-wrap" style={{ color: "red" }}>
-        {error.message}
-      </pre>
-      <pre
-        className="break-words whitespace-pre-wrap"
-        style={{ color: lightGray }}
-      >
-        {error.stack}
-      </pre>
-
-      <div className="text-center">
-        <Button onClick={resetErrorBoundary}>Restart</Button>
-      </div>
-    </div>
-  );
-}
 
 export function Chat() {
   // Loop mode: take the next step whenever nothing is running
@@ -653,10 +626,13 @@ export function Chat() {
                 minHeight={index === history.length - 1 ? "200px" : 0}
               >
                 <ErrorBoundary
-                  FallbackComponent={fallbackRender}
-                  onReset={() => {
-                    dispatch(newSession());
-                  }}
+                  fallbackRender={({ error }) => (
+                    <MessageErrorFallback
+                      error={error}
+                      item={item}
+                      position={row + 1}
+                    />
+                  )}
                 >
                   {renderChatHistoryItem(item, index)}
                 </ErrorBoundary>
