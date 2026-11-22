@@ -83,6 +83,24 @@ describe("NeedsYouTray", () => {
     expect(tray.querySelector("[role=status],[role=alert]")).toBeNull();
   });
 
+  // jsdom does not lay out: this pins what scrolls when a short panel makes
+  // the tray shorter than its question. The heights are measured by
+  // bench/screenshots.
+  it("lets the question scroll under its answer controls", async () => {
+    await setup({
+      ...base(),
+      status: "waiting",
+      questions: [question("q1")],
+    });
+    const row = screen.getByTestId("loop-question-q1");
+    expect(row.className).toContain("only:overflow-y-auto");
+    const controls = screen.getByTestId("question-controls");
+    expect(controls.parentElement).toBe(row);
+    expect(controls.className).toContain("group-first/question:sticky");
+    expect(controls).toContainElement(screen.getByTestId("loop-choice-apply"));
+    expect(row.firstElementChild).not.toBe(controls);
+  });
+
   it("shows one question at a time with a pager", async () => {
     await setup({
       ...base(),

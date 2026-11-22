@@ -597,10 +597,13 @@ export function Chat() {
   );
 
   const showScrollbar = showChatScrollbar ?? window.innerHeight > 5000;
-  // A part of the stack above the prompt that gives way in a short panel
-  const givesWay =
+  // A part of the stack above the prompt that gives way in a short panel. It
+  // starts from one row (22 px: its first line) and grows to its content
+  // before the chat grows past 96 px, so it gives back all but that row
+  // first; when even the row does not fit, the queue goes before the notices.
+  const givesWay = (shrink: string) =>
     history.length > 0
-      ? "thin-scrollbar relative min-h-0 shrink-[9999] overflow-y-auto"
+      ? `thin-scrollbar relative max-h-max min-h-0 grow-[9999] basis-[22px] overflow-y-auto ${shrink}`
       : undefined;
 
   return (
@@ -652,11 +655,17 @@ export function Chat() {
       </StepsDiv>
       <JumpToLatest paused={autoScrollPaused} scrollToLatest={scrollToLatest} />
       {/* The height budget of a short panel. With a chat on screen the parts
-          below are laid out by the page itself ("contents"). What only informs
-          gives way first and scrolls; the chat keeps 96 px until that is used
-          up. A question, the prompt and an approval in it do not give way. */}
+          below are laid out by the page itself ("contents"). The chat keeps
+          96 px while these give way, in this order: what only informs, down
+          to one row each, scrolling; a question, down to its answer controls
+          and a line (QuestionPanel.tsx); then those rows. The approvals' list
+          is sized by a sum (PendingToolCallToolbar.tsx). The prompt, the
+          answer controls and the first approval's buttons do not give way. */}
       <div className={history.length > 0 ? "contents" : "relative shrink-0"}>
-        <div data-testid="input-stack-notices" className={givesWay}>
+        <div
+          data-testid="input-stack-notices"
+          className={givesWay("shrink-[9999]")}
+        >
           <CompactionHoldNotice />
           <CompactionPreparedNotice />
           <IdgafNotice />
@@ -679,7 +688,10 @@ export function Chat() {
         </div>
         {/* A loop asks through its Needs you tray, which holds the same questions */}
         {hasLoop ? <NeedsYouTray /> : <QuestionPanel />}
-        <div data-testid="input-stack-queue" className={givesWay}>
+        <div
+          data-testid="input-stack-queue"
+          className={givesWay("shrink-[9999999]")}
+        >
           <QueuedMessages
             onSendNow={sendNowOrSteer}
             onSteerNow={(ids) => void steerNow(ids)}

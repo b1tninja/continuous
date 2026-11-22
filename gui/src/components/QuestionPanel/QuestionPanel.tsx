@@ -29,6 +29,20 @@ const KIND_LABEL: Record<LoopQuestion["kind"], string> = {
   approval: "Needs your approval",
 };
 
+/**
+ * A question's row. Alone in its list it shrinks with the panel and scrolls
+ * inside itself; among others the list scrolls.
+ */
+const ROW =
+  "group/question mt-1 flex shrink-0 flex-col rounded border border-solid border-border px-1.5 py-1 only:shrink only:overflow-y-auto";
+/**
+ * Round a row's answer controls. Those of the first row stay at the bottom of
+ * what scrolls, so in a short panel the text scrolls under them; in a row
+ * that scrolls they also cover its bottom padding.
+ */
+const CONTROLS =
+  "bottom-0 bg-background group-first/question:sticky group-only/question:-bottom-1 group-only/question:-mb-1 group-only/question:pb-1";
+
 const buttonClass =
   "cursor-pointer rounded border border-solid border-border bg-transparent px-1.5 text-xs text-foreground hover:bg-input disabled:cursor-default disabled:opacity-50";
 
@@ -61,10 +75,7 @@ export function LoopQuestionRow({
     question.kind !== "approval" && (question.options?.length ?? 0) > 1;
 
   return (
-    <li
-      data-testid={`loop-question-${question.id}`}
-      className="mt-1 rounded border border-solid border-border px-1.5 py-1"
-    >
+    <li data-testid={`loop-question-${question.id}`} className={ROW}>
       <div className="text-2xs text-description-muted">
         {question.id} · {KIND_LABEL[question.kind]}
         {itemText ? ` · ${itemText}` : ""}
@@ -77,84 +88,86 @@ export function LoopQuestionRow({
           Assumed: {question.assumption}
         </div>
       )}
-      {question.kind === "approval" ? (
-        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
-          <button
-            type="button"
-            data-testid="loop-approve"
-            className={buttonClass}
-            onClick={() => void answer({ text: "", approve: true })}
-          >
-            Allow once
-          </button>
-          <button
-            type="button"
-            data-testid="loop-deny"
-            className={buttonClass}
-            onClick={() => void answer({ text, approve: false })}
-          >
-            Don't allow
-          </button>
-        </div>
-      ) : (
-        <>
-          {hasOptions ? (
-            <AnswerChoices
-              options={question.options!}
-              pick={question.assumption}
-              testIdPrefix="loop-choice"
-              maxLength={LOOP_LIMITS.maxAnswerLength}
-              onChoose={(choice) =>
-                question.overBudget
-                  ? answerLimit(choice)
-                  : answer({ text: choice })
-              }
-            />
-          ) : (
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
-              <input
-                data-testid="loop-answer-input"
-                value={text}
+      <div data-testid="question-controls" className={CONTROLS}>
+        {question.kind === "approval" ? (
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
+            <button
+              type="button"
+              data-testid="loop-approve"
+              className={buttonClass}
+              onClick={() => void answer({ text: "", approve: true })}
+            >
+              Allow once
+            </button>
+            <button
+              type="button"
+              data-testid="loop-deny"
+              className={buttonClass}
+              onClick={() => void answer({ text, approve: false })}
+            >
+              Don't allow
+            </button>
+          </div>
+        ) : (
+          <>
+            {hasOptions ? (
+              <AnswerChoices
+                options={question.options!}
+                pick={question.assumption}
+                testIdPrefix="loop-choice"
                 maxLength={LOOP_LIMITS.maxAnswerLength}
-                placeholder={
-                  question.kind === "assumption"
-                    ? "Overrule with your answer"
-                    : "Your answer"
+                onChoose={(choice) =>
+                  question.overBudget
+                    ? answerLimit(choice)
+                    : answer({ text: choice })
                 }
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && text.trim()) {
-                    e.preventDefault();
-                    void answer({ text });
-                  }
-                }}
-                className="min-w-0 flex-1 basis-32 rounded border border-solid border-border bg-input px-1 text-xs text-foreground placeholder:text-description-muted"
               />
-              <button
-                type="button"
-                data-testid="loop-answer-send"
-                disabled={!text.trim()}
-                className={buttonClass}
-                onClick={() => void answer({ text })}
-              >
-                Answer
-              </button>
-            </div>
-          )}
-          {question.kind === "assumption" && (
-            <div className="mt-1">
-              <button
-                type="button"
-                data-testid="loop-confirm"
-                className={buttonClass}
-                onClick={() => void answer({ text: "", confirm: true })}
-              >
-                Keep the default
-              </button>
-            </div>
-          )}
-        </>
-      )}
+            ) : (
+              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
+                <input
+                  data-testid="loop-answer-input"
+                  value={text}
+                  maxLength={LOOP_LIMITS.maxAnswerLength}
+                  placeholder={
+                    question.kind === "assumption"
+                      ? "Overrule with your answer"
+                      : "Your answer"
+                  }
+                  onChange={(e) => setText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && text.trim()) {
+                      e.preventDefault();
+                      void answer({ text });
+                    }
+                  }}
+                  className="min-w-0 flex-1 basis-32 rounded border border-solid border-border bg-input px-1 text-xs text-foreground placeholder:text-description-muted"
+                />
+                <button
+                  type="button"
+                  data-testid="loop-answer-send"
+                  disabled={!text.trim()}
+                  className={buttonClass}
+                  onClick={() => void answer({ text })}
+                >
+                  Answer
+                </button>
+              </div>
+            )}
+            {question.kind === "assumption" && (
+              <div className="mt-1">
+                <button
+                  type="button"
+                  data-testid="loop-confirm"
+                  className={buttonClass}
+                  onClick={() => void answer({ text: "", confirm: true })}
+                >
+                  Keep the default
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
       {error && (
         <div role="alert" className="mt-0.5 break-words text-error">
           {error}
@@ -195,10 +208,7 @@ export function PlanDecisionRow({
   };
   const options = decision.options ?? [];
   return (
-    <li
-      data-testid="plan-decision"
-      className="mt-1 rounded border border-solid border-border px-1.5 py-1"
-    >
+    <li data-testid="plan-decision" className={ROW}>
       <div className="text-2xs text-description-muted">
         Plan decision{decision.type ? ` · ${decision.type}` : ""}
         {decision.todos?.length
@@ -206,12 +216,14 @@ export function PlanDecisionRow({
           : ""}
       </div>
       <div className="break-words text-foreground">{decision.question}</div>
-      <AnswerChoices
-        options={options}
-        pick={decision.pick}
-        testIdPrefix="plan-decision"
-        onChoose={(answer) => choose(answer)}
-      />
+      <div data-testid="question-controls" className={CONTROLS}>
+        <AnswerChoices
+          options={options}
+          pick={decision.pick}
+          testIdPrefix="plan-decision"
+          onChoose={(answer) => choose(answer)}
+        />
+      </div>
       {error && (
         <div role="alert" className="mt-0.5 break-words text-error">
           {error}
@@ -295,7 +307,11 @@ export function QuestionPanel() {
         data-testid="question-panel"
         role="region"
         aria-label="Questions for you"
-        className="mx-1 mb-1 rounded border border-solid border-link px-2 py-1 text-xs"
+        // Under the page's height budget (Chat.tsx) the panel gives up its
+        // height down to 123 px before the chat gives up its 96: the heading,
+        // a line of the question and two rows of choices at 300 wide. It
+        // grows back before the notices and the queue do.
+        className="mx-1 mb-1 box-border flex max-h-max min-h-0 shrink-0 grow-[9999999] basis-[123px] flex-col rounded border border-solid border-link px-2 py-1 text-xs"
       >
         <div className="flex items-center gap-1 text-description">
           <QuestionMarkCircleIcon className="h-3 w-3 shrink-0" />
@@ -303,7 +319,7 @@ export function QuestionPanel() {
             {count} question{count === 1 ? "" : "s"} for you
           </span>
         </div>
-        <ul className="m-0 max-h-72 list-none overflow-y-auto p-0">
+        <ul className="m-0 flex max-h-72 min-h-0 list-none flex-col overflow-y-auto p-0">
           {decisions.map((d) => (
             <PlanDecisionRow
               key={d.question}

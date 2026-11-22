@@ -101,7 +101,12 @@ export function PendingToolCallToolbar() {
           </Button>
         )}
       </div>
-      <div className="flex max-h-[50vh] flex-col overflow-y-auto">
+      {/* In a short panel the list takes what the chat (100 px), the prompt
+          with its rows (153 px at 300 wide) and the lines above (35 px)
+          leave, and never under 96 px, a call with a one-line command. A
+          sum, not a measurement: with more above the prompt the chat gets
+          less. */}
+      <div className="flex max-h-[min(50vh,max(96px,calc(100vh_-_288px)))] flex-col overflow-y-auto">
         {pendingToolCalls.map((toolCall, index) => (
           <div
             key={toolCall.toolCallId}
@@ -117,7 +122,15 @@ export function PendingToolCallToolbar() {
               rule={toolCall.policyRule}
             />
 
-            <div className="ml-auto flex flex-wrap items-center justify-end gap-x-1">
+            {/* The first call's buttons stay in sight when the list is
+                shorter than the call: its text scrolls under them */}
+            <div
+              className={
+                index === 0
+                  ? "sticky bottom-0 ml-auto flex basis-full flex-wrap items-center justify-end gap-x-1 bg-input"
+                  : "ml-auto flex flex-wrap items-center justify-end gap-x-1"
+              }
+            >
               {toolCall.askTimer && !toolCall.askTimer.kept && (
                 <span
                   role="timer"
