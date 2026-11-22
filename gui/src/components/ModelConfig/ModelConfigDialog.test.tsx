@@ -57,6 +57,7 @@ async function open(block?: ModelBlockInfo) {
       onDone={onDone}
       onCancel={onCancel}
       onOpenFile={onOpenFile}
+      initialTab="connection"
     />,
     { mockIdeMessenger: mocks.m },
   );
@@ -80,18 +81,20 @@ describe("ModelConfigDialog", () => {
     expect(screen.getByText("/home/u/.continuous/config.yaml")).toBeTruthy();
   });
 
-  it("shows defaults as placeholders, not values", async () => {
+  it("says what a key that is not set does, and leaves the input empty", async () => {
     await open();
     const timeout = await screen.findByLabelText("Request timeout (seconds)");
     expect(timeout).toHaveValue("");
-    expect(timeout).toHaveAttribute("placeholder", "Default: 7200");
+    expect(timeout).toHaveAttribute("placeholder", "Not set");
+    expect(timeout).toHaveAccessibleDescription("Not set: 7,200 s");
   });
 
   it("moves between tabs with the arrow keys, Home and End", async () => {
     const { user } = await open();
-    const first = await screen.findByRole("tab", { name: "Connection" });
-    await waitFor(() => expect(first).toHaveFocus());
-    expect(first).toHaveAttribute("aria-selected", "true");
+    const first = await screen.findByRole("tab", { name: "Overview" });
+    const connection = screen.getByRole("tab", { name: "Connection" });
+    await waitFor(() => expect(connection).toHaveFocus());
+    expect(connection).toHaveAttribute("aria-selected", "true");
 
     await user.keyboard("{ArrowRight}");
     const caps = screen.getByRole("tab", { name: "Capabilities" });
@@ -155,9 +158,9 @@ describe("ModelConfigDialog", () => {
     const topP = screen.getByLabelText("Top P");
     await user.type(topP, "1.5");
     expect(topP).toHaveAttribute("aria-invalid", "true");
-    const describedBy = topP.getAttribute("aria-describedby")!;
-    expect(document.getElementById(describedBy)?.textContent).toBe(
-      "Must be 1 or less.",
+    // Described by its state line and by the error
+    expect(topP).toHaveAccessibleDescription(
+      "Set by you: 1.5 Must be 1 or less.",
     );
     await user.click(screen.getByTestId("model-config-review"));
     expect(preview).not.toHaveBeenCalled();
