@@ -134,8 +134,17 @@ describe("the read-only mounts over the workspace (PS7)", () => {
     make(ws);
     return ws;
   };
-  const tree = (dir: string): string[] =>
-    readdirSync(dir, { recursive: true, encoding: "utf8" }).sort();
+  // Walked by hand: the extension's type check compiles this file with Node
+  // types that do not have readdirSync's `recursive` option
+  const tree = (dir: string, prefix = ""): string[] =>
+    readdirSync(dir, { withFileTypes: true })
+      .flatMap((entry) => {
+        const rel = prefix ? join(prefix, entry.name) : entry.name;
+        return entry.isDirectory()
+          ? [rel, ...tree(join(dir, entry.name), rel)]
+          : [rel];
+      })
+      .sort();
   const mountsOf = (args: string[]) =>
     args.flatMap((a, i) => (args[i - 1] === "--mount" ? [a] : []));
 
