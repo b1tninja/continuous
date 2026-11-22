@@ -4,6 +4,7 @@ import { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { Readable } from "stream";
 import { homedir } from "os";
+import { isAbsolute } from "path";
 import { fileURLToPath } from "url";
 
 import {
@@ -81,9 +82,17 @@ import {
 import { announcePins, announceTrustedApproval } from "./mcpPinNotices";
 import { oauthScopeForMcpServer } from "./workspaceMcpPolicy";
 
-const DEFAULT_MCP_TIMEOUT = 20_000; // 20 seconds
+/** How long a connection may take when the entry has no `connectionTimeout`. */
+export const DEFAULT_MCP_TIMEOUT = 20_000; // 20 seconds
 
-const COMMONS_ENV_VARS = ["HOME", "USER", "USERPROFILE", "LOGNAME", "USERNAME"];
+/** What a local server gets from the editor's environment besides PATH and its own `env`. */
+export const COMMONS_ENV_VARS = [
+  "HOME",
+  "USER",
+  "USERPROFILE",
+  "LOGNAME",
+  "USERNAME",
+];
 
 /**
  * Did the server answer 401? Looks at the status code the transports expose
@@ -762,8 +771,10 @@ Set each one in ~/.continuous/.env, <workspace>/.continuous/.env or <workspace>/
       return fileURLToPath(cwd);
     }
 
-    // Return cwd if cwd is an absolute path.
-    if (cwd.charAt(0) === "/") {
+    // Return cwd if cwd is an absolute path. A drive path is one on Windows;
+    // looking it up inside the workspace found nothing and the setting was
+    // dropped without a word.
+    if (cwd.charAt(0) === "/" || isAbsolute(cwd)) {
       return cwd;
     }
 
@@ -965,6 +976,11 @@ Set each one in ~/.continuous/.env, <workspace>/.continuous/.env or <workspace>/
     });
 
     return transport;
+  }
+
+  /** The PATH a local server was started with; undefined before a start. */
+  getStdioPath(): string | undefined {
+    return this.stdioEnv.PATH;
   }
 
   async getResource(uri: string) {
