@@ -53,4 +53,32 @@ describe("localOutputLimit", () => {
       localOutputLimit({ outputTokensAvailable: 400_000 }),
     ).toBeUndefined();
   });
+
+  test("a server that decides its own limit is sent none", () => {
+    expect(
+      localOutputLimit({
+        apiBase: LOCAL,
+        outputTokensAvailable: 50_000,
+        maxTokensSource: "none",
+      }),
+    ).toBeUndefined();
+    // A limit for this one request is still a limit to fit
+    expect(
+      localOutputLimit({
+        apiBase: LOCAL,
+        maxTokens: 4096,
+        outputTokensAvailable: 50_000,
+        maxTokensSource: "none",
+      }),
+    ).toBe(50_000);
+    // The 4,096 fallback of a local server that is not OpenAI-compatible
+    expect(
+      localOutputLimit({
+        apiBase: LOCAL,
+        maxTokens: 4096,
+        outputTokensAvailable: 50_000,
+        maxTokensSource: "fallback",
+      }),
+    ).toBe(50_000);
+  });
 });

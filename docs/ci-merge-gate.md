@@ -57,7 +57,8 @@ turn every area on.
 | `extensions/vscode/**`                                           | vscode, e2e                                                   |
 | `extensions/cli/**`                                              | cli                                                           |
 | `extensions/intellij/**`                                         | jetbrains                                                     |
-| `bench/**`                                                       | none besides prettier (nothing in the PR checks builds it)    |
+| `bench/screenshots/**`                                           | gui (its job runs the production render check)                |
+| other `bench/**`                                                 | none besides prettier (nothing in the PR checks builds it)    |
 | anything else (`.github/**`, root files, `scripts/**`, new dirs) | all                                                           |
 
 `prettier` is on whenever any non-docs file changed. The check names in the list change: a called job shows

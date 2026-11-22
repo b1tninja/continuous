@@ -25,6 +25,7 @@ declare global {
     __shotReady?: boolean;
     __shotError?: string;
     __store?: unknown;
+    __reactBuild?: { version: string; devElement: boolean };
   }
 }
 
@@ -41,6 +42,15 @@ const fixtureName = params.get("fixture") ?? "idle";
 if (params.get("noProcessShim") !== "1" && typeof process === "undefined") {
   (globalThis as any).process = { platform: "win32", env: {} };
 }
+
+// Which React this page has. Development elements carry _owner and _store,
+// production ones do not, and the render check (render.mjs) is only worth
+// something on a production build, so it reads this first.
+const probe = React.createElement("div") as object;
+window.__reactBuild = {
+  version: React.version,
+  devElement: "_owner" in probe || "_store" in probe,
+};
 
 async function main() {
   try {

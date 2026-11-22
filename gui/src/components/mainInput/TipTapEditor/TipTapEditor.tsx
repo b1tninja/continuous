@@ -284,14 +284,20 @@ function TipTapEditorInner(props: TipTapEditorProps) {
             onDismiss={draft.dismissNotice}
           />
         )}
-        <InputToolbar
-          isMainInput={props.isMainInput}
-          toolbarOptions={props.toolbarOptions}
-          activeKey={activeKey}
-          hidden={shouldHideToolbar && !props.isMainInput}
-          onEnter={onEnter}
-          disabled={isStreaming}
-        />
+        {shouldHideToolbar && !props.isMainInput ? (
+          // An earlier message that is not being edited. Its toolbar was
+          // mounted hidden, and was most of what a row cost to scroll into
+          // view. This keeps the 4 px the hidden toolbar took.
+          <div aria-hidden className="h-0 pt-1" />
+        ) : (
+          <InputToolbar
+            isMainInput={props.isMainInput}
+            toolbarOptions={props.toolbarOptions}
+            activeKey={activeKey}
+            onEnter={onEnter}
+            disabled={isStreaming}
+          />
+        )}
       </div>
 
       <DragOverlay show={drop.dragActive} hint={drop.hint} />

@@ -197,9 +197,6 @@ export function PresetSelect({
             aria-hidden="true"
           />
           <span>{label}</span>
-          {warn && (
-            <span className="hidden min-[481px]:inline">· nothing asks</span>
-          )}
           <span
             className="sr-only"
             data-testid={

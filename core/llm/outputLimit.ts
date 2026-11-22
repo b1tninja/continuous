@@ -16,15 +16,21 @@ export const LOCAL_MAX_OUTPUT_TOKENS = 131_072;
  * reply, so this does not take space from the conversation.
  *
  * Returns undefined when the default should stand: a hosted provider, which
- * can reject a value above its own limit; or a limit the person configured
- * (the 4096 default is treated as not configured).
+ * can reject a value above its own limit; a limit the person configured
+ * (the 4096 default is treated as not configured); or a model whose server
+ * decides for itself (`maxTokensSource: "none"`), which is sent no limit.
  */
 export function localOutputLimit(input: {
   apiBase?: string;
   maxTokens?: number;
   outputTokensAvailable?: number;
+  /** `ModelDescription.maxTokensSource`. */
+  maxTokensSource?: string;
 }): number | undefined {
   const { apiBase, maxTokens, outputTokensAvailable } = input;
+  if (input.maxTokensSource === "none" && maxTokens === undefined) {
+    return undefined;
+  }
   if (!apiBase || !isLocalApiBase(apiBase)) return undefined;
   if (maxTokens !== undefined && maxTokens !== DEFAULT_MAX_TOKENS) {
     return undefined;

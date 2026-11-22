@@ -87,6 +87,16 @@ describe("LoopStatusLine", () => {
     );
   });
 
+  it("keeps the buttons in one group beside the title, so they wrap below it together", async () => {
+    await setup();
+    const buttons = screen.getByTestId("loop-strip-buttons");
+    expect(buttons.previousElementSibling).toBe(
+      screen.getByTestId("loop-title"),
+    );
+    for (const id of ["loop-stop", "loop-settings-toggle", "loop-jump-to-plan"])
+      expect(buttons.contains(screen.getByTestId(id))).toBe(true);
+  });
+
   it("states the state in a word as well as a colour", async () => {
     await setup("waiting");
     expect(screen.getByTestId("loop-strip").getAttribute("data-state")).toBe(

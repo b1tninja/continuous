@@ -952,6 +952,11 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
        * may be shadow-reviewed (off unless the person's config turns it on).
        */
       history?: import("../tools/permissions/auto/prompt").ReviewHistory;
+      /**
+       * The turn is a Plan turn: a call that would run waits for the person
+       * unless it only reads (source "plan-mode").
+       */
+      planMode?: boolean;
     },
     {
       policy: ToolPolicy;

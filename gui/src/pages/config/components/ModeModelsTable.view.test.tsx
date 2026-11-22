@@ -15,6 +15,83 @@ import {
   tailText,
 } from "./modeModelsTableTestUtils";
 
+describe("ModeModelsTable: what a choice that is not set does", () => {
+  const options = (select: HTMLSelectElement) =>
+    Array.from(select.options).map((o) => o.textContent);
+
+  it("has no option that says only Default", async () => {
+    await setupTable({ agent: { title: "Alpha" } });
+    const selects = screen
+      .getByTestId("mode-models-table")
+      .querySelectorAll("select");
+    expect(selects.length).toBeGreaterThan(10);
+    for (const select of selects) {
+      for (const text of options(select)) {
+        expect(text).not.toMatch(/^default$/i);
+      }
+      expect(options(select)[0]).toMatch(/^Not set(: .+)?$/);
+    }
+  });
+
+  it("says the model's setting for an effort, and the rule where no model is starred", async () => {
+    await setupTable();
+    // The text above the table says once what "Not set" means
+    expect(
+      options(
+        screen.getByLabelText("Reasoning effort for Plan") as HTMLSelectElement,
+      )[0],
+    ).toBe("Not set");
+    expect(screen.getByTestId("mode-not-set")).toHaveTextContent(
+      "What Not set does. Reasoning effort: the model's setting.",
+    );
+    expect(screen.getByTestId("mode-not-set")).toHaveTextContent(
+      "the short text for a Qwen model, the full one for every other",
+    );
+    expect(options(promptSelect("Chat"))[0]).toBe("Not set");
+    expect(options(tailSelect("Chat"))[0]).toBe("Not set");
+    // Loop items always get the reminder
+    expect(options(tailSelect("Loop"))[0]).toBe("Not set: on");
+  });
+
+  it("names the text the starred model gets, and the reminder that goes with it", async () => {
+    await setupTable(
+      { agent: { title: "Qwen" }, plan: { title: "Alpha" } },
+      { saved: true },
+      {
+        modelsByRole: {
+          chat: [
+            {
+              title: "Alpha",
+              model: "claude-sonnet-4-6",
+              provider: "anthropic",
+            },
+            { title: "Qwen", model: "qwen3-32b", provider: "openai" },
+            { title: "Coder", model: "qwen3-coder-30b", provider: "openai" },
+          ],
+        },
+      },
+    );
+    expect(options(promptSelect("Plan"))[0]).toBe("Not set: Full");
+    expect(options(tailSelect("Plan"))[0]).toBe("Not set: off");
+    expect(options(promptSelect("Agent"))[0]).toBe("Not set: Short");
+    expect(options(tailSelect("Agent"))[0]).toBe("Not set: on");
+    // Loop and Re-plan take the Agent and Plan models when none is starred
+    expect(options(promptSelect("Loop"))[0]).toBe("Not set: Short");
+    expect(options(promptSelect("Re-plan"))[0]).toBe("Not set: Full");
+    expect(options(tailSelect("Re-plan"))[0]).toBe("Not set: off");
+  });
+
+  it("follows the fallback mode's own choice", async () => {
+    await setupTable({
+      agent: { title: "Alpha", prompt: "short", tail: "off" },
+    });
+    expect(options(promptSelect("Loop"))[0]).toBe("Not set: Short");
+    expect(options(tailSelect("Loop"))[0]).toBe("Not set: off");
+    // The empty choice of Agent itself says what removing its own does
+    expect(options(promptSelect("Agent"))[0]).toBe("Not set: Full");
+  });
+});
+
 describe("ModeModelsTable: what it shows", () => {
   it("renders nothing when there are no chat models", async () => {
     const ideMessenger = new MockIdeMessenger();
@@ -59,7 +136,7 @@ describe("ModeModelsTable: what it shows", () => {
     expect(promptSelect("Loop").value).toBe("terse");
     expect(
       Array.from(promptSelect("Loop").options).map((o) => o.textContent),
-    ).toEqual(["Default", "Full", "Short", "terse", "careful"]);
+    ).toEqual(["Not set: Full", "Full", "Short", "terse", "careful"]);
     expect(tailSelect("Loop").value).toBe("on");
     expect(screen.queryByLabelText("Reminder text for Loop")).toBeNull();
 
