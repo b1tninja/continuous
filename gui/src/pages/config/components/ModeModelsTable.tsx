@@ -24,7 +24,8 @@ import {
 import { MODE_FALLBACK_HINT, MODE_LABEL, ModeCell } from "./ModeCell";
 
 const EFFORTS: { value: ModeReasoningEffort | ""; label: string }[] = [
-  { value: "", label: EFFORT_NOT_SET },
+  // What it means is the same for every mode: the text above the table says it
+  { value: "", label: "Not set" },
   { value: "off", label: "Off" },
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium" },
@@ -143,10 +144,13 @@ export function ModeModelsTable() {
           model each; left blank, they use the Agent model, the Plan model and
           the starting turn's model. Prompt picks the system text of a mode
           (full, short, or a block from prompts), and Reminder the one-line note
-          added to your messages. With no Prompt set, a Qwen model gets the
-          short text and every other model the full one; with no Reminder set,
-          it is on for Loop items and for a model on the short or tailored text.
-          Saved to config.yaml.
+          added to your messages. Saved to config.yaml.
+        </p>
+        <p className="mt-1 text-xs text-description" data-testid="mode-not-set">
+          What Not set does. Reasoning effort: {EFFORT_NOT_SET}. Prompt: the
+          short text for a Qwen model, the full one for every other. Reminder:
+          on for Loop items and for a model on the short or tailored text. Where
+          a mode's model is known, the choice names what applies.
         </p>
       </div>
 

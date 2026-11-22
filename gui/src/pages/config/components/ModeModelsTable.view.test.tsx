@@ -29,19 +29,26 @@ describe("ModeModelsTable: what a choice that is not set does", () => {
       for (const text of options(select)) {
         expect(text).not.toMatch(/^default$/i);
       }
-      expect(options(select)[0]).toMatch(/^Not set: /);
+      expect(options(select)[0]).toMatch(/^Not set(: .+)?$/);
     }
   });
 
-  it("says the model's setting for an effort, and by model with no model starred", async () => {
+  it("says the model's setting for an effort, and the rule where no model is starred", async () => {
     await setupTable();
+    // The text above the table says once what "Not set" means
     expect(
       options(
         screen.getByLabelText("Reasoning effort for Plan") as HTMLSelectElement,
       )[0],
-    ).toBe("Not set: the model's setting");
-    expect(options(promptSelect("Chat"))[0]).toBe("Not set: by model");
-    expect(options(tailSelect("Chat"))[0]).toBe("Not set: by model");
+    ).toBe("Not set");
+    expect(screen.getByTestId("mode-not-set")).toHaveTextContent(
+      "What Not set does. Reasoning effort: the model's setting.",
+    );
+    expect(screen.getByTestId("mode-not-set")).toHaveTextContent(
+      "the short text for a Qwen model, the full one for every other",
+    );
+    expect(options(promptSelect("Chat"))[0]).toBe("Not set");
+    expect(options(tailSelect("Chat"))[0]).toBe("Not set");
     // Loop items always get the reminder
     expect(options(tailSelect("Loop"))[0]).toBe("Not set: on");
   });

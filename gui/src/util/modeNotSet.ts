@@ -16,8 +16,14 @@ import type { ModeDrafts, TableMode } from "./modeModelsDraft";
  * Thinking menu does, in words, from the functions the requests use.
  */
 
+/**
+ * With no model starred for a mode the model id is not known here, so the
+ * choice says only that it is not set; the table's text gives the rule.
+ */
+const NOT_SET = "Not set";
+
 /** With no effort for the mode, the model's own reasoning setting is sent. */
-export const EFFORT_NOT_SET = "Not set: the model's setting";
+export const EFFORT_NOT_SET = "the model's setting";
 
 const PROFILE_LABEL = { full: "Full", short: "Short", tailored: "Tailored" };
 
@@ -64,8 +70,7 @@ function modelIdFor(
 /**
  * The Prompt choice of a mode when none is set: the fallback mode's choice
  * (Loop takes Agent's, Re-plan takes Plan's), else the text the model id
- * selects (core/llm/prompts/turns.ts `promptProfile`). With no model starred
- * the id is not known here, so the answer is the rule.
+ * selects (core/llm/prompts/turns.ts `promptProfile`).
  */
 export function promptNotSetLabel(
   mode: TableMode,
@@ -83,9 +88,7 @@ export function promptNotSetLabel(
   }
   if (choice?.profile) return `Not set: ${PROFILE_LABEL[choice.profile]}`;
   const id = modelIdFor(mode, drafts, models);
-  return id
-    ? `Not set: ${PROFILE_LABEL[promptProfile(id)]}`
-    : "Not set: by model";
+  return id ? `Not set: ${PROFILE_LABEL[promptProfile(id)]}` : NOT_SET;
 }
 
 /**
@@ -103,7 +106,7 @@ export function reminderNotSetLabel(
   const modeModels = draftAsModeModels(unset, blocks);
   const id = modelIdFor(mode, drafts, models);
   if (!id && mode !== "loop" && !promptChoiceFor(modeModels, mode)) {
-    return "Not set: by model";
+    return NOT_SET;
   }
   // Chat has no built-in line, so "on" adds nothing there either
   return tailFor(modeModels, mode, id) ? "Not set: on" : "Not set: off";
