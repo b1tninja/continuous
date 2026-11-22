@@ -1,5 +1,5 @@
 import { act, render, screen } from "@testing-library/react";
-import { useRef } from "react";
+import { ReactNode, useRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatTranscript, useScrollBox } from "./ChatTranscript";
 
@@ -24,10 +24,12 @@ function List({
   count,
   stickToEnd,
   scrollTop,
+  renderItem = (item) => <span>{item}</span>,
 }: {
   count: number;
   stickToEnd: boolean;
   scrollTop?: number;
+  renderItem?: (item: string) => ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const scrollElement = useScrollBox(ref);
@@ -45,7 +47,7 @@ function List({
         items={items}
         stickToEnd={stickToEnd}
         itemKey={(item) => item}
-        renderItem={(item) => <span>{item}</span>}
+        renderItem={renderItem}
       />
     </div>
   );
@@ -81,5 +83,50 @@ describe("ChatTranscript", () => {
     expect(screen.getAllByTestId("chat-transcript-row").length).toBeLessThan(
       40,
     );
+  });
+
+  it("does not render the mounted rows again for a scroll", () => {
+    installGeometry(250, 100);
+    const renderItem = vi.fn((item: string) => <span>{item}</span>);
+    render(
+      <List
+        count={40}
+        stickToEnd={false}
+        scrollTop={0}
+        renderItem={renderItem}
+      />,
+    );
+    const rendersOf = (item: string) =>
+      renderItem.mock.calls.filter(([it]) => it === item).length;
+    const before = rendersOf("row-0");
+    expect(before).toBeGreaterThan(0);
+
+    const scroller = document.querySelector(
+      "[data-chat-scroll]",
+    ) as HTMLDivElement;
+    act(() => {
+      scroller.scrollTop = 300;
+      scroller.dispatchEvent(new Event("scroll"));
+    });
+
+    // The window moved (a later row was mounted) and row-0 stayed in it
+    expect(screen.getByText("row-9")).toBeTruthy();
+    expect(screen.getByText("row-0")).toBeTruthy();
+    expect(rendersOf("row-0")).toBe(before);
+  });
+
+  it("renders the rows again when the owner passes another renderItem", () => {
+    installGeometry(250, 100);
+    const view = render(<List count={40} stickToEnd={false} scrollTop={0} />);
+    expect(screen.getByText("row-0")).toBeTruthy();
+    view.rerender(
+      <List
+        count={40}
+        stickToEnd={false}
+        scrollTop={0}
+        renderItem={(item) => <span>{item} again</span>}
+      />,
+    );
+    expect(screen.getByText("row-0 again")).toBeTruthy();
   });
 });

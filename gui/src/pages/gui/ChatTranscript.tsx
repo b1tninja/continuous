@@ -1,4 +1,5 @@
 import {
+  memo,
   ReactNode,
   useCallback,
   useLayoutEffect,
@@ -153,10 +154,14 @@ export function ChatTranscript<T>({
     const item = items[index];
     const key = itemKey(item, index);
     rows.push(
-      <MeasuredRow key={key} index={index} onHeight={onHeight}>
-        {/* What the person opened in this row outlives its unmount */}
-        <KeptOpenScope id={key}>{renderItem(item, index)}</KeptOpenScope>
-      </MeasuredRow>,
+      <MeasuredRow
+        key={key}
+        rowKey={key}
+        index={index}
+        item={item}
+        renderItem={renderItem}
+        onHeight={onHeight}
+      />,
     );
   }
 
@@ -183,15 +188,21 @@ export function ChatTranscript<T>({
   );
 }
 
-function MeasuredRow({
-  index,
-  onHeight,
-  children,
-}: {
+interface MeasuredRowProps<T> {
+  rowKey: string;
   index: number;
+  item: T;
+  renderItem: (item: T, index: number) => ReactNode;
   onHeight: (index: number, height: number) => void;
-  children: ReactNode;
-}) {
+}
+
+function MeasuredRowInner<T>({
+  rowKey,
+  index,
+  item,
+  renderItem,
+  onHeight,
+}: MeasuredRowProps<T>) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const el = ref.current;
@@ -205,7 +216,13 @@ function MeasuredRow({
   }, [index, onHeight]);
   return (
     <div ref={ref} data-testid="chat-transcript-row" data-chat-index={index}>
-      {children}
+      {/* What the person opened in this row outlives its unmount */}
+      <KeptOpenScope id={rowKey}>{renderItem(item, index)}</KeptOpenScope>
     </div>
   );
 }
+
+// A scroll or a measured height renders the transcript again, several times
+// for one step. The rows are the same unless the owner rendered, which is
+// when renderItem changes, so they are not rendered again for those.
+const MeasuredRow = memo(MeasuredRowInner) as typeof MeasuredRowInner;
