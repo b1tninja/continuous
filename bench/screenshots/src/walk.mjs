@@ -2,7 +2,7 @@
 // person wants, in order), what is counted from a walk's trace, and the rule
 // that says whether a run is worse than the baseline. Where each intent is
 // done in today's layout is in walkLayout.mjs; the browser is driven by
-// walkRun.mjs. Everything here but measureControl, bringIntoView and settle
+// walkRun.mjs. Everything here but measureControl, bringIntoView, pasteInto and settle
 // (which run in the page) is pure and has tests.
 import fs from "node:fs";
 
@@ -75,6 +75,7 @@ export const STEP_KINDS = new Set([
   "ide",
   "click",
   "fill",
+  "paste",
   "select",
   "check",
   "press",
@@ -165,7 +166,10 @@ export function findDeadEnds({ trace, files, endsIn }) {
     }
   }
   for (const e of trace) {
-    if (["fill", "select", "check"].includes(e.do) && e.labelled === false) {
+    if (
+      ["fill", "paste", "select", "check"].includes(e.do) &&
+      e.labelled === false
+    ) {
       out.push({
         kind: "no-label",
         detail: `"${e.intent}": the field has no label`,
@@ -257,40 +261,63 @@ export function baselineEntry(r) {
 const END_RANK = { failed: 0, file: 1, page: 2 };
 
 /**
+ * What --check compares, by the name --check-only takes. "scroll" is the only
+ * one that depends on the fonts of the machine: a line that wraps moves
+ * everything under it.
+ */
+export const CHECK_METRICS = ["ends", "steps", "scroll", "tabstops", "files"];
+
+/** "steps,files" as a list of CHECK_METRICS; throws on a name that is not one. */
+export function parseCheckOnly(text) {
+  const names = String(text ?? "")
+    .split(",")
+    .map((n) => n.trim())
+    .filter(Boolean);
+  const unknown = names.filter((n) => !CHECK_METRICS.includes(n));
+  if (unknown.length || names.length === 0) {
+    throw new Error(
+      `--check-only takes a list of ${CHECK_METRICS.join(", ")}${unknown.length ? `; not ${unknown.join(", ")}` : ""}`,
+    );
+  }
+  return CHECK_METRICS.filter((n) => names.includes(n));
+}
+
+/**
  * One run against its baseline entry. Worse: more steps, more scroll than the
  * tolerance allows, more controls passed, more files opened, or a worse end.
  * A better end is better whatever the numbers say: a journey that stopped at
  * a file left out the work done in the editor, so its steps are not the same
- * steps.
+ * steps. `only` limits the comparison to those of CHECK_METRICS.
  * @returns {{ verdict: "worse"|"same"|"better"|"new", worse: string[], better: string[] }}
  */
 export function compareRun(
   current,
   base,
-  { tolerance = SCROLL_TOLERANCE } = {},
+  { tolerance = SCROLL_TOLERANCE, only = CHECK_METRICS } = {},
 ) {
   if (!base) return { verdict: "new", worse: [], better: [] };
   const worse = [];
   const better = [];
   const now = END_RANK[current.endsIn] ?? 0;
   const was = END_RANK[base.endsIn] ?? 0;
-  if (now !== was) {
+  if (only.includes("ends") && now !== was) {
     const line = `ends in ${base.endsIn} -> ${current.endsIn}`;
     return now < was
       ? { verdict: "worse", worse: [line], better }
       : { verdict: "better", worse, better: [line] };
   }
-  const number = (name, key, slack = 0) => {
+  const number = (metric, name, key, slack = 0) => {
+    if (!only.includes(metric)) return;
     const a = base[key];
     const b = current[key];
     if (typeof a !== "number" || typeof b !== "number") return;
     if (b > a + slack) worse.push(`${name} ${a} -> ${b}`);
     else if (b < a - slack) better.push(`${name} ${a} -> ${b}`);
   };
-  number("steps", "steps");
-  number("scroll px", "scrollPx", tolerance);
-  number("controls passed", "controlsPassed");
-  number("files opened", "filesOpened");
+  number("steps", "steps", "steps");
+  number("scroll", "scroll px", "scrollPx", tolerance);
+  number("tabstops", "controls passed", "controlsPassed");
+  number("files", "files opened", "filesOpened");
   return {
     verdict: worse.length ? "worse" : better.length ? "better" : "same",
     worse,
@@ -299,11 +326,15 @@ export function compareRun(
 }
 
 /** Every result against the baseline's journeys: { rows: [{ journey, width, verdict, worse, better }], failed } */
-export function compareAll(results, journeys) {
+export function compareAll(results, journeys, options) {
   const rows = results.map((r) => ({
     journey: r.journey,
     width: r.width,
-    ...compareRun(baselineEntry(r), journeys?.[r.journey]?.[String(r.width)]),
+    ...compareRun(
+      baselineEntry(r),
+      journeys?.[r.journey]?.[String(r.width)],
+      options,
+    ),
   }));
   return { rows, failed: rows.some((r) => r.verdict === "worse") };
 }
@@ -455,6 +486,27 @@ export function bringIntoView(el) {
     behavior: "instant",
   });
   return Math.round(read().reduce((n, v, i) => n + Math.abs(v - before[i]), 0));
+}
+
+/**
+ * Runs in the page. Pastes `text` into a field as Ctrl+V would, without the
+ * system clipboard (a walk must not replace what the person has copied): the
+ * field gets a real `paste` event carrying the text, and when the page leaves
+ * the paste to the browser the text is inserted at the caret, with the input
+ * event that follows. Returns whether the page took the paste itself.
+ */
+export function pasteInto(el, text) {
+  el.focus();
+  const data = new DataTransfer();
+  data.setData("text/plain", text);
+  const event = new ClipboardEvent("paste", {
+    clipboardData: data,
+    bubbles: true,
+    cancelable: true,
+  });
+  const left = el.dispatchEvent(event);
+  if (left) document.execCommand("insertText", false, text);
+  return !left;
 }
 
 /**

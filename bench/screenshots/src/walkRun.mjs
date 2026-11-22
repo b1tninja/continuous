@@ -14,6 +14,7 @@ import {
   fillIn,
   findPlaceholders,
   measureControl,
+  pasteInto,
   resolveTarget,
   settle,
   STEP_KINDS,
@@ -103,7 +104,9 @@ async function act(page, action, intent, journey) {
   entry.scrollPx = await found.evaluate(bringIntoView);
   // Read at rest, just before the action, so only the action can change it
   const text = await pageText(page);
-  if (action.do === "fill") entry.valuePlaceholders = findPlaceholders(value);
+  if (action.do === "fill" || action.do === "paste") {
+    entry.valuePlaceholders = findPlaceholders(value);
+  }
   if (action.do === "check" && (await found.isChecked())) {
     // already ticked: the person reads it and moves on
     entry.skipped = true;
@@ -113,6 +116,7 @@ async function act(page, action, intent, journey) {
       if (action.do === "click") await found.click({ timeout: FIND_MS });
       if (action.do === "check") await found.check({ timeout: FIND_MS });
       if (action.do === "fill") await found.fill(typed, { timeout: FIND_MS });
+      if (action.do === "paste") await found.evaluate(pasteInto, typed);
       if (action.do === "select") {
         await found.selectOption(typed, { timeout: FIND_MS });
       }

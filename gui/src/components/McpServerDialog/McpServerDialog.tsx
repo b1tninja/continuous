@@ -1038,6 +1038,7 @@ export function McpServerDialog({
                   className="m-0 mt-0.5"
                   name={`${titleId}-scope`}
                   checked={form.scope === "user"}
+                  data-testid="mcp-scope-user"
                   onChange={() => update({ scope: "user" })}
                 />
                 <span className="min-w-0">

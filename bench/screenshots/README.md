@@ -192,6 +192,7 @@ with `--update`. Pictures (`screenshot.mjs`) and axe are separate runs.
 ```sh
 cd bench/screenshots && npm run walk -- --browser edge     # three journeys at 300 and 800 px: a table, and walk.json in a temp folder
 npm run walk -- --check                                     # compare with walk-baseline.json; exit 1 when a journey got worse
+npm run walk -- --check --check-only steps,files,ends,tabstops   # the same without scroll px, as CI runs it
 npm run walk -- --update                                    # rewrite walk-baseline.json from this run
 npm run walk -- --journey add-chat-model --width 800 --out "$TMPDIR/walk"
 ```
@@ -209,11 +210,13 @@ real `<App/>`; the panel is always 700 px high.
 
 What is reported per journey and width:
 
-- **steps**: deliberate actions: a click, a field filled, a selection, a box
-  ticked, a key that commits. Opening Settings is one (the gear is the
-  editor's, so the script sends the message the gear sends). Looking at
-  something is not a step, and neither is a box that is already ticked. A
-  picker that takes a click to open and a click to choose is two.
+- **steps**: deliberate actions: a click, a field filled, a paste, a
+  selection, a box ticked, a key that commits. Opening Settings is one (the
+  gear is the editor's, so the script sends the message the gear sends).
+  Looking at something is not a step, and neither is a box that is already
+  ticked. A picker that takes a click to open and a click to choose is two. A
+  paste is a `paste` event on the field carrying the text, not the system
+  clipboard: a walk must not replace what the person has copied.
 - **scroll px**: before each action the control is scrolled into view by the
   least distance (`scrollIntoView` with `nearest`); what every scrolling box
   moved is added up over the journey. It is the least a person must scroll,
@@ -231,7 +234,8 @@ What is reported per journey and width:
   not compared.
 - **files**: how many times a message left the page for an editor file
   (`harness/walkMock.ts` lists those messages). `config/addLocalWorkspaceBlock`
-  is one: core writes a template and opens it.
+  is one: core writes a template and opens it. `openFile` is another: the
+  "Edit the file" links of the MCP dialog and of a server's menu post it.
 - **ends in**: `page` when the last intent was done in the page; `file` when
   the journey stops in an editor file the person must edit by hand, with the
   size of the template core writes (read from core, not copied); `failed` when
@@ -251,11 +255,77 @@ counts as better whatever the step count says.
 
 `--check` exits 1 when a journey at a width has more steps, more scroll (by
 more than 24 px), more controls passed or more files opened than
-`walk-baseline.json`, or a worse end (page, then file, then failed). It prints
-`improved` lines when a number fell; tighten the baseline with `--update`. It
-is wired into no workflow yet: several Settings layout changes are in flight
-and each would fail it until its map is updated. `--check` is meant for CI
-once they have landed.
+`walk-baseline.json`, or a worse end (page, then file, then failed), and 2
+when a journey could not be walked and nothing else was worse. It prints
+`improved` lines when a number fell; tighten the baseline with `--update`.
+`--check-only <list>` compares only the named ones of `ends`, `steps`,
+`scroll`, `tabstops` and `files`.
+
+The `gui-checks` job of `.github/workflows/pr-checks.yaml` runs
+`npm run walk -- --check --check-only steps,files,ends,tabstops --browser chrome`
+after the production render check, and it blocks. Scroll px is left out there:
+the baseline is taken with Windows fonts, and one line that wraps differently
+on the Linux runner moves everything under it (goal y, which depends on fonts
+in the same way, is reported and never compared). On Windows the whole walk
+takes about 30 s with the build, and repeated runs (Edge, and Chrome once)
+gave the same numbers and the same trace.
+
+#### Before and after the Settings rebuild
+
+Each cell is before / after. Before: MCP servers were at the end of the Tools
+tab and "+" wrote a YAML template. After: MCP servers is a tab of its own with
+an Add dialog, and "Add a model" asks what you have. Both taken with Edge on
+Windows, the panel 700 px high.
+
+| Journey          | Width | Steps   | Scroll px  | Goal y    | Tab stops before the goal (in panel) | Files opened | Ends in                 | Dead ends |
+| ---------------- | ----- | ------- | ---------- | --------- | ------------------------------------ | ------------ | ----------------------- | --------- |
+| `reach-mcp-list` | 300   | 2 / 2   | 3383 / 0   | 4063 / 58 | 32 (30) / 2 (0)                      | 0 / 0        | page / page             | 0 / 0     |
+| `reach-mcp-list` | 800   | 2 / 2   | 1913 / 0   | 2593 / 16 | 32 (30) / 2 (0)                      | 0 / 0        | page / page             | 0 / 0     |
+| `add-mcp-server` | 300   | 3 / 7   | 3381 / 341 | 4065 / 91 | 32 (30) / 2 (0)                      | 1 / 0        | file (160 chars) / page | 2 / 0     |
+| `add-mcp-server` | 800   | 3 / 7   | 1911 / 156 | 2595 / 39 | 32 (30) / 2 (0)                      | 1 / 0        | file (160 chars) / page | 2 / 0     |
+| `add-chat-model` | 300   | 10 / 10 | 180 / 212  | 62 / 62   | 2 (0) / 2 (0)                        | 0 / 0        | page / page             | 0 / 0     |
+| `add-chat-model` | 800   | 10 / 10 | 123 / 91   | 20 / 20   | 2 (0) / 2 (0)                        | 0 / 0        | page / page             | 0 / 0     |
+
+`--check` of the new layout against the old baseline said 5 improved and 1
+worse: `add-chat-model` at 300 px scrolls 212 px where it scrolled 180, which
+is 8 px over the tolerance. All of it is the way down the model checklist to
+the journey's model, the third in the list.
+
+How each journey goes now:
+
+- **`reach-mcp-list`**: the gear, then the MCP servers tab (the second tab).
+  The list's heading is at the top of the page; before, it was under the
+  built-in tools, 4063 px down at 300 px.
+- **`add-mcp-server`**: the gear, the MCP servers tab, "+", paste the command
+  line into the box (the form fills itself; typing the line instead costs one
+  more click, on "Fill in the form"), choose "For all my projects" (nothing is
+  chosen to start with, and Save refuses without it), Save, "Save and start"
+  (a command for all projects starts at once, so the dialog shows what will
+  run and asks), and the server is in the list under "Saved filesystem to
+  ...". Seven steps that end with the server listed; before, three steps ended
+  in a YAML template with `<your-mcp-server>` to replace by hand. "For this
+  workspace only" needs no "Save and start", but the server does not start
+  until the editor's question about the folder is answered, outside the page.
+  The scroll is from the paste box down to "Where to save it".
+- **`add-chat-model`**: the gear (Settings opens on Models the first time, and
+  whenever no chat model is selected; someone who last used another tab has
+  one click more), "+", "An API key", paste the key (the test runs by itself),
+  Next, Next, Review, Save, then the Chat picker and the model: ten steps, as
+  before. The "Use for" step has Chat ticked and puts the first of the added
+  models to use. Three are ticked to start with and the journey's model,
+  Claude Sonnet 5.5, is the third, so it still takes the picker (or two boxes
+  unticked before the save, which costs the same). With no particular model
+  in mind the journey is done at Save, in eight steps. Gone: the click on the
+  Models tab and the one on "Test connection". New: "An API key" and the Next
+  of "Use for".
+
+What the mock answers (`harness/walkMock.ts`): `mcp/parsePaste` with core's own
+parser (`parseMcpPaste`), `mcp/analyzeLaunch` with core's own check
+(`analyzeLaunch`, as on Windows), `mcp/scopes` and `mcp/list` as the dialog's
+pictures have them, and `mcp/save` and `config/saveProviderModels` by doing
+what the request says: the server or the models are in the config the page is
+sent next, with the roles and the selection the request named. Nothing is run
+and nothing is written.
 
 **When the layout changes.** A journey (`JOURNEYS` in `src/walk.mjs`) is a list
 of intents such as "go to where MCP servers are"; `src/walkLayout.mjs` maps
@@ -264,10 +334,11 @@ says which one and why (`add-chat-model: cannot "start adding a model": no
 button "Manage models" in the page`) instead of timing out. Then change only
 the map: point the intent at the new control, by `data-testid` or role and
 name; map it to `[]` when the new layout needs nothing there, or to `null` when
-it cannot be done in the page. Leave the journeys as they are, or the numbers
-stop being comparable. A layout that sends a message the mock has no answer
-for needs one in `harness/walkMock.ts`; `walk.json` lists them as
-`unanswered`. Then `--update`, and say in the pull request what moved.
+it cannot be done in the page. An action the new layout needs and no intent
+names goes in the list of the closest intent. Leave the journeys as they are,
+or the numbers stop being comparable. A layout that sends a message the mock
+has no answer for needs one in `harness/walkMock.ts`; `walk.json` lists them
+as `unanswered`. Then `--update`, and say in the pull request what moved.
 
 ### Production render check
 

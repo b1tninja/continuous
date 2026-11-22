@@ -2085,7 +2085,7 @@ const MCP_USER_FILE = String.raw`C:\Users\dev\.continuous\config.yaml`;
 const MCP_FOLDER = String.raw`D:\code\shop-frontend`;
 const MCP_FOLDER_DIR = String.raw`D:\code\shop-frontend\.continuous\mcpServers`;
 
-function mcpScopes(trust: "trusted" | "untrusted" | "none" = "trusted") {
+export function mcpScopes(trust: "trusted" | "untrusted" | "none" = "trusted") {
   return {
     user: { file: MCP_USER_FILE, exists: true },
     folders: [

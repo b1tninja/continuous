@@ -257,6 +257,24 @@ jobs:
           node --test test/render.test.mjs
           npm run render -- --browser chrome
 
+      # Three Settings journeys (reach the MCP server list, add an MCP server
+      # from a command line, add a chat model with a key) are walked in the same
+      # production build with real clicks, and counted. Fails when a journey
+      # takes more steps, passes more Tab stops, opens more editor files or ends
+      # worse than bench/screenshots/walk-baseline.json, or cannot be walked at
+      # all (Settings moved: update src/walkLayout.mjs, see the README, Walks).
+      # Scroll px is not compared here: the baseline was taken with Windows
+      # fonts, and one line that wraps differently on this runner moves
+      # everything under it. Blocking: it loads nothing from the network, waits
+      # on the page, and two local runs gave the same walk.json byte for byte in
+      # about 30 s each. Uses the packages the step above installed.
+      - name: Walk the Settings journeys
+        timeout-minutes: 5
+        run: |
+          cd bench/screenshots
+          node --test test/walk.test.mjs
+          npm run walk -- --check --check-only steps,files,ends,tabstops --browser chrome
+
   binary-checks:
     if: inputs.run_binary != 'false'
     runs-on: ubuntu-latest

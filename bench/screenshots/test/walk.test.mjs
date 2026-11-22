@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   actionsFor,
   baselineEntry,
+  CHECK_METRICS,
   compareAll,
   compareRun,
   countSteps,
@@ -12,6 +13,7 @@ import {
   findPlaceholders,
   formatTable,
   JOURNEYS,
+  parseCheckOnly,
   resolveTarget,
   SCROLL_TOLERANCE,
   STEP_KINDS,
@@ -35,11 +37,12 @@ describe("countSteps", () => {
       step("open settings", "ide"),
       step("go", "click"),
       step("key", "fill"),
+      step("command", "paste"),
       step("storage", "select"),
       step("model", "check"),
       step("commit", "press"),
     ];
-    assert.equal(countSteps(trace), 6);
+    assert.equal(countSteps(trace), 7);
   });
 
   it("does not count looking, waiting, or a box that was already ticked", () => {
@@ -175,6 +178,92 @@ describe("compareRun", () => {
   });
 });
 
+describe("compareRun with only some metrics", () => {
+  const only = parseCheckOnly("steps,files,ends,tabstops");
+
+  it("leaves scroll out, in both directions", () => {
+    const more = compareRun(entry({ scrollPx: 5000 }), entry(), { only });
+    assert.deepEqual(more, { verdict: "same", worse: [], better: [] });
+    assert.equal(
+      compareRun(entry({ scrollPx: 0 }), entry(), { only }).verdict,
+      "same",
+    );
+    // and without the option it still counts
+    assert.equal(
+      compareRun(entry({ scrollPx: 5000 }), entry()).verdict,
+      "worse",
+    );
+  });
+
+  it("still fails on each number that is compared, and on a worse end", () => {
+    for (const over of [
+      { steps: 6 },
+      { controlsPassed: 21 },
+      { filesOpened: 1 },
+      { endsIn: "file" },
+      { endsIn: "failed" },
+    ]) {
+      const r = compareRun(entry({ scrollPx: 0, ...over }), entry(), { only });
+      assert.equal(r.verdict, "worse", JSON.stringify(over));
+    }
+  });
+
+  it("compares nothing it was not asked to", () => {
+    const worseEverywhere = entry({
+      steps: 9,
+      scrollPx: 9000,
+      controlsPassed: 99,
+      filesOpened: 3,
+      endsIn: "file",
+    });
+    assert.deepEqual(
+      compareRun(worseEverywhere, entry(), { only: ["steps"] }).worse,
+      ["steps 5 -> 9"],
+    );
+    assert.deepEqual(
+      compareRun(worseEverywhere, entry(), { only: ["scroll"] }).worse,
+      ["scroll px 1000 -> 9000"],
+    );
+  });
+
+  it("reaches every journey through compareAll", () => {
+    const result = (over) => ({
+      journey: "a",
+      width: 300,
+      ...entry(over),
+      deadEnds: [],
+    });
+    const base = { a: { 300: entry() } };
+    const scrolled = [result({ scrollPx: 5000 })];
+    assert.equal(compareAll(scrolled, base).failed, true);
+    assert.equal(compareAll(scrolled, base, { only }).failed, false);
+    assert.equal(
+      compareAll([result({ steps: 6 })], base, { only }).failed,
+      true,
+    );
+  });
+});
+
+describe("parseCheckOnly", () => {
+  it("reads a list in any order, with spaces, each name once", () => {
+    assert.deepEqual(parseCheckOnly("tabstops, steps,files,ends,steps"), [
+      "ends",
+      "steps",
+      "tabstops",
+      "files",
+    ]);
+    assert.deepEqual(parseCheckOnly(CHECK_METRICS.join(",")), CHECK_METRICS);
+  });
+
+  it("refuses a name that is not a metric, and an empty list", () => {
+    assert.throws(() => parseCheckOnly("steps,goaly"), /not goaly/);
+    assert.throws(() => parseCheckOnly(""), /--check-only takes a list/);
+    assert.throws(() => parseCheckOnly(undefined), /--check-only takes a list/);
+    // a missing value swallows the next flag
+    assert.throws(() => parseCheckOnly("--browser"), /not --browser/);
+  });
+});
+
 describe("compareAll", () => {
   it("fails when any journey at any width is worse", () => {
     const result = (journey, width, over) => ({
@@ -238,6 +327,19 @@ describe("findDeadEnds", () => {
       findDeadEnds({ trace, files: [], endsIn: "page" }).map((d) => d.kind),
       ["no-label", "placeholder"],
     );
+  });
+
+  it("asks a pasted field for a label as it asks a typed one", () => {
+    const trace = [
+      step("give the command line", "paste", { labelled: false }),
+      step("see it", "see"),
+    ];
+    assert.deepEqual(findDeadEnds({ trace, files: [], endsIn: "page" }), [
+      {
+        kind: "no-label",
+        detail: '"give the command line": the field has no label',
+      },
+    ]);
   });
 
   it("reports a journey that ends in the page without the page showing it", () => {
