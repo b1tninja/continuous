@@ -229,6 +229,40 @@ export const VIEWS = {
     fixture: "drop-snapshot",
     note: "the chat input after a drop of a text file and a binary from the file manager: a snapshot chip with its badge, and the note",
   },
+  "setup-long-model": {
+    fixture: "setup-long-model",
+    note: "the provider setup form in the onboarding card, at its model list, with long model ids",
+  },
+  "setup-dialog": {
+    fixture: "setup-dialog",
+    note: "the same model list in the app dialog, as Manage models opens it",
+  },
+  history: {
+    fixture: "history",
+    note: "History: a few sessions with long titles, and the search box",
+  },
+  "message-error": {
+    fixture: "message-error",
+    note: "a message whose render throws: the error, its stack and Restart in place of the message",
+  },
+  "context-60": {
+    fixture: "context-60",
+    note: 'a reply at 62% context: "Compact conversation" is spelled out in the row under the reply',
+  },
+  "thinking-menu": {
+    fixture: "thinking-menu",
+    note: "a reasoning model with a long name: the Thinking menu beside the model in the input row",
+  },
+  "long-prompt": {
+    fixture: "long-prompt",
+    scrollbars: true,
+    note: "a prompt long enough to scroll inside the input, with scrollbars drawn (dark theme: the colour of the track)",
+  },
+  "zoom-150": {
+    fixture: "status-row",
+    zoom: 1.5,
+    note: "status-row at 150% zoom: the width is the panel's, the page has two thirds of it in CSS pixels",
+  },
 };
 
 export const VIEW_NAMES = Object.keys(VIEWS);
@@ -296,6 +330,8 @@ export function planJobs({ views, widths, themes, height }) {
           height,
           theme,
           name: shotName(view, width, theme),
+          ...(VIEWS[view].zoom ? { zoom: VIEWS[view].zoom } : {}),
+          ...(VIEWS[view].scrollbars ? { scrollbars: true } : {}),
         });
       }
     }

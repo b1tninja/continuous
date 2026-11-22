@@ -10,8 +10,9 @@ import {
 export const USAGE = `Usage: node bench/screenshots/screenshot.mjs [options]
 
   --view <names|all>     chat, conversation, streaming, tool-call, approval, tool-call-done,
-                         loop, settings-tools, permissions-editor (comma list; default all)
-  --width <px,px>        viewport widths (default 300,800)
+                         loop, settings-tools, permissions-editor ... (comma list; default
+                         all; --list prints them)
+  --width <px,px>        panel widths (default 300,800); a zoomed view divides it by its zoom
   --height <px>          viewport height (default 700)
   --theme <dark|light|hc|both>   (default both = dark,light; hc is opt-in)
   --out <dir>            where the PNGs and manifest.json go (required)
@@ -22,6 +23,10 @@ export const USAGE = `Usage: node bench/screenshots/screenshot.mjs [options]
   --dist <dir>           use an already built harness instead of building one
   --browser <auto|chromium|edge|chrome>  (default auto)
   --sandbox              take the pictures inside a Windows Sandbox (see README)
+  --serve                build the harness and keep serving it on 127.0.0.1 for a
+                         browser of your own; prints one address per view (--view
+                         limits the list). No pictures; Ctrl+C stops it
+  --port <n>             the port for --serve (default: any free one)
   --list                 print the views and exit
   --help
 `;
@@ -37,8 +42,9 @@ const VALUE_FLAGS = new Set([
   "tolerance",
   "dist",
   "browser",
+  "port",
 ]);
-const BOOL_FLAGS = new Set(["sandbox", "list", "help"]);
+const BOOL_FLAGS = new Set(["sandbox", "list", "help", "serve"]);
 
 function number(name, value, min, max) {
   const n = Number(value);
@@ -68,6 +74,15 @@ export function parseArgs(argv) {
     }
   }
   if (raw.help || raw.list) return { help: !!raw.help, list: !!raw.list };
+  if (raw.serve) {
+    return {
+      serve: true,
+      port: raw.port === undefined ? 0 : number("port", raw.port, 0, 65535),
+      views: parseViews(raw.view),
+      themes: parseThemes(raw.theme ?? "dark"),
+      dist: raw.dist,
+    };
+  }
   if (!raw.out) throw new Error("--out <dir> is required");
   const browser = raw.browser ?? "auto";
   if (!["auto", "chromium", "edge", "chrome"].includes(browser)) {

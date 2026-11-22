@@ -35,7 +35,8 @@ export function resolveRequest(root, urlPath) {
   return full;
 }
 
-export function serve(root) {
+/** Serves `root`; port 0 takes any free port. */
+export function serve(root, port = 0) {
   const server = http.createServer((req, res) => {
     if (req.method !== "GET" && req.method !== "HEAD") {
       res.writeHead(405).end();
@@ -60,7 +61,7 @@ export function serve(root) {
   });
   return new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
+    server.listen(port, "127.0.0.1", () => {
       const { port } = server.address();
       resolve({
         url: `http://127.0.0.1:${port}/`,
