@@ -124,6 +124,7 @@ Four titles carry the category twice in this version, so the palette shows them 
 The commands from **Open Permissions** to **Test Connection of the Chat Model** do what the same control in the panel does, and have no default key:
 
 - **Open Permissions** and **Open the Audit Inbox** open the Permissions settings page, the second at its Inbox view. **Open Stats** opens the Stats page.
+- **Open Settings** names no tab, so Settings opens on **Models** while no chat model is selected, and otherwise on the tab you used last. The tabs are Models, Providers, Tools, Permissions, Rules, Configs, General and Help. **General** was called Settings, and it holds what the Indexing tab held as a folded group, **Codebase index and docs**; links to `/config?tab=settings` and `/config?tab=indexing` open it.
 - **Stop Response** does what the Stop button does (it cancels the reply and ends running terminal commands), after asking **Stop the response?** in the chat panel, since a key bound to it would otherwise stop with one press. **Resume Response** is the Resume button under a stopped, failed or interrupted turn.
 - **Start Loop** resumes a stopped loop that has work left, as the loop's Resume does; otherwise it picks Loop in the mode picker, and the plan the next message presents starts the loop. **Stop Loop** is the loop's Stop: it stops after the running item, or ends a parallel wave's workers.
 - **Show Agents** opens the session's agents list above the input and moves focus to it.

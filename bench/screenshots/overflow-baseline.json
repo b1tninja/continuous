@@ -365,16 +365,16 @@
       "300": {},
       "340": {}
     },
-    "settings-help": {
-      "200": {
-        "clipped div[aria-label=\"Help\"] > ... > div.space-y-6 > div > div.space-y-0.rounded-default.bg-editor.px-4 > div.overflow-hidden.rounded-md.border.border-gray-600": 2
-      },
+    "settings-general-index": {
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
     },
-    "settings-indexing": {
-      "200": {},
+    "settings-help": {
+      "200": {
+        "clipped div[aria-label=\"Help\"] > ... > div.space-y-6 > div > div.space-y-0.rounded-default.bg-editor.px-4 > div.overflow-hidden.rounded-md.border.border-gray-600": 2
+      },
       "250": {},
       "300": {},
       "340": {}

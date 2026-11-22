@@ -8,10 +8,26 @@ import { Card, Divider } from "../../../components/ui";
 import { IdeMessengerContext } from "../../../context/IdeMessenger";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks";
 import { updateConfig } from "../../../redux/slices/configSlice";
-import { ConfigHeader } from "../components/ConfigHeader";
 import { UserSetting } from "../components/UserSetting";
 import IndexingProgress from "../features/indexing";
 import { DocsSection } from "./DocsSection";
+
+/**
+ * The one line the "Codebase index and docs" fold shows while closed: whether
+ * the index is on, whether the person chose that, and how many documentation
+ * sources the config lists.
+ */
+export function indexingSummary(config: {
+  disableIndexing?: boolean;
+  docs?: unknown[];
+}): string {
+  const docs = config.docs?.length ?? 0;
+  const state =
+    config.disableIndexing === undefined
+      ? "Not set: index on"
+      : `Set by you: index ${config.disableIndexing ? "off" : "on"}`;
+  return `${state}. ${docs} ${docs === 1 ? "doc" : "docs"}`;
+}
 
 function CodebaseSubSection() {
   const config = useAppSelector((state) => state.config.config);
@@ -64,6 +80,13 @@ function EnableIndexingSetting() {
             <br />
             Note that indexing can consume significant system resources,
             especially on larger codebases.
+            <br />
+            <br />
+            <span data-testid="indexing-state">
+              {config.disableIndexing === undefined
+                ? "Not set: on."
+                : `Set by you: ${disableIndexing ? "off" : "on"}.`}
+            </span>
           </div>
         }
         value={!disableIndexing}
@@ -74,14 +97,16 @@ function EnableIndexingSetting() {
   );
 }
 
+/**
+ * Settings > General > Codebase index and docs: what the Indexing tab held.
+ * The fold above names it, so there is no heading here.
+ */
 export function IndexingSettingsSection() {
   const config = useAppSelector((state) => state.config.config);
   const disableIndexing = config.disableIndexing ?? false;
 
   return (
     <>
-      <ConfigHeader title="Indexing" />
-
       <Alert type="warning" className="mb-6">
         <div className="space-y-4">
           <div>

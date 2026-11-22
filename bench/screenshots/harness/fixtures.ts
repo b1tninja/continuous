@@ -1158,8 +1158,9 @@ Object.assign(FIXTURES, {
     "view=protections&section=commands-secrets",
   ),
   "settings-configs": settingsTab("configs"),
-  "settings-indexing": settingsTab("indexing"),
-  "settings-general": settingsTab("settings"),
+  // The old Indexing link: General, with "Codebase index and docs" opened by it
+  "settings-general-index": settingsTab("indexing"),
+  "settings-general": settingsTab("general"),
   "settings-help": settingsTab("help"),
   "agents-running": agentsSession([
     { status: "running" },

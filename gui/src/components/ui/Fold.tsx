@@ -94,7 +94,7 @@ export function Fold({
             <span className="text-sm font-semibold">
               {title}
               {mark && (
-                <span className="ml-1.5 text-2xs font-normal text-warning">
+                <span className="ml-1.5 rounded-sm border border-solid border-border px-1 text-2xs font-normal text-description">
                   {mark}
                 </span>
               )}

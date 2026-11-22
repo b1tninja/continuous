@@ -141,13 +141,13 @@ export const VIEWS = {
     fixture: "settings-configs",
     note: "Settings, Configs tab",
   },
-  "settings-indexing": {
-    fixture: "settings-indexing",
-    note: "Settings, Indexing tab",
+  "settings-general-index": {
+    fixture: "settings-general-index",
+    note: "Settings, General, with Codebase index and docs open, reached through the old Indexing link (?tab=indexing)",
   },
   "settings-general": {
     fixture: "settings-general",
-    note: "Settings, Settings tab",
+    note: "Settings, General tab, with Codebase index and docs folded to its one-line state",
   },
   "settings-help": { fixture: "settings-help", note: "Settings, Help tab" },
   "agents-running": {

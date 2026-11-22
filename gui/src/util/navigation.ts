@@ -2,12 +2,11 @@
 export type ConfigTab =
   | "models"
   | "providers"
-  | "rules"
   | "tools"
   | "permissions"
+  | "rules"
   | "configs"
-  | "indexing"
-  | "settings"
+  | "general"
   | "help";
 
 // TODO: Move all the routes here
@@ -33,8 +32,9 @@ export const CONFIG_ROUTES = {
   TOOLS: buildConfigRoute("tools"),
   PERMISSIONS: buildConfigRoute("permissions"),
   CONFIGS: buildConfigRoute("configs"),
-  INDEXING: buildConfigRoute("indexing"),
-  SETTINGS: buildConfigRoute("settings"),
+  GENERAL: buildConfigRoute("general"),
+  // The Indexing tab is a folded group on General
+  INDEXING: `${buildConfigRoute("general")}&section=index`,
   HELP: buildConfigRoute("help"),
 } as const;
 

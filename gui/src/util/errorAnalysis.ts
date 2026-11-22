@@ -154,7 +154,7 @@ export function analyzeError(
     customErrorMessage =
       "This model produced an invalid tool call that Ollama could not parse. " +
       "This is a known transient issue — you can resubmit your message to try again. " +
-      'Enabling "Only use system message tools" in Settings > Experimental ' +
+      'Enabling "Only use system message tools" in Settings > General > Experimental ' +
       "may reduce these errors by avoiding Ollama's native tool call parser.";
   }
 

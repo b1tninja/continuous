@@ -3,6 +3,13 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Divider } from "../../components/ui/Divider";
 import { TabGroup } from "../../components/ui/TabGroup";
 import { useNavigationListener } from "../../hooks/useNavigationListener";
+import { useAppSelector } from "../../redux/hooks";
+import {
+  landingTab,
+  readLastTab,
+  rememberLastTab,
+  rewriteConfigLink,
+} from "./configLinks";
 import { bottomTabSections, getAllTabs, topTabSections } from "./configTabs";
 import { AccountDropdown } from "./features/account/AccountDropdown";
 
@@ -42,11 +49,37 @@ function moveBetweenTabs(e: React.KeyboardEvent<HTMLDivElement>) {
 function ConfigPage() {
   useNavigationListener();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const activeTab = searchParams.get("tab") || "settings";
+  const [searchParams, setSearchParams] = useSearchParams();
   const tablistRef = useRef<HTMLDivElement>(null);
 
   const allTabs = getAllTabs();
+
+  // An old link (a tab or section that moved) is rewritten to where its
+  // content is now. The page already draws that place on this render; the
+  // effect puts the same thing in the URL, where the views and folds read it.
+  const rewritten = rewriteConfigLink(searchParams);
+  const linked = (rewritten ?? searchParams).get("tab");
+  useEffect(() => {
+    if (rewritten) setSearchParams(rewritten, { replace: true });
+  }, [rewritten, setSearchParams]);
+
+  // With no tab in the link: Models while no chat model is selected, else the
+  // tab last used
+  const hasChatModel = useAppSelector(
+    (state) => !!state.config.config.selectedModelByRole.chat,
+  );
+  const activeTab =
+    linked ||
+    landingTab({
+      hasChatModel,
+      lastTab: readLastTab(),
+      tabIds: allTabs.filter((t) => !t.action).map((t) => t.id),
+    });
+  useEffect(() => {
+    // Only a tab the person asked for: landing on Models for want of a model
+    // must not replace the tab they use
+    if (linked) rememberLastTab(linked);
+  }, [linked]);
 
   const handleTabClick = (tabId: string) => {
     if (tabId === "back") {

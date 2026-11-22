@@ -46,7 +46,6 @@
     "settings-help": {
       "color-contrast": 3
     },
-    "settings-indexing": {},
     "settings-models": {
       "color-contrast": 1
     },
@@ -132,6 +131,9 @@
     "settings-tools-mcp": {},
     "permissions-levels": {},
     "permissions-protections": {},
-    "permissions-protections-open": {}
+    "permissions-protections-open": {},
+    "settings-general-index": {
+      "color-contrast": 7
+    }
   }
 }
