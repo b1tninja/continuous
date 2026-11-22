@@ -287,15 +287,14 @@ export const streamNormalInput = createAsyncThunk<
     const serverDecides =
       selectedChatModel.maxTokensSource === "none" &&
       completionOptions.maxTokens === undefined;
-    const localMaxTokens = serverDecides
-      ? undefined
-      : localOutputLimit({
-          apiBase: selectedChatModel.apiBase,
-          maxTokens:
-            completionOptions.maxTokens ??
-            selectedChatModel.completionOptions?.maxTokens,
-          outputTokensAvailable,
-        });
+    const localMaxTokens = localOutputLimit({
+      apiBase: selectedChatModel.apiBase,
+      maxTokens:
+        completionOptions.maxTokens ??
+        selectedChatModel.completionOptions?.maxTokens,
+      outputTokensAvailable,
+      maxTokensSource: selectedChatModel.maxTokensSource,
+    });
     if (localMaxTokens) {
       completionOptions = { ...completionOptions, maxTokens: localMaxTokens };
     }
