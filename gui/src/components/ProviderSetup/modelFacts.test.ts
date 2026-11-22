@@ -173,7 +173,7 @@ describe("More", () => {
     expect(MORE_NOT_SET).toEqual({
       timeout: "7,200 s",
       connectTimeout: "10 s",
-      proxy: "HTTPS_PROXY / HTTP_PROXY from the environment",
+      proxy: "HTTPS_PROXY or HTTP_PROXY from the environment, else no proxy",
       verifySsl: "on",
       useSystemCa: "on for Windows and macOS, off for Linux",
       caBundlePath: "none",
