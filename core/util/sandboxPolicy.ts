@@ -1,8 +1,5 @@
 import * as posix from "node:path/posix";
 import {
-  CONFIG_BASENAMES,
-  CONFIG_DIRS,
-  CONFIG_DIR_PAIRS,
   HOME_SECRET_DIRS,
   HOME_SECRET_FILES,
   SECRET_BASENAMES,
@@ -27,13 +24,11 @@ import {
 } from "./egressPolicy";
 import {
   BROAD_DENY_READ,
-  CANONICAL_CASE,
   ENV_GLOBS,
   HOME_READ_ALLOWED,
   LINUX_HOME_SECRETS,
   MACOS_HOME_SECRETS,
   MACOS_PRIVATE_ALIASED,
-  NARROWED_CONFIG_DIRS,
   OWN_HOME_DIRS,
   PRECREATE_SAFE,
   PROJECT_POLICY_DIRS,
@@ -41,6 +36,7 @@ import {
   SYSTEM_SECRET_PATHS,
   SYSTEM_TEMP_ROOTS,
   notEnforcedItems,
+  protectedConfigRels,
 } from "./sandboxPolicyData";
 import {
   GLOB_META,
@@ -264,27 +260,6 @@ function locations(root: string, rel: string): string[] {
   return [`${root}/${rel}`, `${root}/**/${rel}`];
 }
 
-function configRels(): { rels: string[]; bases: string[] } {
-  const rels: string[] = [];
-  const bases: string[] = [];
-  for (const dir of CONFIG_DIRS) {
-    for (const r of NARROWED_CONFIG_DIRS[dir] ?? [dir]) rels.push(r);
-  }
-  for (const [a, b] of CONFIG_DIR_PAIRS) {
-    // The other pairs live in the home directory, which is never writable here
-    if (a === ".github") {
-      const joined = `${a}/${b}`;
-      rels.push(CANONICAL_CASE[joined] ?? joined);
-    }
-  }
-  for (const base of CONFIG_BASENAMES) {
-    const r = CANONICAL_CASE[base] ?? base;
-    rels.push(r);
-    bases.push(r);
-  }
-  return { rels, bases };
-}
-
 function addConfig(acc: Acc, ctx: Ctx): void {
   if (!builtinOn(ctx, "protect-config")) {
     acc.warnings.push(
@@ -292,7 +267,7 @@ function addConfig(acc: Acc, ctx: Ctx): void {
     );
     return;
   }
-  const { rels, bases } = configRels();
+  const { rels, bases } = protectedConfigRels();
   for (const root of ctx.roots) {
     put(
       acc,

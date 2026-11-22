@@ -7,8 +7,13 @@ import { sourceEncodedArgs } from "./sourceEncoded";
 export interface ContainerRunOptions {
   runtime: ContainerRuntime;
   image?: string;
-  /** The workspace folder on the host: the only thing mounted */
+  /** The workspace folder on the host: the only folder mounted */
   cwd: string;
+  /**
+   * Paths inside the workspace mounted again read-only, over the read-write
+   * mount (`protectedMounts`): what the host runs or trusts later
+   */
+  readOnly?: readonly ReadOnlyMount[];
   platform?: NodeJS.Platform;
   /** Host user and group on Linux and macOS: the command runs as them, not root */
   user?: { uid: number; gid: number };
@@ -16,6 +21,39 @@ export interface ContainerRunOptions {
   network?: "none" | "bridge";
   memory?: string;
   pids?: number;
+}
+
+/** One path of the workspace mounted again, read-only, over the read-write mount. */
+export interface ReadOnlyMount {
+  /** The path on the host, in the host's own spelling */
+  host: string;
+  /** Where it appears in the container */
+  container: string;
+}
+
+/**
+ * One value of `--mount` is a line of CSV, so a field that holds a comma or a
+ * quote is quoted whole, with its quotes doubled.
+ */
+function mountField(field: string): string {
+  return /[,"]/.test(field) ? `"${field.replace(/"/g, '""')}"` : field;
+}
+
+/**
+ * The arguments for the read-only mounts. `--mount` and not `-v`: with `-v`
+ * a host path that has gone since it was listed is created by the runtime (a
+ * root-owned folder on the host), and with `--mount` the run fails instead.
+ */
+function readOnlyMountArgs(mounts: readonly ReadOnlyMount[]): string[] {
+  return mounts.flatMap((m) => [
+    "--mount",
+    [
+      "type=bind",
+      mountField(`src=${m.host}`),
+      mountField(`dst=${m.container}`),
+      "readonly",
+    ].join(","),
+  ]);
 }
 
 /**
@@ -41,7 +79,8 @@ export function containerWorkdir(
  * - `--read-only` and a small `tmpfs` at `/tmp`: the image cannot be changed; only `/tmp` and the workspace are writable
  * - `--pids-limit`, `--memory`: a runaway command cannot take the machine
  * - `--user uid:gid` (Linux and macOS): files written in the workspace belong to the person, not root
- * - one bind mount, the workspace read-write; no Docker socket, no other folder, no host environment
+ * - one folder, the workspace, mounted read-write; no Docker socket, no other folder, no host environment
+ * - `readOnly`: parts of the workspace mounted again read-only, after the workspace so they sit over it
  * - the command as base64 sourced by bash, so quotes and heredocs arrive exactly (see `sourceEncodedArgs`)
  */
 export function containerArgs(
@@ -75,6 +114,7 @@ export function containerArgs(
     "HOME=/tmp",
     "-v",
     `${opts.cwd}:${workdir}:rw`,
+    ...readOnlyMountArgs(opts.readOnly ?? []),
     "-w",
     workdir,
     opts.image ?? DEFAULT_CONTAINER_IMAGE,
