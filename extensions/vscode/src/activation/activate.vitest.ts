@@ -1,16 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { yaml } = vi.hoisted(() => ({
+const { yaml, getExtension, showInformationMessage } = vi.hoisted(() => ({
   yaml: {
     inspect: vi.fn((_key: string): unknown => undefined),
     update: vi.fn(async (_key: string, _value: unknown, _target: number) => {}),
   },
+  getExtension: vi.fn((_id: string): unknown => undefined),
+  showInformationMessage: vi.fn((..._args: unknown[]): unknown => undefined),
 }));
 
 vi.mock("vscode", () => ({
   ConfigurationTarget: { Global: 1 },
   workspace: { getConfiguration: () => yaml },
-  window: { showInformationMessage: vi.fn() },
+  window: { showInformationMessage },
+  extensions: { getExtension },
+  commands: { executeCommand: vi.fn() },
 }));
 vi.mock("core/util/paths", () => ({
   getContinueRcPath: vi.fn(),
@@ -98,5 +102,50 @@ describe("activateExtension and the yaml.schemas clean-up", () => {
 
     expect(yaml.update).not.toHaveBeenCalled();
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("activateExtension and the side-by-side notice", () => {
+  // A first start: nothing stored yet
+  const firstStart = {
+    globalState: { get: () => undefined, update: async () => {} },
+  } as any;
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    getExtension.mockReset();
+    showInformationMessage.mockReset();
+  });
+
+  it("activates while the notice waits for an answer", async () => {
+    getExtension.mockImplementation((id: string) =>
+      id === "Continue.continue" ? { id } : undefined,
+    );
+    showInformationMessage.mockReturnValue(new Promise(() => {}));
+
+    const api = await activateExtension(firstStart);
+
+    expect(api.registerCustomContextProvider).toBeTypeOf("function");
+    await vi.waitFor(() =>
+      expect(showInformationMessage).toHaveBeenCalledTimes(1),
+    );
+    expect(showInformationMessage.mock.calls[0][0]).toContain(
+      "the Continue extension is also installed",
+    );
+  });
+
+  it("activates when the extension list cannot be read", async () => {
+    getExtension.mockImplementation(() => {
+      throw new Error("extensions are unavailable");
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const api = await activateExtension(firstStart);
+
+    expect(api.registerCustomContextProvider).toBeTypeOf("function");
+    expect(warn).toHaveBeenCalledWith(
+      "Continuous: could not show the side-by-side notice: extensions are unavailable",
+    );
+    expect(showInformationMessage).not.toHaveBeenCalled();
   });
 });

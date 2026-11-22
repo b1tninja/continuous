@@ -63,7 +63,7 @@ Or in VS Code: open the **Extensions** view, select **...** → **Install from V
 
 Run **Developer: Reload Window**, then open the Continuous icon in the activity bar.
 
-Continuous uses the extension ID `b1tninja.continuous`. It installs alongside the original Continue extension (`Continue.continue`) without conflicts, so you do not need to uninstall Continue first. It reads your existing `~/.continue` configuration.
+Continuous uses the extension ID `b1tninja.continuous`. It installs alongside the original Continue extension (`Continue.continue`), so you do not need to uninstall Continue first. It starts from a copy of your `~/.continue` configuration; see [With the Continue extension installed](#with-the-continue-extension-installed).
 
 To check which version is installed, run `code --list-extensions --show-versions` and look for `b1tninja.continuous@<version>`.
 
@@ -90,6 +90,14 @@ code --install-extension (Get-ChildItem "$env:TEMP\continuous-vsix" -Filter *.vs
 ```
 
 Replace `win32-x64-vsix` with `darwin-arm64-vsix` on a Mac and use `bash`/`zsh` syntax with `gh run download ... --dir "$TMPDIR/continuous-vsix"`.
+
+## With the Continue extension installed
+
+Continuous and Continue (`Continue.continue`) can both be installed and enabled. When Continuous finds Continue installed, it shows one notification with these three facts, once:
+
+- **Your configuration was copied.** On its first start Continuous copies `~/.continue` to `~/.continuous`, unless `~/.continuous` already exists, and keeps its configuration there. The index, logs, dev data, downloaded tools and the compiled `config.ts` are not copied; they are rebuilt. `~/.continue` is not changed. Each `continue.*` user setting is also copied once to its `continuous.*` name, where that name has no value yet. With `CONTINUOUS_GLOBAL_DIR` or `CONTINUE_GLOBAL_DIR` set, nothing is copied and Continuous uses the folder the variable names.
+- **The two are separate from here on.** A change in `~/.continue` or a `continue.*` setting does not reach Continuous, and a change in `~/.continuous` or a `continuous.*` setting does not reach Continue. A workspace's `.continue` folder is the exception: both extensions read it.
+- **Both bind the same default shortcuts**, such as `Ctrl+L` and `Ctrl+I` (`Cmd+L` and `Cmd+I` on a Mac). With both extensions enabled, one key press matches a command in each and VS Code runs only one of them. To choose, select **Open Keyboard Shortcuts** in the notification, or run **Preferences: Open Keyboard Shortcuts** and search for `@ext:b1tninja.continuous`, then change or remove the bindings you do not want. Disabling one of the two extensions also ends the overlap.
 
 ## The terminal CLI
 
