@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import { VsCodeExtension } from "../extension/VsCodeExtension";
 import { removeStaleYamlSchemaEntries } from "../lang-server/yamlSchemas";
 import { registerSessionCleanup } from "../sessionCleanup";
+import { offerSideBySideNotice } from "../util/sideBySideNotice";
 import { isUnsupportedPlatform } from "../util/util";
 import { warnOptionalStartup } from "../util/warnOptionalStartup";
 import { migrateContinueSettings } from "../util/migrateSettings";
@@ -45,6 +46,8 @@ export async function activateExtension(context: vscode.ExtensionContext) {
   const vscodeExtension = new VsCodeExtension(context);
   // "Clean up old sessions", and its one notice after an update
   registerSessionCleanup(context);
+  // Not awaited: the notice waits for an answer, and start-up must not
+  void offerSideBySideNotice(context);
 
   // Load Continuous configuration
   if (!context.globalState.get("hasBeenInstalled")) {
