@@ -354,8 +354,8 @@ class Ollama extends BaseLLM implements ModelInstaller {
         this.serverSaidWindow = true;
         this._contextLength = window;
         this.contextLengthSource = "provider";
-        // The next config load builds this model with the window, so the
-        // model row shows it.
+        // Core reloads the config when this is new, so the model is built
+        // with the window and the model row shows it.
         rememberLearned(this.limitsKey, { contextLength: window });
       } else {
         this.serverSaidWindow = false;

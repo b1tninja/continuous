@@ -14,6 +14,7 @@ export interface LearnedFacts {
 
 const learned = new Map<string, LearnedFacts>();
 const attempted = new Set<string>();
+const listeners = new Set<(key: string, facts: LearnedFacts) => void>();
 
 /** One model on one endpoint. The address is as the person configured it. */
 export function learnedKey(
@@ -56,8 +57,41 @@ export function usableLearnedFacts(
   };
 }
 
+/**
+ * Keeps what a server said. Listeners hear of it only when it differs from
+ * what was known: a model rebuilt with the learned window asks its server
+ * again and gets the same answer, which must not start another reload.
+ */
 export function rememberLearned(key: string, facts: LearnedFacts): void {
+  const before = learned.get(key);
   learned.set(key, facts);
+  if (
+    before?.contextLength === facts.contextLength &&
+    before?.maxOutputTokens === facts.maxOutputTokens
+  ) {
+    return;
+  }
+  for (const listener of [...listeners]) {
+    try {
+      listener(key, facts);
+    } catch {
+      // advisory: the request that learned the window goes on
+    }
+  }
+}
+
+/**
+ * Called when a model's limits become known or change. A model object built
+ * earlier keeps the limits it was built with, so whoever shows them has to
+ * build it again (core reloads the config). Returns the unsubscribe.
+ */
+export function onLearned(
+  listener: (key: string, facts: LearnedFacts) => void,
+): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
 /** True the first time a key is asked about, so a server is asked once. */

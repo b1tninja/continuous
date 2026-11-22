@@ -252,6 +252,7 @@ import { CodebaseRulesCache } from "./config/markdown/loadCodebaseRules";
 import { registerMcpWizardHandlers } from "./config/mcpWizard/protocolHandlers";
 import { setupLocalConfig } from "./config/onboarding";
 import { openSecretLocation } from "./config/openSecretLocation";
+import { reloadConfigWhenLearned } from "./config/reloadConfigWhenLearned";
 import {
   moveCredentialsToSecrets,
   requestHasCredentials,
@@ -401,6 +402,7 @@ export class Core {
           SESSION_LOG_STORAGE_DEFAULT,
       );
       this.configHandler = new ConfigHandler(this.ide, this.llmLogger);
+      reloadConfigWhenLearned(this.configHandler);
 
       this.docsService = DocsService.createSingleton(
         this.configHandler,
@@ -3073,8 +3075,8 @@ export class Core {
         ),
       );
       if (!facts) return;
+      // The reload that shows it follows from this (reloadConfigWhenLearned)
       rememberLearned(model.limitsKey, facts);
-      await this.configHandler.reloadConfig("Context window learned");
     } catch {
       // advisory: the default window stays
     }

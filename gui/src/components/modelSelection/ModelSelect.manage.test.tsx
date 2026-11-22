@@ -65,6 +65,63 @@ describe("model picker: window unknown", () => {
   });
 });
 
+describe("model picker: the window a local server reported", () => {
+  const local = (extra: Record<string, unknown>) =>
+    model("Llama 3.1 8B", {
+      provider: "ollama",
+      underlyingProviderName: "ollama",
+      model: "llama3.1:8b",
+      ...extra,
+    });
+
+  it("gives the number and where it came from", async () => {
+    const m = local({ contextLength: 4096, contextLengthSource: "provider" });
+    await setup([m], m);
+    const tag = screen.getByTestId("model-option-server-window");
+    expect(tag.textContent).toBe("(4,096 tokens, from the server)");
+    expect(screen.queryByTestId("model-option-window-unknown")).toBeNull();
+  });
+
+  it("appears when a config update brings the learned window", async () => {
+    const before = local({
+      contextLength: 131072,
+      contextLengthSource: "published",
+    });
+    const { store } = await setup([before], before);
+    expect(screen.queryByTestId("model-option-server-window")).toBeNull();
+
+    const after = local({
+      contextLength: 4096,
+      contextLengthSource: "provider",
+    });
+    await act(async () => {
+      store.dispatch(
+        updateConfig({
+          ...EMPTY_CONFIG,
+          modelsByRole: { ...EMPTY_CONFIG.modelsByRole, chat: [after] },
+          selectedModelByRole: {
+            ...EMPTY_CONFIG.selectedModelByRole,
+            chat: after,
+          },
+        }),
+      );
+    });
+    expect(
+      screen.getByTestId("model-option-server-window").textContent,
+    ).toContain("4,096");
+  });
+
+  it("says nothing for a window the person set or a cloud provider reported", async () => {
+    const set = local({ contextLength: 16384, contextLengthSource: "config" });
+    const cloud = model("Opus", {
+      contextLength: 200000,
+      contextLengthSource: "provider",
+    });
+    await setup([set, cloud], set);
+    expect(screen.queryByTestId("model-option-server-window")).toBeNull();
+  });
+});
+
 describe("model picker: Manage models", () => {
   const connection = {
     provider: "bedrock-mantle",
