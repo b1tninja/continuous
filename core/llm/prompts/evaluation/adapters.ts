@@ -313,3 +313,38 @@ export function bedrockConverse(opts: {
     },
   };
 }
+
+/**
+ * The model the TURNS_EVAL_* variables name (see live.vitest.ts), with its
+ * label for a report. Every suite in this directory picks its model here, so
+ * they all go through the same provider path.
+ */
+export function modelFromEnv(env: NodeJS.ProcessEnv = process.env): {
+  label: string;
+  model: Chat;
+} {
+  const id = env.TURNS_EVAL_MODEL ?? "";
+  const provider = env.TURNS_EVAL_PROVIDER ?? "openai";
+  const apiKey = env.TURNS_EVAL_API_KEY ?? "";
+  return {
+    label: `${provider}:${id}`,
+    model:
+      provider === "bedrock"
+        ? bedrockConverse({
+            model: id,
+            region: env.TURNS_EVAL_REGION ?? "us-east-1",
+            profile: env.TURNS_EVAL_AWS_PROFILE,
+          })
+        : provider === "anthropic"
+          ? anthropicMessages({
+              model: id,
+              apiKey,
+              baseUrl: env.TURNS_EVAL_BASE_URL,
+            })
+          : openAiCompatible({
+              model: id,
+              apiKey: apiKey || undefined,
+              baseUrl: env.TURNS_EVAL_BASE_URL ?? "https://api.openai.com/v1",
+            }),
+  };
+}

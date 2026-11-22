@@ -1,8 +1,10 @@
 import path from "path";
 
+import { refusalText } from "core/tools/refusalText.js";
 import {
   approvalHeldResult,
   consumeLoopGrant,
+  endRunAtQuestionCap,
   holdQuestion,
   LOOP_REPEAT_LIMIT,
   loopCallKey,
@@ -28,6 +30,8 @@ const FILE_CHANGING_TOOLS = new Set(["Write", "Edit", "MultiEdit"]);
  * - a call the person allowed from an approval question runs, once;
  * - any other call that would ask is held as an approval question in the
  *   inbox and refused for now, so the item goes on (or reports waiting);
+ * - a call that would be held when the item can hold no more questions ends
+ *   the run as waiting, with one result, and the rest of the reply is not run;
  * - in a re-plan, which only reads, such a call is refused;
  * - a call repeated LOOP_REPEAT_LIMIT times in the item's run is refused.
  *
@@ -114,6 +118,17 @@ export function holdLoopCall(
     loop = held.loop;
     commitLoop(loop);
   }
+  // No more questions can be held: the run ends here, rather than each
+  // further call being answered with the same refusal
+  if (!held.ok && held.cap && current.kind === "item") {
+    const ended = endRunAtQuestionCap(loop, call.name);
+    commitLoop(ended.loop);
+    return {
+      approved: false,
+      denialReason: "loop",
+      denialMessage: ended.result,
+    };
+  }
   return {
     approved: false,
     denialReason: "loop",
@@ -121,6 +136,19 @@ export function holdLoopCall(
       ? approvalHeldResult(held.question, CLI_LOOP_TOOL_NAMES)
       : `This call needs the person's approval and was not run. ${held.error}`,
   };
+}
+
+/** Whether the running item's run ended at a question cap (holdLoopCall). */
+export function loopRunEndedAtCap(): boolean {
+  return !!getSessionLoop()?.current?.questionCap;
+}
+
+/**
+ * What a call gets when an earlier call of the same reply ended the run at
+ * a question cap: it is not run, and not held either.
+ */
+export function loopRunEndedResult(call: CallLike): string | undefined {
+  return loopRunEndedAtCap() ? refusalText.runEnded(call.name) : undefined;
 }
 
 /**

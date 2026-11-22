@@ -37,6 +37,7 @@ import {
   setDialogMessage,
   setOnboardingCard,
   setShowDialog,
+  setToolPolicy,
 } from "@gui/redux/slices/uiSlice";
 import { createElement } from "react";
 import type { setupStore } from "@gui/redux/store";
@@ -982,15 +983,80 @@ export const FIXTURES: Record<string, Fixture> = {
   },
   "permissions-editor": permissionsEditor,
   /** The Settings page, Tools tab, with "Commands and secrets" */
-  "settings-tools": async ({ navigate }) => {
-    navigate("/config?tab=tools");
+  "settings-tools": async (ctx) => {
+    addMcpServer(ctx);
+    ctx.navigate("/config?tab=tools");
     await new Promise((r) => setTimeout(r, 500));
     // the section lower on the page
     document
       .querySelector("[data-testid=terminal-env]")
       ?.scrollIntoView({ block: "start" });
   },
+  /** The same page at its MCP server, with the server's tools listed */
+  "settings-tools-mcp": async (ctx) => {
+    addMcpServer(ctx);
+    ctx.navigate("/config?tab=tools");
+    await new Promise((r) => setTimeout(r, 500));
+    const server = document.querySelector("[data-testid=mcp-server-github]");
+    (
+      server?.querySelector("[data-testid=tool-group-header]") as HTMLElement
+    )?.click();
+    // after the list has opened
+    await new Promise((r) => setTimeout(r, 200));
+    server?.scrollIntoView({ block: "start" });
+  },
 };
+
+/** One connected MCP server whose tools differ: Automatic, Ask First, Excluded, and one waiting for approval. */
+function addMcpServer({ store, messenger }: FixtureContext): void {
+  const tool = (name: string, description: string, extra: object = {}) => ({
+    type: "function",
+    function: { name: `github_${name}`, description },
+    displayTitle: name,
+    originalFunctionName: name,
+    group: "github",
+    readonly: false,
+    ...extra,
+  });
+  const info: any = structuredClone(
+    messenger.responses["config/getSerializedProfileInfo"],
+  );
+  info.result.config.mcpServerStatuses = [
+    {
+      id: "github",
+      name: "github",
+      type: "stdio",
+      command: "github-mcp-server",
+      status: "connected",
+      errors: [],
+      infos: [],
+      prompts: [],
+      resources: [],
+      resourceTemplates: [],
+      tools: [],
+    },
+  ];
+  info.result.config.tools = [
+    tool("list_issues", "List the issues of a repository, newest first."),
+    tool("get_pull_request", "Read one pull request with its reviews."),
+    tool("create_issue", "Open an issue in a repository."),
+    tool("delete_repository", "Delete a repository and everything in it."),
+    tool("search_code", "Search code across repositories.", {
+      mcpPendingApproval: "added",
+    }),
+  ];
+  messenger.responses["config/getSerializedProfileInfo"] = info;
+  sendConfig(messenger);
+  store.dispatch(
+    setToolPolicy({
+      toolName: "github_list_issues",
+      policy: "allowedWithoutPermission",
+    }),
+  );
+  store.dispatch(
+    setToolPolicy({ toolName: "github_delete_repository", policy: "disabled" }),
+  );
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

@@ -1,4 +1,4 @@
-import type { ChatMessage, ILLM, ToolCallDelta } from "../../..";
+import type { ChatMessage, ILLM, Tool, ToolCallDelta } from "../../..";
 import { BuiltInToolNames } from "../../../tools/builtIn";
 import {
   actTurn,
@@ -408,6 +408,67 @@ export function reasoningOptions(effort: ReasoningEffort | undefined) {
   };
 }
 
+/** One reply from the model: its text, its calls as sent and parsed, the time it took. */
+export interface AskedReply {
+  text: string;
+  calls: ScoredCall[];
+  raw: ToolCallDelta[];
+  ms: number;
+  error?: string;
+  stopReason?: string;
+}
+
+/**
+ * Send one request and read the reply. A failed or timed-out request comes
+ * back as a reply with `error` and no call, so a run never throws part-way.
+ */
+export async function askModel(
+  model: Chat,
+  messages: ChatMessage[],
+  tools: Tool[],
+  opts: {
+    timeoutMs?: number;
+    maxTokens?: number;
+    reasoning?: ReasoningEffort;
+    /** Default 0. */
+    temperature?: number;
+  } = {},
+): Promise<AskedReply> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 60_000);
+  const t0 = Date.now();
+  try {
+    const message = await model.chat(messages, controller.signal, {
+      tools,
+      temperature: opts.temperature ?? 0,
+      maxTokens: opts.maxTokens ?? REPLY_MAX_TOKENS,
+      ...reasoningOptions(opts.reasoning),
+    });
+    const raw = message.role === "assistant" ? (message.toolCalls ?? []) : [];
+    const stopReason =
+      message.role === "assistant"
+        ? (message.usage as any)?.response?.stopReason
+        : undefined;
+    return {
+      text: textOf(message.content),
+      calls: parseCalls(raw),
+      raw,
+      ms: Date.now() - t0,
+      ...(typeof stopReason === "string" ? { stopReason } : {}),
+    };
+  } catch (e: any) {
+    return {
+      text: "",
+      calls: [],
+      raw: [],
+      ms: Date.now() - t0,
+      error: String(e?.message ?? e),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function onlyReads(calls: ScoredCall[]): boolean {
   return calls.length > 0 && calls.every((c) => READ_TOOLS.has(c.name));
 }
@@ -452,54 +513,8 @@ export async function runTurnsEval(
   let next = 0;
   let done = 0;
 
-  async function ask(
-    messages: ChatMessage[],
-    scenario: TurnScenario,
-  ): Promise<{
-    text: string;
-    calls: ScoredCall[];
-    raw: ToolCallDelta[];
-    ms: number;
-    error?: string;
-    stopReason?: string;
-  }> {
-    const controller = new AbortController();
-    const timer = setTimeout(
-      () => controller.abort(),
-      opts.timeoutMs ?? 60_000,
-    );
-    const t0 = Date.now();
-    try {
-      const message = await model.chat(messages, controller.signal, {
-        tools: scenario.tools,
-        temperature: 0,
-        maxTokens: opts.maxTokens ?? REPLY_MAX_TOKENS,
-        ...reasoningOptions(opts.reasoning),
-      });
-      const raw = message.role === "assistant" ? (message.toolCalls ?? []) : [];
-      const stopReason =
-        message.role === "assistant"
-          ? (message.usage as any)?.response?.stopReason
-          : undefined;
-      return {
-        text: textOf(message.content),
-        calls: parseCalls(raw),
-        raw,
-        ms: Date.now() - t0,
-        ...(typeof stopReason === "string" ? { stopReason } : {}),
-      };
-    } catch (e: any) {
-      return {
-        text: "",
-        calls: [],
-        raw: [],
-        ms: Date.now() - t0,
-        error: String(e?.message ?? e),
-      };
-    } finally {
-      clearTimeout(timer);
-    }
-  }
+  const ask = (messages: ChatMessage[], scenario: TurnScenario) =>
+    askModel(model, messages, scenario.tools, opts);
 
   async function worker() {
     for (;;) {
