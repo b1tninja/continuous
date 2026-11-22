@@ -124,4 +124,11 @@ describe("Shortcut component", () => {
       expect(kbdElement).toHaveClass("keyboard-key-special");
     });
   });
+
+  it("lets a chord break after each +, so a narrow panel never splits a key", () => {
+    vi.mocked(util.getMetaKeyLabel).mockReturnValue("Ctrl");
+    const { container } = render(<Shortcut>cmd shift backspace</Shortcut>);
+    expect(container.querySelectorAll("kbd")).toHaveLength(3);
+    expect(container.querySelectorAll(".separator + wbr")).toHaveLength(2);
+  });
 });
