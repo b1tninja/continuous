@@ -194,7 +194,9 @@ describe("what moved from Tools to Permissions", () => {
     await setup({}, <ToolsSection />);
     for (const id of MOVED) expect(screen.queryByTestId(id), id).toBeNull();
     expect(screen.getByText("Built-in Tools")).toBeTruthy();
-    expect(screen.getByText("MCP Servers")).toBeTruthy();
+    // The MCP list has its own tab; Tools keeps one line that points there
+    expect(screen.queryByText("MCP Servers")).toBeNull();
+    expect(screen.getByTestId("mcp-moved")).toBeTruthy();
   });
 
   it("is on Permissions exactly once: Levels has the levels, Protections the rest", async () => {

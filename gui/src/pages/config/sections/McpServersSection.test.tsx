@@ -141,7 +141,7 @@ describe("the MCP servers tab", () => {
     expect(tabs.map((t) => t.id).slice(0, 3)).toEqual([
       "models",
       "mcp",
-      "providers",
+      "tools",
     ]);
     // The name a screen reader hears; below 330 px only the icon shows
     expect(tabs[1].label).toBe("MCP servers");

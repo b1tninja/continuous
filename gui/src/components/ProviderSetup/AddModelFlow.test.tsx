@@ -622,7 +622,7 @@ describe("Add a model: Use for, More and the review", () => {
       "Not set: 10 s to reach the server",
     );
     expect(state("moreProxy")).toBe(
-      "Not set: HTTPS_PROXY / HTTP_PROXY from the environment",
+      "Not set: HTTPS_PROXY or HTTP_PROXY from the environment, else no proxy",
     );
     expect(state("moreVerifySsl")).toBe("Not set: on");
     expect(state("moreUseSystemCa")).toBe(

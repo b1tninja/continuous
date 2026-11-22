@@ -247,6 +247,7 @@ describe("Providers merged into Models", () => {
     expect(ids).not.toContain("providers");
     expect(ids).toEqual([
       "models",
+      "mcp",
       "tools",
       "permissions",
       "rules",
