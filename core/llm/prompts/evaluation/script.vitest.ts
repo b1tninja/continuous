@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const script = resolve(__dirname, "../../../scripts/turns-eval.mjs");
@@ -44,6 +46,23 @@ describe("npm run eval:turns (scripts/turns-eval.mjs): argument guards", () => {
     expect(run(["--stub", "oracle", "--reasoning", "max"]).status).toBe(2);
     expect(run(["--stub", "oracle", "--runs", "0"]).status).toBe(2);
     expect(run(["--stub", "oracle", "--max-tokens", "10"]).status).toBe(2);
+  });
+
+  it("guards the replay's own options", () => {
+    // repeat is a stand-in of the replay only
+    expect(run(["--stub", "repeat"]).status).toBe(2);
+    expect(run(["--stub", "oracle", "--temperature", "1"]).status).toBe(2);
+    expect(
+      run(["--replay", "--stub", "oracle", "--temperature", "3"]).status,
+    ).toBe(2);
+    expect(
+      run(["--replay", "--stub", "oracle", "--profile", "both"]).status,
+    ).toBe(2);
+    const r = run(["--replay", "--provider", "anthropic", "--model", "m"], {
+      ANTHROPIC_API_KEY: "k",
+    });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain("every case under every arm");
   });
 
   it("will not call a hosted API without a key", () => {
@@ -109,6 +128,45 @@ describe(
       expect(r.status).toBe(0);
       expect(r.stdout).toContain("3 runs of every scenario");
       expect(r.stdout).toMatch(/\| act-calls-tool \| act \| 3\/3 \|/);
+    });
+
+    it("--replay runs the guidance replay on the oracle and writes the report where --out says", () => {
+      const out = join(mkdtempSync(join(tmpdir(), "replay-test-")), "r.md");
+      const r = run([
+        "--replay",
+        "--stub",
+        "oracle",
+        "--runs",
+        "2",
+        "--out",
+        out,
+      ]);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain("## Guidance replay: stub:oracle");
+      for (const row of [
+        "edit-not-found | old",
+        "edit-not-found | new",
+        "question-cap | old",
+        "question-cap | new",
+        "unknown-tool | old",
+        "unknown-tool | new",
+      ]) {
+        expect(r.stdout).toContain(
+          `| ${row} | 2 | 2/2 (34 to 100%) | 2/2 (34 to 100%) | 2/2 (34 to 100%) | 0 |`,
+        );
+      }
+      expect(r.stdout).not.toContain("### Profile:");
+      expect(r.stderr).toContain("Replay complete.");
+      expect(readFileSync(out, "utf8")).toContain("| unknown-tool | new | 2 |");
+      rmSync(dirname(out), { recursive: true, force: true });
+    });
+
+    it("--replay with the repeat stand-in scores no call as changed", () => {
+      const r = run(["--replay", "--stub", "repeat"]);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain(
+        "| unknown-tool | new | 1 | 0/1 (0 to 79%) | 0/1 (0 to 79%) | 0/1 (0 to 79%) | 0 |",
+      );
     });
 
     it("without --strict a missed bar still exits 0, and --profile narrows the run", () => {

@@ -293,9 +293,6 @@ const SETTLED_AT: Partial<Record<string, TestStep["id"]>> = {
   default: "level",
 };
 
-const PLAN_HOLD =
-  "Plan mode asks before a tool that may make changes. Only tools marked read-only run on their own.";
-
 function decisionOf(policy: ToolPolicy): TestDecision {
   return policy === "disabled"
     ? "deny"
@@ -559,16 +556,6 @@ function verdictOf(
     source = "mode";
     reason = "Chat mode offers no tools, so this call cannot happen.";
     settledMode = true;
-  } else if (
-    input.mode === "plan" &&
-    policy === "allowedWithoutPermission" &&
-    !facts.tool?.readonly &&
-    !evaluated.readOnly &&
-    facts.level !== "idgaf"
-  ) {
-    policy = "allowedWithPermission";
-    source = "plan-mode";
-    reason = PLAN_HOLD;
   }
   if (!reason) {
     reason =
@@ -671,6 +658,8 @@ export function testToolCall(input: TestToolCallInput): ToolCallTestResult {
     largeChangeLines: input.sources.user?.auto?.environment?.largeChangeLines,
     cwd,
     shell,
+    // Plan mode's hold is the evaluator's own last step
+    planMode: input.mode === "plan",
     ...(input.taint ? { taint: input.taint } : {}),
   });
 

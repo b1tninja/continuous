@@ -3,6 +3,7 @@
   color: var(--vscode-editor-foreground);
   padding: 1px 4px;
   margin: 0.08rem 0.08rem;
+  white-space: nowrap;
 }
 
 .keyboard-key-normal {

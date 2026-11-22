@@ -13,6 +13,7 @@ import { effectiveLevels } from "src/permissions/policyLevels.js";
 import { withReadOnlyMcp } from "src/permissions/readOnlyMcp.js";
 
 import { cliAuditSession, cliAuditTrail } from "../audit/cliAudit.js";
+import { loopRunEndedAtCap } from "../loop/loopHolds.js";
 import { loopItemRunning } from "../loop/loopSession.js";
 import {
   SERVICE_NAMES,
@@ -396,6 +397,13 @@ export async function handleToolCalls(
   });
   if (repeatEndsTurn) {
     logger.debug("Repeat guard reached; ending the turn");
+    return true;
+  }
+  // Loop mode: a call that would ask when the item can hold no more questions
+  // ended the run (loopHolds.ts), so no further request is made. A subagent's
+  // turn ends the same way, and then the item's own.
+  if (loopRunEndedAtCap()) {
+    logger.debug("Loop question cap reached; ending the turn");
     return true;
   }
 

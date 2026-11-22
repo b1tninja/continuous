@@ -1,12 +1,16 @@
 import type { ModeModelsConfig, ModeReasoningEffort, ModelUse } from "core";
 import type { ModeModelsInput } from "core/config/yaml/saveModeModels";
 
-/** The values `modeModels.<use>.reasoningEffort` already accepts. */
+/**
+ * The values `modeModels.<use>.reasoningEffort` already accepts. The empty
+ * one means no effort for the mode: the menu shows what the model's own
+ * setting then sends (`modelSettingLabel`).
+ */
 export const THINKING_EFFORTS: {
   value: ModeReasoningEffort | "";
   label: string;
 }[] = [
-  { value: "", label: "Default" },
+  { value: "", label: "Model setting" },
   { value: "off", label: "Off" },
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium" },

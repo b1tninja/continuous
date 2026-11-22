@@ -141,16 +141,8 @@
       "340": {}
     },
     "loop-blocked-open": {
-      "200": {
-        "scroll-x details[data-testid=loop-controls] > ul.m-0.mt-1.max-h-48.list-none": 38,
-        "squeezed div[data-testid=blocked-1] > div.flex.items-center.gap-1 > code.min-w-0.flex-1.truncate": 85,
-        "squeezed div[data-testid=blocked-3] > div.flex.items-center.gap-1 > code.min-w-0.flex-1.truncate": 85,
-        "squeezed div[data-testid=blocked-5] > div.flex.items-center.gap-1 > code.min-w-0.flex-1.truncate": 85,
-        "squeezed div[data-testid=loop-item-2] > span.min-w-0.flex-1.truncate.text-foreground": 254
-      },
-      "250": {
-        "squeezed div[data-testid=loop-item-2] > span.min-w-0.flex-1.truncate.text-foreground": 242
-      },
+      "200": {},
+      "250": {},
       "300": {},
       "340": {}
     },
@@ -197,13 +189,8 @@
       "340": {}
     },
     "loop-idgaf": {
-      "200": {
-        "scroll-x details[data-testid=loop-controls] > ul.m-0.mt-1.max-h-48.list-none": 38,
-        "squeezed div[data-testid=loop-item-2] > span.min-w-0.flex-1.truncate.text-foreground": 254
-      },
-      "250": {
-        "squeezed div[data-testid=loop-item-2] > span.min-w-0.flex-1.truncate.text-foreground": 242
-      },
+      "200": {},
+      "250": {},
       "300": {},
       "340": {}
     },
@@ -214,9 +201,7 @@
       "340": {}
     },
     "loop-plan-finished": {
-      "200": {
-        "squeezed span[data-testid=loop-title]": 242
-      },
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
@@ -258,17 +243,13 @@
       "340": {}
     },
     "loop-settings-open": {
-      "200": {
-        "scroll-x ... > div > div > div[role=dialog].relative.z-50 > div.fixed.inset-0.flex.items-start": 23
-      },
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
     },
     "loop-stopped": {
-      "200": {
-        "squeezed span[data-testid=loop-title]": 27
-      },
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
@@ -322,18 +303,10 @@
       "340": {}
     },
     "preset-open": {
-      "200": {
-        "outside div > div > div[role=listbox].flex.w-max.flex-col.overflow-auto": 2
-      },
-      "250": {
-        "outside div > div > div[role=listbox].flex.w-max.flex-col.overflow-auto": 2
-      },
-      "300": {
-        "outside div > div > div[role=listbox].flex.w-max.flex-col.overflow-auto": 2
-      },
-      "340": {
-        "outside div > div > div[role=listbox].flex.w-max.flex-col.overflow-auto": 2
-      }
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
     },
     "settings-configs": {
       "200": {},
@@ -348,9 +321,7 @@
       "340": {}
     },
     "settings-help": {
-      "200": {
-        "clipped div[aria-label=\"Help\"] > ... > div.space-y-6 > div > div.space-y-0.rounded-default.bg-editor.px-4 > div.overflow-hidden.rounded-md.border.border-gray-600": 2
-      },
+      "200": {},
       "250": {},
       "300": {},
       "340": {}
@@ -380,6 +351,12 @@
       "340": {}
     },
     "settings-tools": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "settings-tools-mcp": {
       "200": {},
       "250": {},
       "300": {},

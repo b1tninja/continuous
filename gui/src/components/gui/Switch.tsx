@@ -36,8 +36,16 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
       </span>
       <div className="flex flex-row items-center gap-1">
         {isToggled && !!showIfToggled && showIfToggled}
-        <div
-          className={`relative flex items-center rounded-full border border-solid border-command-border bg-vsc-input-background`}
+        {/* A real switch: reachable with Tab and worked with Space or Enter.
+            It was a div, which a keyboard could not reach at all. */}
+        <button
+          type="button"
+          role="switch"
+          aria-checked={isToggled}
+          aria-label={text}
+          disabled={disabled}
+          // text-inherit: a button has its own text colour, and the knob's border takes it
+          className="relative box-content flex cursor-[inherit] items-center rounded-full border border-solid border-command-border bg-vsc-input-background text-inherit"
           onClick={
             disabled
               ? undefined
@@ -60,7 +68,7 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
               width: size,
             }}
           />
-        </div>
+        </button>
       </div>
     </div>
   );

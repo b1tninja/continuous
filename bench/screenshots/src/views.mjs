@@ -222,6 +222,10 @@ export const VIEWS = {
     fixture: "settings-tools",
     note: "Settings, Tools tab, with Commands and secrets",
   },
+  "settings-tools-mcp": {
+    fixture: "settings-tools-mcp",
+    note: "Settings, Tools tab, at an MCP server with its tools listed and the control that sets them all",
+  },
   "drop-target": {
     fixture: "drop-target",
     note: "the chat input while a file is dragged over it: the drop target and the VS Code Shift hint",
@@ -267,6 +271,26 @@ export const VIEWS = {
     fixture: "status-row",
     zoom: 1.5,
     note: "status-row at 150% zoom: the width is the panel's, the page has two thirds of it in CSS pixels",
+  },
+  "model-overview-cloud": {
+    fixture: "model-overview-cloud",
+    note: "Configure, Overview: a cloud model through an account, with a role the person set and a timeout from the account",
+  },
+  "model-overview-catalog": {
+    fixture: "model-overview-catalog",
+    note: "Configure for a catalog model's variant: values from the catalog model, the variant and the account",
+  },
+  "model-overview-ollama": {
+    fixture: "model-overview-ollama",
+    note: "Configure, Overview: a local Ollama model whose server reported its window",
+  },
+  "model-overview-assumed": {
+    fixture: "model-overview-assumed",
+    note: "Configure, Overview: a local server that reports no window, so 32,768 is assumed and no output cap is sent",
+  },
+  "model-config-generation": {
+    fixture: "model-config-generation",
+    note: "Configure, Generation: every field says Set by you or what Not set does",
   },
 };
 

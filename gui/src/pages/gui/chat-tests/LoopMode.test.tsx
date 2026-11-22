@@ -2,6 +2,7 @@ import { act, fireEvent, waitFor } from "@testing-library/react";
 import type { ChatMessage, PromptLog } from "core";
 import { serializeTool } from "core/tools";
 import { BuiltInToolNames } from "core/tools/builtIn";
+import { refusalText } from "core/tools/refusalText";
 import {
   createNewFileTool,
   finishItemTool,
@@ -658,6 +659,76 @@ describe("Loop mode", () => {
     expect(ran).toBe(1);
     expect(h.loop().grants).toEqual([]);
   });
+
+  test("an item that keeps calling a held tool ends at the question limit with one result, waits, and runs again once answered", async () => {
+    const h = await setup(["Run the builds"]);
+    let ran = 0;
+    h.ideMessenger.responseHandlers["tools/call"] = async () => {
+      ran++;
+      return {
+        contextItems: [{ name: "out", description: "out", content: "ok" }],
+      };
+    };
+    const build = (n: number) =>
+      calls({
+        name: BuiltInToolNames.RunTerminalCommand,
+        args: { command: `npm run build:${n}`, waitForCompletion: true },
+      });
+    h.turns.push(
+      // Four are held; the fifth is past the limit and ends the run
+      build(1),
+      build(2),
+      build(3),
+      build(4),
+      build(5),
+      // The run after the answers
+      build(1),
+      finish("done", "built"),
+    );
+    await h.start();
+
+    await waitFor(() => expect(h.loop().status).toBe("waiting"));
+    // No request followed the fifth call: the rerun's turns are still unread
+    expect(h.requests).toHaveLength(5);
+    expect(h.turns).toHaveLength(2);
+    expect(ran).toBe(0);
+    expect(h.itemStatus("1")).toBe("waiting");
+    expect(h.loop().current).toBeUndefined();
+    expect(h.loop().questions).toHaveLength(4);
+    expect(h.loop().items[0].summary).toBe(
+      "Stopped at the question limit: 4 questions are open for the person.",
+    );
+    const results = h.store
+      .getState()
+      .session.history.flatMap((item) => item.toolCallStates ?? [])
+      .flatMap((tc) => tc.output ?? [])
+      .map((o) => o.content);
+    expect(results.filter((r) => r.includes("held as question"))).toHaveLength(
+      4,
+    );
+    expect(results.filter((r) => !r.includes("held as question"))).toEqual([
+      refusalText.questionCapWaiting(BuiltInToolNames.RunTerminalCommand, 4),
+    ]);
+
+    // One answer is not enough while others are open; the last one wakes it
+    for (let open = 4; open > 0; open--) {
+      expect(h.itemStatus("1")).toBe("waiting");
+      await act(async () => {
+        fireEvent.click(document.querySelector("[data-testid=loop-approve]")!);
+      });
+      await waitFor(() =>
+        expect(h.loop().questions.filter((q) => !q.answerId)).toHaveLength(
+          open - 1,
+        ),
+      );
+    }
+    await waitFor(() => expect(h.loop().status).toBe("stopped"));
+    expect(h.loop().stopReason).toBe("done");
+    expect(h.requests).toHaveLength(7);
+    // The allowed call ran, once
+    expect(ran).toBe(1);
+    expect(h.prompt(5)).toContain("Allowed.");
+  }, 30_000);
 
   test("each item starts in a fresh context, with the earlier items' notes and the person's standing instructions", async () => {
     const h = await setup(["Write the lexer", "Add tests"]);

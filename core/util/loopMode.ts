@@ -25,6 +25,7 @@ import type {
   TaskPlan,
 } from "../index.js";
 import { stableStringify } from "../tools/permissions/auto/state.js";
+import { refusalText } from "../tools/refusalText";
 import {
   DEFAULT_POLICY_LEVELS,
   parsePolicyLevel,
@@ -2526,7 +2527,12 @@ export function describeLoopBudget(budget: LoopBudget): string {
 
 export type HoldResult =
   | { ok: true; loop: LoopState; question: LoopQuestion; duplicate: boolean }
-  | { ok: false; error: string };
+  | {
+      ok: false;
+      error: string;
+      /** Refused at a cap: the item's own (maxOpenQuestionsPerItem) or the loop's */
+      cap?: "item" | "loop";
+    };
 
 /** Records a question the running item holds for the person. */
 /**
@@ -2738,12 +2744,14 @@ export function holdQuestion(
     return {
       ok: false,
       error: `This item already holds ${LOOP_LIMITS.maxOpenQuestionsPerItem} open questions. Continue on your stated assumptions, or call ${names.finishItem} with outcome "waiting".`,
+      cap: "item",
     };
   }
   if (loop.questions.length >= LOOP_LIMITS.maxQuestions) {
     return {
       ok: false,
       error: `The loop already holds ${LOOP_LIMITS.maxQuestions} questions. Continue on a stated assumption.`,
+      cap: "loop",
     };
   }
   const held: LoopQuestion = {
@@ -3989,6 +3997,56 @@ export function approvalHeldResult(
     return `This call was not run, and nobody was asked: Questions is IDGAF, so a call that would need approval is refused. Do not report "waiting", and do not try to reach the same result another way; do what you can without it and say so in your summary.`;
   }
   return `This call needs the person's approval, so it was not run. It is held as question ${question.id} in their inbox. Do not try to reach the same result another way. Do what you can without it, then call ${names.finishItem} with outcome "waiting"; the item will run again once they answer.`;
+}
+
+/**
+ * A call that would ask reached a question cap, so it cannot be held: the
+ * item's run ends here instead of answering this call and each one after it.
+ * In one person's sessions 162 results said the cap was reached and the model
+ * went on calling tools that need approval
+ * (plans/research/agent-guidance-review-2026-11-21.md, 4.12).
+ *
+ * The run ends as waiting when a question of the item is open for the person,
+ * which is what an answer wakes. With none open (the loop's own cap, or an
+ * item whose open questions are all assumptions) nothing would wake a waiting
+ * item, so it ends as stuck on the person's answer. A report the run already
+ * made stands.
+ */
+export function endRunAtQuestionCap(
+  loop: LoopState,
+  toolName: string,
+): { loop: LoopState; result: string } {
+  const current = loop.current;
+  const itemId = current?.itemId;
+  if (!current || current.kind !== "item" || !itemId) {
+    return { loop, result: refusalText.questionCapStuck(toolName) };
+  }
+  const open = openQuestions(loop, itemId).length;
+  const waits = hasOpenBlocking(loop, itemId);
+  const report: NonNullable<typeof current.report> = waits
+    ? {
+        outcome: "waiting",
+        summary: `Stopped at the question limit: ${open} questions are open for the person.`,
+      }
+    : {
+        outcome: "stuck",
+        blocker: "answer",
+        summary:
+          "Stopped at the question limit: a call needs the person's approval and could not be asked.",
+      };
+  return {
+    loop: {
+      ...loop,
+      current: {
+        ...current,
+        report: current.report ?? report,
+        questionCap: true,
+      },
+    },
+    result: waits
+      ? refusalText.questionCapWaiting(toolName, open)
+      : refusalText.questionCapStuck(toolName),
+  };
 }
 
 const FINISH_OUTCOMES: FinishOutcome[] = ["done", "waiting", "stuck", "later"];

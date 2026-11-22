@@ -80,6 +80,7 @@ async function open(block: ModelBlockInfo = BLOCK) {
       onDone={onDone}
       onCancel={vi.fn()}
       onOpenFile={vi.fn()}
+      initialTab="connection"
     />,
     { mockIdeMessenger: m },
   );
@@ -336,9 +337,10 @@ describe("Bedrock settings", () => {
       "auto",
     );
     await user.type(screen.getByLabelText("Guardrail id or ARN"), "gr-1");
-    expect(screen.getByLabelText("Guardrail version")).toHaveAttribute(
-      "placeholder",
-      "Default: DRAFT",
+    expect(
+      screen.getByLabelText("Guardrail version"),
+    ).toHaveAccessibleDescription(
+      "Not set: DRAFT, used only with a guardrail id",
     );
     await user.click(screen.getByTestId("model-config-review"));
     await waitFor(() => expect(preview).toHaveBeenCalled());

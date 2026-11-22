@@ -95,35 +95,38 @@ export function RecentlyBlocked() {
               data-testid={`blocked-${item.id}`}
               className="flex flex-col gap-0.5 rounded-sm border border-solid border-command-border px-1 py-0.5"
             >
-              <div className="flex items-center gap-1">
+              {/* The command keeps 64 px: when the verdict and its button do not fit beside that, they wrap below */}
+              <div className="flex flex-wrap items-center gap-x-1">
                 <code
-                  className="min-w-0 flex-1 truncate"
+                  className="min-w-12 flex-1 basis-16 truncate"
                   title={maskCommandForDisplay(item.summary)}
                 >
                   {maskCommandForDisplay(item.summary)}
                 </code>
-                <span className="shrink-0 font-semibold text-foreground">
-                  {decisionLabel({
-                    outcome: "blocked",
-                    source: item.source,
-                    category: item.category,
-                  })}
-                </span>
-                {canAllowOnce(item) &&
-                  (item.allowedOnce ? (
-                    <span className="shrink-0 text-description-muted">
-                      Allowed once. Ask the agent to try again.
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      data-testid={`allow-once-${item.id}`}
-                      className="shrink-0 cursor-pointer rounded-sm border-none bg-lightgray/20 px-1 text-2xs text-foreground"
-                      onClick={() => dispatch(allowBlockedOnce(item.id))}
-                    >
-                      Allow once
-                    </button>
-                  ))}
+                <div className="ml-auto flex max-w-full min-w-0 flex-wrap items-center justify-end gap-x-1">
+                  <span className="shrink-0 font-semibold text-foreground">
+                    {decisionLabel({
+                      outcome: "blocked",
+                      source: item.source,
+                      category: item.category,
+                    })}
+                  </span>
+                  {canAllowOnce(item) &&
+                    (item.allowedOnce ? (
+                      <span className="min-w-0 text-description-muted">
+                        Allowed once. Ask the agent to try again.
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        data-testid={`allow-once-${item.id}`}
+                        className="shrink-0 cursor-pointer rounded-sm border-none bg-lightgray/20 px-1 text-2xs text-foreground"
+                        onClick={() => dispatch(allowBlockedOnce(item.id))}
+                      >
+                        Allow once
+                      </button>
+                    ))}
+                </div>
               </div>
               <PendingActionSummary
                 id={"blocked-action-" + item.id}

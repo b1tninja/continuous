@@ -151,7 +151,7 @@ const PACKAGE_JSON = `{
 `;
 
 /** The benchmark seed package (bench/seed/loopsbx), as the plan scenarios see it. */
-const SEED: Record<string, string> = {
+export const SEED: Record<string, string> = {
   "package.json": PACKAGE_JSON,
   "README.md":
     "# loopsbx\n\nString helpers. `npm test` runs the node:test files under test/.\n",

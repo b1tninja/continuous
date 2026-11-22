@@ -41,7 +41,11 @@ import { startShadowReview } from "../audit/shadowHook.js";
 import { firePermissionRequest } from "../hooks/fireHook.js";
 import { notifyAttention } from "../hooks/lifecycleHooks.js";
 import { itemBudgetNoteNow } from "../loop/loopBudget.js";
-import { holdLoopCall, loopRepeatGuard } from "../loop/loopHolds.js";
+import {
+  holdLoopCall,
+  loopRepeatGuard,
+  loopRunEndedResult,
+} from "../loop/loopHolds.js";
 import {
   forgetRequest,
   onKeepWaiting,
@@ -591,7 +595,8 @@ async function coreRulesVerdict(
     // (Context Permissive lets a command that only reads run without asking).
     // A refusal, a floor rule or a protected path still tightens, including
     // in headless runs whose own policy would allow the call.
-    const levels = effectiveLevels(currentPermissionMode());
+    const mode = currentPermissionMode();
+    const levels = effectiveLevels(mode);
     const approval = { levels, ...approvalExtras(levels) };
     const defaultsOnly = policyIsDefault(levels);
     const mcpServer = toolCall.tool?.mcpServer;
@@ -614,6 +619,15 @@ async function coreRulesVerdict(
           ? getReviewer(assistant, modelState.authConfig)
           : null,
       isHeadless: !!isHeadless,
+      // Plan mode's hold is the engine's: what would run waits unless it only reads
+      ...(mode === "plan"
+        ? {
+            planTurn: {
+              planMode: true,
+              readOnlyTool: toolCall.tool?.readonly === true,
+            },
+          }
+        : {}),
       history: autoReview ? services.chatHistory.getHistory() : undefined,
       // WB45: web.enabled, the session's web grants, the URLs the person wrote
       web: webContextSafely(hostAllow),
@@ -1464,7 +1478,8 @@ export async function executeStreamedToolCalls(
     let call = originalCall;
 
     try {
-      const repeated = loopRepeat.check(call);
+      // A run ended at the question cap by an earlier call runs nothing more
+      const repeated = loopRunEndedResult(call) ?? loopRepeat.check(call);
       if (repeated) {
         callbacks?.onToolStart?.(call.name, call.arguments, call.id);
         entriesByIndex.set(index, {

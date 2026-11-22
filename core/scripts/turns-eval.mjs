@@ -16,6 +16,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const STUBS = ["oracle", "text-only"];
+// The replay also has a stand-in that sends the failed call again
+const REPLAY_STUBS = [...STUBS, "repeat"];
 
 const HELP = `Usage: npm run eval:turns -- [options]
 
@@ -56,10 +58,21 @@ Options:
                          checks that the harness and the bar work)
   -h, --help
 
+Guidance replay (another suite, same model flags):
+  --replay               Instead of the turn prompts, send conversations that end in a failed
+                         or refused tool call, with the result worded one way per arm (old,
+                         new), and score the next call: changed, valid, succeeded. --runs is
+                         the trials per case and arm; --profile takes one text (default full).
+                         There is no bar. The report goes to --out, or to a file under the
+                         temp directory. --stub also takes repeat. See
+                         llm/prompts/evaluation/README.md.
+  --temperature <n>      With --replay: sampling temperature, 0 to 2 (default 0.7, so that
+                         trials differ; the turn-prompt run is always at 0)
+
 Environment (alternative to flags): TURNS_EVAL_PROVIDER, TURNS_EVAL_MODEL,
 TURNS_EVAL_BASE_URL, TURNS_EVAL_API_KEY, TURNS_EVAL_REGION, TURNS_EVAL_AWS_PROFILE,
 TURNS_EVAL_PROFILES, TURNS_EVAL_REASONING, TURNS_EVAL_RUNS, TURNS_EVAL_MAX_TOKENS, TURNS_EVAL_OUT,
-TURNS_EVAL_DUMP.
+TURNS_EVAL_DUMP, TURNS_EVAL_TEMPERATURE (replay only).
 
 Examples:
   npm run eval:turns -- --stub oracle --strict
@@ -67,6 +80,8 @@ Examples:
   OPENAI_API_KEY=... npm run eval:turns -- --provider openai --model gpt-4.1-mini --yes --strict
   ANTHROPIC_API_KEY=... npm run eval:turns -- --provider anthropic --model claude-haiku-4-5 --yes
   npm run eval:turns -- --provider bedrock --model us.amazon.nova-2-lite-v1:0 --aws-profile torgate --yes --dump nova.json
+  npm run eval:turns -- --replay --stub oracle
+  npm run eval:turns -- --replay --ollama --model qwen3:8b --runs 10
 `;
 
 function parse(argv) {
@@ -134,6 +149,12 @@ function parse(argv) {
       case "--stub":
         o.stub = next();
         break;
+      case "--replay":
+        o.replay = true;
+        break;
+      case "--temperature":
+        o.temperature = next();
+        break;
       default:
         fail(`Unknown option ${a}. Try --help.`);
     }
@@ -166,9 +187,27 @@ if (opts.help) {
 const env = { ...process.env };
 let target;
 
+// What a hosted run sends, for the --yes message
+const requests = () =>
+  opts.replay
+    ? `every case under every arm ${Number(env.TURNS_EVAL_RUNS ?? 1)} time(s)`
+    : `${10 * Number(env.TURNS_EVAL_RUNS ?? 1)} requests`;
+
+if (opts.temperature !== undefined) {
+  const t = Number(opts.temperature);
+  if (!opts.replay) fail("--temperature goes with --replay");
+  if (opts.temperature === "" || !(t >= 0 && t <= 2)) {
+    fail("--temperature must be a number from 0 to 2");
+  }
+  env.TURNS_EVAL_TEMPERATURE = String(t);
+}
+
 if (opts.profile) {
   if (!["full", "short", "tailored", "both", "all"].includes(opts.profile)) {
     fail("--profile must be full, short, tailored, both or all");
+  }
+  if (opts.replay && ["both", "all"].includes(opts.profile)) {
+    fail("--replay takes one profile: full, short or tailored");
   }
   env.TURNS_EVAL_PROFILES =
     opts.profile === "both"
@@ -203,8 +242,9 @@ if (opts.reasoning) {
 }
 
 if (opts.stub) {
-  if (!STUBS.includes(opts.stub)) {
-    fail(`--stub must be ${STUBS.join(" or ")}`);
+  const stubs = opts.replay ? REPLAY_STUBS : STUBS;
+  if (!stubs.includes(opts.stub)) {
+    fail(`--stub must be ${stubs.join(" or ")}`);
   }
   env.TURNS_EVAL_STUB = opts.stub;
   target = `stub:${opts.stub}`;
@@ -227,7 +267,7 @@ if (opts.stub) {
     const region = opts.region ?? env.TURNS_EVAL_REGION ?? "us-east-1";
     if (!opts.yes) {
       fail(
-        `This sends ${10 * Number(env.TURNS_EVAL_RUNS ?? 1)} requests to Bedrock in ${region}, which AWS bills.\n` +
+        `This sends ${requests()} to Bedrock in ${region}, which AWS bills.\n` +
           "Re-run with --yes to go ahead.",
       );
     }
@@ -258,7 +298,7 @@ if (opts.stub) {
       if (!key) fail(`No API key: set ${keyName} (or TURNS_EVAL_API_KEY).`);
       if (!opts.yes) {
         fail(
-          `This sends ${10 * Number(env.TURNS_EVAL_RUNS ?? 1)} requests to ${new URL(effectiveUrl).host}, which the provider bills.\n` +
+          `This sends ${requests()} to ${new URL(effectiveUrl).host}, which the provider bills.\n` +
             "Re-run with --yes to go ahead, or use --ollama / a localhost --base-url.",
         );
       }
@@ -279,10 +319,18 @@ if (opts.out) env.TURNS_EVAL_OUT = resolve(opts.out);
 if (opts.dump) env.TURNS_EVAL_DUMP = resolve(opts.dump);
 
 const coreDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-console.error(`Running the turn-prompt evaluation against ${target} ...`);
+const suite = opts.replay ? "guidanceReplay.live" : "live";
+console.error(
+  `Running the ${opts.replay ? "guidance replay" : "turn-prompt evaluation"} against ${target} ...`,
+);
 const run = spawnSync(
   "npx",
-  ["vitest", "run", "llm/prompts/evaluation/live.vitest.ts", "--reporter=dot"],
+  [
+    "vitest",
+    "run",
+    `llm/prompts/evaluation/${suite}.vitest.ts`,
+    "--reporter=dot",
+  ],
   {
     cwd: coreDir,
     env,
@@ -304,6 +352,15 @@ rmSync(dir, { recursive: true, force: true });
 if (run.status !== 0 || passed === undefined) {
   console.error("The evaluation did not complete (see the output above).");
   process.exit(run.status || 1);
+}
+if (opts.replay) {
+  // No bar to meet: the run is whole when every trial got a reply
+  console.error(
+    passed
+      ? "Replay complete."
+      : "Replay complete, but some model calls failed (see the report).",
+  );
+  process.exit(opts.strict && !passed ? 1 : 0);
 }
 console.error(
   passed

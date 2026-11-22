@@ -1,6 +1,7 @@
 import { ctxItemToRifWithContents } from "core/commands/util";
-import { memo, useEffect, useMemo, useRef } from "react";
-import { useRemark } from "react-remark";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+// useRemarkSync calls no hook: it is the same pipeline, run at once
+import { useRemark, useRemarkSync as renderRemarkSync } from "react-remark";
 import rehypeKatex from "rehype-katex";
 import remarkMath from "remark-math";
 import styled from "styled-components";
@@ -190,6 +191,13 @@ function getLanguageFromClassName(className: any): string | null {
   return language ?? null;
 }
 
+/** The patches applied to the markdown source before it is parsed. */
+function patchSource(source: string | undefined): string {
+  return normalizeDisplayMathBlocks(
+    fixDoubleDollarNewLineLatex(patchNestedMarkdown(source ?? "")),
+  );
+}
+
 function getCodeChildrenContent(children: any) {
   if (typeof children === "string") {
     return children;
@@ -242,7 +250,7 @@ const StyledMarkdownPreview = memo(function StyledMarkdownPreview(
 
   const codeblockStreamIds = useRef<string[]>([]);
 
-  const [reactContent, setMarkdownSource] = useRemark({
+  const remarkOptions: Parameters<typeof useRemark>[0] = {
     remarkPlugins: [
       remarkTables,
       [
@@ -416,15 +424,32 @@ const StyledMarkdownPreview = memo(function StyledMarkdownPreview(
         },
       },
     },
+  };
+  const [parsedContent, setMarkdownSource] = useRemark(remarkOptions);
+
+  // The first parse is done while mounting, so the message has its text and
+  // its height in the first commit. Parsed in an effect, as later changes
+  // are, a row scrolled into the transcript was measured empty first, and
+  // the transcript mounted about three times the rows the viewport needed.
+  const [firstParse] = useState(() => {
+    const source = patchSource(props.source);
+    try {
+      return { source, content: renderRemarkSync(source, remarkOptions) };
+    } catch {
+      // The effect below parses it, as it always did
+      return undefined;
+    }
   });
+  const firstParseUsed = useRef(false);
+  const reactContent = parsedContent ?? firstParse?.content ?? null;
 
   useEffect(() => {
-    setMarkdownSource(
-      // some patches to source markdown are applied here:
-      normalizeDisplayMathBlocks(
-        fixDoubleDollarNewLineLatex(patchNestedMarkdown(props.source ?? "")),
-      ),
-    );
+    const source = patchSource(props.source);
+    if (!firstParseUsed.current) {
+      firstParseUsed.current = true;
+      if (firstParse?.source === source) return;
+    }
+    setMarkdownSource(source);
   }, [props.source, allSymbols]);
 
   const uiConfig = useAppSelector(selectUIConfig);

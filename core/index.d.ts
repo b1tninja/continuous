@@ -121,6 +121,12 @@ export interface ILLM
    */
   readonly contextLengthSource?:
     "config" | "provider" | "published" | "unknown";
+  /**
+   * Where `completionOptions.maxTokens` came from. `none` means no output cap
+   * is sent and the server decides (a local OpenAI-compatible server with no
+   * known cap).
+   */
+  readonly maxTokensSource?: import("./llm/providerModelLimits").MaxTokensSource;
 
   autocompleteOptions?: Partial<TabAutocompleteOptions>;
 
@@ -898,6 +904,11 @@ export interface LoopState {
       /** What a later item should know (finish_item notes) */
       notes?: string;
     };
+    /**
+     * The run ended at a question cap (endRunAtQuestionCap): the host ends
+     * the turn and runs no further call of it
+     */
+    questionCap?: boolean;
     /** A re-plan: the to-dos it started from, to tell whether it adds scope */
     planTexts?: string[];
     /**
@@ -2605,6 +2616,8 @@ export interface ModelDescription {
    * because no config, provider, or published window was found.
    */
   contextLengthSource?: "config" | "provider" | "published" | "unknown";
+  /** Where `completionOptions.maxTokens` came from; `none`: no cap is sent. */
+  maxTokensSource?: import("./llm/providerModelLimits").MaxTokensSource;
   maxStopWords?: number;
   template?: TemplateType;
   completionOptions?: BaseCompletionOptions;

@@ -16,6 +16,10 @@ import { createLoop, enterWait, stopLoop } from "core/util/loopMode";
 import { addBlockedCall } from "@gui/redux/slices/blockedCallsSlice";
 import { setPolicyLevel } from "@gui/redux/slices/uiSlice";
 import { POLICY_AREAS } from "core/tools/permissions/policy";
+import {
+  ModelConfigDialog,
+  type ModelConfigTab,
+} from "@gui/components/ModelConfig/ModelConfigDialog";
 import { ProviderSetupFlow } from "@gui/components/ProviderSetup/ProviderSetupFlow";
 import type { MockIdeMessenger } from "@gui/context/MockIdeMessenger";
 import {
@@ -37,6 +41,7 @@ import {
   setDialogMessage,
   setOnboardingCard,
   setShowDialog,
+  setToolPolicy,
 } from "@gui/redux/slices/uiSlice";
 import { createElement } from "react";
 import type { setupStore } from "@gui/redux/store";
@@ -568,6 +573,21 @@ export const FIXTURES: Record<string, Fixture> = {
       ),
     );
   },
+  /**
+   * One reply whose markdown the render check supplies: render.mjs sets
+   * window.__renderMarkdown before the page loads
+   */
+  "render-markdown": ({ store }) => {
+    const markdown = (window as { __renderMarkdown?: string }).__renderMarkdown;
+    store.dispatch(
+      newSession(
+        session(
+          [user("Render this."), assistant(markdown ?? MARKDOWN_REPLY)],
+          "Render check",
+        ),
+      ),
+    );
+  },
   /** A reply that is still arriving */
   streaming: async ({ store }) => {
     store.dispatch(
@@ -915,15 +935,80 @@ export const FIXTURES: Record<string, Fixture> = {
   },
   "permissions-editor": permissionsEditor,
   /** The Settings page, Tools tab, with "Commands and secrets" */
-  "settings-tools": async ({ navigate }) => {
-    navigate("/config?tab=tools");
+  "settings-tools": async (ctx) => {
+    addMcpServer(ctx);
+    ctx.navigate("/config?tab=tools");
     await new Promise((r) => setTimeout(r, 500));
     // the section lower on the page
     document
       .querySelector("[data-testid=terminal-env]")
       ?.scrollIntoView({ block: "start" });
   },
+  /** The same page at its MCP server, with the server's tools listed */
+  "settings-tools-mcp": async (ctx) => {
+    addMcpServer(ctx);
+    ctx.navigate("/config?tab=tools");
+    await new Promise((r) => setTimeout(r, 500));
+    const server = document.querySelector("[data-testid=mcp-server-github]");
+    (
+      server?.querySelector("[data-testid=tool-group-header]") as HTMLElement
+    )?.click();
+    // after the list has opened
+    await new Promise((r) => setTimeout(r, 200));
+    server?.scrollIntoView({ block: "start" });
+  },
 };
+
+/** One connected MCP server whose tools differ: Automatic, Ask First, Excluded, and one waiting for approval. */
+function addMcpServer({ store, messenger }: FixtureContext): void {
+  const tool = (name: string, description: string, extra: object = {}) => ({
+    type: "function",
+    function: { name: `github_${name}`, description },
+    displayTitle: name,
+    originalFunctionName: name,
+    group: "github",
+    readonly: false,
+    ...extra,
+  });
+  const info: any = structuredClone(
+    messenger.responses["config/getSerializedProfileInfo"],
+  );
+  info.result.config.mcpServerStatuses = [
+    {
+      id: "github",
+      name: "github",
+      type: "stdio",
+      command: "github-mcp-server",
+      status: "connected",
+      errors: [],
+      infos: [],
+      prompts: [],
+      resources: [],
+      resourceTemplates: [],
+      tools: [],
+    },
+  ];
+  info.result.config.tools = [
+    tool("list_issues", "List the issues of a repository, newest first."),
+    tool("get_pull_request", "Read one pull request with its reviews."),
+    tool("create_issue", "Open an issue in a repository."),
+    tool("delete_repository", "Delete a repository and everything in it."),
+    tool("search_code", "Search code across repositories.", {
+      mcpPendingApproval: "added",
+    }),
+  ];
+  messenger.responses["config/getSerializedProfileInfo"] = info;
+  sendConfig(messenger);
+  store.dispatch(
+    setToolPolicy({
+      toolName: "github_list_issues",
+      policy: "allowedWithoutPermission",
+    }),
+  );
+  store.dispatch(
+    setToolPolicy({ toolName: "github_delete_repository", policy: "disabled" }),
+  );
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -1415,6 +1500,204 @@ Object.assign(FIXTURES, {
     );
     await sleep(400);
   },
+});
+
+/** A provider account as providers.yaml has it, key by reference. */
+const WORK_ACCOUNT = {
+  name: "anthropic-work",
+  provider: "anthropic",
+  apiKey: "${{ secrets.ANTHROPIC_WORK_KEY }}",
+  requestOptions: { timeout: 300 },
+};
+
+const NO_CREDENTIALS = {
+  apiKey: { state: "none" as const },
+  headers: {},
+  env: {},
+};
+
+/**
+ * "Configure" for one model, in the app dialog: the model as the config
+ * loaded it, the entry the dialog reads (`config/getModelBlock`), and what
+ * its server lists when asked.
+ */
+async function modelConfigScene(
+  { store, messenger }: FixtureContext,
+  scene: {
+    model: Partial<ModelDescription> & { title: string };
+    block: Record<string, unknown>;
+    tab?: ModelConfigTab;
+  },
+): Promise<void> {
+  const model = scene.model as ModelDescription;
+  const info: any = structuredClone(
+    messenger.responses["config/getSerializedProfileInfo"],
+  );
+  info.result.config.modelsByRole.chat = [model];
+  info.result.config.selectedModelByRole.chat = model;
+  messenger.mockMessageToWebview("configUpdate", info);
+  Object.assign(messenger.responses as any, {
+    "config/getModelBlock": {
+      editable: true,
+      file: "C:\\Users\\dev\\.continuous\\config.yaml",
+      scope: "user",
+      credentials: NO_CREDENTIALS,
+      entryYaml: "",
+      ...scene.block,
+    },
+    "models/listedLimits": { ok: true },
+  });
+  store.dispatch(newSession());
+  store.dispatch(setShowDialog(true));
+  store.dispatch(
+    setDialogMessage(
+      createElement(ModelConfigDialog, {
+        title: model.title,
+        onDone: () => {},
+        onCancel: () => {},
+        onOpenFile: () => {},
+        ...(scene.tab ? { initialTab: scene.tab } : {}),
+      }),
+    ),
+  );
+  await sleep(600);
+}
+
+const CLOUD_MODEL = {
+  title: "Claude Sonnet",
+  provider: "anthropic",
+  underlyingProviderName: "anthropic",
+  model: "claude-sonnet-4-6",
+  apiBase: "https://api.anthropic.com/v1/",
+  contextLength: 200_000,
+  contextLengthSource: "published" as const,
+  // The loader fills in the provider's own limit (core/config/yaml/models.ts)
+  completionOptions: { model: "claude-sonnet-4-6", maxTokens: 8192 },
+  maxTokensSource: "config" as const,
+  roles: ["chat", "edit"],
+};
+
+const CLOUD_BLOCK = {
+  entry: {
+    name: "Claude Sonnet",
+    connection: "anthropic-work",
+    model: "claude-sonnet-4-6",
+    roles: ["chat", "edit"],
+  },
+  layers: {
+    account: WORK_ACCOUNT,
+    accountFile: "file:///c%3A/Users/dev/.continuous/providers.yaml",
+  },
+};
+
+Object.assign(FIXTURES, {
+  /** A cloud model through an account: a role the person set, a timeout from the account */
+  "model-overview-cloud": (ctx: FixtureContext) =>
+    modelConfigScene(ctx, { model: CLOUD_MODEL, block: CLOUD_BLOCK }),
+  /** A catalog model's variant: values from the catalog model, the variant and the account */
+  "model-overview-catalog": (ctx: FixtureContext) =>
+    modelConfigScene(ctx, {
+      model: {
+        ...CLOUD_MODEL,
+        title: "Claude Sonnet#plan",
+        contextLengthSource: "config",
+        completionOptions: {
+          model: "claude-sonnet-4-6",
+          maxTokens: 32_000,
+          temperature: 0.6,
+          reasoning: true,
+          reasoningBudgetTokens: 8000,
+        },
+      },
+      block: {
+        catalog: true,
+        entry: { from: "Claude Sonnet#plan", roles: ["chat"] },
+        layers: {
+          ...CLOUD_BLOCK.layers,
+          catalogModel: {
+            name: "Claude Sonnet",
+            connection: "anthropic-work",
+            model: "claude-sonnet-4-6",
+            contextLength: 200_000,
+            defaultCompletionOptions: { temperature: 0.6, maxTokens: 32_000 },
+            variants: {
+              plan: {
+                defaultCompletionOptions: {
+                  reasoning: true,
+                  reasoningBudgetTokens: 8000,
+                },
+              },
+            },
+          },
+          catalogFile: "file:///c%3A/Users/dev/.continuous/models.yaml",
+        },
+      },
+    }),
+  /** A local Ollama model whose server reported its window */
+  "model-overview-ollama": (ctx: FixtureContext) =>
+    modelConfigScene(ctx, {
+      model: {
+        title: "Qwen3 Coder (Ollama)",
+        provider: "ollama",
+        underlyingProviderName: "ollama",
+        model: "qwen3-coder:30b",
+        apiBase: "http://localhost:11434/",
+        contextLength: 262_144,
+        contextLengthSource: "provider",
+        completionOptions: { model: "qwen3-coder:30b", maxTokens: 4096 },
+        maxTokensSource: "fallback",
+      },
+      block: {
+        entry: {
+          name: "Qwen3 Coder (Ollama)",
+          provider: "ollama",
+          model: "qwen3-coder:30b",
+        },
+      },
+    }),
+  /** A local OpenAI-compatible server that reports no window: 32,768 is assumed */
+  "model-overview-assumed": (ctx: FixtureContext) =>
+    modelConfigScene(ctx, {
+      model: {
+        title: "Local llama.cpp",
+        provider: "openai",
+        underlyingProviderName: "openai",
+        model: "my-finetune-q5",
+        apiBase: "http://127.0.0.1:8080/v1/",
+        contextLength: 32_768,
+        contextLengthSource: "unknown",
+        completionOptions: { model: "my-finetune-q5" },
+        maxTokensSource: "none",
+      },
+      block: {
+        entry: {
+          name: "Local llama.cpp",
+          provider: "openai",
+          model: "my-finetune-q5",
+          apiBase: "http://127.0.0.1:8080/v1",
+        },
+      },
+    }),
+  /** The Generation tab: one value the person set, the rest saying what not set does */
+  "model-config-generation": (ctx: FixtureContext) =>
+    modelConfigScene(ctx, {
+      model: {
+        ...CLOUD_MODEL,
+        completionOptions: {
+          model: "claude-sonnet-4-6",
+          maxTokens: 8192,
+          temperature: 0.2,
+        },
+      },
+      block: {
+        ...CLOUD_BLOCK,
+        entry: {
+          ...CLOUD_BLOCK.entry,
+          defaultCompletionOptions: { temperature: 0.2 },
+        },
+      },
+      tab: "generation",
+    }),
 });
 
 export const FIXTURE_NAMES = Object.keys(FIXTURES);
