@@ -46,7 +46,7 @@ Distributions are read from the registry, not by running `wsl.exe`: on a machine
 - The setting applies to the agent's terminal tool only. VS Code's own terminal keeps its profile.
 - This is where commands run, not isolation. A WSL distribution can read and write your Windows drives under `/mnt`, and commands run with your access.
 - Files the agent edits with the edit tools are still edited on the Windows side. A project that lives in the Windows file system is slow to use from WSL; a project inside the distribution is not.
-- In a VS Code window attached to WSL (Remote WSL), commands already run in the distribution and this setting is not needed.
+- In a remote window (Remote WSL, SSH, a dev container) the setting does not apply: commands there are typed into the editor's terminal on the remote side. In a Remote WSL window that is already the distribution, so commands run there with the setting at `wsl` or `default`. In an SSH or dev container window, while the setting is `wsl`, the terminal tool does not run commands and says so. Set `continuous.terminal.shell` to `default` to run them there.
 
 ## Sandbox runtime status (probe only)
 

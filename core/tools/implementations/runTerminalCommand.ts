@@ -82,8 +82,13 @@ import {
   removeBackgroundedProcess,
   removeRunningProcess,
 } from "../../util/processTerminalStates";
-import { executionShell, LOCAL_REMOTE_NAMES } from "../../util/shell";
+import {
+  executionShell,
+  LOCAL_REMOTE_NAMES,
+  remoteShellConflict,
+} from "../../util/shell";
 import { terminalEnvironment } from "../../util/terminalEnvironment";
+import { refusalText } from "../refusalText";
 import { getBooleanArg, getStringArg } from "../parseArgs";
 import { commandLintGate } from "../permissions/commandLint";
 import { missingBinaryGate } from "../permissions/missingBinaryGate";
@@ -182,13 +187,19 @@ const LOCAL_ONLY = LOCAL_REMOTE_NAMES;
 
 /**
  * Why a command is not run: the place it should run in is not there (WSL asked
- * for and not installed, which never falls back to the host), or the lint.
+ * for and not installed, which never falls back to the host; a container or
+ * WSL asked for in a remote window, where neither applies), or the lint.
  */
 function commandBlocked(
   command: string,
   remoteName?: string,
 ): string | undefined {
   if (executionShell(remoteName).source === "terminal") {
+    // Asked to run in a container or in WSL, which a remote window cannot
+    // honour: typing the command into the remote terminal would run it
+    // unconfined without a word
+    const conflict = remoteShellConflict(remoteName);
+    if (conflict) return refusalText.remoteWindowShell(conflict);
     // The command goes to a remote window's terminal: this machine's shell
     // does not read it, so its dialect rules (no && in Windows PowerShell)
     // do not apply and nothing is started here that could be missing

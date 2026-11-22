@@ -1,3 +1,8 @@
+import {
+  CONFIG_BASENAMES,
+  CONFIG_DIRS,
+  CONFIG_DIR_PAIRS,
+} from "../tools/permissions/protectedPaths";
 import type {
   NotEnforcedItem,
   SandboxPlatform,
@@ -30,6 +35,34 @@ export const CANONICAL_CASE: Readonly<Record<string, string>> = {
   "library/launchagents": "Library/LaunchAgents",
   "library/launchdaemons": "Library/LaunchDaemons",
 };
+
+/**
+ * The `protect-config` list as paths relative to a writable root, in the
+ * spelling on disk: every CONFIG_DIRS entry (narrowed where the whole
+ * directory cannot be locked), the `.github` pairs, and every
+ * CONFIG_BASENAMES entry (also returned alone as `bases`). The OS sandbox
+ * and the container executor both read it, so the two protect the same list.
+ */
+export function protectedConfigRels(): { rels: string[]; bases: string[] } {
+  const rels: string[] = [];
+  const bases: string[] = [];
+  for (const dir of CONFIG_DIRS) {
+    for (const r of NARROWED_CONFIG_DIRS[dir] ?? [dir]) rels.push(r);
+  }
+  for (const [a, b] of CONFIG_DIR_PAIRS) {
+    // The other pairs live in the home directory, which is never writable here
+    if (a === ".github") {
+      const joined = `${a}/${b}`;
+      rels.push(CANONICAL_CASE[joined] ?? joined);
+    }
+  }
+  for (const base of CONFIG_BASENAMES) {
+    const r = CANONICAL_CASE[base] ?? base;
+    rels.push(r);
+    bases.push(r);
+  }
+  return { rels, bases };
+}
 
 /**
  * `.env` names a glob can cover without also hiding `.env.example`, which the

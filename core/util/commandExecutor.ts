@@ -2,6 +2,7 @@ import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { spawn } from "node:child_process";
 import { COMMAND_STDIO, commandEnvironment } from "./commandSpawn";
 import { containerArgs } from "./containerArgs";
+import { protectedMounts } from "./containerProtectedMounts";
 import {
   containerUnavailableMessage,
   DEFAULT_CONTAINER_IMAGE,
@@ -143,9 +144,10 @@ function wslDistroOf(shell: ResolvedShell): string | undefined {
 
 /**
  * One `docker run` or `podman run` per command (plans/isolation.md, W2): the
- * workspace the command starts in is the only thing mounted, there is no
+ * workspace the command starts in is the only folder mounted, there is no
  * network, no capability, no Docker socket and no host environment, and the
- * image cannot be changed (see `containerArgs`). Where the runtime is missing
+ * image cannot be changed (see `containerArgs`). The parts of the workspace
+ * that the host runs or trusts later are read-only (`protectedMounts`). Where the runtime is missing
  * or its daemon is not running the executor is `unavailable`: the command is
  * not run and never falls back to the host's shell.
  */
@@ -160,8 +162,17 @@ function containerExecutor(
     "runtime" in status ? status.runtime : (preference.runtime ?? "docker");
   const image = preference.image ?? DEFAULT_CONTAINER_IMAGE;
   const platform = opts.platform ?? process.platform;
+  // The protected paths are read from the folder again for each command: a
+  // `.vscode` made since the last one is read-only from now on
   const run = (command: string, cwd: string) =>
-    containerArgs(command, { runtime, image, cwd, platform, user: hostUser() });
+    containerArgs(command, {
+      runtime,
+      image,
+      cwd,
+      platform,
+      user: hostUser(),
+      readOnly: protectedMounts(cwd, { platform }),
+    });
   const cwdOf = (options?: SpawnOptions) =>
     typeof options?.cwd === "string" ? options.cwd : process.cwd();
   return {
@@ -188,6 +199,6 @@ function containerExecutor(
         }),
       ),
     describe: () =>
-      `bash in a ${runtime} container (${image}): the workspace folder only, no network, no capabilities, no host secrets`,
+      `bash in a ${runtime} container (${image}): the workspace folder only, no network, no capabilities, no host secrets; .git/hooks, .git/config, .vscode and the other files that run later are read-only`,
   };
 }

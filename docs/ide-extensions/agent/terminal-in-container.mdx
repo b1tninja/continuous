@@ -24,7 +24,8 @@ The format is `container`, `container:<runtime>`, `container:<runtime>:<image>` 
 ## What changes
 
 - **The shell.** Commands run in `bash` inside a new container that is removed when the command ends. The agent is told this, so it writes `a && b` and Linux paths. The [command checks](/ide-extensions/agent/command-checks) read the command as bash too.
-- **The workspace.** The workspace folder is the only thing mounted, read-write, and the command starts in it. On Windows it appears as `/workspace`.
+- **The workspace.** The workspace folder is the only folder mounted, read-write, and the command starts in it. On Windows it appears as `/workspace`.
+- **Configuration that runs later is read-only.** `.git/hooks`, `.git/config`, `.vscode`, `.idea`, `.devcontainer`, `.github/workflows`, `.envrc`, `.mcp.json` and the other paths the [`protect-config` check](/reference/permissions-yaml#builtin) covers are mounted read-only when they exist at the top of the workspace. A command that writes one fails with `Read-only file system`. `git commit` still works; `git config` and `git remote add` do not, because they write `.git/config`.
 - **No network.** The container has no network access, so commands such as `npm install` or `git clone` fail inside it.
 - **Locked down.** The image is read-only apart from `/tmp` and the workspace, all capabilities are dropped, and memory and process counts are limited. Your environment variables and the Docker socket are not passed in. On Linux and macOS the command runs as you, so files it writes belong to you.
 - **Nothing is kept.** Anything written outside the workspace is gone when the command ends.
@@ -40,6 +41,8 @@ Continuous never installs a runtime, starts a daemon or pulls an image on its ow
 
 ## Limits
 
-- The workspace is writable from the container, so this does not protect the files in it.
+- The rest of the workspace is writable from the container, so this does not protect your source files.
+- A protected path that does not exist yet is not created, so a command can create it. The same names deeper in the tree (`packages/app/.vscode`) and symbolic links are not mounted read-only.
 - The setting applies to the agent's terminal tool only. VS Code's own terminal keeps its profile.
+- In a remote window (SSH, WSL, a dev container) the setting does not apply: commands there are typed into the editor's terminal on the remote machine, with no container. While the setting is `container`, the terminal tool does not run commands in a remote window and says so. Set `continuous.terminal.shell` to `default` to run them there.
 - Files the agent edits with the edit tools are edited on the host, in the same folder the container sees.

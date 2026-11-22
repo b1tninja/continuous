@@ -6,7 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IDE, ToolExtras } from "../..";
 import type { CommandExecutor } from "../../util/commandExecutor";
 import { COMMAND_STDIO } from "../../util/commandSpawn";
-import { withRealExitCode, type ShellKind } from "../../util/shell";
+import {
+  setTerminalShellPreference,
+  withRealExitCode,
+  type ShellKind,
+} from "../../util/shell";
 
 /**
  * Phase 0 of the OS sandbox plan: every command the IDE's terminal tool
@@ -45,6 +49,7 @@ vi.mock("../../util/commandExecutor", async (orig) => {
 
 import { fullText } from "../../util/commandOutputBuffer";
 import { findCommand } from "../../util/commandOutputStore";
+import { refusalText } from "../refusalText";
 import { runTerminalCommandImpl } from "./runTerminalCommand";
 
 type FakeChild = EventEmitter & {
@@ -132,6 +137,7 @@ beforeEach(() => {
 
 afterEach(() => {
   executorBox.current = undefined;
+  setTerminalShellPreference(undefined);
   vi.unstubAllEnvs();
   vi.useRealTimers();
 });
@@ -377,5 +383,101 @@ describe("the container executor mounts the workspace the tool starts in (W28)",
     expect(options.cwd).toBe(workspace);
     child.emit("close", 0);
     await pending;
+  });
+});
+
+describe("a remote window with commands set to run somewhere else (PS9)", () => {
+  const remote = (remoteName: string) => {
+    const ex = extras();
+    (ex.ide.getIdeInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+      remoteName,
+    });
+    return ex;
+  };
+
+  it("does not type the command into the remote terminal when a container was asked for", async () => {
+    setTerminalShellPreference({ kind: "container" });
+    const { executor, calls } = fakeExecutor(fakeChild());
+    executorBox.current = executor;
+    const ex = remote("ssh-remote");
+    const result = await runTerminalCommandImpl(
+      { command: "npm test", waitForCompletion: true },
+      ex,
+    );
+    expect(result[0].status).toBe("Command not run");
+    expect(result[0].content).toBe(
+      refusalText.remoteWindowShell({
+        remoteName: "ssh-remote",
+        preference: "container",
+        from: "setting",
+      }),
+    );
+    expect(ex.ide.runCommand).toHaveBeenCalledTimes(0);
+    // Nothing was started on this machine either
+    expect(calls).toHaveLength(0);
+    expect(nodeSpawn).not.toHaveBeenCalled();
+  });
+
+  it("refuses for WSL too, and for the choice made in the environment", async () => {
+    setTerminalShellPreference({ kind: "wsl", distro: "Ubuntu" });
+    const first = remote("dev-container");
+    const wsl = await runTerminalCommandImpl({ command: "ls" }, first);
+    expect(wsl[0].content).toContain("continuous.terminal.shell is set to wsl");
+    expect(first.ide.runCommand).not.toHaveBeenCalled();
+
+    setTerminalShellPreference(undefined);
+    vi.stubEnv("CONTINUOUS_TERMINAL_SHELL", "container:podman");
+    const second = remote("ssh-remote");
+    const env = await runTerminalCommandImpl({ command: "ls" }, second);
+    expect(env[0].content).toContain(
+      "CONTINUOUS_TERMINAL_SHELL is set to container",
+    );
+    expect(second.ide.runCommand).not.toHaveBeenCalled();
+  });
+
+  it("types the command into the remote terminal as before with the default setting", async () => {
+    vi.stubEnv("CONTINUOUS_TERMINAL_SHELL", "");
+    const ex = remote("ssh-remote");
+    const result = await runTerminalCommandImpl(
+      { command: "npm test", waitForCompletion: true },
+      ex,
+    );
+    expect(ex.ide.runCommand).toHaveBeenCalledTimes(1);
+    expect(ex.ide.runCommand).toHaveBeenCalledWith("npm test");
+    expect(result[0].status).toBe("Command executed");
+  });
+
+  it("in a local window the container setting still sends the command to the container executor", async () => {
+    setTerminalShellPreference({ kind: "container", runtime: "docker" });
+    const actual = await vi.importActual<
+      typeof import("../../util/commandExecutor")
+    >("../../util/commandExecutor");
+    // The executor the setting gives, with the runtime's answer supplied: no
+    // container is started, the runtime's program is the mocked spawn
+    executorBox.current = actual.getCommandExecutor({
+      containerStatus: { state: "ready", runtime: "docker" },
+    });
+    expect((executorBox.current as CommandExecutor).kind).toBe("container");
+    const child = fakeChild();
+    nodeSpawn.mockImplementation(() => {
+      queueMicrotask(() => child.emit("spawn"));
+      return child;
+    });
+    const ex = extras();
+    const pending = runTerminalCommandImpl(
+      { command: "ls", waitForCompletion: true },
+      ex,
+    );
+    await started();
+    expect(nodeSpawn).toHaveBeenCalledTimes(1);
+    expect(nodeSpawn.mock.calls[0][0]).toBe("docker");
+    expect(nodeSpawn.mock.calls[0][1].slice(0, 3)).toEqual([
+      "run",
+      "--rm",
+      "-i",
+    ]);
+    expect(ex.ide.runCommand).not.toHaveBeenCalled();
+    child.emit("close", 0);
+    expect((await pending)[0].status).not.toBe("Command not run");
   });
 });

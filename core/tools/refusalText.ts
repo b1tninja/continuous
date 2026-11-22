@@ -68,6 +68,25 @@ export const refusalText = {
     `${reason ?? "This tool is turned off in the user's tool settings."}\n\n${command}\n\n${carryOnToolOff}`,
 
   /**
+   * The terminal tool in a remote window, with commands set to run in WSL or
+   * in a container: that choice is about the local machine, so nothing was
+   * typed into the remote terminal (IDE).
+   */
+  remoteWindowShell: (conflict: {
+    remoteName: string;
+    preference: "wsl" | "container";
+    from: "setting" | "environment";
+  }): string => {
+    const name =
+      conflict.from === "setting"
+        ? "continuous.terminal.shell"
+        : "CONTINUOUS_TERMINAL_SHELL";
+    const outside =
+      conflict.preference === "container" ? "the container" : "WSL";
+    return `The command was not run. ${name} is set to ${conflict.preference}, and that setting does not apply in a remote window (${conflict.remoteName}): in a remote window commands go to the editor's terminal on the remote machine, outside ${outside}. They run there once ${name} is ${conflict.from === "setting" ? "set to default" : "unset"}. ${carryOn}`;
+  },
+
+  /**
    * Loop mode: a call that would ask when the item can hold no more
    * questions. The harness ends the item's run with this one result; the
    * questions already open are what wake it.
