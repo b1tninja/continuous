@@ -12,6 +12,7 @@
       "reason": "Reserved or invented example hosts in test corpora, evaluation cases and doc strings (RFC 2606 style); never contacted by code.",
       "hosts": [
         "10.0.0.5",
+        "192.168.1.50",
         "api.example.com",
         "api.example.io",
         "cdn.example.org",
