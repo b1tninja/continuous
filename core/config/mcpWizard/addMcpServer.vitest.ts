@@ -357,6 +357,15 @@ describe("planMcpServerEntry and renderEntryYaml", () => {
       name: "docs",
       url: "https://docs.example.com/mcp",
     });
+    // A tool call limit of its own, in the file's milliseconds
+    expect(
+      planMcpServerEntry({
+        name: "a",
+        transport: "stdio",
+        command: "npx",
+        toolTimeoutMs: 180_000,
+      }).entry,
+    ).toEqual({ name: "a", command: "npx", toolTimeout: 180_000 });
     // Chosen by the person: written
     expect(
       planMcpServerEntry({

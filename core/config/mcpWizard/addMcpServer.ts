@@ -163,6 +163,9 @@ export function planMcpServerEntry(
   if (draft.connectionTimeoutMs && draft.connectionTimeoutMs > 0) {
     entry.connectionTimeout = Math.round(draft.connectionTimeoutMs);
   }
+  if (draft.toolTimeoutMs && draft.toolTimeoutMs > 0) {
+    entry.toolTimeout = Math.round(draft.toolTimeoutMs);
+  }
   for (const s of [...secrets.map((x) => x.name), ...pending]) {
     if (!isValidSecretName(s))
       errors.push(`"${s}" is not a valid secret name.`);

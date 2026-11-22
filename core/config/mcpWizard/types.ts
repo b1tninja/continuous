@@ -111,6 +111,8 @@ export interface McpServerDraft {
   headers?: McpDraftValue[];
   /** Connection timeout in milliseconds, written as `connectionTimeout`. */
   connectionTimeoutMs?: number;
+  /** The limit of one tool call in milliseconds, written as `toolTimeout`. */
+  toolTimeoutMs?: number;
   /**
    * A remote server whose `type` is left out of the file: the connection
    * tries Streamable HTTP and then SSE. `transport` is then only a guess.

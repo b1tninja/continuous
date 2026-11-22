@@ -48,6 +48,7 @@ const FORM_KEYS = new Set([
   "url",
   "type",
   "connectionTimeout",
+  "toolTimeout",
 ]);
 const STDIO_KEYS = ["command", "args", "env", "cwd"];
 const REMOTE_KEYS = ["url", "type", "apiKey", "oauth", "requestOptions"];
@@ -113,10 +114,14 @@ export function entryToEditDraft(entry: Record<string, unknown>): McpEditDraft {
       .filter((k) => k !== "headers")
       .map((k) => `requestOptions.${k}`),
   ];
-  const timeout =
-    typeof entry.connectionTimeout === "number"
+  const timeout = {
+    ...(typeof entry.connectionTimeout === "number"
       ? { connectionTimeoutMs: entry.connectionTimeout }
-      : {};
+      : {}),
+    ...(typeof entry.toolTimeout === "number"
+      ? { toolTimeoutMs: entry.toolTimeout }
+      : {}),
+  };
   const name = String(entry.name ?? "");
   if (typeof entry.command === "string") {
     const args = Array.isArray(entry.args) ? entry.args.map(String) : [];

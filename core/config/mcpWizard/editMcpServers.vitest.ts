@@ -175,6 +175,28 @@ describe("mergeEditedEntry", () => {
     });
   });
 
+  it("reads and removes the tool call limit like any other form setting", () => {
+    const old = {
+      name: "a",
+      command: "npx",
+      connectionTimeout: 30_000,
+      toolTimeout: 180_000,
+    };
+    expect(entryToEditDraft(old).draft).toMatchObject({
+      connectionTimeoutMs: 30_000,
+      toolTimeoutMs: 180_000,
+    });
+    expect(entryToEditDraft(old).keptKeys).toEqual([]);
+    // Reset in the form: the key leaves the file
+    expect(
+      mergeEditedEntry(old, {
+        name: "a",
+        command: "npx",
+        connectionTimeout: 30_000,
+      }),
+    ).toEqual({ name: "a", command: "npx", connectionTimeout: 30_000 });
+  });
+
   it("drops the other kind's settings when the kind changes", () => {
     expect(
       mergeEditedEntry(

@@ -3,8 +3,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { DEFAULT_REQUEST_TIMEOUT_MSEC } from "@modelcontextprotocol/sdk/shared/protocol.js";
-
 import type { IDE } from "../..";
 import { maskCommandForDisplay } from "../../tools/permissions/displayMask";
 import { readSecretFromEnvFile } from "../../util/secretsFile";
@@ -12,6 +10,7 @@ import {
   COMMONS_ENV_VARS,
   DEFAULT_MCP_TIMEOUT,
 } from "../../context/mcp/MCPConnection";
+import { DEFAULT_MCP_TOOL_TIMEOUT } from "../../context/mcp/mcpTimeouts";
 import { inspectProjectConfig } from "../projectTrust";
 import type { SecretStorageKind } from "../secretStorage";
 
@@ -179,8 +178,9 @@ export interface McpWizardScopesResponse {
     /** The limit of the dialog's Test. */
     probeTimeoutMs: number;
     /**
-     * The limit of one tool call when no connection timeout is set (the MCP
-     * library's own). A set `connectionTimeout` is used for tool calls too.
+     * The limit of one tool call when neither `toolTimeout` nor
+     * `connectionTimeout` is set. With only `connectionTimeout` set, tool
+     * calls follow that (context/mcp/mcpTimeouts.ts).
      */
     toolCallTimeoutMs: number;
     /** A local server's environment besides its own `env`. */
@@ -560,6 +560,9 @@ export function resolveHeld(draft: McpServerDraft, held: HeldValues): Resolved {
     ...(draft.headers ? { headers: values(draft.headers) } : {}),
     ...(typeof draft.connectionTimeoutMs === "number"
       ? { connectionTimeoutMs: draft.connectionTimeoutMs }
+      : {}),
+    ...(typeof draft.toolTimeoutMs === "number"
+      ? { toolTimeoutMs: draft.toolTimeoutMs }
       : {}),
     ...(draft.autoTransport === true ? { autoTransport: true } : {}),
     ...(secretArgs.size
@@ -1016,7 +1019,7 @@ export function registerMcpWizardHandlers(
       defaults: {
         connectionTimeoutMs: DEFAULT_MCP_TIMEOUT,
         probeTimeoutMs: DEFAULT_PROBE_TIMEOUT_MS,
-        toolCallTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MSEC,
+        toolCallTimeoutMs: DEFAULT_MCP_TOOL_TIMEOUT,
         inheritedEnv: ["PATH", ...COMMONS_ENV_VARS],
         ...(dirs[0] ? { cwd: dirs[0] } : {}),
       },
