@@ -22,7 +22,9 @@ import { evaluateToolPolicy } from "./evaluateToolPolicies";
  * command would be, so the person's rules, protected paths and approval mode
  * apply; one that would ask is held as an approval question in the inbox and
  * runs once allowed. Then core runs it in the first workspace folder, through
- * the command executor (loop/runCheck), as it runs a terminal command.
+ * the command executor (loop/runCheck), as it runs a terminal command. Core
+ * runs it only if it holds the decision made here for the same call id and
+ * command, so a check is decided before every run.
  */
 
 export type CheckPermission =
@@ -232,6 +234,13 @@ export async function runLoopCheck(
     const grant = consumeLoopGrant(loop, key);
     if (grant.granted) {
       loop = grant.loop;
+      // Core runs a call that asked only once it has the person's answer for
+      // this call id
+      try {
+        await ideMessenger.request("audit/answer", { callId, approved: true });
+      } catch {
+        // core then refuses the run and says why
+      }
     } else {
       const held = holdQuestion(
         loop,

@@ -14,6 +14,11 @@ vi.mock("node:child_process", async (orig) => {
 import { recordPolicyDecision } from "../tools/permissions/audit/hook";
 import { callRows, readAuditSession } from "../tools/permissions/audit/reader";
 import { AuditTrail } from "../tools/permissions/audit/trail";
+import {
+  DECISION_MAX_AGE_MS,
+  RecordedDecisions,
+  type RecordedPolicy,
+} from "../tools/permissions/recordedDecisions";
 import { resetCommandLintGate } from "../tools/permissions/commandLint";
 import { getCommandExecutor } from "./commandExecutor";
 import { containerUnavailableMessage } from "./containerStatus";
@@ -59,18 +64,39 @@ const trail = () =>
     syncImportant: false,
   });
 
-/** The decision the webview asks for before it sends the check. */
-function decided(t: AuditTrail, callId: string, command: string): void {
+let clock = 0;
+let decisions: RecordedDecisions;
+beforeEach(() => {
+  clock = 1_000_000;
+  decisions = new RecordedDecisions(() => clock);
+});
+
+/** The decision the webview asks for before it sends the check, as core keeps it. */
+function decided(
+  t: AuditTrail,
+  callId: string,
+  command: string,
+  policy: RecordedPolicy = "allow",
+  toolName = "run_terminal_command",
+): void {
+  decisions.record(callId, toolName, { command }, policy);
   recordPolicyDecision(
     t,
     {
       session: "s1",
       callId,
-      toolName: "run_terminal_command",
+      toolName,
       parsedArgs: { command },
     },
     "allowedWithoutPermission",
-    { policy: "allowedWithoutPermission" },
+    {
+      policy:
+        policy === "allow"
+          ? "allowedWithoutPermission"
+          : policy === "ask"
+            ? "allowedWithPermission"
+            : "disabled",
+    },
   );
 }
 
@@ -186,6 +212,7 @@ describe("a Loop check's outcome is written to the audit trail", () => {
       { command: "npm test", callId: "loop-check-1" },
       {
         trail: t,
+        decisions,
         cwd: dir,
         run: async () => ({ exitCode: 2, output: "1 test failed" }),
       },
@@ -210,6 +237,7 @@ describe("a Loop check's outcome is written to the audit trail", () => {
       { command: "npm test", callId: "loop-check-2" },
       {
         trail: t,
+        decisions,
         cwd: dir,
         run: async () => ({ exitCode: null, output: "", timedOut: true }),
       },
@@ -230,6 +258,7 @@ describe("a Loop check's outcome is written to the audit trail", () => {
       { command: "npm test", callId: "loop-check-3" },
       {
         trail: t,
+        decisions,
         cwd: dir,
         executor: getCommandExecutor({
           terminalShell: { kind: "container", runtime: "docker" },
@@ -246,9 +275,190 @@ describe("a Loop check's outcome is written to the audit trail", () => {
     const run = vi.fn();
     const result = await runAuditedLoopCheck(
       { command: "  ", callId: "loop-check-4" },
-      { trail: trail(), cwd: dir, run },
+      { trail: trail(), decisions, cwd: dir, run },
     );
     expect(result.notRun).toBe(true);
     expect(run).not.toHaveBeenCalled();
+  });
+});
+
+describe("core runs a Loop check only on a decision it recorded", () => {
+  const rows = (ev: string) =>
+    ["s1", "unknown"].flatMap(
+      (session) =>
+        readAuditSession(dir, session).filter(
+          (r) => r.ev === ev,
+        ) as unknown as Record<string, unknown>[],
+    );
+
+  /** Sends the message with the real runner, so a start would be counted. */
+  async function send(t: AuditTrail, command: string, callId: string) {
+    const starts = spawn.mock.calls.length;
+    const result = await runAuditedLoopCheck(
+      { command, callId },
+      { trail: t, decisions, cwd: dir },
+    );
+    return { result, started: spawn.mock.calls.length - starts };
+  }
+
+  function expectRefused(
+    sent: Awaited<ReturnType<typeof send>>,
+    callId: string,
+    why: string,
+  ) {
+    expect(sent.started).toBe(0);
+    expect(sent.result).toEqual({
+      exitCode: null,
+      output: `The command was not run: ${why}.`,
+      notRun: true,
+    });
+    const refusal = rows("decision").filter(
+      (r) => r.callId === callId && r.source === "recorded-decision",
+    );
+    expect(refusal).toHaveLength(1);
+    expect(refusal[0]).toMatchObject({
+      tool: "run_terminal_command",
+      policy: "deny",
+      by: "system",
+      reason: sent.result.output,
+    });
+    expect(
+      rows("outcome").filter((r) => r.callId === callId && r.ran === false),
+    ).not.toHaveLength(0);
+    expect(getAllRunningProcessIds()).toEqual([]);
+  }
+
+  /** A command that leaves a file behind if it ever runs. */
+  const touch = () =>
+    nodeScript(
+      "touch.js",
+      `require("fs").writeFileSync(${JSON.stringify(path.join(dir, "ran"))}, "x")`,
+    );
+  const ranFile = () => fs.existsSync(path.join(dir, "ran"));
+
+  it("refuses a command no decision was recorded for", async () => {
+    const t = trail();
+    const sent = await send(t, touch(), "loop-check-none");
+    expectRefused(
+      sent,
+      "loop-check-none",
+      "no decision is recorded for this call",
+    );
+    expect(ranFile()).toBe(false);
+  });
+
+  it("refuses a command other than the one that was decided", async () => {
+    const t = trail();
+    decided(t, "loop-check-a", "npm test");
+    const sent = await send(t, touch(), "loop-check-a");
+    expectRefused(
+      sent,
+      "loop-check-a",
+      "the decision for this call is for a different command",
+    );
+    expect(ranFile()).toBe(false);
+  });
+
+  it("refuses a command whose decision was a refusal", async () => {
+    const t = trail();
+    const command = touch();
+    decided(t, "loop-check-b", command, "deny");
+    const sent = await send(t, command, "loop-check-b");
+    expectRefused(sent, "loop-check-b", "the command was refused");
+    expect(ranFile()).toBe(false);
+  });
+
+  it("runs a decision once: the same call id starts nothing a second time", async () => {
+    const t = trail();
+    const command = nodeScript("once.js", `console.log("once")`);
+    decided(t, "loop-check-c", command);
+    const first = await send(t, command, "loop-check-c");
+    expect(first.result).toEqual({ exitCode: 0, output: "once" });
+    expect(first.started).toBe(1);
+    const again = await send(t, command, "loop-check-c");
+    expectRefused(
+      again,
+      "loop-check-c",
+      "no decision is recorded for this call",
+    );
+  });
+
+  it("refuses a command that asked and has no answer, and one the person refused", async () => {
+    const t = trail();
+    const command = touch();
+    decided(t, "loop-check-d", command, "ask");
+    expectRefused(
+      await send(t, command, "loop-check-d"),
+      "loop-check-d",
+      "the command needs approval, and none is recorded",
+    );
+    decided(t, "loop-check-e", command, "ask");
+    decisions.answer("loop-check-e", false);
+    expectRefused(
+      await send(t, command, "loop-check-e"),
+      "loop-check-e",
+      "the command was refused",
+    );
+    expect(ranFile()).toBe(false);
+  });
+
+  it("runs a command that asked once the person's approval is recorded", async () => {
+    const t = trail();
+    const command = nodeScript("asked.js", `console.log("asked")`);
+    decided(t, "loop-check-f", command, "ask");
+    decisions.answer("loop-check-f", true);
+    const sent = await send(t, command, "loop-check-f");
+    expect(sent.result).toEqual({ exitCode: 0, output: "asked" });
+    expect(sent.started).toBe(1);
+  });
+
+  it("does not take an approval for a call that was refused or never decided", async () => {
+    const t = trail();
+    const command = touch();
+    decided(t, "loop-check-g", command, "deny");
+    decisions.answer("loop-check-g", true);
+    decisions.answer("loop-check-h", true);
+    expectRefused(
+      await send(t, command, "loop-check-g"),
+      "loop-check-g",
+      "the command was refused",
+    );
+    expectRefused(
+      await send(t, command, "loop-check-h"),
+      "loop-check-h",
+      "no decision is recorded for this call",
+    );
+    expect(ranFile()).toBe(false);
+  });
+
+  it("refuses a decision for another tool, and one that is too old", async () => {
+    const t = trail();
+    const command = touch();
+    decided(t, "loop-check-i", command, "allow", "read_file");
+    expectRefused(
+      await send(t, command, "loop-check-i"),
+      "loop-check-i",
+      "the decision for this call is not for a terminal command",
+    );
+    decided(t, "loop-check-j", command);
+    clock += DECISION_MAX_AGE_MS + 1;
+    expectRefused(
+      await send(t, command, "loop-check-j"),
+      "loop-check-j",
+      "the decision for this call is too old",
+    );
+    expect(ranFile()).toBe(false);
+  });
+
+  it("refuses with the audit trail turned off too", async () => {
+    const off = new AuditTrail({ dir, enabled: false });
+    const starts = spawn.mock.calls.length;
+    const result = await runAuditedLoopCheck(
+      { command: touch(), callId: "loop-check-k" },
+      { trail: off, decisions, cwd: dir },
+    );
+    expect(result.notRun).toBe(true);
+    expect(spawn.mock.calls.length).toBe(starts);
+    expect(ranFile()).toBe(false);
   });
 });

@@ -95,9 +95,12 @@ import { toolForPolicy } from "./tools/definitions/sessionMessaging";
 import { recordAutoAnswer } from "./tools/permissions/audit/autoAnswer";
 import { getAuditTrail } from "./tools/permissions/audit/global";
 import {
+  auditPolicyOf,
+  clampPolicy,
   recordPolicyDecision,
   recordReviewDecision,
 } from "./tools/permissions/audit/hook";
+import { recordedDecisions } from "./tools/permissions/recordedDecisions";
 import { registerAuditListHandlers } from "./tools/permissions/audit/listingHandlers";
 import { machineAuditHost } from "./tools/permissions/audit/listingHost";
 import { registerAuditOverview } from "./tools/permissions/audit/overviewHandler";
@@ -1075,6 +1078,7 @@ export class Core {
         { command, callId },
         {
           trail: getAuditTrail(),
+          decisions: recordedDecisions,
           cwd: where.cwd,
           remoteName: (await this.ide.getIdeInfo()).remoteName,
         },
@@ -1358,6 +1362,7 @@ export class Core {
 
     on("audit/answer", async ({ data }) => {
       getAuditTrail().answer(data.callId, data.approved);
+      recordedDecisions.answer(data.callId, data.approved);
       void this.shadowIde.answered(data.callId, data.approved);
     });
 
@@ -2739,6 +2744,7 @@ export class Core {
             basePolicy,
             refused,
           );
+          recordedDecisions.record(callId, toolName, parsedArgs, "deny");
           return refused;
         }
         const { config } = await this.configHandler.loadConfig();
@@ -2808,6 +2814,13 @@ export class Core {
           },
           basePolicy,
           result,
+        );
+        // What a later loop/runCheck for this call is held to
+        recordedDecisions.record(
+          callId,
+          toolName,
+          parsedArgs,
+          auditPolicyOf(clampPolicy(basePolicy, result)),
         );
         // Shadow mode (off unless the person's config turns it on): beside the decision, never in it
         void this.shadowIde.afterPolicy(
