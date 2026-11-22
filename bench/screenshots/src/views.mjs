@@ -118,7 +118,15 @@ export const VIEWS = {
   },
   "settings-models": {
     fixture: "settings-models",
-    note: "Settings, Models tab",
+    note: "Settings, Models tab: In use, Connections (none yet), four folds",
+  },
+  "settings-models-connections": {
+    fixture: "settings-models-connections",
+    note: "Settings, Models tab with three provider connections under In use, and the folds' one-line states",
+  },
+  "settings-models-accounts": {
+    fixture: "settings-models-accounts",
+    note: "Settings, Models tab with the Accounts fold open (opened by &section=accounts): the provider accounts of providers.yaml",
   },
   "settings-rules": { fixture: "settings-rules", note: "Settings, Rules tab" },
   "settings-permissions": {

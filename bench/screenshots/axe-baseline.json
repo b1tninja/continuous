@@ -134,6 +134,12 @@
     "permissions-protections-open": {},
     "settings-general-index": {
       "color-contrast": 7
+    },
+    "settings-models-accounts": {
+      "color-contrast": 1
+    },
+    "settings-models-connections": {
+      "color-contrast": 1
     }
   }
 }

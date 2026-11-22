@@ -18,6 +18,9 @@ const TAB_ALIASES: Record<string, Target> = {
   settings: { tab: "general" },
   // The Indexing tab is a folded group on General
   indexing: { tab: "general", section: "index" },
+  // Providers merged into Models: its connections are shown there, its
+  // accounts are the "accounts" fold
+  providers: { tab: "models", section: "connections" },
 };
 
 /**

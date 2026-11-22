@@ -35,7 +35,7 @@ type Confirming =
 /**
  * One row per provider connection in the selected config, with the ways back
  * into the setup flow: its models, its connection, a connection test, and
- * removing it. Shown on Settings > Providers.
+ * removing it. Shown on Settings > Models, under the models in use.
  */
 export function ProvidersCard() {
   const ideMessenger = useContext(IdeMessengerContext);
@@ -152,8 +152,9 @@ export function ProvidersCard() {
 
   return (
     <Card>
-      <div className="flex items-center justify-between gap-2 px-3 py-2">
-        <div>
+      {/* The button goes under the text when the panel is too narrow for both */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+        <div className="min-w-0 flex-1 basis-32">
           <div className="text-sm font-medium">Connections</div>
           <div className="text-xs text-description-muted">
             Each provider connection in the selected config and how it signs in.

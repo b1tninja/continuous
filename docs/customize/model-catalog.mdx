@@ -114,11 +114,11 @@ A workspace's `.continuous/models.yaml` adds models for that workspace, and a mo
 - each chosen model in `~/.continuous/models.yaml`, with the context window, tools and image support the provider reported;
 - a `from:` entry in the selected config.
 
-Setting up the same endpoint again reuses its account and catalog models. A connection set up before this, with its provider, address and key on every model, keeps working and is edited as it is. **Settings > Providers > Turn into an account** converts it: the connection becomes an account, the models move to the catalog, and each model keeps its place, name and roles in the config.
+Setting up the same endpoint again reuses its account and catalog models. A connection set up before this, with its provider, address and key on every model, keeps working and is edited as it is. **Turn into an account** on its row under **Settings > Models > Connections** converts it: the connection becomes an account, the models move to the catalog, and each model keeps its place, name and roles in the config.
 
 ## Assign models to roles and modes
 
-**Settings > Models > Assign models** lists every model in the catalog, each variant on its own row, and the models that are only in the config, with the account each one uses. Tick what each model is for: Chat, Edit, Apply, Autocomplete, Subagents or Compaction (the `summarize` role). Saving writes the selected config: a catalog model gets a `from:` entry with those roles, and the entry goes again when no role is left. Roles the table does not show, such as `embed`, are kept.
+**Settings > Models > Roles > Assign models** lists every model in the catalog, each variant on its own row, and the models that are only in the config, with the account each one uses. Tick what each model is for: Chat, Edit, Apply, Autocomplete, Subagents or Compaction (the `summarize` role). Saving writes the selected config: a catalog model gets a `from:` entry with those roles, and the entry goes again when no role is left. Roles the table does not show, such as `embed`, are kept.
 
 **Models per mode** also offers catalog models that the config does not list yet; choosing one for a mode adds it.
 

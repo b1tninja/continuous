@@ -5,7 +5,6 @@ import {
   DocumentIcon,
   PencilIcon,
   QuestionMarkCircleIcon,
-  ServerStackIcon,
   ShieldCheckIcon,
   WrenchScrewdriverIcon,
 } from "@heroicons/react/24/outline";
@@ -14,7 +13,6 @@ import { ConfigsSection } from "./sections/ConfigsSection";
 import { HelpSection } from "./sections/HelpSection";
 import { ModelsSection } from "./sections/ModelsSection";
 import { PermissionsSection } from "./sections/permissions/PermissionsSection";
-import { ProvidersSection } from "./sections/ProvidersSection";
 import { RulesSection } from "./sections/RulesSection";
 import { ToolsSection } from "./sections/ToolsSection";
 import { UserSettingsSection } from "./sections/UserSettingsSection";
@@ -64,16 +62,6 @@ export const topTabSections: TabSection[] = [
         icon: <CubeIcon className="h-3 w-3 shrink-0 xs:h-4 xs:w-4" />,
       },
       // A tab that belongs second, after Models, goes here.
-      {
-        id: "providers",
-        label: "Providers",
-        component: (
-          <ConfigSection>
-            <ProvidersSection />
-          </ConfigSection>
-        ),
-        icon: <ServerStackIcon className="h-3 w-3 shrink-0 xs:h-4 xs:w-4" />,
-      },
       {
         id: "tools",
         label: "Tools",

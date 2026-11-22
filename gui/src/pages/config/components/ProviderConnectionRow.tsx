@@ -30,7 +30,12 @@ export interface ProviderConnectionRowProps {
   onConvertToAccount: () => void;
 }
 
-const ghost = { variant: "ghost", size: "sm", className: "my-0" } as const;
+// 24 px high: the row's actions sit side by side and wrap in a narrow panel
+const ghost = {
+  variant: "ghost",
+  size: "sm",
+  className: "my-0 min-h-6",
+} as const;
 
 function ConfirmBar(props: {
   testId: string;
@@ -104,7 +109,8 @@ export function ProviderConnectionRow(props: ProviderConnectionRowProps) {
               {where}
             </span>
           )}
-          <span className="text-description-muted">
+          {/* A secret's name has no place to break; in a narrow panel it wraps inside the word */}
+          <span className="[overflow-wrap:anywhere] text-description-muted">
             <span
               className={auth.tone === "warning" ? "text-warning" : undefined}
               data-testid="provider-auth"

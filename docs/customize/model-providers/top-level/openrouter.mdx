@@ -157,7 +157,7 @@ Every request is the same: one GET to `openrouter.ai/api/v1/models` with no acco
 
 Where to set it:
 
-- **VS Code**: `continuous.modelInformationUpdates` (`automatic`, `manual`, `off`) and `continuous.modelInformationRefreshHours` in the settings, or the **Model information updates** card at the bottom of the Models settings page.
+- **VS Code**: `continuous.modelInformationUpdates` (`automatic`, `manual`, `off`) and `continuous.modelInformationRefreshHours` in the settings, or the **Model information updates** card in the **Model information** group at the bottom of the Models settings page (folded; its header says the choice in use and when the list was last pulled).
 - **Any IDE and the terminal agent**: `modelCatalog: automatic | manual | off` and `modelCatalogRefreshHours: 24` in the user-level `config.yaml` (`~/.continuous/config.yaml`). The VS Code setting and the settings page write these lines, so JetBrains and `continuous` follow the same choice. `modelCatalog: never`, saved by **Don't ask again** in earlier builds, still means "only when I ask, without the question".
 - **Environment**: `CONTINUOUS_MODEL_INFO_UPDATES=automatic|manual|off` and `CONTINUOUS_MODEL_INFO_REFRESH_HOURS=<hours>` override `config.yaml`, for example in CI.
 

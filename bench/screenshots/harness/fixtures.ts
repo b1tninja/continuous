@@ -1040,6 +1040,83 @@ function agentsSession(
   };
 }
 
+/** Three provider connections, two accounts in providers.yaml and a pulled model list. */
+function seedModelConnections(ctx: FixtureContext): void {
+  Object.assign(ctx.messenger.responses, {
+    "config/getProviderSetup": {
+      connections: [
+        {
+          provider: "anthropic",
+          connection: {},
+          account: "anthropic-work",
+          models: [
+            { name: "Claude Opus", model: "claude-opus-4-5" },
+            { name: "Claude Sonnet", model: "claude-sonnet-4-5" },
+          ],
+          key: {
+            state: "secret",
+            secretName: "CONTINUOUS_ANTHROPIC_API_KEY",
+            storedIn: { secure: true, env: false },
+          },
+        },
+        {
+          provider: "bedrock",
+          connection: { region: "us-east-1", profile: "work" },
+          models: [
+            { name: "Bedrock Opus", model: "anthropic.claude-opus-4-5" },
+          ],
+          key: { state: "none" },
+        },
+        {
+          provider: "openai",
+          connection: { apiBase: "http://localhost:1234/v1" },
+          models: [{ name: "Local", model: "qwen3-coder-30b-a3b-instruct" }],
+          key: {
+            state: "secret",
+            secretName: "LOCAL_KEY",
+            storedIn: { secure: false, env: false },
+          },
+        },
+      ],
+      secureStorageAvailable: true,
+      preferredKeyStorage: "secure",
+      editable: true,
+    },
+    "providers/list": {
+      instances: [
+        {
+          name: "anthropic-work",
+          provider: "anthropic",
+          source: "global",
+          sourceUri: "file:///home/u/.continuous/providers.yaml",
+          key: {
+            state: "secret",
+            secretName: "CONTINUOUS_ANTHROPIC_API_KEY",
+            storedIn: { secure: true, env: false },
+          },
+          usedBy: [{ config: "Main Config", model: "Claude Sonnet" }],
+        },
+        {
+          name: "strata",
+          provider: "openai",
+          apiBase: "https://strata.example/v1",
+          source: "global",
+          sourceUri: "file:///home/u/.continuous/providers.yaml",
+          key: { state: "none" },
+          usedBy: [],
+        },
+      ],
+      globalFileUri: "file:///home/u/.continuous/providers.yaml",
+      secureStorageAvailable: true,
+    },
+    "modelCatalog/status": {
+      policy: "automatic",
+      refreshHours: 24,
+      openrouter: { fetchedAt: "2026-11-09T08:30:00.000Z", count: 312 },
+    },
+  });
+}
+
 /** A Settings tab; `tab` may carry more of the query ("permissions&view=rules"). */
 function settingsTab(tab: string): Fixture {
   return async ({ navigate }) => {
@@ -1133,6 +1210,16 @@ Object.assign(FIXTURES, {
   "loop-frame-finished": noop,
   "loop-frame-stopped": noop,
   "settings-models": settingsTab("models"),
+  /** Models with three provider connections, two accounts and a pulled model list */
+  "settings-models-connections": async (ctx) => {
+    seedModelConnections(ctx);
+    await settingsTab("models")(ctx);
+  },
+  /** The same page with the Accounts fold opened by its link */
+  "settings-models-accounts": async (ctx) => {
+    seedModelConnections(ctx);
+    await settingsTab("models&section=accounts")(ctx);
+  },
   "settings-rules": settingsTab("rules"),
   "settings-permissions": async (ctx) => {
     ctx.messenger.responseHandlers["policy/rules"] = (async () =>

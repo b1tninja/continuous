@@ -181,6 +181,13 @@ describe("old links into Settings", () => {
     expect(where()).toBe("?tab=general&section=index");
   });
 
+  it("?tab=providers opens Models at Connections", async () => {
+    await openAt("/config?tab=providers");
+    expect(screen.getByTestId("content-models")).toBeDefined();
+    expect(selected()).toBe("Models");
+    expect(where()).toBe("?tab=models&section=connections");
+  });
+
   it("?tab=tools still opens Tools", async () => {
     await openAt("/config?tab=tools");
     expect(screen.getByTestId("content-tools")).toBeDefined();

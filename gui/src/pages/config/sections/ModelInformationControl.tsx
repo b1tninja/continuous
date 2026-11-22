@@ -32,8 +32,19 @@ const OPTIONS: { mode: Mode; label: string; effect: string }[] = [
 const modeOf = (p: CatalogPolicy): Mode =>
   p === "automatic" ? "automatic" : p === "off" ? "off" : "manual";
 
-/** "Model information updates" on the Models settings page. */
-export function ModelInformationControl() {
+/**
+ * "Model information updates" on the Models settings page. `onStatus` is told
+ * what was read, for the header of the fold this card sits in.
+ */
+export function ModelInformationControl({
+  onStatus,
+}: {
+  onStatus?: (status: {
+    policy: CatalogPolicy;
+    refreshHours: number;
+    openrouter?: { fetchedAt: string; count: number };
+  }) => void;
+} = {}) {
   const ideMessenger = useContext(IdeMessengerContext);
   const [policy, setPolicy] = useState<CatalogPolicy>();
   const [hours, setHours] = useState<number>();
@@ -46,9 +57,11 @@ export function ModelInformationControl() {
       if (res.status !== "success") return;
       setPolicy(res.content.policy);
       setHours(res.content.refreshHours);
+      onStatus?.(res.content);
     } catch {
       // not shown
     }
+    // onStatus is a state setter of the page
   }, [ideMessenger]);
 
   useEffect(() => {
