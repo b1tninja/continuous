@@ -46,8 +46,23 @@ describe("modelSettingLabel", () => {
     ).toBe("Model setting (on)");
   });
 
-  it("keeps the level and drops a word where there is no room", () => {
-    expect(modelSettingLabel(model(), undefined, true)).toBe("Model (medium)");
+  it("is the level alone, no wider than Medium, where there is no room", () => {
+    expect(modelSettingLabel(model(), undefined, true)).toBe("(med)");
+    expect(modelSettingLabel(model(), false, true)).toBe("(off)");
+    expect(
+      modelSettingLabel(
+        model({
+          completionOptions: { reasoningBudgetTokens: 16_000 } as never,
+        }),
+        undefined,
+        true,
+      ),
+    ).toBe("(high)");
     expect(modelSettingLabel(undefined, undefined, true)).toBe("Model");
+    for (const reasoning of [undefined, true, false]) {
+      expect(
+        modelSettingLabel(model(), reasoning, true).length,
+      ).toBeLessThanOrEqual("Medium".length);
+    }
   });
 });

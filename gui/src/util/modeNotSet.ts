@@ -113,24 +113,29 @@ export function reminderNotSetLabel(
  * The Thinking menu's empty choice: what the model's own setting sends.
  * "Model setting (medium)" for a reasoning model with the 2,048 token
  * budget, "(off)" when the model or the session turned reasoning off.
- * `compact` is for a toolbar with no room: a select is as wide as its
- * longest option, so the words are cut and the level kept.
+ * `compact` is for a toolbar with no room: "(med)", "(off)".
  */
 export function modelSettingLabel(
   model: ModelDescription | null | undefined,
   sessionReasoning: boolean | undefined,
   compact = false,
 ): string {
-  const name = compact ? "Model" : "Model setting";
-  if (!model) return name;
+  // Compact is the level alone, in brackets, and no wider than "Medium":
+  // the menu is as wide as its longest choice, and the model name beside
+  // it gives up the room
+  const label = (level: string) =>
+    compact
+      ? `(${level === "medium" ? "med" : level})`
+      : `Model setting (${level})`;
+  if (!model) return compact ? "Model" : "Model setting";
   const on =
     sessionReasoning ??
     (modelSupportsReasoning(model) &&
       model.completionOptions?.reasoning !== false);
-  if (!on) return `${name} (off)`;
+  if (!on) return label("off");
   // Ollama takes no budget, so there is no level to name
-  if (model.underlyingProviderName === "ollama") return `${name} (on)`;
+  if (model.underlyingProviderName === "ollama") return label("on");
   const budget =
     model.completionOptions?.reasoningBudgetTokens ?? DEFAULT_REASONING_BUDGET;
-  return `${name} (${budgetTokensToEffort(budget)})`;
+  return label(budgetTokensToEffort(budget));
 }

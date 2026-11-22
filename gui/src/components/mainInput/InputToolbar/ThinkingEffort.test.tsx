@@ -68,21 +68,15 @@ describe("the Thinking menu's choice for no effort", () => {
   it("says what the model's own setting sends, never Default", async () => {
     const { store } = await renderToolbar(claude);
     // A reasoning model with the 2,048 token budget reasons at medium. The
-    // toolbar measures as narrow here, where the label drops a word
+    // toolbar measures as narrow here, where the label is the level alone
     // ("Model setting (medium)" with room: modeNotSet.test.ts)
-    expect(labels()).toEqual([
-      "Model (medium)",
-      "Off",
-      "Low",
-      "Medium",
-      "High",
-    ]);
+    expect(labels()).toEqual(["(med)", "Off", "Low", "Medium", "High"]);
 
     // The bulb turned reasoning off for the session
     await act(async () => {
       store.dispatch(setHasReasoningEnabled(false));
     });
-    expect(labels()[0]).toBe("Model (off)");
+    expect(labels()[0]).toBe("(off)");
   });
 
   it("follows the model's own budget", async () => {
@@ -90,7 +84,7 @@ describe("the Thinking menu's choice for no effort", () => {
       ...claude,
       completionOptions: { reasoningBudgetTokens: 16_000 },
     } as typeof claude);
-    expect(labels()[0]).toBe("Model (high)");
+    expect(labels()[0]).toBe("(high)");
   });
 });
 
