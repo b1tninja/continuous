@@ -18,6 +18,7 @@
     "../../core/dist/**/*",
     "../../core/**/*.test.ts",
     "../../core/**/test/**/*",
+    "../../core/vitest.page.config.ts",
     "../../core/**/*.skip.ts"
   ]
 }

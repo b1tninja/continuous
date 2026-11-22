@@ -1,7 +1,15 @@
 import { isBuiltin } from "node:module";
 import path from "node:path";
 
-import type { Plugin } from "vite";
+// The few fields of a Vite plugin this uses, written out: the type checks of
+// the extension and the CLI compile this file without Vite installed.
+export interface PagePlugin {
+  name: string;
+  enforce: "pre";
+  resolveId(source: string): string | null;
+  load(id: string): string | null;
+  transform(code: string, id: string): { code: string; map: null } | null;
+}
 
 // Makes the core sources the chat webview bundles run as they do in the built
 // page (measured on the build, Vite 8):
@@ -86,18 +94,18 @@ const slash = (p: string) => p.replace(/\\/g, "/").toLowerCase();
  * `pageFiles` are paths from the repository root (`core/util/uri.ts`);
  * `root` is the repository root.
  */
-export function pagePlugin(pageFiles: string[], root: string): Plugin {
+export function pagePlugin(pageFiles: string[], root: string): PagePlugin {
   const inPage = new Set(pageFiles.map((f) => slash(path.resolve(root, f))));
   return {
     name: "webview-page",
     enforce: "pre",
-    resolveId(source) {
+    resolveId(source: string) {
       return source === STUB_ID ? RESOLVED_STUB_ID : null;
     },
-    load(id) {
+    load(id: string) {
       return id === RESOLVED_STUB_ID ? "export default {};" : null;
     },
-    transform(code, id) {
+    transform(code: string, id: string) {
       const file = id.replace(/[?#].*$/, "");
       if (!inPage.has(slash(file))) return null;
       return { code: asInThePage(code, file), map: null };

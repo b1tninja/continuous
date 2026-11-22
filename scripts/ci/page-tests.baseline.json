@@ -63,6 +63,11 @@
       "test": "prompt profile environment override accepts tailored for any model",
       "kind": "no-environment",
       "why": "As above."
+    },
+    {
+      "where": "core/tools/permissions/auto/state.ts#reviewContextKey",
+      "kind": "not-reached",
+      "why": "Uses createHash from node:crypto. Its only caller is core/tools/permissions/auto/handler.ts, which runs in core when the page sends tools/autoReview; the page imports handler.ts for a type only, and from state.ts only stableStringify (gui/src/redux/slices/blockedCallsSlice.ts). The planMode suite reaches it by calling the handler directly."
     }
   ]
 }
