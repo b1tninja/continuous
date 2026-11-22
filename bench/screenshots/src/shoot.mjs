@@ -13,7 +13,7 @@ import { classify, measureOverflow } from "./overflow.mjs";
 import { serve } from "./server.mjs";
 import { checkStack, measureStack } from "./stack.mjs";
 
-async function loadPlaywright(playwrightDir) {
+export async function loadPlaywright(playwrightDir) {
   const entry = path.join(playwrightDir, "index.mjs");
   return (await import(pathToFileURL(entry).href)).chromium;
 }

@@ -11,7 +11,8 @@ browser through `playwright-core`. No model, no network, no key, no IDE.
 Dev-only. Nothing in `core/`, `gui/`, `extensions/`, `binary/` or `packages/`
 imports this folder; it is not a workspace, it is not in any `tsconfig`
 `include`, the VS Code `.vscodeignore` is relative to `extensions/vscode`, and
-the CLI publishes an explicit `files` list. It is wired into no workflow.
+the CLI publishes an explicit `files` list. One part runs in a workflow: the
+production render check (below) is a step of the gui job.
 
 ## Set up once
 
@@ -153,6 +154,63 @@ known violations per view: rule, then the most nodes seen at any width or theme.
 nodes of one than it allows; it prints improvements so the baseline can be tightened
 with `--update`. Pictures (`screenshot.mjs`) and axe are separate runs.
 
+### Production render check
+
+```sh
+cd bench/screenshots && npm run render -- --browser edge      # --doc tables,math limits it
+```
+
+Fixed markdown is drawn as a reply in the real chat and the page is asked what
+came out. It exists because the harness has React's **production** build
+(`vite build`, and `vite.config.mjs` fixes `process.env.NODE_ENV`) and every
+unit test runs the development one. Production elements have no `_owner` or
+`_store`, which is how `hast-to-hyperscript` (under `react-remark`) decides it
+is talking to React. Without the fixes in
+`gui/src/components/StyledMarkdownPreview` a string `style` reached React (error
+62: a table, and later any formula, replaced the reply with the error boundary)
+and `className` arrived as `class` (no language on a code block, a mermaid fence
+drawn as text). The check reads `window.__reactBuild` first and exits 2 if the
+page has a development build, because then it would pass whatever the pipeline
+does.
+
+One page load per document (`DOCS` in `src/render.mjs`), so one crash does not
+hide the rest:
+
+| Document  | What must be on the page                                                                                                                                                                          |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tables`  | two `<table>`s; the plain one has no `text-align`, the aligned one has left, center, right as `style.textAlign` and as computed style                                                             |
+| `math`    | `$a^2+b^2$` and two display formulas as KaTeX; every `style` attribute inside `.katex` parsed into properties; the formula in backslash parentheses still there (this pipeline leaves it as text) |
+| `code`    | `<pre><code>` with the class `language-ts`, highlighted, and `ts` in the code block toolbar                                                                                                       |
+| `mermaid` | a diagram (`.mermaid svg`) with both nodes, and no plain `<code>`                                                                                                                                 |
+| `html`    | nothing from the raw HTML: `remark-rehype` runs without `allowDangerousHtml`, so an inline tag is dropped and its text stays, and a block of HTML is dropped whole                                |
+| `misc`    | a link with `target` and `rel`; a `javascript:` link without `href`; a task list as a plain list (no GFM here); nested lists; a remote image behind its "Load Image" button                       |
+
+A document fails on a `pageerror`, on a console error in React's format
+(`Minified React error`, or `...Error: ` as a caught error is logged), on a
+request to any host but the harness, or when the content is not as in the
+table. The mock IDE logs the names of messages it has no answer for
+(`history/load`) as errors; those are printed with a failure and do not cause
+one. About 12 s with the build (6 pages of about 1.6 s) with Edge on the machine
+it was written on. `--dist` reuses a built harness; `--timeout` is how long a
+document may take to come out right (20000 ms; the diagram is drawn after a
+debounce).
+
+What it catches, measured by removing each fix and running it (2026-11-21):
+
+- without the `createElement` shim (`utils/rehypeCreateElement.ts`), `code` and
+  `mermaid` fail;
+- without the shim and `rehypeTableCellAlign` (pull request 300), `tables` fails
+  with error 62;
+- without the shim and `rehypeElementStyleObjects` (pull request 989), `math`
+  fails with error 62;
+- with the shim in place, removing either plugin alone changes nothing on the
+  page and nothing fails: the shim makes `hast-to-hyperscript` parse the style
+  strings itself, so the two plugins are a second line behind it.
+
+In CI it is the last step of `gui-checks` (`.github/workflows/pr-checks.yaml`),
+with the runner's Chrome, and it blocks. A change under `bench/screenshots/`
+runs that job (`scripts/ci/changed-areas.mjs`).
+
 ### Before and after
 
 ```sh
@@ -232,4 +290,5 @@ cd bench/screenshots && npm test
 
 Offline: the command line, the view list, the pixel counting, the file server's
 path check, the browser choice, the overflow rules and baseline comparison, and
-the height rule of `crowded-stack`.
+the height rule of `crowded-stack`, and the render check's documents and its
+filter for console errors.
