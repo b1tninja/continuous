@@ -28,6 +28,12 @@ export type ToIdeFromWebviewProtocol = ToIdeFromWebviewOrCoreProtocol & {
    * host without it answers with an error, read as nothing to show.
    */
   "instructionFiles/state": [{ load?: boolean }, InstructionFilesState];
+  /**
+   * Show the editor's own question about this folder's configuration again
+   * ("Trust this folder"), or its workspace trust page in Restricted Mode.
+   * The page cannot answer for the person: the editor asks.
+   */
+  "projectTrust/ask": [undefined, { shown: "config" | "workspace" | "none" }];
   openUrl: [string, void];
   // An apply that stopped without writing answers with the reason (VS Code);
   // any other failure is an error response
