@@ -91,6 +91,15 @@ describe("remoteShellConflict: a choice of where commands run that a remote wind
     ).toBeUndefined();
   });
 
+  it("is nothing in a WSL remote window when WSL was asked for, and still a conflict for a container there", () => {
+    expect(
+      remoteShellConflict("wsl", { CONTINUOUS_TERMINAL_SHELL: "wsl" }),
+    ).toBeUndefined();
+    expect(remoteShellConflict("wsl", container)?.preference).toBe(
+      "container",
+    );
+  });
+
   it("names what was asked for and where, in a remote window", () => {
     expect(remoteShellConflict("ssh-remote", container)).toEqual({
       remoteName: "ssh-remote",

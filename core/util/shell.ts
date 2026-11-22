@@ -358,6 +358,9 @@ export function remoteShellConflict(
   }
   const preference = getTerminalShellPreference(env);
   if (!preference) return undefined;
+  // A WSL remote window already runs its commands in WSL, which is what
+  // the wsl preference asks for, so there is nothing to refuse
+  if (preference.kind === "wsl" && remoteName === "wsl") return undefined;
   return {
     remoteName,
     preference: preference.kind,
