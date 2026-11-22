@@ -178,6 +178,26 @@ jobs:
           RELACE_API_KEY: ${{ secrets.RELACE_API_KEY }}
           INCEPTION_API_KEY: ${{ secrets.INCEPTION_API_KEY }}
 
+      # The page tests build the webview to learn which core files it bundles.
+      - name: Setup gui component
+        uses: ./.github/actions/setup-component
+        with:
+          component: gui
+          include-packages: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.CI_GITHUB_TOKEN }}
+
+      # The chat page bundles about 200 core files and gives them no Node: its
+      # modules are empty, and there is no `process` or `Buffer`. The suites
+      # beside those files run again with the files changed to match, so code
+      # that needs Node fails here and not first in a release
+      # (docs/ci-merge-gate.md section 10). Known cases, with reasons:
+      # scripts/ci/page-tests.baseline.json.
+      - name: Run the core tests as the chat page runs the code
+        run: |
+          node --test scripts/ci/page-tests.test.mjs
+          (cd core && npm run test:page)
+
   gui-checks:
     if: inputs.run_gui != 'false'
     runs-on: ubuntu-latest
