@@ -23,7 +23,11 @@
   height: 0;
   pointer-events: none;
   white-space: nowrap;
-  width: 1px;
+  /* As wide as the line, so a placeholder longer than a narrow panel ends in
+     an ellipsis. Clipped sideways only: the box has no height. */
+  width: 100%;
+  overflow-x: clip;
+  text-overflow: ellipsis;
 }
 
 .gap-cursor {
