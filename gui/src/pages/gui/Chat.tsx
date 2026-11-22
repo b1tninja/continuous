@@ -597,6 +597,11 @@ export function Chat() {
   );
 
   const showScrollbar = showChatScrollbar ?? window.innerHeight > 5000;
+  // A part of the stack above the prompt that gives way in a short panel
+  const givesWay =
+    history.length > 0
+      ? "thin-scrollbar relative min-h-0 shrink-[9999] overflow-y-auto"
+      : undefined;
 
   return (
     <QuestionPanelContext.Provider value={true}>
@@ -607,7 +612,7 @@ export function Chat() {
         ref={stepsDivRef}
         role="region"
         aria-label="Conversation"
-        className={`pt-[8px] ${showScrollbar ? "thin-scrollbar" : "no-scrollbar"} ${history.length > 0 ? "min-h-0 flex-1 overflow-y-scroll" : "shrink-0"}`}
+        className={`pt-[8px] ${showScrollbar ? "thin-scrollbar" : "no-scrollbar"} ${history.length > 0 ? "min-h-0 flex-[1_1_96px] overflow-y-scroll" : "shrink-0"}`}
       >
         {highlights}
         <ChatTranscript
@@ -646,35 +651,43 @@ export function Chat() {
         <ToolDialectNotice />
       </StepsDiv>
       <JumpToLatest paused={autoScrollPaused} scrollToLatest={scrollToLatest} />
-      <div className={"relative shrink-0"}>
-        <CompactionHoldNotice />
-        <CompactionPreparedNotice />
-        <IdgafNotice />
-        <CacheMissNotice />
-        <ColdCacheNotice />
-        <SessionLoadNotice />
-        {sentWithNoModel && !hasChatModel && (
-          <NoModelNotice onDismiss={() => setSentWithNoModel(false)} />
-        )}
-        <EditUndoLine />
-        <InstructionFileNotice />
-        <CachingOffNotice />
-        <PendingToolChangesNotice />
-        <SmallWindowNotice />
-        <LargeMessageNotice />
-        {/* A loop shows its own plan in its panel */}
-        {!hasLoop && <TaskListPanel />}
-        <LoopInbox />
-        <AgentsList />
+      {/* The height budget of a short panel. With a chat on screen the parts
+          below are laid out by the page itself ("contents"). What only informs
+          gives way first and scrolls; the chat keeps 96 px until that is used
+          up. A question, the prompt and an approval in it do not give way. */}
+      <div className={history.length > 0 ? "contents" : "relative shrink-0"}>
+        <div data-testid="input-stack-notices" className={givesWay}>
+          <CompactionHoldNotice />
+          <CompactionPreparedNotice />
+          <IdgafNotice />
+          <CacheMissNotice />
+          <ColdCacheNotice />
+          <SessionLoadNotice />
+          {sentWithNoModel && !hasChatModel && (
+            <NoModelNotice onDismiss={() => setSentWithNoModel(false)} />
+          )}
+          <EditUndoLine />
+          <InstructionFileNotice />
+          <CachingOffNotice />
+          <PendingToolChangesNotice />
+          <SmallWindowNotice />
+          <LargeMessageNotice />
+          {/* A loop shows its own plan in its panel */}
+          {!hasLoop && <TaskListPanel />}
+          <LoopInbox />
+          <AgentsList />
+        </div>
         {/* A loop asks through its Needs you tray, which holds the same questions */}
         {hasLoop ? <NeedsYouTray /> : <QuestionPanel />}
-        <QueuedMessages
-          onSendNow={sendNowOrSteer}
-          onSteerNow={(ids) => void steerNow(ids)}
-          onEdit={editQueuedMessage}
-          onRemove={(id) => dispatch(removeQueuedMessage(id))}
-          onMove={(id, to) => dispatch(moveQueuedMessage({ id, to }))}
-        />
+        <div data-testid="input-stack-queue" className={givesWay}>
+          <QueuedMessages
+            onSendNow={sendNowOrSteer}
+            onSteerNow={(ids) => void steerNow(ids)}
+            onEdit={editQueuedMessage}
+            onRemove={(id) => dispatch(removeQueuedMessage(id))}
+            onMove={(id, to) => dispatch(moveQueuedMessage({ id, to }))}
+          />
+        </div>
         {/* Before a key stops the reply or a switch stops the agent */}
         <InterruptConfirm />
         <ContinueInputBox
