@@ -27,32 +27,15 @@
       "340": {}
     },
     "audit-inbox": {
-      "200": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578,
-        "squeezed li[data-testid=audit-row-i1] > div.mt-1.flex.min-w-0.flex-wrap > code.min-w-0.flex-1.truncate.font-mono": 154,
-        "squeezed li[data-testid=audit-row-i2] > div.mt-1.flex.min-w-0.flex-wrap > code.min-w-0.flex-1.truncate.font-mono": 51
-      },
-      "250": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
-      },
-      "300": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
-      },
+      "200": {},
+      "250": {},
+      "300": {},
       "340": {}
     },
     "audit-list": {
-      "200": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578,
-        "squeezed li[data-testid=audit-row-c1] > div.mt-1.flex.min-w-0.flex-wrap > code.min-w-0.flex-1.truncate.font-mono": 51,
-        "squeezed li[data-testid=audit-row-c2] > div.mt-1.flex.min-w-0.flex-wrap > code.min-w-0.flex-1.truncate.font-mono": 166,
-        "squeezed li[data-testid=audit-row-c4] > div.mt-1.flex.min-w-0.flex-wrap > code.min-w-0.flex-1.truncate.font-mono": 360
-      },
-      "250": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
-      },
-      "300": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
-      },
+      "200": {},
+      "250": {},
+      "300": {},
       "340": {}
     },
     "bedrock-fail": {
@@ -309,51 +292,27 @@
       "340": {}
     },
     "permissions-editor": {
-      "200": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
-      },
-      "250": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
-      },
-      "300": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
-      },
+      "200": {},
+      "250": {},
+      "300": {},
       "340": {}
     },
     "permissions-error": {
-      "200": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
-      },
-      "250": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
-      },
-      "300": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
-      },
+      "200": {},
+      "250": {},
+      "300": {},
       "340": {}
     },
     "permissions-intro": {
-      "200": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
-      },
-      "250": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
-      },
-      "300": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
-      },
+      "200": {},
+      "250": {},
+      "300": {},
       "340": {}
     },
     "permissions-loading": {
-      "200": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
-      },
-      "250": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
-      },
-      "300": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
-      },
+      "200": {},
+      "250": {},
+      "300": {},
       "340": {}
     },
     "preset-open": {
@@ -371,122 +330,53 @@
       }
     },
     "settings-configs": {
-      "200": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
-      },
-      "250": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
-      },
-      "300": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
-      },
+      "200": {},
+      "250": {},
+      "300": {},
       "340": {}
     },
     "settings-general": {
-      "200": {
-        "clipped div[aria-label=\"Settings\"]": 37,
-        "clipped div[aria-label=\"Settings\"] > ... > div.flex.flex-col.gap-3 > form > div.flex.items-center.gap-2 > div.flex.w-full.flex-row.overflow-hidden": 47,
-        "outside div[aria-label=\"Settings\"] > ... > div.pl-6 > div.flex.flex-col.gap-x-1.gap-y-4 > div.flex.items-start.justify-start.gap-4 > div.flex.items-center.justify-between.gap-3": 5,
-        "outside div[aria-label=\"Settings\"] > ... > div.space-y-0.rounded-default.bg-editor.px-4 > div.flex.flex-col.gap-4 > div.flex.items-start.justify-start.gap-4 > button.m-0.flex.flex-1.cursor-pointer": 37,
-        "outside div[aria-label=\"Settings\"] > ... > div.space-y-0.rounded-default.bg-editor.px-4 > div.flex.flex-col.gap-4 > div.flex.items-start.justify-start.gap-4 > div.flex.w-20.items-center.rounded-md": 13,
-        "outside input[aria-label=\"Disable autocomplete in files\"]": 14,
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
-      },
-      "250": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
-      },
-      "300": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
-      },
+      "200": {},
+      "250": {},
+      "300": {},
       "340": {}
     },
     "settings-help": {
       "200": {
-        "clipped div[aria-label=\"Help\"] > ... > div.space-y-6 > div > div.space-y-0.rounded-default.bg-editor.px-4 > div.overflow-hidden.rounded-md.border.border-gray-600": 26,
-        "outside div[aria-label=\"Help\"] > ... > div.space-y-0.rounded-default.bg-editor.px-4 > div.overflow-hidden.rounded-md.border.border-gray-600 > div.flex.flex-col.items-start.p-3 > div.shrink-0.whitespace-nowrap": 9,
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
+        "clipped div[aria-label=\"Help\"] > ... > div.space-y-6 > div > div.space-y-0.rounded-default.bg-editor.px-4 > div.overflow-hidden.rounded-md.border.border-gray-600": 2
       },
-      "250": {
-        "clipped div[aria-label=\"Help\"] > ... > div.space-y-6 > div > div.space-y-0.rounded-default.bg-editor.px-4 > div.overflow-hidden.rounded-md.border.border-gray-600": 4,
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
-      },
-      "300": {
-        "clipped div[aria-label=\"Help\"] > ... > div.space-y-6 > div > div.space-y-0.rounded-default.bg-editor.px-4 > div.overflow-hidden.rounded-md.border.border-gray-600": 4,
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
-      },
+      "250": {},
+      "300": {},
       "340": {}
     },
     "settings-indexing": {
-      "200": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
-      },
-      "250": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
-      },
-      "300": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
-      },
+      "200": {},
+      "250": {},
+      "300": {},
       "340": {}
     },
     "settings-models": {
-      "200": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
-      },
-      "250": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
-      },
-      "300": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
-      },
+      "200": {},
+      "250": {},
+      "300": {},
       "340": {}
     },
     "settings-permissions": {
-      "200": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
-      },
-      "250": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
-      },
-      "300": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
-      },
+      "200": {},
+      "250": {},
+      "300": {},
       "340": {}
     },
     "settings-rules": {
-      "200": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
-      },
-      "250": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
-      },
-      "300": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
-      },
+      "200": {},
+      "250": {},
+      "300": {},
       "340": {}
     },
     "settings-tools": {
-      "200": {
-        "clipped div[aria-label=\"Tools\"]": 58,
-        "outside div[data-testid=policy-row-context] > div.relative": 3,
-        "outside div[data-testid=policy-row-questions] > div.relative": 5,
-        "outside label[data-testid=question-type-cost] > select.shrink-0.cursor-pointer.rounded.border": 43,
-        "outside label[data-testid=question-type-design] > select.shrink-0.cursor-pointer.rounded.border": 58,
-        "outside label[data-testid=question-type-detail] > select.shrink-0.cursor-pointer.rounded.border": 51,
-        "outside label[data-testid=question-type-irreversible] > select.shrink-0.cursor-pointer.rounded.border": 55,
-        "outside label[data-testid=question-type-scope] > select.shrink-0.cursor-pointer.rounded.border": 28,
-        "outside label[data-testid=question-type-security] > select.shrink-0.cursor-pointer.rounded.border": 57,
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
-      },
-      "250": {
-        "clipped div[aria-label=\"Tools\"]": 8,
-        "outside label[data-testid=question-type-design] > select.shrink-0.cursor-pointer.rounded.border": 8,
-        "outside label[data-testid=question-type-irreversible] > select.shrink-0.cursor-pointer.rounded.border": 5,
-        "outside label[data-testid=question-type-security] > select.shrink-0.cursor-pointer.rounded.border": 7,
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
-      },
-      "300": {
-        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
-      },
+      "200": {},
+      "250": {},
+      "300": {},
       "340": {}
     },
     "setup-dialog": {

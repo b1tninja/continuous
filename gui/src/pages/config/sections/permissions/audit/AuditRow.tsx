@@ -36,8 +36,9 @@ export function AuditRow({
       </div>
       <div className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2">
         <strong className="text-xs break-all">{call.tool}</strong>
+        {/* Goes on its own line when less than 96 px is left beside the tool name */}
         <code
-          className="min-w-0 flex-1 truncate font-mono text-2xs"
+          className="min-w-0 flex-1 basis-24 truncate font-mono text-2xs"
           title={call.summary}
         >
           {call.summary}

@@ -43,13 +43,27 @@ describe("Settings page at a narrow width", () => {
     expect(panel.className).not.toContain("sm:block");
   });
 
-  it("makes the navigation a sideways-scrolling strip below sm and a column from sm", async () => {
+  it("makes the navigation one row of icon tabs below sm and a column from sm", async () => {
     await open("tools");
     const nav = screen.getByRole("navigation", { name: "Settings" });
     const strip = nav.firstElementChild as HTMLElement;
     expect(strip.className).toContain("flex-row");
-    expect(strip.className).toContain("overflow-x-auto");
+    // Nothing scrolls sideways out of view: the tabs share the row, and wrap if they must
+    expect(strip.className).not.toContain("overflow-x-auto");
+    expect(strip.className).toContain("flex-wrap");
+    expect(strip.className).toContain("sm:flex-nowrap");
     expect(strip.className).toContain("sm:flex-col");
+    // The tablist and the groups have no box below sm, so Back and every tab are items of the one row
+    const list = screen.getByRole("tablist", { name: "Settings sections" });
+    expect(list.className).toContain("contents");
+    expect(list.className).toContain("sm:flex");
+    for (const tab of within(nav).getAllByRole("tab")) {
+      expect(tab.className).toContain("max-sm:flex-1");
+      expect(tab.parentElement?.className).toContain("contents");
+      // The label is hidden below md; the name comes from aria-label
+      expect(tab.querySelector("span")?.className).toContain("hidden");
+      expect(tab.getAttribute("aria-label")).toBeTruthy();
+    }
     expect(nav.className).toContain("sm:w-12");
     expect(nav.parentElement?.className).toContain("flex-col");
     expect(nav.parentElement?.className).toContain("sm:flex-row");

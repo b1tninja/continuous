@@ -87,9 +87,10 @@ export function PolicyCard() {
             <div
               key={area}
               data-testid={`policy-row-${area}`}
-              className="flex items-center justify-between gap-2"
+              className="flex flex-wrap items-center justify-between gap-2"
             >
-              <div className="flex flex-col">
+              {/* The select moves under the text when less than 80 px is left for it */}
+              <div className="flex min-w-0 flex-1 basis-20 flex-col">
                 <span className="text-sm">{POLICY_AREA_LABELS[area]}</span>
                 <span className="text-2xs text-description">
                   {AREA_HINTS[area]}
@@ -188,10 +189,11 @@ export function PolicyCard() {
           {QUESTION_TYPES.map((type) => (
             <label
               key={type}
-              className="flex items-center justify-between gap-2 text-xs"
+              className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs"
               data-testid={`question-type-${type}`}
             >
-              <span>
+              {/* The select is about 150 px wide; in a narrow panel it goes under the text */}
+              <span className="min-w-0 flex-1 basis-32">
                 {type}
                 <span className="block text-2xs text-description">
                   {QUESTION_TYPE_DESCRIPTIONS[type]}
@@ -200,7 +202,7 @@ export function PolicyCard() {
               <select
                 value={whoDecides(type, youDecide, agentDecides)}
                 onChange={(e) => setWho(type, e.target.value as WhoDecides)}
-                className="shrink-0 cursor-pointer rounded border border-solid border-border bg-input px-1 text-xs text-foreground"
+                className="box-border max-w-full shrink-0 cursor-pointer rounded border border-solid border-border bg-input px-1 text-xs text-foreground"
               >
                 <option value="you">You decide</option>
                 <option value="agent">Agent may decide</option>

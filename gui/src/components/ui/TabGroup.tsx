@@ -22,8 +22,9 @@ interface TabGroupProps {
 }
 
 /**
- * A run of Settings tabs. Below `sm` the group is a row inside the top strip
- * (dividers are hidden there); from `sm` it is a column in the sidebar.
+ * A run of Settings tabs. Below `sm` the group has no box of its own, so its
+ * tabs share the one row of the top strip (dividers are hidden there); from
+ * `sm` it is a column in the sidebar.
  */
 export function TabGroup({
   tabs,
@@ -37,7 +38,7 @@ export function TabGroup({
   // Two groups on one page must not share element ids
   const groupId = useId();
   return (
-    <div className={`flex shrink-0 flex-row gap-1 sm:block ${className}`}>
+    <div className={`contents sm:block sm:shrink-0 ${className}`}>
       {showTopDivider && <Divider className="hidden sm:block" />}
 
       {label && (

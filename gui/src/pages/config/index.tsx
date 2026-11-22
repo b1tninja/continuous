@@ -56,7 +56,7 @@ function ConfigPage() {
     }
   };
 
-  // In the narrow strip the selected tab may be off screen.
+  // In a short sidebar the selected tab may be off screen.
   useEffect(() => {
     tablistRef.current
       ?.querySelector<HTMLElement>('[aria-selected="true"]')
@@ -78,19 +78,19 @@ function ConfigPage() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden sm:flex-row">
-      {/* Below `sm`: a strip along the top that scrolls sideways. From `sm`: the vertical sidebar. */}
+      {/* Below `sm`: one row of icons along the top, every tab in view (it wraps under about 170 px). From `sm`: the vertical sidebar. */}
       <nav
         aria-label="Settings"
         className="flex shrink-0 flex-row border-0 bg-vsc-background sm:w-12 sm:flex-col md:w-40"
       >
-        <div className="thin-scrollbar flex flex-1 flex-row items-center gap-1 overflow-x-auto border-0 border-b-2 border-solid border-b-border p-1 text-xs sm:flex-col sm:items-stretch sm:gap-0 sm:overflow-x-hidden sm:overflow-y-auto sm:border-r-2 sm:border-b-0 sm:border-r-border sm:p-2">
+        <div className="thin-scrollbar flex min-w-0 flex-1 flex-row flex-wrap items-center border-0 border-b-2 border-solid border-b-border p-1 text-xs sm:flex-col sm:flex-nowrap sm:items-stretch sm:overflow-x-hidden sm:overflow-y-auto sm:border-r-2 sm:border-b-0 sm:border-r-border sm:p-2">
           {sections.filter(isCommandSection).map(renderGroup)}
 
           <div
             ref={tablistRef}
             role="tablist"
             aria-label="Settings sections"
-            className="flex flex-row items-center gap-1 sm:flex-1 sm:flex-col sm:items-stretch sm:gap-0"
+            className="contents sm:flex sm:flex-1 sm:flex-col sm:items-stretch"
             onKeyDown={moveBetweenTabs}
           >
             {topTabSections
