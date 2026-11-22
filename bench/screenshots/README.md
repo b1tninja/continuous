@@ -59,6 +59,16 @@ reply at 62% context, so "Compact conversation" is spelled out under it),
 `long-prompt` (forty lines in the input; drawn with scrollbars, which every
 other view hides) and `zoom-150`.
 
+The model's Configure dialog: `model-overview-cloud` (its Overview tab for a
+cloud model through an account, with a role the person set and a timeout from
+the account), `model-overview-catalog` (a catalog model's variant: values from
+the catalog model, the variant and the account), `model-overview-ollama` (a
+local model whose server reported its window), `model-overview-assumed` (a
+local server that reports nothing: 32,768 assumed, no output cap sent) and
+`model-config-generation` (the Generation tab, each field saying "Set by you"
+or what "Not set" does). The dialog is at most 600 px wide, so its 800 px
+picture shows the four-column table and its 300 px picture the stacked list.
+
 `crowded-stack` is a short panel's worst case: an approval waiting, the task
 list open with three tasks and two queued messages, above the prompt. Shoot it
 with `--height 400`. It is also measured (`src/stack.mjs`): its manifest entry
