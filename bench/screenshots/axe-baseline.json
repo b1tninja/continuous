@@ -50,7 +50,9 @@
     "settings-models": {
       "color-contrast": 1
     },
-    "settings-permissions": {},
+    "settings-permissions": {
+      "color-contrast": 2
+    },
     "settings-rules": {
       "color-contrast": 2
     },
@@ -127,6 +129,9 @@
       "scrollable-region-focusable": 1,
       "target-size": 12
     },
-    "settings-tools-mcp": {}
+    "settings-tools-mcp": {},
+    "permissions-levels": {},
+    "permissions-protections": {},
+    "permissions-protections-open": {}
   }
 }

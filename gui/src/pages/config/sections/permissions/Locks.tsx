@@ -1,6 +1,7 @@
 /**
- * What no rule can override. Shown on every area that has rules, so a person
- * who is about to write an Always rule sees what it cannot reach.
+ * What no rule can override. Listed once, in Protections; every area that has
+ * rules says they exist and links here, so a person who is about to write an
+ * Always rule knows what it cannot reach.
  */
 const LOCKS: { id: string; label: string; reason: string }[] = [
   {

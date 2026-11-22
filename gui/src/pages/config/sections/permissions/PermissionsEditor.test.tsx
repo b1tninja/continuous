@@ -13,6 +13,7 @@ import { MockIdeMessenger } from "../../../../context/MockIdeMessenger";
 import { setupStore } from "../../../../redux/store";
 import { renderWithProviders } from "../../../../util/test/render";
 import { PermissionsSection } from "./PermissionsSection";
+import { answerProtectionsReads } from "./protectionsTestHost";
 
 type UserFile = {
   path: string;
@@ -55,6 +56,7 @@ async function setup(
   handlers: Record<string, unknown> = {},
 ) {
   const ideMessenger = new MockIdeMessenger();
+  answerProtectionsReads(ideMessenger);
   const rules = vi.fn(async () => report);
   (ideMessenger.responseHandlers as any)["policy/rules"] = rules;
   (ideMessenger.responseHandlers as any)["policy/test"] = vi.fn(
@@ -67,6 +69,10 @@ async function setup(
   await renderWithProviders(<PermissionsSection />, {
     store,
     mockIdeMessenger: ideMessenger,
+    // The page opens on Levels; these tests are about the Rules view
+    routerProps: {
+      initialEntries: ["/config?tab=permissions&view=rules"],
+    } as never,
   });
   await act(async () => {});
   return { rules };
@@ -104,9 +110,21 @@ describe("Permissions editor", () => {
     expect(screen.getByTestId("no-own-rules").textContent).toContain(
       "You have no rules of your own yet: these built-in protections apply.",
     );
+    // The Rules view says the locks exist; they are listed once, in Protections
+    const pointer = screen.getByTestId("locks-pointer");
+    expect(pointer.textContent).toContain("protected paths");
+    expect(pointer.textContent).toContain("your policy files");
+    expect(screen.queryByTestId("locks")).toBeNull();
+    await act(async () =>
+      fireEvent.click(screen.getByTestId("open-protections")),
+    );
+    expect(
+      screen.getByTestId("view-protections").getAttribute("aria-selected"),
+    ).toBe("true");
     const locks = screen.getByTestId("locks");
     expect(locks.textContent).toContain("Protected paths");
     expect(locks.textContent).toContain("Your policy files");
+    expect(screen.getAllByTestId("locks")).toHaveLength(1);
   });
 
   it("adds a rule: checks it with a dry run, shows the diff and verdict, then saves", async () => {

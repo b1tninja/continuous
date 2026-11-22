@@ -67,16 +67,21 @@ function WindowSelect({
 /**
  * The decision timer (core decisionTimer.ts): how long a decision is held for
  * a countdown before it takes effect, per level. Asks have windows up to 30 s;
- * a heads-up on an allowed call is 5 or 10 s. Both are off by default.
+ * a heads-up on an allowed call is 5 or 10 s. Not set, both are off.
+ * `folded`: a fold header above already names it, so the heading is for
+ * screen readers only.
  */
-export function DecisionTimerCard() {
+export function DecisionTimerCard({ folded = false }: { folded?: boolean }) {
   return (
     <section
-      className="mt-2 flex flex-col gap-1"
+      className={folded ? "flex flex-col gap-1" : "mt-2 flex flex-col gap-1"}
       aria-labelledby="decision-timer-heading"
       data-testid="decision-timer"
     >
-      <h4 id="decision-timer-heading" className="my-0 text-xs font-semibold">
+      <h4
+        id="decision-timer-heading"
+        className={folded ? "sr-only" : "my-0 text-xs font-semibold"}
+      >
         Decision timer
       </h4>
       <p className="my-0 text-2xs text-description">
@@ -84,7 +89,8 @@ export function DecisionTimerCard() {
         without a refusal and a retry. An ask that nobody answers is refused
         when its window ends; an allowed call with a heads-up runs. Asks that a
         rule or a guard raised keep waiting. The model is told when nobody
-        answered. A turn adds at most the longest window to the wait.
+        answered. A turn adds at most the longest window to the wait. A window
+        that is not set is off.
       </p>
       <div
         className="grid grid-cols-[1fr_auto_auto] items-center gap-x-3 gap-y-1 text-xs"

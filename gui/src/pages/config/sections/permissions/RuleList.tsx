@@ -162,49 +162,57 @@ export function RuleList({
   );
 }
 
+/**
+ * The built-in rules of one area, in a line. The rules themselves and their
+ * switches are in Protections, once; here the area says how many apply to it,
+ * names any that is off, and keeps what only this view knows: an Always rule
+ * of yours that exempts one.
+ */
 export function BuiltinList({
   builtins,
+  onOpen,
 }: {
   builtins: AreaReport["builtins"];
+  /** Opens the Protections view, where the rules are listed and switched. */
+  onOpen: () => void;
 }) {
   if (builtins.length === 0) return null;
+  const off = builtins.filter((b) => !b.on);
   return (
     <section aria-label="Built-in rules" data-testid="builtins">
       <h5 className="my-1 text-xs font-semibold">Built-in rules</h5>
-      <ul className="m-0 flex flex-col gap-1 p-0">
-        {builtins.map((b) => (
-          <li
-            key={b.id}
-            className="list-none rounded-sm border border-solid border-border px-2 py-1"
-            data-testid={`builtin-row-${b.id}`}
+      <p className="m-0 text-2xs text-description-muted">
+        {builtins.length - off.length} of {builtins.length} built-in rules that
+        apply to this area are on.{" "}
+        <button
+          type="button"
+          className="cursor-pointer border-0 bg-transparent p-0 text-2xs text-link underline"
+          data-testid="open-builtin-rules"
+          onClick={onOpen}
+        >
+          See and switch them in Protections
+        </button>
+      </p>
+      {off.map((b) => (
+        <div
+          key={b.id}
+          className="text-2xs text-warning"
+          data-testid={`builtin-off-${b.id}`}
+        >
+          Off: {b.label}
+        </div>
+      ))}
+      {builtins.flatMap((b) =>
+        (b.exemptedBy ?? []).map((rule) => (
+          <div
+            key={`${b.id}:${rule}`}
+            className="text-2xs text-warning"
+            data-testid={`exempt-${b.id}`}
           >
-            <div className="flex flex-wrap items-center gap-1">
-              <SourceBadge source="builtin" />
-              <span className="inline-block rounded-sm border border-solid border-border px-1 text-2xs text-description">
-                Locked
-              </span>
-              <span
-                className={`text-2xs ${b.on ? "text-success" : "text-warning"}`}
-              >
-                {b.on ? "On" : "Off"}
-              </span>
-            </div>
-            <div className="text-xs">{b.label}</div>
-            <div className="text-2xs text-description-muted">
-              {b.description}
-            </div>
-            {b.exemptedBy?.map((rule) => (
-              <div
-                key={rule}
-                className="text-2xs text-warning"
-                data-testid={`exempt-${b.id}`}
-              >
-                Exempted by your Always rule {rule}
-              </div>
-            ))}
-          </li>
-        ))}
-      </ul>
+            {b.label}: exempted by your Always rule {rule}
+          </div>
+        )),
+      )}
     </section>
   );
 }

@@ -20,6 +20,7 @@ import {
   PolicyCard,
   PolicyControls,
 } from "../../../../../components/PolicyControls";
+import { BuiltinRulesCard } from "../../../../../components/PolicyControls/BuiltinRulesCard";
 import { MockIdeMessenger } from "../../../../../context/MockIdeMessenger";
 import { loadPolicySettings } from "../../../../../redux/thunks/policySettings";
 import { setupStore } from "../../../../../redux/store";
@@ -643,7 +644,7 @@ describe("the toolbar and Settings controls go through the same native confirmat
     const ideMessenger = new MockIdeMessenger();
     const { confirm, file } = policyHost(ideMessenger, { confirm: false });
     const store = setupStore({ ideMessenger });
-    const { user } = await renderWithProviders(<PolicyCard />, {
+    const { user } = await renderWithProviders(<BuiltinRulesCard />, {
       store,
       mockIdeMessenger: ideMessenger,
     });
@@ -670,7 +671,7 @@ describe("the toolbar and Settings controls go through the same native confirmat
       fileText: "skipPermissionConfirm: on\n",
     });
     const store = setupStore({ ideMessenger });
-    const { user } = await renderWithProviders(<PolicyCard />, {
+    const { user } = await renderWithProviders(<BuiltinRulesCard />, {
       store,
       mockIdeMessenger: ideMessenger,
     });

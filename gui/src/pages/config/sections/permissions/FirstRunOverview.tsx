@@ -97,7 +97,7 @@ export function FirstRunOverview({ onDismiss }: { onDismiss: () => void }) {
       </div>
       <p className="mt-2 mb-1 text-2xs text-description-muted">
         A preset sets all five levels at once. Pick one in the toolbar above the
-        input or in Settings, Tools:
+        input or in the Levels view below:
       </p>
       <ul
         className="m-0 flex flex-col gap-0.5 p-0 text-2xs"

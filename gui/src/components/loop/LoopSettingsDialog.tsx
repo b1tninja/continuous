@@ -159,7 +159,7 @@ export function LoopSettingsDialog({
             </div>
             <div
               data-testid="loop-policy"
-              title="Plan edits and Questions: change them in the toolbar or in Settings > Tools"
+              title="Plan edits and Questions: change them in the toolbar or in Settings > Permissions > Levels"
               className="text-description"
             >
               Plan {policyLevelLabel("plan", loop.policy?.plan ?? "cautious")} ·

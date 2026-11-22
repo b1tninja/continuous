@@ -279,7 +279,7 @@ const permissionsEditor: Fixture = async ({ messenger, navigate }) => {
       },
     },
   });
-  navigate("/config?tab=permissions");
+  navigate("/config?tab=permissions&view=rules");
   await wait(600);
   const add = document.querySelector<HTMLButtonElement>(
     "button[aria-label='Add a rule']",
@@ -915,15 +915,11 @@ export const FIXTURES: Record<string, Fixture> = {
     )?.click();
   },
   "permissions-editor": permissionsEditor,
-  /** The Settings page, Tools tab, with "Commands and secrets" */
+  /** The Settings page, Tools tab, from the top: built-in tools, then MCP servers */
   "settings-tools": async (ctx) => {
     addMcpServer(ctx);
     ctx.navigate("/config?tab=tools");
     await new Promise((r) => setTimeout(r, 500));
-    // the section lower on the page
-    document
-      .querySelector("[data-testid=terminal-env]")
-      ?.scrollIntoView({ block: "start" });
   },
   /** The same page at its MCP server, with the server's tools listed */
   "settings-tools-mcp": async (ctx) => {
@@ -1044,10 +1040,27 @@ function agentsSession(
   };
 }
 
+/** A Settings tab; `tab` may carry more of the query ("permissions&view=rules"). */
 function settingsTab(tab: string): Fixture {
   return async ({ navigate }) => {
     navigate(`/config?tab=${tab}`);
     await sleep(600);
+  };
+}
+
+/** Permissions with the first-run card dismissed, so the view itself is at the top. */
+function permissionsView(query: string): Fixture {
+  return async (ctx) => {
+    // The page reads the rules in every view (Custom policy needs them)
+    ctx.messenger.responseHandlers["policy/rules"] = (async () =>
+      permissionsReport()) as never;
+    await settingsTab(`permissions&${query}`)(ctx);
+    document
+      .querySelector<HTMLButtonElement>(
+        "[data-testid=permissions-intro-dismiss]",
+      )
+      ?.click();
+    await sleep(300);
   };
 }
 
@@ -1137,8 +1150,13 @@ Object.assign(FIXTURES, {
         maxNewPlanItems: 3,
         notices: [],
       } as never)) as never;
-    await settingsTab("permissions")(ctx);
+    await settingsTab("permissions&view=rules")(ctx);
   },
+  "permissions-levels": permissionsView("view=levels"),
+  "permissions-protections": permissionsView("view=protections"),
+  "permissions-protections-open": permissionsView(
+    "view=protections&section=commands-secrets",
+  ),
   "settings-configs": settingsTab("configs"),
   "settings-indexing": settingsTab("indexing"),
   "settings-general": settingsTab("settings"),
@@ -1178,7 +1196,7 @@ Object.assign(FIXTURES, {
   "permissions-loading": async (ctx: FixtureContext) => {
     ctx.messenger.responseHandlers["policy/rules"] = (() =>
       new Promise(() => {})) as never;
-    await settingsTab("permissions")(ctx);
+    await settingsTab("permissions&view=rules")(ctx);
     await sleep(4500);
   },
   /** The read failed: an error that names the files, with Retry */
@@ -1186,7 +1204,7 @@ Object.assign(FIXTURES, {
     ctx.messenger.responseHandlers["policy/rules"] = (async () => {
       throw new Error("unreadable");
     }) as never;
-    await settingsTab("permissions")(ctx);
+    await settingsTab("permissions&view=rules")(ctx);
   },
   /** The first-run overview card on the Permissions page */
   "permissions-intro": async (ctx: FixtureContext) => {

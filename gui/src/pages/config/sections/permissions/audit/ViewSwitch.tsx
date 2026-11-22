@@ -1,13 +1,24 @@
-export type PermissionsView = "rules" | "recent" | "inbox";
+export type PermissionsView =
+  "levels" | "rules" | "protections" | "recent" | "inbox";
 
 export function isPermissionsView(
   value: string | null | undefined,
 ): value is PermissionsView {
-  return value === "rules" || value === "recent" || value === "inbox";
+  return VIEWS.some((v) => v.id === value);
 }
 
 const VIEWS: { id: PermissionsView; label: string; help: string }[] = [
+  {
+    id: "levels",
+    label: "Levels",
+    help: "Who decides a call your rules do not decide",
+  },
   { id: "rules", label: "Rules", help: "Every rule in effect, and your own" },
+  {
+    id: "protections",
+    label: "Protections",
+    help: "Locks, built-in rules, secrets, the decision timer, shadow review",
+  },
   {
     id: "recent",
     label: "Recent calls",
@@ -16,7 +27,7 @@ const VIEWS: { id: PermissionsView; label: string; help: string }[] = [
   { id: "inbox", label: "Inbox", help: "Questions nobody has answered" },
 ];
 
-/** Rules, Recent calls and Inbox: the page's three views. Arrow keys move between them. */
+/** Levels, Rules, Protections, Recent calls and Inbox: the page's views. Arrow keys move between them. */
 export function ViewSwitch({
   view,
   onChange,

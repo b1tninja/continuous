@@ -150,7 +150,7 @@ Set `CONTINUE_COMMAND_LINT=off` in the environment that starts the editor or the
 
 ## Destructive commands, large edits, dependencies and unlisted hosts
 
-Four built-in rules ask before a call that is hard to undo or that changes what the project trusts. Each runs with no model call, asks at every level below IDGAF, and is not loosened by an allow rule. At Automatic the call asks you instead of going to the reviewer model. Turn one off under built-in rules in **Settings, Tools**, or with `builtin: { <rule-id>: off }` in `permissions.yaml`.
+Four built-in rules ask before a call that is hard to undo or that changes what the project trusts. Each runs with no model call, asks at every level below IDGAF, and is not loosened by an allow rule. At Automatic the call asks you instead of going to the reviewer model. Turn one off under **Built-in rules** in **Settings, Permissions, Protections**, or with `builtin: { <rule-id>: off }` in `permissions.yaml`.
 
 | Rule                       | Asks for                                                                                                                                                                                                               | Does not ask for                                                                                                          |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
@@ -191,7 +191,7 @@ Notes on the edges:
 
 The file tools read and write with the editor's own authority, so text from a repository, a web page or a tool result can steer them to a file you never meant. A file tool call asks, at every level below IDGAF and whatever an allow rule says, when it reaches:
 
-- a real path outside the workspace folders: an absolute path elsewhere, a `..` climb, or a symlink or junction that leaves (the path is judged where it lands, not as written), and another account's home (`~root/x`). The built-in rule `ask-outside-paths` controls this (**Settings, Tools**, or `permissions.yaml`)
+- a real path outside the workspace folders: an absolute path elsewhere, a `..` climb, or a symlink or junction that leaves (the path is judged where it lands, not as written), and another account's home (`~root/x`). The built-in rule `ask-outside-paths` controls this (**Settings, Permissions, Protections**, or `permissions.yaml`)
 - a network or device path (`\\host\share`, `\\?\C:\x`, `/dev`, `/proc`, `/sys`), a Windows device name (`NUL`, `COM1`), an alternate data stream (`notes.txt:hidden`), a name with a trailing dot or space, or an 8.3 short name. Network paths follow `protect-network-paths`; the rest has no switch
 - your global configuration folder (`~/.continuous`, `~/.continue`), even to read, because it holds keys
 

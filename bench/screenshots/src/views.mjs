@@ -123,7 +123,19 @@ export const VIEWS = {
   "settings-rules": { fixture: "settings-rules", note: "Settings, Rules tab" },
   "settings-permissions": {
     fixture: "settings-permissions",
-    note: "Settings, Permissions tab (render only)",
+    note: "Settings, Permissions tab, Rules view (render only)",
+  },
+  "permissions-levels": {
+    fixture: "permissions-levels",
+    note: "Settings, Permissions, Levels: the preset, the five levels, Plans and questions folded, Skip the confirmation",
+  },
+  "permissions-protections": {
+    fixture: "permissions-protections",
+    note: "Settings, Permissions, Protections: the locks, then four folds closed, each with its one-line state",
+  },
+  "permissions-protections-open": {
+    fixture: "permissions-protections-open",
+    note: "Settings, Permissions, Protections, with Commands and secrets open (opened by &section=commands-secrets)",
   },
   "settings-configs": {
     fixture: "settings-configs",
@@ -172,7 +184,7 @@ export const VIEWS = {
   },
   "permissions-intro": {
     fixture: "permissions-intro",
-    note: "Settings, Permissions, with the first-run overview card",
+    note: "Settings, Permissions, Levels, with the first-run overview card",
   },
   "chat-first-run": {
     fixture: "chat-first-run",
@@ -220,7 +232,7 @@ export const VIEWS = {
   },
   "settings-tools": {
     fixture: "settings-tools",
-    note: "Settings, Tools tab, with Commands and secrets",
+    note: "Settings, Tools tab from the top: built-in tools, then MCP servers",
   },
   "settings-tools-mcp": {
     fixture: "settings-tools-mcp",

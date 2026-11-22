@@ -27,7 +27,7 @@ allow:
   - Bash(npm test)
 ```
 
-Most of this is written for you: the toolbar and **Settings, Tools** in the extension, and `/policy` in the terminal agent, save the levels here. The extension's **Custom policy** editor (see the [Permissions page](/ide-extensions/agent/permissions-page#custom-policy)) writes every key in the table except the terminal agent's lists and `sandbox`. The Permissions page explains what the levels and presets mean; this page lists the keys.
+Most of this is written for you: the toolbar and **Settings, Permissions, Levels** in the extension, and `/policy` in the terminal agent, save the levels here. The extension's **Custom policy** editor (see the [Permissions page](/ide-extensions/agent/permissions-page#custom-policy)) writes every key in the table except the terminal agent's lists and `sandbox`. The Permissions page explains what the levels and presets mean; this page lists the keys.
 
 ## Keys
 
@@ -54,7 +54,7 @@ Most of this is written for you: the toolbar and **Settings, Tools** in the exte
 | `mcpServers.<name>`      | `trusted`                              | none                                     | by hand, extension (Custom policy) |
 | `allow`, `ask`, `exclude` | list of terminal agent rules          | none                                     | terminal agent ("always allow")              |
 | `sandbox`                | reserved                               |                                          | accepted, nothing reads it yet               |
-| `skipPermissionConfirm`  | `on` / `off`                           | off (the line is absent)                 | extension (Settings, Tools)                  |
+| `skipPermissionConfirm`  | `on` / `off`                           | off (the line is absent)                 | extension (Settings, Permissions, Levels)    |
 
 ### `levels`
 

@@ -1,4 +1,4 @@
-import { act, fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
 import { listEffectiveRules } from "core/tools/permissions/effectiveRules";
 import { DEFAULT_POLICY_LEVELS } from "core/tools/permissions/policy";
 import {
@@ -57,8 +57,25 @@ async function setup(path?: string) {
 }
 
 describe("Permissions views", () => {
+  it("has five views in order and opens on Levels", async () => {
+    await setup();
+    const tabs = within(screen.getByTestId("view-switch")).getAllByRole("tab");
+    expect(tabs.map((t) => t.textContent)).toEqual([
+      "Levels",
+      "Rules",
+      "Protections",
+      "Recent calls",
+      "Inbox",
+    ]);
+    expect(
+      screen.getByTestId("view-levels").getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(screen.getByTestId("policy-card")).toBeTruthy();
+    expect(screen.queryByTestId("protections")).toBeNull();
+  });
+
   it("reads the audit only when its view is opened, and keeps the rules", async () => {
-    const h = await setup();
+    const h = await setup("/config?tab=permissions&view=rules");
     expect(h["audit/list"]).not.toHaveBeenCalled();
     expect(screen.getByTestId("view-rules").getAttribute("aria-selected")).toBe(
       "true",
@@ -106,8 +123,21 @@ describe("Permissions views", () => {
         key: "ArrowRight",
       }),
     );
-    expect(
-      screen.getByTestId("view-recent").getAttribute("aria-selected"),
-    ).toBe("true");
+    expect(screen.getByTestId("view-rules").getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    await act(async () =>
+      fireEvent.keyDown(screen.getByTestId("view-switch"), {
+        key: "ArrowLeft",
+      }),
+    );
+    await act(async () =>
+      fireEvent.keyDown(screen.getByTestId("view-switch"), {
+        key: "ArrowLeft",
+      }),
+    );
+    expect(screen.getByTestId("view-inbox").getAttribute("aria-selected")).toBe(
+      "true",
+    );
   });
 });

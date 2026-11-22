@@ -163,7 +163,7 @@ export function RecentlyBlocked() {
                 ) : (
                   <div className="text-description-muted">
                     Set by your rules or settings. Change them in config.yaml or
-                    Settings &gt; Tools to allow this.
+                    Settings &gt; Permissions to allow this.
                   </div>
                 ))}
             </div>

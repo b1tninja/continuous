@@ -33,11 +33,8 @@ import { useAppDispatch, useAppSelector } from "../../../redux/hooks";
 import { updateConfig } from "../../../redux/slices/configSlice";
 import { ConfigHeader } from "../components/ConfigHeader";
 import { ImportClineMcpButton } from "../components/ImportClineMcp";
-import { PolicyCard } from "../../../components/PolicyControls";
 import { ToolPoliciesGroup } from "../components/ToolPoliciesGroup";
 import { ToolChangeNotice } from "../../../components/toolChanges/ToolChangeNotice";
-import { ShadowReviewControl } from "./ShadowReviewControl";
-import { TerminalEnvironmentControl } from "./TerminalEnvironmentControl";
 
 interface MCPServerStatusProps {
   allToolsOff: boolean;
@@ -589,9 +586,6 @@ export function ToolsSection() {
       )}
       <div className="mb-4 space-y-6">
         <ToolChangeNotice />
-        <PolicyCard />
-        <ShadowReviewControl />
-        <TerminalEnvironmentControl />
         <ToolPoliciesGroup
           showIcon={false}
           groupName={BUILT_IN_GROUP_NAME}

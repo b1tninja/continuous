@@ -10,6 +10,9 @@ import {
   loadPolicySettings,
 } from "../../redux/thunks/policySettings";
 import { renderWithProviders } from "../../util/test/render";
+import { ProtectionsView } from "../../pages/config/sections/permissions/ProtectionsView";
+import { answerProtectionsReads } from "../../pages/config/sections/permissions/protectionsTestHost";
+import { BuiltinRulesCard } from "./BuiltinRulesCard";
 import { PolicyCard } from "./PolicyCard";
 import { PolicyControls, IdgafChip } from "./PolicyControls";
 
@@ -269,7 +272,7 @@ describe("the settings beside the levels", () => {
       saved.push(data);
     }) as any;
     const store = setupStore({ ideMessenger });
-    const { user } = await renderWithProviders(<PolicyCard />, {
+    const { user } = await renderWithProviders(<BuiltinRulesCard />, {
       store,
       mockIdeMessenger: ideMessenger,
     });
@@ -329,6 +332,7 @@ describe("the settings beside the levels", () => {
 
   it("loads the shared file at startup: levels, switches and the floor", async () => {
     const ideMessenger = new MockIdeMessenger();
+    answerProtectionsReads(ideMessenger);
     ideMessenger.responseHandlers["policy/load"] = (async () => ({
       settings: {
         levels: {
@@ -344,10 +348,13 @@ describe("the settings beside the levels", () => {
       notices: [],
     })) as any;
     const store = setupStore({ ideMessenger });
-    await renderWithProviders(<PolicyCard />, {
-      store,
-      mockIdeMessenger: ideMessenger,
-    });
+    await renderWithProviders(
+      <>
+        <PolicyCard />
+        <ProtectionsView />
+      </>,
+      { store, mockIdeMessenger: ideMessenger },
+    );
     await act(async () => {
       await store.dispatch(loadPolicySettings());
     });

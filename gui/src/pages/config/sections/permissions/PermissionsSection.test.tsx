@@ -6,6 +6,7 @@ import { MockIdeMessenger } from "../../../../context/MockIdeMessenger";
 import { setupStore } from "../../../../redux/store";
 import { renderWithProviders } from "../../../../util/test/render";
 import { PermissionsSection } from "./PermissionsSection";
+import { answerProtectionsReads } from "./protectionsTestHost";
 
 const report = listEffectiveRules({
   levels: DEFAULT_POLICY_LEVELS,
@@ -69,6 +70,7 @@ const askResult = {
 
 async function setup() {
   const ideMessenger = new MockIdeMessenger();
+  answerProtectionsReads(ideMessenger);
   const rules = vi.fn(async () => report);
   const test = vi.fn(async () => askResult);
   ideMessenger.responseHandlers["policy/rules"] = rules as any;
@@ -77,6 +79,10 @@ async function setup() {
   await renderWithProviders(<PermissionsSection />, {
     store,
     mockIdeMessenger: ideMessenger,
+    // The page opens on Levels; these tests are about the Rules view
+    routerProps: {
+      initialEntries: ["/config?tab=permissions&view=rules"],
+    } as never,
   });
   await act(async () => {});
   return { rules, test };
@@ -122,15 +128,25 @@ describe("PermissionsSection", () => {
     expect(row.textContent).toContain("came with the workspace");
   });
 
-  it("shows the built-in protections and the fixed decision order", async () => {
+  it("says how many built-in protections apply, links to them, and shows the fixed decision order", async () => {
     await setup();
-    expect(screen.getByTestId("builtin-row-no-fetch-and-run")).toBeTruthy();
-    await act(async () => fireEvent.click(screen.getByTestId("tab-tools")));
-    expect(
-      screen.getByTestId("exempt-ask-dependency-change").textContent,
-    ).toContain(
-      "Exempted by your Always rule runTerminalCommand(npm install lodash)",
+    // The rules are listed once, in Protections; the area counts its own
+    expect(screen.getByTestId("builtins").textContent).toMatch(
+      /^Built-in rules\d+ of \d+ built-in rules that apply to this area are on\./,
     );
+    expect(screen.queryByTestId("builtin-row-no-fetch-and-run")).toBeNull();
+    await act(async () => fireEvent.click(screen.getByTestId("tab-tools")));
+    expect(screen.getByTestId("exempt-ask-dependency-change").textContent).toBe(
+      "Ask before changing dependencies: exempted by your Always rule runTerminalCommand(npm install lodash)",
+    );
+    await act(async () =>
+      fireEvent.click(screen.getByTestId("open-builtin-rules")),
+    );
+    expect(
+      screen.getByTestId("view-protections").getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(screen.getByTestId("fold-builtin-rules")).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByTestId("view-rules")));
     expect(screen.getByTestId("decision-order").textContent).toContain(
       "does not matter",
     );
