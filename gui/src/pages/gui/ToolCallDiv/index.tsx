@@ -1,7 +1,10 @@
 import { ArrowRightIcon } from "@heroicons/react/24/outline";
 import { ToolCallState } from "core";
 import { BuiltInToolNames } from "core/tools/builtIn";
-import { useState } from "react";
+import {
+  KeptOpenScope,
+  useKeptOpenState,
+} from "../../../hooks/useKeptOpenState";
 import { useAppSelector } from "../../../redux/hooks";
 import { RootState } from "../../../redux/store";
 import FunctionSpecificToolCallDiv from "./FunctionSpecificToolCallDiv";
@@ -22,7 +25,7 @@ export function ToolCallDiv({
   toolCallStates,
   historyIndex,
 }: ToolCallDivProps) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useKeptOpenState("tool-group", true);
   const availableTools = useAppSelector(
     (state: RootState) => state.config.config.tools,
   );
@@ -137,7 +140,9 @@ export function ToolCallDiv({
         >
           {toolCallStates.map((toolCallState) => (
             <div className="py-1 pl-6" key={toolCallState.toolCallId}>
-              {renderToolCall(toolCallState)}
+              <KeptOpenScope id={toolCallState.toolCallId}>
+                {renderToolCall(toolCallState)}
+              </KeptOpenScope>
             </div>
           ))}
         </div>
@@ -147,7 +152,9 @@ export function ToolCallDiv({
 
   return toolCallStates.map((toolCallState) => (
     <div className="py-1" key={toolCallState.toolCallId}>
-      {renderToolCall(toolCallState)}
+      <KeptOpenScope id={toolCallState.toolCallId}>
+        {renderToolCall(toolCallState)}
+      </KeptOpenScope>
     </div>
   ));
 }

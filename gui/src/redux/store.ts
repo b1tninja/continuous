@@ -25,6 +25,7 @@ import tabsReducer from "./slices/tabsSlice";
 import uiReducer from "./slices/uiSlice";
 import { migrateApproval } from "core/tools/permissions/policy";
 import { chatDebugMiddleware } from "./chatDebugMiddleware";
+import { keptOpenStateMiddleware } from "./keptOpenStateMiddleware";
 
 const rootReducer = combineReducers({
   session: sessionReducer,
@@ -156,7 +157,7 @@ export function setupStore(options: { ideMessenger?: IIdeMessenger }) {
             ideMessenger,
           },
         },
-      }).concat(chatDebugMiddleware),
+      }).concat(chatDebugMiddleware, keptOpenStateMiddleware),
     // This can be uncommented to get detailed Redux logs
     // .concat(logger),
   });

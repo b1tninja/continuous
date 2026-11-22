@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { KeptOpenScope } from "../../hooks/useKeptOpenState";
 import { CHAT_WINDOW_ESTIMATE_PX, chatWindowRange } from "./chatWindow";
 
 /**
@@ -150,9 +151,11 @@ export function ChatTranscript<T>({
   const rows: ReactNode[] = [];
   for (let index = range.start; index < range.end; index++) {
     const item = items[index];
+    const key = itemKey(item, index);
     rows.push(
-      <MeasuredRow key={itemKey(item, index)} index={index} onHeight={onHeight}>
-        {renderItem(item, index)}
+      <MeasuredRow key={key} index={index} onHeight={onHeight}>
+        {/* What the person opened in this row outlives its unmount */}
+        <KeptOpenScope id={key}>{renderItem(item, index)}</KeptOpenScope>
       </MeasuredRow>,
     );
   }

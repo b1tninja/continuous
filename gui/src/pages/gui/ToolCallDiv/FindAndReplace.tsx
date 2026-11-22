@@ -6,10 +6,11 @@ import { EditOperation } from "core/tools/definitions/multiEdit";
 import { renderContextItems } from "core/util/messageContent";
 import { getLastNPathParts, getUriPathBasename } from "core/util/uri";
 import { diffLines } from "diff";
-import { useContext, useMemo, useState } from "react";
+import { useContext, useMemo } from "react";
 import { ApplyActions } from "../../../components/StyledMarkdownPreview/StepContainerPreToolbar/ApplyActions";
 import { FileInfo } from "../../../components/StyledMarkdownPreview/StepContainerPreToolbar/FileInfo";
 import { IdeMessengerContext } from "../../../context/IdeMessenger";
+import { useKeptOpenState } from "../../../hooks/useKeptOpenState";
 import { useAppSelector } from "../../../redux/hooks";
 import {
   selectApplyStateByToolCallId,
@@ -92,7 +93,6 @@ export function FindAndReplaceDisplay({
   toolCallId,
   historyIndex,
 }: FindAndReplaceDisplayProps) {
-  const [isExpanded, setIsExpanded] = useState<boolean | undefined>(undefined);
   const ideMessenger = useContext(IdeMessengerContext);
   const applyState: ApplyState | undefined = useAppSelector((state) =>
     selectApplyStateByToolCallId(state, toolCallId),
@@ -101,7 +101,11 @@ export function FindAndReplaceDisplay({
   const toolCallState = useAppSelector((state) =>
     selectToolCallById(state, toolCallId),
   );
-  const showContent = isExpanded ?? toolCallState?.status === "generated";
+  // Open while the edit waits for approval, until the person chooses
+  const [showContent, setShowContent] = useKeptOpenState(
+    "diff",
+    toolCallState?.status === "generated",
+  );
   const config = useAppSelector((state) => state.config.config);
 
   const displayName = useMemo(() => {
@@ -210,7 +214,7 @@ export function FindAndReplaceDisplay({
       <div
         className={`find-widget-skip sticky -top-2 z-10 m-0 flex cursor-pointer items-center justify-between gap-3 bg-editor px-1.5 py-1 ${showContent ? "rounded-t-default border-b border-command-border" : "rounded-default"}`}
         onClick={() => {
-          setIsExpanded(!showContent);
+          setShowContent(!showContent);
         }}
       >
         <div className="flex min-w-0 flex-1 flex-row items-center gap-2 text-xs">

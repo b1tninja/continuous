@@ -5,6 +5,7 @@ import { ChatHistoryItem } from "core";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import styled from "styled-components";
 
+import { useKeptOpenState } from "../../../hooks/useKeptOpenState";
 import { useAppSelector } from "../../../redux/hooks";
 import { AnimatedEllipsis } from "../../AnimatedEllipsis";
 import StyledMarkdownPreview from "../../StyledMarkdownPreview";
@@ -56,9 +57,11 @@ function ThinkingBlockPeek({
   const keepExpanded = useAppSelector(
     (state) => state.config.config.ui?.keepThinkingExpanded === true,
   );
-  // null: follow the stream (open while thinking, folded after it)
-  const [chosenOpen, setChosenOpen] = useState<boolean | null>(null);
-  const open = chosenOpen ?? (!!inProgress || keepExpanded);
+  // Until the person chooses: open while thinking, folded after it
+  const [open, setOpen] = useKeptOpenState(
+    "thinking",
+    !!inProgress || keepExpanded,
+  );
 
   const startedRef = useRef<number | null>(inProgress ? Date.now() : null);
   const [measured, setMeasured] = useState<number | null>(null);
@@ -118,7 +121,7 @@ function ThinkingBlockPeek({
             data-testid="thinking-block-peek"
             aria-expanded={open}
             aria-controls={contentId}
-            onClick={() => setChosenOpen(!open)}
+            onClick={() => setOpen(!open)}
           >
             {label}
             {open ? (

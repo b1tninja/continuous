@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { ApplyState } from "core";
 import { EditOperation } from "core/tools/definitions/multiEdit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { clearKeptOpenState } from "../../../hooks/useKeptOpenState";
 import { FindAndReplaceDisplay } from "./FindAndReplace";
 
 // Mock the dependencies
@@ -73,6 +74,8 @@ describe("FindAndReplaceDisplay", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // The useContext mock below puts every render in one kept-state scope
+    clearKeptOpenState();
 
     mockUseAppSelector.mockImplementation((selector: any) => {
       const mockState = {

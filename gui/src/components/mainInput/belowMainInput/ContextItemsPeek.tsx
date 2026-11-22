@@ -179,6 +179,7 @@ export function ContextItemsPeek({
   return (
     <ToggleDiv
       icon={icon}
+      keptAs="context-items"
       title={
         title ??
         (isGatheringContext ? (

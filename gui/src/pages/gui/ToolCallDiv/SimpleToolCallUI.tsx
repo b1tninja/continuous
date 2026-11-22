@@ -1,10 +1,11 @@
 import { Tool, ToolCallState } from "core";
-import { ComponentType, useContext, useMemo, useState } from "react";
+import { ComponentType, useContext, useMemo } from "react";
 import {
   ContextItemsPeekItem,
   openContextItem,
 } from "../../../components/mainInput/belowMainInput/ContextItemsPeek";
 import { IdeMessengerContext } from "../../../context/IdeMessenger";
+import { useKeptOpenState } from "../../../hooks/useKeptOpenState";
 import { ToggleWithIcon } from "./ToggleWithIcon";
 import { ToolCallStatusMessage } from "./ToolCallStatusMessage";
 import { ToolTruncateHistoryIcon } from "./ToolTruncateHistoryIcon";
@@ -29,7 +30,7 @@ export function SimpleToolCallUI({
     return contextItems.filter((item) => !item.hidden);
   }, [toolCallState]);
 
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useKeptOpenState("results", false);
 
   const isToggleable = shownContextItems.length > 1;
   const isSingleItem = shownContextItems.length === 1;
@@ -38,7 +39,7 @@ export function SimpleToolCallUI({
 
   function handleClick() {
     if (isToggleable) {
-      setOpen((prev) => !prev);
+      setOpen(!open);
     } else if (isSingleItem) {
       openContextItem(shownContextItems[0], ideMessenger);
     }
