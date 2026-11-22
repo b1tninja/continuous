@@ -22,6 +22,7 @@ import {
 } from "core/tools/permissions/injection.js";
 import { hostAllowRules } from "core/tools/permissions/webHostRules.js";
 import { effectiveWebLevel } from "core/tools/permissions/webPolicy.js";
+import { resolveToolAlias, unknownToolResult } from "core/tools/unknownTool.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
 import { getWebConfig } from "core/util/webConfig.js";
 import { ChatCompletionToolMessageParam } from "openai/resources/chat/completions.mjs";
@@ -1265,17 +1266,40 @@ export async function preprocessStreamedToolCalls(
   // Get all available tools
 
   // Process each tool call
-  for (const toolCall of toolCalls) {
+  for (const sentCall of toolCalls) {
     const startTime = Date.now();
+    let toolCall = sentCall;
     try {
       // Arguments that did not parse: the call is answered, never run
       if (toolCall.unparsedArguments) {
         throw new Error(toolCall.unparsedArguments);
       }
       const availableTools: Tool[] = await getAllAvailableTools(isHeadless);
-      const tool =
+      let tool =
         availableTools.find((t) => t.name === toolCall.name) ??
         TOOL_ALIASES.find((t) => t.name === toolCall.name);
+      if (!tool) {
+        // The IDE's name for a tool on offer here (`read_file` for `Read`)
+        // runs as that tool: the permission check and the run below see its
+        // real name and its own parameter names
+        const alias = resolveToolAlias(
+          toolCall.name,
+          toolCall.arguments,
+          availableTools.map((t) => ({
+            name: t.name,
+            required: t.parameters.required,
+          })),
+        );
+        if (alias) {
+          tool = availableTools.find((t) => t.name === alias.name);
+          toolCall = {
+            ...toolCall,
+            name: alias.name,
+            arguments: alias.args,
+            argumentsStr: JSON.stringify(alias.args),
+          };
+        }
+      }
       if (!tool) {
         // A withheld tool whose server is gone says so (C88)
         const gone = cliWithheldRefusal(toolCall.name, false);
@@ -1293,7 +1317,13 @@ export async function preprocessStreamedToolCalls(
             { approved: false, denialMessage: gone },
           );
         }
-        throw new Error(gone ?? `Tool ${toolCall.name} not found`);
+        throw new Error(
+          gone ??
+            unknownToolResult(
+              toolCall.name,
+              availableTools.map((t) => t.name),
+            ),
+        );
       }
 
       validateToolCallArgsPresent(toolCall, tool);

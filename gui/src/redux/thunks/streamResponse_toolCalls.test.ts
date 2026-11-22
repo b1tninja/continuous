@@ -2296,7 +2296,8 @@ describe("streamResponseThunk - tool calls", () => {
       initialState.ui.toolSettings = {
         [terminalName]: "allowedWithoutPermission",
       };
-      initialState.config.config.tools = [grepTool];
+      // The call below is to the terminal tool, so the session has it
+      initialState.config.config.tools = [grepTool, terminalTool];
       const mockStore = createMockStore(initialState);
 
       const mockIdeMessenger = mockStore.mockIdeMessenger;
@@ -2373,6 +2374,99 @@ describe("streamResponseThunk - tool calls", () => {
       expect(requestSpy).not.toHaveBeenCalledWith(
         "tools/call",
         expect.any(Object),
+      );
+    });
+
+    /** A reply that calls `name`, in a session with the terminal and grep tools. */
+    async function replyCalling(name: string, args: Record<string, unknown>) {
+      const initialState = getRootStateWithClaude();
+      initialState.session.history = [
+        {
+          message: { id: "1", role: "user", content: "Run echo hello" },
+          contextItems: [],
+        },
+      ];
+      initialState.ui.toolSettings = {
+        [terminalName]: "allowedWithPermission",
+      };
+      initialState.config.config.tools = [terminalTool, grepTool];
+      const mockStore = createMockStore(initialState);
+      const mockIdeMessenger = mockStore.mockIdeMessenger;
+      mockIdeMessenger.responses["llm/compileChat"] = {
+        compiledChatMessages: [{ role: "user", content: "Run echo hello" }],
+        didPrune: false,
+        contextPercentage: 0.5,
+      };
+      async function* reply(): AsyncGenerator<
+        AssistantChatMessage[],
+        PromptLog
+      > {
+        yield [
+          {
+            role: "assistant",
+            content: "",
+            toolCalls: [
+              {
+                id: "tool-wrong-name",
+                type: "function",
+                function: { name, arguments: JSON.stringify(args) },
+              },
+            ],
+          },
+        ];
+        return {
+          prompt: "Run echo hello",
+          completion: "",
+          modelProvider: "anthropic",
+          modelTitle: "Claude 3.5 Sonnet",
+        };
+      }
+      mockIdeMessenger.llmStreamChat = vi.fn().mockReturnValue(reply());
+      const requestSpy = vi.spyOn(mockIdeMessenger, "request");
+      await mockStore.dispatch(
+        streamResponseThunk({
+          editorState: mockEditorState,
+          modifiers: mockModifiers,
+        }) as any,
+      );
+      const call = (mockStore.getState() as RootState).session.history
+        .flatMap((item) => item.toolCallStates ?? [])
+        .find((c) => c.toolCallId === "tool-wrong-name");
+      return { call, requestSpy };
+    }
+
+    it("runs the CLI's name for a tool on offer as that tool (AG4)", async () => {
+      const { call, requestSpy } = await replyCalling("Bash", {
+        command: "echo hello",
+      });
+      // The person's policy is asked about the real tool, with its arguments
+      expect(requestSpy).toHaveBeenCalledWith(
+        "tools/evaluatePolicy",
+        expect.objectContaining({
+          toolName: terminalName,
+          parsedArgs: { command: "echo hello" },
+        }),
+      );
+      expect(call?.toolCall.function.name).toBe(terminalName);
+      expect(call?.status).toBe("generated");
+    });
+
+    it("answers a name no tool has with the tools on offer, not 'invalid arguments' (AG4)", async () => {
+      const { call, requestSpy } = await replyCalling("open_terminal", {
+        command: "echo hello",
+      });
+      expect(call?.status).toBe("errored");
+      expect(call?.output?.[0].content).toBe(
+        `There is no tool named open_terminal. The tools available are: ${terminalName}, ${grepName}.`,
+      );
+      // Nothing was asked of core about a tool that does not exist
+      expect(requestSpy).not.toHaveBeenCalledWith(
+        "tools/preprocessArgs",
+        expect.objectContaining({ toolName: "open_terminal" }),
+      );
+      expect(requestSpy).not.toHaveBeenCalledWith(
+        "tools/evaluatePolicy",
+        expect.objectContaining({ toolName: "open_terminal" }),
       );
     });
 
@@ -2598,7 +2692,7 @@ describe("streamResponseThunk - tool calls", () => {
       const initialState = getRootStateWithClaude();
       initialState.config.config.tools = [terminalTool];
       initialState.ui.toolSettings = {
-        runTerminalCommand: "allowedWithPermission",
+        [terminalName]: "allowedWithPermission",
       };
       const mockStoreWithTerminalTool = createMockStore(initialState);
 
@@ -2653,7 +2747,9 @@ describe("streamResponseThunk - tool calls", () => {
                 id: "tool-call-eval",
                 type: "function",
                 function: {
-                  name: "runTerminalCommand",
+                  // The tool's real name: a wrong one is answered with the
+                  // list of tools before any policy is asked
+                  name: terminalName,
                   arguments: JSON.stringify({ command: 'eval "echo hello"' }),
                 },
               },

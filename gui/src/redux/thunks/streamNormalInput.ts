@@ -106,6 +106,7 @@ import {
   refuseTruncatedToolCalls,
 } from "./preprocessToolCallArgs";
 import { refuseRoleCalls } from "./refuseRoleCalls";
+import { resolveUnknownToolCalls } from "./resolveUnknownToolCalls";
 import { refuseWithheldCalls } from "./refuseWithheldCalls";
 import { withheldTools } from "../../util/toolListHold";
 import { checkpointSession } from "./session";
@@ -750,6 +751,13 @@ export const streamNormalInput = createAsyncThunk<
         }),
       );
     }
+
+    // A name no tool answers to: the other surface's name for a tool on
+    // offer runs as that tool, any other gets the list of tools
+    resolveUnknownToolCalls(dispatch, selectPendingToolCalls(getState()), {
+      offered: activeTools,
+      known: [...state1.config.config.tools, ...toolList.tools],
+    });
 
     // A call to a tool the mode's role may not use is refused, offered or not
     refuseRoleCalls(dispatch, selectPendingToolCalls(getState()), {

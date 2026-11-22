@@ -130,7 +130,11 @@ export async function preprocessToolCalls(
                       cause: editFailureCauseOf(errorReason),
                       detail: errorMessage,
                     })
-                  : `${toolName} failed because the arguments were invalid, with the following message: ${errorMessage}\n\nPlease try something else or request further instructions.`,
+                  : errorReason === ContinueErrorReason.ToolNotFound &&
+                      errorMessage
+                    ? // A wrong name, not wrong arguments: core's text as it is
+                      errorMessage
+                    : `${toolName} failed because the arguments were invalid, with the following message: ${errorMessage}\n\nPlease try something else or request further instructions.`,
                 hidden: false,
               },
             ],

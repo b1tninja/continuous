@@ -633,7 +633,7 @@ describe.skip("preprocessStreamedToolCalls", () => {
     expect(preprocessedCalls).toHaveLength(0);
     expect(errorChatEntries).toHaveLength(1);
     expect(errorChatEntries[0].content).toContain(
-      "Tool nonexistent_tool not found",
+      "There is no tool named nonexistent_tool. The tools available are: ",
     );
   });
 });

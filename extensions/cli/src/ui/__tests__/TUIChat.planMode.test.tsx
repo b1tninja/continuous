@@ -247,7 +247,13 @@ describe("TUIChat - plan mode", () => {
         "lookup_issue",
       );
       const result = llm.requests[1].messages.find((m) => m.role === "tool");
-      expect(messageText(result!)).toContain("not found");
+      // Answered with the tools Plan mode does offer; the MCP tool is not one
+      expect(messageText(result!)).toMatch(
+        /^There is no tool named lookup_issue\. The tools available are: /,
+      );
+      expect(messageText(result!).split("available are:")[1]).not.toContain(
+        "lookup_issue",
+      );
     } finally {
       ui.unmount();
     }
