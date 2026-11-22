@@ -283,12 +283,17 @@ export const streamNormalInput = createAsyncThunk<
 
     // A local model with no configured limit may use the room that is left,
     // so a large tool call is not cut off for no gain
+    // No cap at all is sent to a server that picks its own limit
+    const serverDecides =
+      selectedChatModel.maxTokensSource === "none" &&
+      completionOptions.maxTokens === undefined;
     const localMaxTokens = localOutputLimit({
       apiBase: selectedChatModel.apiBase,
       maxTokens:
         completionOptions.maxTokens ??
         selectedChatModel.completionOptions?.maxTokens,
       outputTokensAvailable,
+      maxTokensSource: selectedChatModel.maxTokensSource,
     });
     if (localMaxTokens) {
       completionOptions = { ...completionOptions, maxTokens: localMaxTokens };
@@ -324,9 +329,14 @@ export const streamNormalInput = createAsyncThunk<
     noteRequestSent({
       model: selectedChatModel.model,
       provider: selectedChatModel.provider,
-      maxTokens: budget.maxTokens,
-      askedMaxTokens: budget.asked,
-      ceiling: budget.ceiling,
+      // Nothing is sent when the server decides, so nothing is recorded
+      ...(serverDecides
+        ? {}
+        : {
+            maxTokens: budget.maxTokens,
+            askedMaxTokens: budget.asked,
+            ceiling: budget.ceiling,
+          }),
       promptEstimate: budget.promptTokens,
       contextLength: selectedChatModel.contextLength,
       pruned: didPrune,

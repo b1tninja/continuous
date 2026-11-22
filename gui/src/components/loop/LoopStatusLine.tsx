@@ -131,147 +131,153 @@ export function LoopStatusLine({
       <span data-testid="loop-status" className="sr-only">
         {summary}
       </span>
-      <div className="flex min-w-0 items-center gap-1">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-1">
         <LoopPhaseMark className="h-3.5 w-[25px] shrink-0" />
+        {/* The title keeps 32 px ("Loop" needs 27): when the buttons do not fit beside that, they wrap below */}
         <span
           data-testid="loop-title"
           title={title}
-          className="min-w-0 flex-1 truncate font-semibold"
+          className="min-w-8 flex-1 basis-8 truncate font-semibold"
         >
           {title}
         </span>
-        {stopped ? (
-          <>
-            {paused && tasksLeft > 0 && entry === "loop" && (
-              <button
-                type="button"
-                data-testid="loop-start-fresh"
-                title="Drop the paused loop and plan again"
-                className={`${TEXT_BUTTON} text-description hover:text-foreground`}
-                onClick={() => void dispatch(startFreshThunk())}
-              >
-                Start fresh
-              </button>
-            )}
-            {loop.stopReason !== "done" && (
-              <button
-                type="button"
-                data-testid="loop-resume"
-                className={`${TEXT_BUTTON} text-link`}
-                title={
-                  paused
-                    ? "Budgets restart from now; the next item is told you worked outside the loop"
-                    : "Budgets restart from now"
-                }
-                onClick={() => void dispatch(resumeLoopThunk())}
-              >
-                {paused && tasksLeft > 0
-                  ? `Resume loop (${tasksLeft} task${tasksLeft === 1 ? "" : "s"} left)`
-                  : "Resume"}
-              </button>
-            )}
-            <button
-              type="button"
-              data-testid="loop-end"
-              className={`${TEXT_BUTTON} text-description hover:text-foreground`}
-              onClick={() => void dispatch(endLoopThunk())}
-            >
-              Close
-            </button>
-          </>
-        ) : (
-          <div ref={menuRoot} className="relative flex shrink-0 items-center">
-            {!loop.stopRequested && (
-              <button
-                type="button"
-                data-testid="loop-stop"
-                aria-label={stopLabel}
-                title={stopTitle}
-                className="min-h-6 cursor-pointer rounded-l border border-solid border-border bg-transparent px-2 text-xs text-foreground hover:bg-input"
-                onClick={stopAfter}
-              >
-                Stop
-              </button>
-            )}
-            <button
-              ref={menuButton}
-              type="button"
-              data-testid="loop-stop-menu"
-              aria-label="More ways to stop"
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              aria-controls={menuOpen ? menuId : undefined}
-              className={`flex min-h-6 w-6 cursor-pointer items-center justify-center border border-solid border-border bg-transparent p-0 text-foreground hover:bg-input ${loop.stopRequested ? "rounded" : "rounded-r border-l-0"}`}
-              onClick={() => setMenuOpen(!menuOpen)}
-            >
-              <ChevronDownIcon className="h-2.5 w-2.5" aria-hidden="true" />
-            </button>
-            {menuOpen && (
-              <div
-                id={menuId}
-                role="menu"
-                aria-label="Stop"
-                data-testid="loop-stop-options"
-                className="absolute top-full right-0 z-10 mt-0.5 flex min-w-40 flex-col rounded border border-solid border-border bg-input py-0.5 text-xs shadow-lg"
-              >
-                {!loop.stopRequested && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    data-testid="loop-stop-after"
-                    title={stopTitle}
-                    className="cursor-pointer border-none bg-transparent px-2 py-1 text-left text-foreground hover:bg-list-active"
-                    onClick={stopAfter}
-                  >
-                    {stopLabel}
-                  </button>
-                )}
-                {loop.current && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    data-testid="loop-stop-now"
-                    title="Stop the running item now; it goes back to pending"
-                    className="cursor-pointer border-none bg-transparent px-2 py-1 text-left text-foreground hover:bg-list-active"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      void dispatch(cancelStream());
-                    }}
-                  >
-                    Stop now
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-        <button
-          type="button"
-          data-testid="loop-settings-toggle"
-          aria-label="Loop settings"
-          title="Loop settings"
-          aria-haspopup="dialog"
-          aria-expanded={settingsOpen}
-          className={ICON_BUTTON}
-          onClick={onToggleSettings}
+        <div
+          data-testid="loop-strip-buttons"
+          className="ml-auto flex max-w-full min-w-0 flex-wrap items-center justify-end gap-x-1"
         >
-          <Cog6ToothIcon className="h-3.5 w-3.5" aria-hidden="true" />
-        </button>
-        {taskPlan && (
+          {stopped ? (
+            <>
+              {paused && tasksLeft > 0 && entry === "loop" && (
+                <button
+                  type="button"
+                  data-testid="loop-start-fresh"
+                  title="Drop the paused loop and plan again"
+                  className={`${TEXT_BUTTON} text-description hover:text-foreground`}
+                  onClick={() => void dispatch(startFreshThunk())}
+                >
+                  Start fresh
+                </button>
+              )}
+              {loop.stopReason !== "done" && (
+                <button
+                  type="button"
+                  data-testid="loop-resume"
+                  className={`${TEXT_BUTTON} text-link`}
+                  title={
+                    paused
+                      ? "Budgets restart from now; the next item is told you worked outside the loop"
+                      : "Budgets restart from now"
+                  }
+                  onClick={() => void dispatch(resumeLoopThunk())}
+                >
+                  {paused && tasksLeft > 0
+                    ? `Resume loop (${tasksLeft} task${tasksLeft === 1 ? "" : "s"} left)`
+                    : "Resume"}
+                </button>
+              )}
+              <button
+                type="button"
+                data-testid="loop-end"
+                className={`${TEXT_BUTTON} text-description hover:text-foreground`}
+                onClick={() => void dispatch(endLoopThunk())}
+              >
+                Close
+              </button>
+            </>
+          ) : (
+            <div ref={menuRoot} className="relative flex shrink-0 items-center">
+              {!loop.stopRequested && (
+                <button
+                  type="button"
+                  data-testid="loop-stop"
+                  aria-label={stopLabel}
+                  title={stopTitle}
+                  className="min-h-6 cursor-pointer rounded-l border border-solid border-border bg-transparent px-2 text-xs text-foreground hover:bg-input"
+                  onClick={stopAfter}
+                >
+                  Stop
+                </button>
+              )}
+              <button
+                ref={menuButton}
+                type="button"
+                data-testid="loop-stop-menu"
+                aria-label="More ways to stop"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                aria-controls={menuOpen ? menuId : undefined}
+                className={`flex min-h-6 w-6 cursor-pointer items-center justify-center border border-solid border-border bg-transparent p-0 text-foreground hover:bg-input ${loop.stopRequested ? "rounded" : "rounded-r border-l-0"}`}
+                onClick={() => setMenuOpen(!menuOpen)}
+              >
+                <ChevronDownIcon className="h-2.5 w-2.5" aria-hidden="true" />
+              </button>
+              {menuOpen && (
+                <div
+                  id={menuId}
+                  role="menu"
+                  aria-label="Stop"
+                  data-testid="loop-stop-options"
+                  className="absolute top-full right-0 z-10 mt-0.5 flex min-w-40 flex-col rounded border border-solid border-border bg-input py-0.5 text-xs shadow-lg"
+                >
+                  {!loop.stopRequested && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      data-testid="loop-stop-after"
+                      title={stopTitle}
+                      className="cursor-pointer border-none bg-transparent px-2 py-1 text-left text-foreground hover:bg-list-active"
+                      onClick={stopAfter}
+                    >
+                      {stopLabel}
+                    </button>
+                  )}
+                  {loop.current && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      data-testid="loop-stop-now"
+                      title="Stop the running item now; it goes back to pending"
+                      className="cursor-pointer border-none bg-transparent px-2 py-1 text-left text-foreground hover:bg-list-active"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        void dispatch(cancelStream());
+                      }}
+                    >
+                      Stop now
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           <button
             type="button"
-            data-testid="loop-jump-to-plan"
-            aria-label="Jump to plan"
-            title="Jump to the plan"
+            data-testid="loop-settings-toggle"
+            aria-label="Loop settings"
+            title="Loop settings"
+            aria-haspopup="dialog"
+            aria-expanded={settingsOpen}
             className={ICON_BUTTON}
-            onClick={() => void jumpToPlan()}
+            onClick={onToggleSettings}
           >
-            <ClipboardDocumentListIcon
-              className="h-3.5 w-3.5"
-              aria-hidden="true"
-            />
+            <Cog6ToothIcon className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
-        )}
+          {taskPlan && (
+            <button
+              type="button"
+              data-testid="loop-jump-to-plan"
+              aria-label="Jump to plan"
+              title="Jump to the plan"
+              className={ICON_BUTTON}
+              onClick={() => void jumpToPlan()}
+            >
+              <ClipboardDocumentListIcon
+                className="h-3.5 w-3.5"
+                aria-hidden="true"
+              />
+            </button>
+          )}
+        </div>
       </div>
       <div
         data-testid="loop-strip-progress-row"

@@ -1,6 +1,7 @@
 import path from "path";
 
 import { checkOfProtection } from "core/tools/permissions/checkOfProtection.js";
+import { PLAN_MODE_HOLD_REASON } from "core/tools/permissions/planMode.js";
 import { BUILTIN_RULES } from "core/tools/permissions/policy.js";
 import {
   suggestAllowRule,
@@ -102,6 +103,11 @@ function askRuleSource(verdict: CoreVerdict): AskSource {
   }
 }
 
+/** Plan mode asked: the engine's hold, or the mode's own list of tools. */
+const PLAN_MODE_ASK_SOURCE: AskSource = {
+  what: "Plan mode, the mode this session is in (plan-mode)",
+};
+
 /** Sources where a check asked, so no allow rule turns the ask off. */
 const CHECK_SOURCES: Partial<Record<string, AskSource>> = {
   "tainted-session": {
@@ -114,6 +120,8 @@ const CHECK_SOURCES: Partial<Record<string, AskSource>> = {
     what: "the check that a command fits the shell it runs in (shell-hint)",
   },
   manual: { what: "the Manual level set for this kind of call (manual)" },
+  // No rule or level lifts it: the mode is the reason
+  "plan-mode": PLAN_MODE_ASK_SOURCE,
 };
 
 function engineExplains(verdict: CoreVerdict): Explained | undefined {
@@ -220,10 +228,11 @@ function cliExplains(facts: AskFacts): Explained {
     };
   }
   if (origin?.kind === "mode") {
+    // The same words as the engine's hold, and no allow rule lifts either
     return {
-      reason: "Plan mode asks before anything that could change the workspace.",
-      source: { what: "Plan mode, the mode this session is in" },
-      ruleStopsAsk: true,
+      reason: PLAN_MODE_HOLD_REASON,
+      source: PLAN_MODE_ASK_SOURCE,
+      ruleStopsAsk: false,
     };
   }
   if (origin?.kind === "default") {

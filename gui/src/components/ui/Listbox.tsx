@@ -46,7 +46,8 @@ const ListboxOptions = React.forwardRef<HTMLUListElement, ListboxOptionsProps>(
         anchor={"bottom start"}
         {...props}
         className={cn(
-          "flex w-max max-w-[400px] min-w-[160px] flex-col overflow-auto bg-vsc-input-background px-0 shadow-md",
+          // The anchor caps the content width at the room there is; 1 px of padding leaves room for the border
+          "flex w-max max-w-[400px] min-w-[160px] flex-col overflow-auto bg-vsc-input-background px-0 shadow-md [--anchor-padding:1px]",
           props.className,
         )}
         style={{

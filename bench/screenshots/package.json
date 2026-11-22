@@ -9,6 +9,7 @@
     "shots": "node screenshot.mjs",
     "axe": "node axe.mjs",
     "overflow": "node overflow.mjs",
+    "render": "node render.mjs",
     "walk": "node walk.mjs"
   },
   "dependencies": {

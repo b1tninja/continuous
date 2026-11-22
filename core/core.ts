@@ -11,7 +11,7 @@ import {
 } from "./autocomplete/util/openedFilesLruCache";
 import { ConfigHandler } from "./config/ConfigHandler";
 import {
-  getModelBlock,
+  getModelBlockWithLayers,
   previewModelEdit,
   saveModelEdit,
 } from "./config/modelEdit/modelBlockEdit";
@@ -1515,7 +1515,9 @@ export class Core {
       return { saved };
     });
 
-    on("config/getModelBlock", async (msg) => getModelBlock(msg.data.title));
+    on("config/getModelBlock", async (msg) =>
+      getModelBlockWithLayers(msg.data.title, this.ide),
+    );
     on("config/previewModelEdit", async (msg) =>
       previewModelEdit(msg.data.title, msg.data.ops),
     );
@@ -2722,6 +2724,7 @@ export class Core {
           agent,
           history,
           withheld,
+          planMode,
         },
       }) => {
         // Withheld while the prompt cache is warm (C88): refused whatever the
@@ -2788,6 +2791,8 @@ export class Core {
           trustedDomains: readUserTrustedDomains(),
           envNames: readUserEnvNames(),
           largeChangeLines: readUserLargeChangeLines(),
+          // Plan mode's hold is the engine's, so the audit trail records it
+          ...(planMode ? { planMode: true } : {}),
           ...(dirs[0]
             ? { cwd: terminalCwdForPolicy(toolName, parsedArgs, dirs) }
             : {}),

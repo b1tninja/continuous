@@ -68,7 +68,11 @@ describe("explainAsk: the CLI's own lists", () => {
   it("names Plan mode when the mode's own list asked", () => {
     const why = cliAsk(PLAN_MODE_POLICIES, bash("npm test"));
     expect(why.reason).toContain("Plan mode asks");
-    expect(why.source.what).toBe("Plan mode, the mode this session is in");
+    expect(why.source.what).toBe(
+      "Plan mode, the mode this session is in (plan-mode)",
+    );
+    // An allow rule does not stop Plan mode's ask
+    expect(why.ruleStopsAsk).toBe(false);
   });
 
   it("names the hook over the list that allowed the call", () => {

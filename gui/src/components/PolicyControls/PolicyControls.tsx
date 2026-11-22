@@ -256,8 +256,9 @@ export function PolicyControls() {
 }
 
 /**
- * One chip in the mode bar for as long as any area is at IDGAF: a bolt, the
- * word and (when there is room) "nothing asks", tinted red. The sentence that
+ * One chip in the mode bar for as long as any area is at IDGAF: a bolt and
+ * the word, tinted red. Only the word: the bar is short of room, and what it
+ * means is in the tooltip and the description. The sentence that
  * used to fill a banner is the tooltip and the accessible description, so it
  * is reachable by keyboard and screen reader, not only by hover. There is no
  * close button on purpose: the chip is the state, and choosing it goes back
@@ -289,7 +290,6 @@ export function IdgafChip() {
           aria-hidden="true"
         />
         <span>IDGAF</span>
-        <span className="hidden min-[481px]:inline">· nothing asks</span>
         <span className="sr-only">. Select to go back to Careful.</span>
       </button>
       <span

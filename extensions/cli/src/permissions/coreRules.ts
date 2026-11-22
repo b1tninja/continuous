@@ -308,6 +308,12 @@ export interface CoreRulesInput {
   cwd?: string;
   /** The Web area's facts: web.enabled, the session's grants, the person's URLs (WB45) */
   web?: WebCallContext;
+  /**
+   * Set in Plan mode: the engine holds a call that would run unless it only
+   * reads (core's planModeVerdict, the rule the IDE uses). `readOnlyTool` is
+   * the CLI tool's own `readonly` flag, which is what "only reads" means here.
+   */
+  planTurn?: { planMode: true; readOnlyTool: boolean };
 }
 
 /** The MCP tool's declared schema, where the engine reads it (`function.parameters`). */
@@ -421,6 +427,7 @@ export async function evaluateWithCoreRules(
         history: buildReviewHistory(input.history ?? []),
         approval: input.approval,
         headless: isHeadless,
+        ...input.planTurn,
       },
     );
     if (reply.notice) logger.warn(`Notice: ${reply.notice}`);
@@ -463,6 +470,7 @@ export async function evaluateWithCoreRules(
     ...deputyWorkspace(dirsWithAddedFolders(input.cwd)),
     // The shell the CLI runs commands in: its login shell, PowerShell on Windows
     shell: resolveShell().kind,
+    ...input.planTurn,
     ...taint,
   });
   return rulesVerdict(input, basePolicy, result, processedArgs);
@@ -545,7 +553,9 @@ function ownCheckAsked(
  * `--ask`, `--exclude`, the catch-all `*`, a headless subagent's asks) do not
  * stop it, the same as core's rules and guards do not (core's
  * idgafRunsEverything, the one place IDGAF overrides a decision). Plan mode is
- * a mode with its own role, not a level, and keeps its own policies.
+ * a mode with its own role, not a level, and keeps its own policies: what the
+ * role does not offer stays refused. A call those policies ask about still
+ * runs at IDGAF, because the engine allows it there (core's holdInPlanMode).
  */
 export function runsAtIdgaf(
   levels: PolicyLevels,
@@ -612,7 +622,10 @@ export function keepCoreVerdict(
     verdict.source === "protected-path" ||
     verdict.source === "safety-floor" ||
     verdict.source === "tainted-session" ||
-    verdict.source === "secret-egress"
+    verdict.source === "secret-egress" ||
+    // Plan mode's hold is not a level's ask: it stands at the defaults too,
+    // over an allow from a hook or the CLI's own lists
+    verdict.source === "plan-mode"
   ) {
     return verdict;
   }
