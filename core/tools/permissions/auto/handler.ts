@@ -6,6 +6,11 @@ import type { ShellKind } from "../../../util/shell";
 import { DecisionSource } from "../decide";
 import { uriToPath } from "../names";
 import { EvaluateInput, evaluateToolPolicyWithRules } from "../evaluate";
+import {
+  onlyReads,
+  PLAN_MODE_HOLD_REASON,
+  PLAN_MODE_SOURCE,
+} from "../planMode";
 import { deputyWorkspace } from "../workspaceRoots";
 import type { ToolPermissions } from "../rules";
 import type { AuditAgent, AuditReviewer } from "../audit/record";
@@ -47,6 +52,13 @@ export interface AutoReviewRequest {
   approval?: ApprovalSettings;
   /** No person to ask: an unusable reviewer refuses. */
   headless?: boolean;
+  /**
+   * The turn is a Plan turn: a call that does not only read is the person's
+   * to approve, so the reviewer is not asked about it (planMode.ts).
+   */
+  planMode?: boolean;
+  /** As EvaluateInput.readOnlyTool: the surface's word that the tool only reads */
+  readOnlyTool?: boolean;
 }
 
 export interface AutoReviewReply {
@@ -156,6 +168,8 @@ export async function autoReviewToolCall(
     shell: deps.shell,
     trustedDomains: deps.trustedDomains,
     envNames: deps.envNames,
+    ...(req.planMode ? { planMode: true } : {}),
+    ...(req.readOnlyTool ? { readOnlyTool: true } : {}),
     ...tainted,
   });
   const base = { displayValue: evaluated.displayValue };
@@ -218,6 +232,23 @@ export async function autoReviewToolCall(
   });
   if (found && found.level !== "automatic") {
     return settled("ask", "This area is not set to Automatic.");
+  }
+  // Plan mode: the reviewer's allow would run a call that changes things
+  // while planning, so the call stays with the person
+  if (
+    req.planMode &&
+    !req.readOnlyTool &&
+    !onlyReads(req.toolName, deps.tool, {
+      parsedArgs: req.parsedArgs,
+      cwd: folderPath(deps.environment.workspaceDirs?.[0]),
+      shell: deps.shell,
+    })
+  ) {
+    return {
+      ...settled("ask", ""),
+      reason: PLAN_MODE_HOLD_REASON,
+      ruleSource: PLAN_MODE_SOURCE,
+    };
   }
 
   // The call is open. From here Auto is the only thing that may loosen it.

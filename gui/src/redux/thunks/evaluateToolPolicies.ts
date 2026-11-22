@@ -12,6 +12,7 @@ import { userTextForReview } from "core/tools/permissions/auto/history";
 import type { ReviewHistory } from "core/tools/permissions/auto/prompt";
 import { isFlaggedOutput } from "core/tools/permissions/injection";
 import type { DecisionSource } from "core/tools/permissions/decide";
+import { planModeVerdict } from "core/tools/permissions/planMode";
 import { refusalText } from "core/tools/refusalText";
 import { IIdeMessenger } from "../../context/IdeMessenger";
 import { isEditTool } from "../../util/toolCallState";
@@ -43,7 +44,7 @@ export interface EvaluatedPolicy {
   policy: ToolPolicy;
   displayValue?: string;
   /** Why core decided, when the user has toolPermissions rules. "auto" means the reviewer model. */
-  source?: DecisionSource | "auto" | "once" | "plan-mode";
+  source?: DecisionSource | "auto" | "once";
   /** The reviewer's named reason (Auto mode). */
   category?: string;
   reason?: string;
@@ -54,9 +55,6 @@ export interface EvaluatedPolicy {
   protection?: string;
   toolCallState: ToolCallState;
 }
-
-export const PLAN_MODE_HOLD_REASON =
-  "Plan mode asks before a tool that may make changes. Only tools marked read-only run on their own.";
 
 /**
  * Arguments for the area lookup. A read-only command is Context use only when
@@ -80,11 +78,11 @@ function callContextFor(toolCallState: {
 }
 
 /**
- * Plan mode only reads. Built-in tools that write are not offered in it, but
- * other tools (MCP servers) are, and they keep their own policies; one set to
- * run on its own, or allowed by a rule or approval mode, would change things
- * while planning. A call that would run without asking waits for the user
- * instead, unless its tool is marked read-only. Refusals stand.
+ * Plan mode's hold is core's rule (planModeVerdict): a call that would run
+ * waits for the person unless it only reads. Core applies it to the verdict
+ * it returns when the request says the turn is a Plan turn; this applies the
+ * same function to what the webview decides itself (an edit, whose ask is
+ * its diff, and a verdict it clamps to the tool's setting).
  */
 export function holdInPlanMode(
   result: EvaluatedPolicy,
@@ -94,25 +92,14 @@ export function holdInPlanMode(
   if (result.policy !== "allowedWithoutPermission") return result;
   const name = result.toolCallState.toolCall.function.name;
   const tool = activeTools.find((t) => t.function.name === name);
-  if (tool?.readonly) return result;
-  // A command the parser vouched as only reading may run in a plan turn:
-  // that is how a re-plan looks at `git log` or `ls`
-  if (result.readOnly) return result;
-  // An area set to IDGAF runs everything, in Plan mode too: that is what the
-  // level says. Permissive and below still wait for the person here.
-  // The call's arguments matter: a vouched read-only command is Context use.
-  if (
-    levelOfCall(approval, name, tool, callContextFor(result.toolCallState))
-      ?.level === "idgaf"
-  ) {
-    return result;
-  }
-  return {
-    ...result,
-    policy: "allowedWithPermission",
-    source: "plan-mode",
-    reason: PLAN_MODE_HOLD_REASON,
-  };
+  return planModeVerdict(result, {
+    // The flag on the tool, or a command the parser vouched as only reading
+    readOnly: !!tool?.readonly || !!result.readOnly,
+    // The call's arguments matter: a vouched read-only command is Context use
+    idgaf:
+      levelOfCall(approval, name, tool, callContextFor(result.toolCallState))
+        ?.level === "idgaf",
+  });
 }
 
 /**
@@ -139,6 +126,7 @@ export async function evaluateToolPolicy(
     sessionId,
     agent,
     history,
+    mode === "plan",
   );
   // Plan mode changes nothing until the plan is accepted, at every level
   // below IDGAF
@@ -156,6 +144,7 @@ async function evaluateBasePolicy(
   sessionId?: string,
   agent?: AuditAgent,
   history?: ReviewHistory,
+  planMode?: boolean,
 ): Promise<EvaluatedPolicy> {
   const toolName = toolCallState.toolCall.function.name;
   // Core writes the decision to the audit trail when it knows the call
@@ -163,6 +152,8 @@ async function evaluateBasePolicy(
     callId: toolCallState.toolCallId,
     ...(sessionId ? { sessionId } : {}),
     ...(agent ? { agent } : {}),
+    // Core holds a call that would run in a Plan turn, and records that
+    ...(planMode ? { planMode: true } : {}),
   };
   // Offered for shadow review (core ignores it unless the person turned that
   // on). Not for edits: their answer is a diff the person accepts or rejects.
@@ -189,7 +180,7 @@ async function evaluateBasePolicy(
         if (policy === "disabled") {
           return { ...result.content, toolCallState };
         }
-        if (source === "protected-path") {
+        if (source === "protected-path" || source === "plan-mode") {
           return { ...result.content, toolCallState };
         }
       } else {
@@ -308,6 +299,7 @@ async function reviewOpenCalls(
   activeTools: Tool[],
   dispatch: AppThunkDispatch,
   approval?: ApprovalSettings,
+  planMode?: boolean,
 ): Promise<EvaluatedPolicy[]> {
   return Promise.all(
     results.map(async (r) => {
@@ -365,6 +357,8 @@ async function reviewOpenCalls(
           processedArgs: r.toolCallState.processedArgs,
           history: auto.history,
           ...(approval ? { approval } : {}),
+          // In a Plan turn core leaves a call that changes things to the person
+          ...(planMode ? { planMode: true } : {}),
         });
         if (res.status !== "success") return r;
         reply = res.content;
@@ -487,6 +481,7 @@ export async function evaluateToolPolicies(
       activeTools,
       dispatch,
       approval,
+      mode === "plan",
     );
   }
 
