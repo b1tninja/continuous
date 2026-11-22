@@ -153,6 +153,88 @@ known violations per view: rule, then the most nodes seen at any width or theme.
 nodes of one than it allows; it prints improvements so the baseline can be tightened
 with `--update`. Pictures (`screenshot.mjs`) and axe are separate runs.
 
+### Walks
+
+```sh
+cd bench/screenshots && npm run walk -- --browser edge     # three journeys at 300 and 800 px: a table, and walk.json in a temp folder
+npm run walk -- --check                                     # compare with walk-baseline.json; exit 1 when a journey got worse
+npm run walk -- --update                                    # rewrite walk-baseline.json from this run
+npm run walk -- --journey add-chat-model --width 800 --out "$TMPDIR/walk"
+```
+
+How hard three Settings journeys are, as numbers that can be compared before
+and after a layout change. Each journey starts on the chat page (fixture
+`walk-start`) in a fresh page and is done with real clicks and typing in the
+real `<App/>`; the panel is always 700 px high.
+
+| Journey          | From the chat page to                                                                |
+| ---------------- | ------------------------------------------------------------------------------------ |
+| `reach-mcp-list` | the list of MCP servers in view                                                      |
+| `add-mcp-server` | `npx -y @modelcontextprotocol/server-filesystem /tmp` added and listed in the page   |
+| `add-chat-model` | a model added with an API key (not a real one; the mock answers) and picked for Chat |
+
+What is reported per journey and width:
+
+- **steps**: deliberate actions: a click, a field filled, a selection, a box
+  ticked, a key that commits. Opening Settings is one (the gear is the
+  editor's, so the script sends the message the gear sends). Looking at
+  something is not a step, and neither is a box that is already ticked. A
+  picker that takes a click to open and a click to choose is two.
+- **scroll px**: before each action the control is scrolled into view by the
+  least distance (`scrollIntoView` with `nearest`); what every scrolling box
+  moved is added up over the journey. It is the least a person must scroll,
+  not what they do scroll while looking.
+- **goal y**: the top edge of the journey's goal control on its page as a tall
+  picture would show it. The goal is the MCP list's heading, the control that
+  starts adding a server, and the control that starts adding a model.
+- **tab stops before (in panel)**: how many Tab stops come before the goal in
+  document order (visible, enabled, `tabindex` 0 or more, a radio group once;
+  inside its dialog when it is in a `role="dialog"`), and how many of them are
+  in the same tab panel. This is what `--check` compares as "controls passed".
+- **pointer-only before**: things before the goal that take a click but not
+  the Tab key, guessed from the pointer cursor on an element that neither is
+  nor holds a focusable one (the switches of `ToggleSwitch` are such). Reported,
+  not compared.
+- **files**: how many times a message left the page for an editor file
+  (`harness/walkMock.ts` lists those messages). `config/addLocalWorkspaceBlock`
+  is one: core writes a template and opens it.
+- **ends in**: `page` when the last intent was done in the page; `file` when
+  the journey stops in an editor file the person must edit by hand, with the
+  size of the template core writes (read from core, not copied); `failed` when
+  the layout could not do an intent.
+- **dead ends**: a placeholder the person must replace (`<your-mcp-server>`,
+  `YOUR_API_KEY`, `CHANGEME`) in the file or in a field the journey fills; a
+  field the journey fills that has no label; and an end with nothing new in
+  the page to confirm it.
+
+What it cannot see: whether a label is understood, what a person has to know
+to pick a value, reading and thinking time, anything done in the editor after
+a file opens (writing the YAML, saving it, the folder trust question, approving
+the server's tools), a real provider or MCP server, and a control that is
+clickable without showing the pointer cursor. A journey that ends in a file is
+therefore shorter in steps than it is for a person, which is why a better end
+counts as better whatever the step count says.
+
+`--check` exits 1 when a journey at a width has more steps, more scroll (by
+more than 24 px), more controls passed or more files opened than
+`walk-baseline.json`, or a worse end (page, then file, then failed). It prints
+`improved` lines when a number fell; tighten the baseline with `--update`. It
+is wired into no workflow yet: several Settings layout changes are in flight
+and each would fail it until its map is updated. `--check` is meant for CI
+once they have landed.
+
+**When the layout changes.** A journey (`JOURNEYS` in `src/walk.mjs`) is a list
+of intents such as "go to where MCP servers are"; `src/walkLayout.mjs` maps
+each intent to the actions that do it today. A walk that cannot do an intent
+says which one and why (`add-chat-model: cannot "start adding a model": no
+button "Manage models" in the page`) instead of timing out. Then change only
+the map: point the intent at the new control, by `data-testid` or role and
+name; map it to `[]` when the new layout needs nothing there, or to `null` when
+it cannot be done in the page. Leave the journeys as they are, or the numbers
+stop being comparable. A layout that sends a message the mock has no answer
+for needs one in `harness/walkMock.ts`; `walk.json` lists them as
+`unanswered`. Then `--update`, and say in the pull request what moved.
+
 ### Before and after
 
 ```sh
@@ -207,6 +289,9 @@ starting; disconnect it.
 | `src/diff.mjs`                         | The pure parts of the comparison.                                                       |
 | `src/overflow.mjs`, `overflow.mjs`     | The overflow pass: the measurement, the rules, the baseline, and its command.           |
 | `src/sandbox.mjs`, `sandbox-entry.mjs` | The Windows Sandbox route.                                                              |
+| `src/walk.mjs`, `src/walkLayout.mjs`   | The journeys, what is counted and compared; where each intent is done today.            |
+| `src/walkRun.mjs`, `walk.mjs`          | Drives the journeys in the browser; the command.                                        |
+| `harness/walkMock.ts`                  | The message record and the IDE answers the journeys need.                               |
 
 To add a view: add a fixture in `harness/fixtures.ts`, add it to `src/views.mjs`
 (a test checks the two agree).
@@ -231,5 +316,6 @@ cd bench/screenshots && npm test
 ```
 
 Offline: the command line, the view list, the pixel counting, the file server's
-path check, the browser choice, the overflow rules and baseline comparison, and
-the height rule of `crowded-stack`.
+path check, the browser choice, the overflow rules and baseline comparison, the
+height rule of `crowded-stack`, and the walk's step count, placeholder
+detection and comparison rule.

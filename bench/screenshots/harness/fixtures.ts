@@ -42,6 +42,7 @@ import {
 import { createElement } from "react";
 import type { setupStore } from "@gui/redux/store";
 import { AUDIT_FIXTURES } from "./auditFixtures";
+import { installWalkMock } from "./walkMock";
 
 export type Store = ReturnType<typeof setupStore>;
 export interface FixtureContext {
@@ -937,6 +938,11 @@ export const FIXTURES: Record<string, Fixture> = {
     // after the list has opened
     await new Promise((r) => setTimeout(r, 200));
     server?.scrollIntoView({ block: "start" });
+  },
+  /** Where `npm run walk` starts: the chat page, the same MCP server, and the walk's answers (walkMock.ts) */
+  "walk-start": (ctx) => {
+    installWalkMock(ctx);
+    addMcpServer(ctx);
   },
 };
 

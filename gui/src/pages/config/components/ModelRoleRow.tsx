@@ -72,7 +72,7 @@ export function ModelRoleRow({
         <p className="mt-1 text-xs text-description">{description}</p>
       </div>
       <div className="flex items-center gap-2">
-        <div className="flex-1">
+        <div className="flex-1" data-testid={`model-role-${role}`}>
           <ModelRoleSelector
             displayName={displayName}
             description={description}
