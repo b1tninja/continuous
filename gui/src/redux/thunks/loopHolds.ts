@@ -10,6 +10,7 @@ import {
   approvalHeldResult,
   consumeLoopGrant,
   describeHeldCall,
+  endRunAtQuestionCap,
   FINISH_ITEM_TOOL_NAME,
   HOLD_QUESTION_TOOL_NAME,
   REMIND_ME_TOOL_NAME,
@@ -198,6 +199,8 @@ export function addItemBudgetNote(
  *   question in the inbox and refused for now, so the item goes on (or
  *   reports waiting) and other items run;
  * - in a re-plan turn, which only reads, such a call is refused;
+ * - a call that would be held when the item can hold no more questions ends
+ *   the run as waiting, with one result, and the rest of the reply is not run;
  * - a call repeated LOOP_REPEAT_LIMIT times with no file change between is
  *   refused, and a second refusal ends the run as stuck;
  * - past the item's turn limit, tools that only read are refused.
@@ -236,6 +239,9 @@ export function applyLoopHolds(
   const startLoop = loop;
   const result = policies.map((p): EvaluatedPolicy => {
     if (p.policy === "disabled") return p;
+    // The run ended at an earlier call of this reply: the caller ends the
+    // turn, and this call is cancelled with it
+    if (loop?.current?.questionCap) return p;
     const { toolCallState } = p;
     const name = toolCallState.toolCall.function.name;
     const key = grantKey(name, toolCallState.parsedArgs ?? {});
@@ -327,6 +333,19 @@ export function applyLoopHolds(
       new Date(),
     );
     if (held.ok) loop = held.loop;
+    // No more questions can be held: the run ends here, rather than each
+    // further call being answered with the same refusal
+    if (!held.ok && held.cap && current.kind === "item") {
+      const ended = endRunAtQuestionCap(loop, name);
+      loop = ended.loop;
+      refuse(
+        dispatch,
+        toolCallState.toolCallId,
+        "Question limit reached",
+        ended.result,
+      );
+      return { ...p, policy: "disabled" };
+    }
     refuse(
       dispatch,
       toolCallState.toolCallId,

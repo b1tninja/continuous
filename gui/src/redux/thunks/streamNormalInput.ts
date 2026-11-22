@@ -836,7 +836,8 @@ export const streamNormalInput = createAsyncThunk<
     }
     // Loop mode holds calls that would ask instead of waiting (loopHolds.ts)
     const policies = applyLoopHolds(dispatch, getState, evaluated);
-    // A hold can end the run (a call repeated after it was refused)
+    // A hold can end the run (a call repeated after it was refused, or one
+    // that would ask when no more questions can be held)
     if (getState().session.loop?.current?.report) {
       await dispatch(cancelStream({ loop: "keep" }));
       return;
