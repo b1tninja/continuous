@@ -68,6 +68,47 @@ describe("DecisionTimerCard", () => {
     expect(screen.queryByTestId("timer-idgaf")).toBeNull();
   });
 
+  it("IDGAF has a row too: no ask window, since it never asks, and a delay", async () => {
+    await setup();
+    expect(screen.getByTestId("timer-idgaf-none").textContent).toBe(
+      "Never asks",
+    );
+    const select = screen.getByTestId("headsUp-idgaf") as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => o.value)).toEqual([
+      "0",
+      "5",
+      "10",
+    ]);
+  });
+
+  it("IDGAF's delay shows the value in use: 0 seconds, runs at once, until one is set", async () => {
+    await setup();
+    const select = screen.getByTestId("headsUp-idgaf") as HTMLSelectElement;
+    expect(select.value).toBe("0");
+    expect(select.selectedOptions[0].textContent).toBe("0 s");
+    expect(screen.getByTestId("headsUp-idgaf-state").textContent).toBe(
+      "IDGAF delay: 0 seconds. Every call runs at once.",
+    );
+  });
+
+  it("shows IDGAF's delay from the file, and saves a change with the other windows", async () => {
+    const { saved, store } = await setup({ headsUp: { permissive: 10 } });
+    await pick("headsUp-idgaf", "5");
+    const select = screen.getByTestId("headsUp-idgaf") as HTMLSelectElement;
+    expect(select.selectedOptions[0].textContent).toBe("5 s");
+    expect(screen.getByTestId("headsUp-idgaf-state").textContent).toBe(
+      "IDGAF delay: 5 seconds, for a call a lower level would have asked about or refused. Other calls run at once.",
+    );
+    expect(store.getState().ui.policyExtras.headsUp).toEqual({
+      permissive: 10,
+      idgaf: 5,
+    });
+    expect(saved.at(-1).headsUp).toEqual({ permissive: 10, idgaf: 5 });
+    expect(saved.at(-1).timer).toBeUndefined();
+    await pick("headsUp-idgaf", "0");
+    expect(saved.at(-1).headsUp).toEqual({ permissive: 10 });
+  });
+
   it("starts with everything off", async () => {
     await setup();
     for (const level of ["manual", "cautious", "automatic", "permissive"]) {

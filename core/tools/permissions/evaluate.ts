@@ -31,6 +31,7 @@ import {
   exemptionsFor,
   trustedFetchAllow,
 } from "./evaluateExtras";
+import { levelRunsHeld, wouldHaveSentence } from "./levelText";
 import { parsePermissions, uriToPath } from "./names";
 import { outsideTargetReason } from "./outsideEdits";
 import { onlyReads, planModeVerdict } from "./planMode";
@@ -293,7 +294,7 @@ function holdInPlanMode(
     return result;
   }
   const held = planModeVerdict(result, { readOnly: false });
-  if (callLevel(input) !== "idgaf") return held;
+  if (!levelRunsHeld(callLevel(input))) return held;
   // Another objection is already on record: that one says more
   if (result.idgafOverride) return result;
   return {
@@ -926,8 +927,7 @@ function withWouldHave(
   reason: string | undefined,
   d: { policy: ToolPolicy; reason?: string },
 ): string {
-  const was = d.policy === "disabled" ? "refused" : "asked";
-  return `${reason ?? "Allowed at IDGAF."} Below IDGAF this call would have been ${was}${d.reason ? `: ${d.reason}` : "."}`;
+  return `${reason ?? "Allowed at IDGAF."} ${wouldHaveSentence(d)}`;
 }
 
 function overrideOf(d: {

@@ -16,6 +16,52 @@ export const POLICY_LEVELS: readonly PolicyLevel[] = [
 ];
 
 /**
+ * What each level does with a call something would have asked about or
+ * refused (a rule, a guard, a check, Plan mode's hold). Levels that ask can
+ * have a window for their asks. The top level never asks: it runs the call
+ * and the decision records what it overrode.
+ */
+const LEVEL_TRAITS: Readonly<
+  Record<PolicyLevel, { asks: boolean; runsHeld: boolean }>
+> = {
+  manual: { asks: true, runsHeld: false },
+  cautious: { asks: true, runsHeld: false },
+  automatic: { asks: true, runsHeld: false },
+  permissive: { asks: true, runsHeld: false },
+  idgaf: { asks: false, runsHeld: true },
+};
+
+/** The level can leave a call waiting for the person. */
+export function levelAsks(level: PolicyLevel): boolean {
+  return LEVEL_TRAITS[level].asks;
+}
+
+/**
+ * The level runs a call that a lower level would have asked about or refused,
+ * and records what it overrode. Text that is not a level does not.
+ */
+export function levelRunsHeld(level: unknown): boolean {
+  return (
+    typeof level === "string" &&
+    Object.hasOwn(LEVEL_TRAITS, level) &&
+    LEVEL_TRAITS[level as PolicyLevel].runsHeld
+  );
+}
+
+/**
+ * What a level below the top one would have done with a call the top level
+ * ran: asked about it or refused it, and why. One sentence, the same in the
+ * decision's reason, the audit trail and a heads-up on the call.
+ */
+export function wouldHaveSentence(lower: {
+  policy: string;
+  reason?: string;
+}): string {
+  const was = lower.policy === "disabled" ? "refused" : "asked";
+  return `Below IDGAF this call would have been ${was}${lower.reason ? `: ${lower.reason}` : "."}`;
+}
+
+/**
  * Spellings that are read as a level and never written. 2.14.x called the top
  * level `yolo` (and `IDGAF` on Plan edits and Questions only).
  */

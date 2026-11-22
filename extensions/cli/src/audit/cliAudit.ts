@@ -71,6 +71,11 @@ export interface ApprovalTrace {
     };
     held: { proposed: "allow" | "refuse"; seconds: number };
   };
+  /**
+   * The call was allowed and shown first as a heads-up: the level ran it past
+   * an ask or a refusal and has a window set (askCountdown.ts proposalForRanPast)
+   */
+  headsUp?: boolean;
   /** Loop mode held the call as a question */
   held?: boolean;
   /** The role the tool table applied (core/tools/roleTools.ts) */
@@ -117,18 +122,50 @@ export function setApprovalsAnsweredWithoutAuth(value: boolean): void {
   answeredWithoutAuth = value;
 }
 
+/**
+ * What a rule or guard would have done, for the record, and one more on the
+ * count of calls IDGAF ran past an objection. A heads-up the person declined
+ * keeps the record (the level did decide to run it) and is not counted.
+ */
+function countedWouldHave(
+  trace: ApprovalTrace,
+  approved: boolean,
+): AuditWouldHave | undefined {
+  try {
+    if (!approved && !trace.headsUp) return undefined;
+    const wouldHave = idgafWouldHave(trace);
+    if (wouldHave && approved) noteIdgafObjection();
+    return wouldHave;
+  } catch {
+    // counting never blocks a call
+    return undefined;
+  }
+}
+
+/**
+ * How a heads-up ended, as its own row: the window ran out, or the person
+ * answered inside it (the timer's outcome), or they stopped the countdown and
+ * answered later. A window that ran out is never recorded as their choice.
+ */
+function recordHeadsUpEnd(
+  trail: ReturnType<typeof cliAuditTrail>,
+  callId: string,
+  trace: ApprovalTrace,
+  approved: boolean,
+): void {
+  if (trace.timer) {
+    trail.timerResolved(callId, trace.timer.resolved, trace.timer.held);
+    return;
+  }
+  trail.answer(callId, approved, answeredWithoutAuth ? "system" : "person");
+}
+
 export function recordCliDecision(
   call: { id: string; name: string; arguments: Record<string, unknown> },
   trace: ApprovalTrace,
   result: { approved: boolean; denialMessage?: string },
 ): void {
-  let wouldHave: AuditWouldHave | undefined;
-  try {
-    wouldHave = result.approved ? idgafWouldHave(trace) : undefined;
-    if (wouldHave) noteIdgafObjection();
-  } catch {
-    // counting never blocks a call
-  }
+  const wouldHave = countedWouldHave(trace, result.approved);
   try {
     // --format stream-json reports the decision whether or not the trail is on
     activeStreamJson()?.toolDecision(call, trace, result);
@@ -175,10 +212,12 @@ export function recordCliDecision(
     }
     trail.decision({
       ...base,
-      policy: result.approved ? "allow" : "deny",
+      // A heads-up the person declined was still allowed by the policy
+      policy: result.approved || trace.headsUp ? "allow" : "deny",
       reason: v?.reason ?? idgafLiftedReason(trace) ?? result.denialMessage,
       ...(wouldHave ? { level: "idgaf", wouldHave } : {}),
     });
+    if (trace.headsUp) recordHeadsUpEnd(trail, call.id, trace, result.approved);
   } catch {
     // the audit never blocks a call
   }

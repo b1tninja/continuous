@@ -971,6 +971,11 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
       rule?: string;
       /** The protection that decided, when source is protected-path. */
       protection?: string;
+      /**
+       * The level ran the call past an ask or a refusal: what a lower level
+       * would have decided. A heads-up window set for that level shows it.
+       */
+      idgafOverride?: import("../tools/permissions/evaluate").IdgafOverride;
     },
   ];
   /**
