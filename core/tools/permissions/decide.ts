@@ -61,6 +61,8 @@ export type DecisionSource =
   | "trusted-host"
   | "manual"
   | "tool-setting"
+  // The turn is a Plan turn and the call does not only read (planMode.ts)
+  | "plan-mode"
   | "default";
 
 export interface ToolDecision {

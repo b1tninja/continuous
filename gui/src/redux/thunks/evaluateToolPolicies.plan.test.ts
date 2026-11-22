@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_POLICY_LEVELS } from "core/tools/permissions/policy";
 import { MockIdeMessenger } from "../../context/MockIdeMessenger";
+import { PLAN_MODE_HOLD_REASON } from "core/tools/permissions/planMode";
 import {
   evaluateToolPolicies,
   evaluateToolPolicy,
-  PLAN_MODE_HOLD_REASON,
 } from "./evaluateToolPolicies";
 
 const ASK = "allowedWithPermission" as const;
@@ -202,5 +202,73 @@ describe("a command the parser vouched as only reading, in Plan mode", () => {
     );
     expect(result.policy).toBe(ASK);
     expect(result.source).toBe("plan-mode");
+  });
+});
+
+describe("the hold is core's: the webview says the turn is a Plan turn", () => {
+  async function evaluateIn(mode: "plan" | "agent", reply: any) {
+    const ide = new MockIdeMessenger();
+    const sent: any[] = [];
+    ide.responseHandlers["tools/evaluatePolicy"] = (async (data: any) => {
+      sent.push(data);
+      return reply;
+    }) as any;
+    const result = await evaluateToolPolicy(
+      ide,
+      [mcpTool],
+      call("github_create_issue"),
+      { github_create_issue: ALLOW },
+      { levels: { ...DEFAULT_POLICY_LEVELS, tools: "permissive" } },
+      mode,
+    );
+    return { result, sent };
+  }
+
+  it("tells core, so the engine holds the call and the audit trail has it", async () => {
+    const { sent } = await evaluateIn("plan", { policy: ALLOW });
+    expect(sent[0].planMode).toBe(true);
+    const agent = await evaluateIn("agent", { policy: ALLOW });
+    expect(agent.sent[0].planMode).toBeUndefined();
+  });
+
+  it("shows the verdict core held, with core's reason", async () => {
+    const { result } = await evaluateIn("plan", {
+      policy: ASK,
+      source: "plan-mode",
+      reason: PLAN_MODE_HOLD_REASON,
+    });
+    expect(result).toMatchObject({
+      policy: ASK,
+      source: "plan-mode",
+      reason: "Plan mode asks before anything that changes files or state.",
+    });
+  });
+
+  it("tells the reviewer's handler too, so it is not asked about a call that changes things", async () => {
+    const ide = new MockIdeMessenger();
+    // The tool's own setting asks, and the area is Automatic: open for review
+    ide.responseHandlers["tools/evaluatePolicy"] = async () =>
+      ({ policy: ASK }) as any;
+    const review = vi.fn(async () => ({
+      decision: "ask",
+      by: "rules",
+      ruleSource: "plan-mode",
+      reason: PLAN_MODE_HOLD_REASON,
+    }));
+    ide.responseHandlers["tools/autoReview"] = review as any;
+    const [result] = await evaluateToolPolicies(
+      vi.fn() as any,
+      ide,
+      [mcpTool],
+      [call("github_create_issue")],
+      {},
+      { sessionId: "s", history: { userMessages: [], toolCalls: [] } },
+      { levels: { ...DEFAULT_POLICY_LEVELS, tools: "automatic" } },
+      "plan",
+    );
+    expect(review).toHaveBeenCalledWith(
+      expect.objectContaining({ planMode: true }),
+    );
+    expect(result.policy).toBe(ASK);
   });
 });
