@@ -120,6 +120,10 @@ describe("probeMcpServer over stdio", () => {
     expect(r.notice).toBe(
       "Results from this server are treated as untrusted text.",
     );
+    // What the server calls itself, and the limit the test ran with
+    expect(r.server).toEqual({ name: "mock-stdio", version: "1" });
+    expect(r.timeoutMs).toBe(15_000);
+    expect(r.pathSearched).toBeUndefined();
     const { methods } = recorded();
     expect(methods).toContain("initialize");
     expect(methods).toContain("tools/list");
@@ -221,6 +225,11 @@ describe("probeMcpServer over stdio", () => {
     );
     expect(r.ok).toBe(false);
     expect(r.hints.map((h) => h.code)).toContain("command-not-found");
+    // The PATH the process was given, folder by folder
+    expect(r.pathSearched).toEqual(
+      (process.env.PATH ?? "").split(path.delimiter).filter(Boolean),
+    );
+    expect(r.server).toBeUndefined();
   });
 });
 

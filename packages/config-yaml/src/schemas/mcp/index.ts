@@ -7,7 +7,13 @@ const baseMcpServerSchema = z.object({
   faviconUrl: z.string().optional(),
   sourceFile: z.string().optional(), // Added during loading
   sourceSlug: z.string().optional(), // Added during loading
+  /** Milliseconds the client waits for the server to connect (20 000 when not set). */
   connectionTimeout: z.number().gt(0).optional(),
+  /**
+   * Milliseconds one tool call may take. Not set: `connectionTimeout` when
+   * that is set (as before this key existed), otherwise 60 000.
+   */
+  toolTimeout: z.number().gt(0).optional(),
 });
 
 const stdioMcpServerSchema = baseMcpServerSchema.extend({

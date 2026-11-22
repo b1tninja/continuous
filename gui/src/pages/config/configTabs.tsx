@@ -4,6 +4,7 @@ import {
   CubeIcon,
   DocumentIcon,
   PencilIcon,
+  PuzzlePieceIcon,
   QuestionMarkCircleIcon,
   ShieldCheckIcon,
   WrenchScrewdriverIcon,
@@ -11,6 +12,7 @@ import {
 import { ConfigSection } from "./components/ConfigSection";
 import { ConfigsSection } from "./sections/ConfigsSection";
 import { HelpSection } from "./sections/HelpSection";
+import { McpServersSection } from "./sections/McpServersSection";
 import { ModelsSection } from "./sections/ModelsSection";
 import { PermissionsSection } from "./sections/permissions/PermissionsSection";
 import { RulesSection } from "./sections/RulesSection";
@@ -61,7 +63,17 @@ export const topTabSections: TabSection[] = [
         ),
         icon: <CubeIcon className="h-3 w-3 shrink-0 xs:h-4 xs:w-4" />,
       },
-      // A tab that belongs second, after Models, goes here.
+      {
+        // Second, so nobody scrolls past tools and permissions to reach it
+        id: "mcp",
+        label: "MCP servers",
+        component: (
+          <ConfigSection>
+            <McpServersSection />
+          </ConfigSection>
+        ),
+        icon: <PuzzlePieceIcon className="h-3 w-3 shrink-0 xs:h-4 xs:w-4" />,
+      },
       {
         id: "tools",
         label: "Tools",

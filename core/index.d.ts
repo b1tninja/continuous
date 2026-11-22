@@ -2796,7 +2796,10 @@ type BaseInternalMCPOptions = {
   id: string;
   name: string;
   faviconUrl?: string;
+  /** `connectionTimeout`, in milliseconds */
   timeout?: number;
+  /** `toolTimeout`, in milliseconds: the limit of one tool call */
+  toolTimeout?: number;
   requestOptions?: RequestOptions;
   sourceFile?: string;
   /**

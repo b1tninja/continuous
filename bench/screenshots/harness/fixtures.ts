@@ -16,6 +16,7 @@ import { createLoop, enterWait, stopLoop } from "core/util/loopMode";
 import { addBlockedCall } from "@gui/redux/slices/blockedCallsSlice";
 import { setPolicyLevel } from "@gui/redux/slices/uiSlice";
 import { POLICY_AREAS } from "core/tools/permissions/policy";
+import { McpServerDialog } from "@gui/components/McpServerDialog/McpServerDialog";
 import {
   ModelConfigDialog,
   type ModelConfigTab,
@@ -1008,10 +1009,26 @@ export const FIXTURES: Record<string, Fixture> = {
     ctx.navigate("/config?tab=tools");
     await new Promise((r) => setTimeout(r, 500));
   },
-  /** The same page at its MCP server, with the server's tools listed */
+  /** Settings, MCP servers, at a server with its tools listed (the list lived on the Tools tab before) */
   "settings-tools-mcp": async (ctx) => {
     addMcpServer(ctx);
-    ctx.navigate("/config?tab=tools");
+    (ctx.messenger.responses as any)["mcp/scopes"] = mcpScopes();
+    (ctx.messenger.responses as any)["mcp/list"] = {
+      servers: [
+        {
+          name: "github",
+          scope: "user",
+          file: MCP_USER_FILE,
+          transport: "stdio",
+          target: "github-mcp-server",
+          secrets: [],
+          envNames: [],
+          headerNames: [],
+        },
+      ],
+      problems: [],
+    };
+    ctx.navigate("/config?tab=mcp");
     await new Promise((r) => setTimeout(r, 500));
     const server = document.querySelector("[data-testid=mcp-server-github]");
     (
@@ -1984,3 +2001,286 @@ function statusRowScene(store: Store): void {
     }),
   );
 }
+
+// ---- Settings, MCP servers, and the Add / Edit dialog ----
+
+const MCP_USER_FILE = String.raw`C:\Users\dev\.continuous\config.yaml`;
+const MCP_FOLDER = String.raw`D:\code\shop-frontend`;
+const MCP_FOLDER_DIR = String.raw`D:\code\shop-frontend\.continuous\mcpServers`;
+
+function mcpScopes(trust: "trusted" | "untrusted" | "none" = "trusted") {
+  return {
+    user: { file: MCP_USER_FILE, exists: true },
+    folders: [
+      {
+        dir: MCP_FOLDER,
+        name: "shop-frontend",
+        mcpDir: MCP_FOLDER_DIR,
+        trust,
+      },
+    ],
+    secretStore: {
+      kind: "secure",
+      envFile: String.raw`C:\Users\dev\.continuous\.env`,
+    },
+    defaults: {
+      connectionTimeoutMs: 20_000,
+      probeTimeoutMs: 20_000,
+      toolCallTimeoutMs: 60_000,
+      inheritedEnv: [
+        "PATH",
+        "HOME",
+        "USER",
+        "USERPROFILE",
+        "LOGNAME",
+        "USERNAME",
+      ],
+      cwd: MCP_FOLDER,
+    },
+  };
+}
+
+/** Servers of both places, one that failed to start and one this page cannot write. */
+function addMcpServersOfBothScopes(ctx: FixtureContext): void {
+  addMcpServer(ctx);
+  const { messenger } = ctx;
+  const info: any = structuredClone(
+    messenger.responses["config/getSerializedProfileInfo"],
+  );
+  const blank = {
+    errors: [],
+    infos: [],
+    prompts: [],
+    resources: [],
+    resourceTemplates: [],
+    tools: [],
+  };
+  info.result.config.mcpServerStatuses = [
+    { ...info.result.config.mcpServerStatuses[0], configSource: "user" },
+    {
+      ...blank,
+      id: "shop-database",
+      name: "shop-database",
+      type: "stdio",
+      command: "uvx",
+      args: ["mcp-server-postgres", "--read-only"],
+      status: "connected",
+      configSource: "workspace",
+      sourceFile: `${MCP_FOLDER_DIR}\\shop-database.yaml`,
+    },
+    {
+      ...blank,
+      id: "design-tokens",
+      name: "design-tokens",
+      type: "stdio",
+      command: "npx",
+      args: ["-y", "@acme/design-tokens-mcp"],
+      status: "error",
+      errors: [
+        'Failed to connect to "design-tokens"\nError: command "npx" not found',
+      ],
+      configSource: "user",
+    },
+    {
+      ...blank,
+      id: "sentry",
+      name: "sentry",
+      url: "https://mcp.sentry.dev/mcp",
+      status: "connected",
+      configSource: "user",
+      sourceFile: String.raw`C:\Users\dev\.continuous\mcpServers\claude_desktop_config.json`,
+    },
+  ];
+  messenger.responses["config/getSerializedProfileInfo"] = info;
+  sendConfig(messenger);
+  const listing = (
+    name: string,
+    scope: "user" | "project",
+    file: string,
+    target: string,
+  ) => ({
+    name,
+    scope,
+    file,
+    transport: "stdio",
+    ...(scope === "project" ? { folder: MCP_FOLDER } : {}),
+    target,
+    secrets: [],
+    envNames: [],
+    headerNames: [],
+  });
+  (messenger.responses as any)["mcp/list"] = {
+    servers: [
+      listing("github", "user", MCP_USER_FILE, "github-mcp-server"),
+      listing(
+        "design-tokens",
+        "user",
+        MCP_USER_FILE,
+        "npx -y @acme/design-tokens-mcp",
+      ),
+      listing(
+        "shop-database",
+        "project",
+        `${MCP_FOLDER_DIR}\\shop-database.yaml`,
+        "uvx mcp-server-postgres --read-only",
+      ),
+    ],
+    problems: [],
+  };
+  (messenger.responses as any)["mcp/scopes"] = mcpScopes();
+}
+
+/** The Add dialog with a command server filled in, as after a paste. */
+async function openMcpDialog(
+  { store, messenger, navigate }: FixtureContext,
+  mode: object = {
+    kind: "add",
+    prefillName: "filesystem",
+    prefill: {
+      name: "filesystem",
+      transport: "stdio",
+      command: "npx",
+      args: [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        String.raw`D:\code\shop-frontend\docs and notes`,
+      ],
+      env: [{ name: "GITHUB_TOKEN", value: "", secret: true }],
+    },
+  },
+): Promise<void> {
+  (messenger.responses as any)["mcp/list"] = { servers: [], problems: [] };
+  (messenger.responses as any)["mcp/scopes"] = mcpScopes("none");
+  (messenger.responses as any)["mcp/analyzeLaunch"] = {
+    analysis: { findings: [], blocked: false, display: "" },
+    expired: false,
+  };
+  navigate("/config?tab=mcp");
+  await sleep(300);
+  store.dispatch(setShowDialog(true));
+  store.dispatch(
+    setDialogMessage(
+      createElement(McpServerDialog, {
+        mode: mode as never,
+        onDone: () => {},
+        onCancel: () => {},
+      }),
+    ),
+  );
+  await sleep(300);
+  // "For all my projects"
+  (
+    document.querySelector(
+      "[data-testid=mcp-scope] input[type=radio]",
+    ) as HTMLElement
+  )?.click();
+  await sleep(100);
+}
+
+const MCP_FIXTURES: Record<string, Fixture> = {
+  /** Settings, MCP servers: servers of both places */
+  "settings-mcp": async (ctx) => {
+    addMcpServersOfBothScopes(ctx);
+    ctx.navigate("/config?tab=mcp");
+    await sleep(500);
+  },
+  /** The same with a folder whose servers are not trusted */
+  "settings-mcp-untrusted": async (ctx) => {
+    addMcpServersOfBothScopes(ctx);
+    (ctx.messenger.responses as any)["mcp/scopes"] = mcpScopes("untrusted");
+    ctx.navigate("/config?tab=mcp");
+    await sleep(500);
+  },
+  /** Settings, MCP servers, with none */
+  "settings-mcp-empty": async (ctx) => {
+    (ctx.messenger.responses as any)["mcp/list"] = {
+      servers: [],
+      problems: [],
+    };
+    (ctx.messenger.responses as any)["mcp/scopes"] = mcpScopes("none");
+    ctx.navigate("/config?tab=mcp");
+    await sleep(500);
+  },
+  /** The Add dialog, basic part */
+  "mcp-dialog": (ctx) => openMcpDialog(ctx),
+  /** The Add dialog with Advanced open, scrolled to it */
+  "mcp-dialog-advanced": async (ctx) => {
+    await openMcpDialog(ctx);
+    const toggle = document.querySelector(
+      "[data-testid=mcp-server-dialog] button[aria-expanded]",
+    ) as HTMLElement;
+    toggle?.click();
+    await sleep(150);
+    toggle?.scrollIntoView({ block: "start" });
+  },
+  /** The Add dialog for a remote server, Advanced open */
+  "mcp-dialog-url": async (ctx) => {
+    await openMcpDialog(ctx, {
+      kind: "add",
+      prefillName: "linear",
+      prefill: {
+        name: "linear",
+        transport: "http",
+        autoTransport: true,
+        url: "https://mcp.linear.app/mcp",
+        headers: [{ name: "Authorization", value: "", secret: true }],
+      },
+    });
+    const toggle = document.querySelector(
+      "[data-testid=mcp-server-dialog] button[aria-expanded]",
+    ) as HTMLElement;
+    toggle?.click();
+    await sleep(150);
+    toggle?.scrollIntoView({ block: "start" });
+  },
+  /** The Add dialog after a Test that failed: the command was not found */
+  "mcp-dialog-failed-test": async (ctx) => {
+    (ctx.messenger.responses as any)["mcp/probe"] = {
+      ran: true,
+      result: {
+        ok: false,
+        status: "error",
+        durationMs: 180,
+        timeoutMs: 20_000,
+        transport: "stdio",
+        tools: [],
+        resources: [],
+        prompts: [],
+        errors: ['Failed to connect to "filesystem"\nError: spawn npx ENOENT'],
+        infos: [],
+        stderr: { lines: [], truncated: false },
+        hints: [
+          {
+            code: "install-node",
+            text: "`npx` was not found. Install Node.js (it includes npx), then restart your editor so the PATH is refreshed.",
+            link: "https://docs.npmjs.com/downloading-and-installing-node-js-and-npm",
+          },
+        ],
+        needsSignIn: false,
+        notice: "",
+        pathSearched: [
+          String.raw`C:\Windows\system32`,
+          String.raw`C:\Windows`,
+          String.raw`C:\Program Files\Git\cmd`,
+        ],
+      },
+    };
+    await openMcpDialog(ctx);
+    (document.querySelector("[data-testid=mcp-test]") as HTMLElement)?.click();
+    await sleep(200);
+    (
+      document.querySelector("[data-testid=mcp-confirm-run-yes]") as HTMLElement
+    )?.click();
+    await sleep(300);
+    document
+      .querySelector("[data-testid=mcp-test-result]")
+      ?.scrollIntoView({ block: "end" });
+  },
+  /** The Add dialog asking before it runs the command */
+  "mcp-dialog-confirm-run": async (ctx) => {
+    await openMcpDialog(ctx);
+    (document.querySelector("[data-testid=mcp-test]") as HTMLElement)?.click();
+    await sleep(200);
+  },
+};
+Object.assign(FIXTURES, MCP_FIXTURES);

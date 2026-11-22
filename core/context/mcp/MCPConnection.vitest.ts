@@ -183,6 +183,16 @@ describe("MCPConnection", () => {
       );
     });
 
+    it.runIf(process.platform === "win32")(
+      "should return a Windows drive path unchanged",
+      async () => {
+        const conn = new MCPConnection(baseOptions);
+
+        const dir = String.raw`C:\tools\server`;
+        await expect((conn as any).resolveCwd(dir)).resolves.toBe(dir);
+      },
+    );
+
     // A POSIX file: URI is not an absolute path on Windows
     it.skipIf(process.platform === "win32")(
       "should resolve relative cwd using IDE workspace",

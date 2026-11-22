@@ -631,7 +631,8 @@ The [Model Context Protocol](https://modelcontextprotocol.io/introduction) is a 
   - `clientId`: Client id of an OAuth client you registered with the server's authorization server. When set, dynamic client registration is not used.
   - `clientSecret`: Secret of that client, if it has one. Write it as `${{ secrets.NAME }}`, never inline.
   - `redirectHost`: Host name in the redirect URL, `localhost` (default) or `127.0.0.1`. The local server listens on loopback addresses only either way.
-- `connectionTimeout`: Optional timeout for _initial_ connection to MCP server
+- `connectionTimeout`: How long to wait for the server to connect, in milliseconds. Not set: 20000 (20 seconds).
+- `toolTimeout`: How long one tool call may take, in milliseconds. Not set: tool calls follow `connectionTimeout` when you set that one, and otherwise may take 60000 (60 seconds). Set it when a tool is slow and you do not want to wait as long for the connection, for example `connectionTimeout: 20000` with `toolTimeout: 300000`.
 
 **Example:**
 

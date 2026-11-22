@@ -8,6 +8,7 @@ import {
   vscBackground,
   vscForeground,
 } from "..";
+import { dialogMayClose } from "./closeGuard";
 
 interface TextDialogProps {
   showDialog: boolean;
@@ -41,9 +42,13 @@ const DialogContainer = styled.div`
 `;
 
 const TextDialog = (props: TextDialogProps) => {
+  // A dialog with unsaved input may ask first (closeGuard.ts)
+  const requestClose = () => {
+    if (dialogMayClose()) props.onClose();
+  };
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === "Escape") {
-      props.onClose();
+      requestClose();
     }
   };
 
@@ -53,7 +58,7 @@ const TextDialog = (props: TextDialogProps) => {
 
   return (
     <ScreenCover
-      onClick={props.onClose}
+      onClick={requestClose}
       hidden={!props.showDialog}
       onKeyDown={handleKeyDown}
       tabIndex={-1}
@@ -64,7 +69,7 @@ const TextDialog = (props: TextDialogProps) => {
           e.stopPropagation();
         }}
       >
-        <CloseButton onClick={props.onClose} aria-label="Close">
+        <CloseButton onClick={requestClose} aria-label="Close">
           <XMarkIcon className="z-50 h-5 w-5 hover:brightness-125" />
         </CloseButton>
 

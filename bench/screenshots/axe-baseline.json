@@ -148,6 +148,14 @@
     "tall-question": {
       "color-contrast": 14,
       "scrollable-region-focusable": 1
-    }
+    },
+    "mcp-dialog": {},
+    "mcp-dialog-advanced": {},
+    "mcp-dialog-confirm-run": {},
+    "mcp-dialog-failed-test": {},
+    "mcp-dialog-url": {},
+    "settings-mcp": {},
+    "settings-mcp-empty": {},
+    "settings-mcp-untrusted": {}
   }
 }

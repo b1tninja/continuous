@@ -29,6 +29,11 @@ export interface McpServerLocations {
   configPath: string;
   /** The project folder; its `.continuous/mcpServers` is read. */
   projectDir?: string;
+  /**
+   * The person's own block folder (`~/.continuous/mcpServers`). Its YAML
+   * files are listed as "user" when given; the CLI does not pass it.
+   */
+  globalMcpDir?: string;
 }
 
 export interface McpServerListing {
@@ -120,8 +125,7 @@ function listingsOf(
   return out;
 }
 
-function projectFiles(projectDir: string): string[] {
-  const dir = projectMcpServerDir(projectDir);
+function blockFiles(dir: string): string[] {
   try {
     return fs
       .readdirSync(dir)
@@ -142,8 +146,15 @@ export function listMcpServers(loc: McpServerLocations): McpServerList {
     if (user.error) problems.push(`${loc.configPath} ${user.error}`);
     servers.push(...listingsOf(user.config, "user", loc.configPath));
   }
+  if (loc.globalMcpDir) {
+    for (const file of blockFiles(loc.globalMcpDir)) {
+      const block = readYaml(file);
+      if (block.error) problems.push(`${file} ${block.error}`);
+      servers.push(...listingsOf(block.config, "user", file));
+    }
+  }
   if (loc.projectDir) {
-    for (const file of projectFiles(loc.projectDir)) {
+    for (const file of blockFiles(projectMcpServerDir(loc.projectDir))) {
       const project = readYaml(file);
       if (project.error) problems.push(`${file} ${project.error}`);
       servers.push(...listingsOf(project.config, "project", file));
@@ -225,8 +236,18 @@ export function removeMcpServer(
       matches,
     };
   }
-  const target = matches[0];
-  if (target.scope === "project") {
+  return removeListedMcpServer(matches[0], loc.configPath);
+}
+
+/**
+ * Remove the server of one listing from its file. A block file that held
+ * only this server is deleted; the main config.yaml never is.
+ */
+export function removeListedMcpServer(
+  target: McpServerListing,
+  configPath: string,
+): RemoveMcpServerResult {
+  if (path.resolve(target.file) !== path.resolve(configPath || ".")) {
     const { config } = readYaml(target.file);
     if ((config?.mcpServers ?? []).length <= 1) {
       try {
@@ -241,13 +262,15 @@ export function removeMcpServer(
       return {
         ok: true,
         file: target.file,
-        scope: "project",
+        scope: target.scope,
         fileDeleted: true,
         secrets: target.secrets,
       };
     }
   }
-  const edit = editConfigYamlFile(target.file, (c) => withoutServer(c, name));
+  const edit = editConfigYamlFile(target.file, (c) =>
+    withoutServer(c, target.name),
+  );
   if (!edit.ok) return { ok: false, reason: "write", error: edit.error };
   return {
     ok: true,
