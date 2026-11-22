@@ -113,7 +113,7 @@ The `models` section defines the language models used in your configuration. Mod
 - `defaultCompletionOptions`: Default completion options for model settings.
 
   - `contextLength`: Maximum context length of the model, typically in tokens.
-  - `maxTokens`: Maximum number of tokens to generate in a completion.
+  - `maxTokens`: Maximum number of tokens to generate in a completion. Not set: the provider's or the published limit for the model, at most a quarter of the context window, and 4,096 when no limit is known. A server on this machine or network that takes OpenAI-style requests, with no known limit, is sent none and decides for itself.
   - `temperature`: Controls the randomness of the completion. Values range from `0.0` (deterministic) to `1.0` (random).
   - `topP`: The cumulative probability for nucleus sampling.
   - `topK`: Maximum number of tokens considered at each step.

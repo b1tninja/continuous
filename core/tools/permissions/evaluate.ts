@@ -33,6 +33,7 @@ import {
 } from "./evaluateExtras";
 import { parsePermissions, uriToPath } from "./names";
 import { outsideTargetReason } from "./outsideEdits";
+import { onlyReads, planModeVerdict } from "./planMode";
 import { builtinRuleOn } from "./policy";
 import type { ProtectedHit, ProtectedKind } from "./protected";
 import { findProtected } from "./protectedCall";
@@ -209,6 +210,16 @@ export interface EvaluateInput extends TaintedSessionInput, WebEvaluateInput {
    * config file and nothing else.
    */
   envNames?: EnvNameOptions;
+  /**
+   * The turn is a Plan turn: a call that would run waits for the person
+   * unless it only reads (planMode.ts). Every surface sets it from its mode.
+   */
+  planMode?: boolean;
+  /**
+   * The surface's word that the tool only reads, for a caller whose `tool`
+   * carries no `readonly` flag (the CLI's tools). Read in Plan mode only.
+   */
+  readOnlyTool?: boolean;
   /** Path syntax to judge file paths by; the host's when absent. Tests set it. */
   platform?: "win32" | "posix";
   /** The home folder; the host's when absent. Tests set it. */
@@ -222,7 +233,8 @@ export interface EvaluateInput extends TaintedSessionInput, WebEvaluateInput {
  * IDGAF on the call's area every call runs (idgafRunsEverything). The
  * secret-read plus network pair asks below IDGAF and runs at IDGAF, unless
  * the person turned safety checks on, in which case IDGAF refuses it
- * (applySecretEgressRule, the last step).
+ * (applySecretEgressRule). In a Plan turn a call all of that would run waits
+ * unless it only reads (holdInPlanMode, the last step).
  */
 export function evaluateToolPolicyWithRules(
   input: EvaluateInput,
@@ -243,13 +255,56 @@ export function evaluateToolPolicyWithRules(
       ),
     ),
   );
-  return applyShellHints(
+  return holdInPlanMode(
     input,
-    annotateExemptions(
+    applyShellHints(
       input,
-      applySecretEgressRule(input, result, () => callLevel(input) === "idgaf"),
+      annotateExemptions(
+        input,
+        applySecretEgressRule(
+          input,
+          result,
+          () => callLevel(input) === "idgaf",
+        ),
+      ),
     ),
   );
+}
+
+/**
+ * Plan mode, after everything else: whatever would have run the call (the
+ * tool's setting, a level, the person's allow rule), it waits unless it only
+ * reads. IDGAF runs it, as it runs everything, and the decision records that
+ * Plan mode would have asked.
+ */
+function holdInPlanMode(
+  input: EvaluateInput,
+  result: ToolPolicyResult,
+): ToolPolicyResult {
+  if (!input.planMode || result.policy !== "allowedWithoutPermission") {
+    return result;
+  }
+  const call = {
+    parsedArgs: input.parsedArgs,
+    cwd: input.cwd,
+    shell: input.shell,
+  };
+  if (input.readOnlyTool || onlyReads(input.toolName, input.tool, call)) {
+    return result;
+  }
+  const held = planModeVerdict(result, { readOnly: false });
+  if (callLevel(input) !== "idgaf") return held;
+  // Another objection is already on record: that one says more
+  if (result.idgafOverride) return result;
+  return {
+    ...result,
+    reason: withWouldHave(result.reason, held),
+    idgafOverride: overrideOf({
+      policy: held.policy,
+      source: held.source,
+      reason: held.reason,
+    }),
+  };
 }
 
 /**

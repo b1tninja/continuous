@@ -6,7 +6,9 @@ import type {
   ModelBlockInfo,
 } from "core/config/modelEdit/modelBlockEdit";
 import {
+  applyModelPatch,
   DEFAULT_ROLES,
+  fieldFor,
   getPath,
   MODEL_EDIT_FIELDS,
   MODEL_ROLES,
@@ -18,6 +20,14 @@ import {
   type ModelPatchOp,
   type TriState,
 } from "core/config/modelEdit/modelEditFields";
+import {
+  resolvedCapability,
+  resolvedValue,
+  resolveModelEntry,
+  valueText,
+  type ModelLayers,
+  type ResolvedValue,
+} from "core/config/modelEdit/valueState";
 import { defaultSecretName } from "core/config/providerSecretName";
 import { modelSupportsNativeTools } from "core/llm/toolSupport";
 import { formatPriceSource } from "core/llm/utils/priceSourceText";
@@ -29,6 +39,9 @@ import type { Suggestion } from "core/util/suggestedSettings";
 import { providerRecoversText } from "core/util/toolDialectLeak";
 import { useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ContextLengthControl } from "./ContextLengthControl";
+import { notSetContext } from "./modelFacts";
+import { ModelOverview, restFields } from "./ModelOverview";
+import { ValueState } from "./ValueState";
 import { IdeMessengerContext } from "../../context/IdeMessenger";
 import { BedrockConnectionTester } from "../../forms/BedrockConnectionTester";
 import { FormSelect } from "../../forms/FormSelect";
@@ -39,6 +52,7 @@ import {
   fieldError,
   formFromBlock,
   formToOps,
+  fromInput,
   headerIsSensitive,
   mergeOps,
   overrideValue,
@@ -67,9 +81,11 @@ import {
 } from "./toolPreview";
 import { useFocusTrap } from "./useFocusTrap";
 
-type Tab = ModelEditSection | "advanced";
+export type ModelConfigTab = ModelEditSection | "overview" | "advanced";
+type Tab = ModelConfigTab;
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: "overview", label: "Overview" },
   { id: "connection", label: "Connection" },
   { id: "capabilities", label: "Capabilities" },
   { id: "generation", label: "Generation" },
@@ -79,11 +95,13 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 const inputClass =
-  "w-full rounded-default border border-solid border-input-border bg-input px-2 py-1 text-xs text-input-foreground placeholder:text-input-placeholder focus:outline focus:outline-1 focus:outline-border-focus aria-[invalid=true]:border-error";
+  "box-border w-full rounded-default border border-solid border-input-border bg-input px-2 py-1 text-xs text-input-foreground placeholder:text-input-placeholder focus:outline focus:outline-1 focus:outline-border-focus aria-[invalid=true]:border-error";
 
 /** Which tab shows the field at this path (for jumping to an error). */
 function tabOf(key: string): Tab {
-  if (key === "capabilities") return "capabilities";
+  if (key === "capabilities" || key.startsWith("capabilities.")) {
+    return "capabilities";
+  }
   if (key === "apiKey" || key.startsWith("requestOptions.headers")) {
     return "connection";
   }
@@ -122,6 +140,16 @@ interface Props {
   onCancel: () => void;
   /** Open the file the model is defined in. */
   onOpenFile: () => void;
+  /** The tab shown first. The Overview, unless a caller wants another. */
+  initialTab?: ModelConfigTab;
+}
+
+/** Where the control that sets a key is: the element to focus after a jump. */
+function controlId(key: string): string {
+  if (key === "contextLength") return "context-length-number";
+  if (key === "capabilities.tools") return "mc-tools";
+  if (key === "capabilities.images") return "mc-images";
+  return `mc-${key.replace(/\./g, "-")}`;
 }
 
 /**
@@ -135,6 +163,7 @@ export function ModelConfigDialog({
   onDone,
   onCancel,
   onOpenFile,
+  initialTab = "overview",
 }: Props) {
   const ideMessenger = useContext(IdeMessengerContext);
   const titleId = useId();
@@ -148,7 +177,11 @@ export function ModelConfigDialog({
   const [loadError, setLoadError] = useState<string>();
   const [initial, setInitial] = useState<ModelForm>();
   const [form, setForm] = useState<ModelForm>();
-  const [tab, setTab] = useState<Tab>("connection");
+  const [tab, setTab] = useState<Tab>(initialTab);
+  /** The control to focus once its tab is shown (Set on the Overview). */
+  const [jump, setJump] = useState<string>();
+  /** The server was asked for its window from the Overview, and answered. */
+  const [asked, setAsked] = useState<"asking" | "answered">();
   const [errors, setErrors] = useState<Record<string, string>>({});
   /** Error keys that came from the Advanced tab's text, shown there. */
   const [yamlErrorKeys, setYamlErrorKeys] = useState<Set<string>>(new Set());
@@ -198,8 +231,19 @@ export function ModelConfigDialog({
 
   const ready = form !== undefined;
   useEffect(() => {
-    if (ready) tabRefs.current.connection?.focus();
-  }, [ready]);
+    if (ready) tabRefs.current[initialTab]?.focus();
+  }, [ready, initialTab]);
+
+  useEffect(() => {
+    if (!jump) return;
+    const control = rootRef.current?.querySelector<HTMLElement>(
+      `[id="${controlId(jump)}"]`,
+    );
+    if (!control) return;
+    control.focus();
+    control.scrollIntoView?.({ block: "center" });
+    setJump(undefined);
+  }, [jump, tab]);
 
   // Ask the model's server what window it lists; quietly nothing when it
   // does not say or the model has no OpenAI-style listing
@@ -230,6 +274,77 @@ export function ModelConfigDialog({
 
   const provider = String(form?.fields.provider || loaded?.provider || "");
   const modelId = String(form?.fields.model || loaded?.model || "");
+
+  // The layers as the file has them, then with the form's changes on top:
+  // every state below is what a save of this form would make true
+  const context = useMemo(() => {
+    const saved = info?.entry
+      ? (resolveModelEntry({ entry: info.entry, ...info.layers }) ?? info.entry)
+      : undefined;
+    return notSetContext(provider, modelId, loaded, saved);
+  }, [info, loaded, provider, modelId]);
+  const layers: ModelLayers | undefined = useMemo(() => {
+    if (!info?.entry || !form || !initial) return undefined;
+    const built = formToOps(initial, form).ops;
+    const ops = info.catalog
+      ? built.filter((op) => pathKey(op.path) === "contextLength")
+      : built;
+    return {
+      entry: applyModelPatch(info.entry, ops).entry,
+      entryFile: info.file,
+      ...info.layers,
+    };
+  }, [info, form, initial]);
+
+  function stateOf(key: string): ResolvedValue {
+    const field = fieldFor(key.split("."))!;
+    const state = resolvedValue(field, layers ?? { entry: {} }, context);
+    // A typed value that does not validate is not in the layers, but it is
+    // still what the person set: say so, next to its error
+    const typed =
+      field.kind === "secretRef" || !form
+        ? undefined
+        : fromInput(field, form.fields[key]);
+    if (typed === undefined || state.setByUser) return state;
+    const text = valueText(field, typed);
+    return {
+      value: typed,
+      valueText: text,
+      sourceKind: "user",
+      source: "set by you",
+      setByUser: true,
+      detail: text,
+      sentence: `Set by you: ${text}`,
+    };
+  }
+  /** Reset: the input goes back to empty, so the save removes the key. */
+  function reset(key: string) {
+    const field = fieldFor(key.split("."));
+    if (!field) return;
+    update(
+      key,
+      key === "roles" ? null : field.kind === "boolean" ? "default" : "",
+    );
+  }
+  /** Go: open the file of the layer an inherited value comes from. */
+  function goFor(state: ResolvedValue) {
+    const file = state.setByUser ? undefined : state.whereSet?.file;
+    return file
+      ? () => ideMessenger.post("openFile", { path: file })
+      : undefined;
+  }
+  function askServer() {
+    setAsked("asking");
+    void ideMessenger
+      .request("models/listedLimits", { title })
+      .then((res) => {
+        if (res.status === "success" && res.content.ok && res.content.limits) {
+          setListed(res.content.limits);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setAsked("answered"));
+  }
 
   function update(key: string, value: string | string[] | null) {
     setForm((f) => f && { ...f, fields: { ...f.fields, [key]: value } });
@@ -424,7 +539,7 @@ export function ModelConfigDialog({
 
   const header = (
     <div className="flex flex-col gap-1">
-      <h2 id={titleId} className="m-0 text-base">
+      <h2 id={titleId} className="m-0 pr-6 text-base break-words">
         Configure {title}
       </h2>
       {info?.file && (
@@ -461,25 +576,90 @@ export function ModelConfigDialog({
   } else if (!form || !info) {
     body = <p className="m-0 text-sm">Loading...</p>;
   } else {
-    const fieldProps = { form, errors, update, provider, entry: info.entry };
+    const fieldProps = {
+      form,
+      errors,
+      update,
+      provider,
+      entry: info.entry,
+      stateOf,
+      reset,
+      goFor,
+    };
+    const tools = resolvedCapability(
+      "tool_use",
+      layers ?? { entry: {} },
+      context,
+    );
+    const images = resolvedCapability(
+      "image_input",
+      layers ?? { entry: {} },
+      context,
+    );
+    const visible = (
+      [
+        "connection",
+        "capabilities",
+        "generation",
+        "templates",
+        "context",
+      ] as const
+    ).flatMap((section) => visibleFields(section, provider, info.entry));
+    const assumedWindow = (
+      <AssumedWindow
+        asked={asked}
+        listed={listed}
+        onAsk={askServer}
+        onUse={(n) => update(CONTEXT_KEY, String(n))}
+      />
+    );
+    const connectionTest = (
+      <ConnectionTest
+        form={form}
+        loaded={loaded}
+        provider={provider}
+        modelId={modelId}
+        title={title}
+        update={update}
+        applySuggestions={applySuggestions}
+      />
+    );
     body = (
       <>
         {review ? (
           <ReviewPanel diff={review.diff} stores={review.stores} />
         ) : info.catalog ? (
-          <CatalogContext
-            form={form}
-            update={update}
-            error={errors.contextLength}
-            published={loaded?.contextLength}
-            source={loaded?.contextLengthSource}
-          />
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+            <CatalogContext
+              form={form}
+              update={update}
+              error={errors.contextLength}
+              published={loaded?.contextLength}
+              source={loaded?.contextLengthSource}
+              state={stateOf(CONTEXT_KEY)}
+              onGo={goFor(stateOf(CONTEXT_KEY))}
+            />
+            <ModelOverview
+              source={{
+                stateOf,
+                tools,
+                images,
+                goFor,
+                // Only the window is written on a catalog entry
+                editable: (key) => key === CONTEXT_KEY,
+                onSet: setJump,
+                onReset: reset,
+              }}
+              rest={restFields(visible)}
+              assumedWindow={assumedWindow}
+            />
+          </div>
         ) : (
           <>
             <div
               role="tablist"
               aria-label="Model settings"
-              className="flex flex-wrap gap-1 border-0 border-b border-solid border-border"
+              className="flex shrink-0 flex-wrap gap-1 border-0 border-b border-solid border-border"
             >
               {TABS.map((t, i) => (
                 <button
@@ -516,8 +696,30 @@ export function ModelConfigDialog({
               role="tabpanel"
               id={`${titleId}-panel-${tab}`}
               aria-labelledby={`${titleId}-tab-${tab}`}
-              className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto pr-1"
+              className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1"
             >
+              {tab === "overview" && (
+                <ModelOverview
+                  source={{
+                    stateOf,
+                    tools,
+                    images,
+                    goFor,
+                    onReset: reset,
+                    onSet: (key) => {
+                      setTab(tabOf(key));
+                      setJump(key);
+                    },
+                  }}
+                  rest={restFields(visible)}
+                  assumedWindow={assumedWindow}
+                >
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-medium">Test connection</span>
+                    {connectionTest}
+                  </div>
+                </ModelOverview>
+              )}
               {tab === "connection" && (
                 <ConnectionPanel
                   {...fieldProps}
@@ -534,7 +736,20 @@ export function ModelConfigDialog({
                     setErrors(({ [k]: _gone, ...rest }) => rest);
                   }}
                   setHeaders={(headers) => patchForm({ headers })}
-                  applySuggestions={applySuggestions}
+                  accountHeaders={
+                    info.layers?.account
+                      ? {
+                          account: String(info.layers.account.name ?? ""),
+                          names: Object.keys(
+                            (getPath(info.layers.account, [
+                              "requestOptions",
+                              "headers",
+                            ]) as Record<string, unknown> | undefined) ?? {},
+                          ),
+                        }
+                      : undefined
+                  }
+                  connectionTest={connectionTest}
                 />
               )}
               {tab === "capabilities" && (
@@ -542,6 +757,8 @@ export function ModelConfigDialog({
                   {...fieldProps}
                   loaded={loaded}
                   modelId={modelId}
+                  toolsState={tools}
+                  imagesState={images}
                   systemToolsForced={
                     !!config.experimental?.onlyUseSystemMessageTools
                   }
@@ -570,6 +787,8 @@ export function ModelConfigDialog({
                     error={errors.contextLength}
                     published={loaded?.contextLength}
                     source={loaded?.contextLengthSource}
+                    state={stateOf(CONTEXT_KEY)}
+                    onGo={goFor(stateOf(CONTEXT_KEY))}
                   />
                   <ListedWindowNote
                     listed={listed}
@@ -624,7 +843,7 @@ export function ModelConfigDialog({
           </p>
         )}
 
-        <div className="flex justify-end gap-2">
+        <div className="flex shrink-0 justify-end gap-2">
           {review ? (
             <>
               <Button
@@ -669,7 +888,7 @@ export function ModelConfigDialog({
       aria-labelledby={titleId}
       aria-busy={!loadError && !info ? true : undefined}
       tabIndex={-1}
-      className="flex flex-col gap-3 p-4 outline-none"
+      className="box-border flex max-h-[95vh] min-h-0 flex-col gap-3 p-4 outline-none"
       data-testid="model-config-dialog"
     >
       {header}
@@ -734,6 +953,8 @@ function CatalogContext(props: {
   error?: string;
   published?: number;
   source?: ModelDescription["contextLengthSource"];
+  state?: ResolvedValue;
+  onGo?: () => void;
 }) {
   return (
     <div className="flex flex-col gap-2">
@@ -748,7 +969,64 @@ function CatalogContext(props: {
         error={props.error}
         published={props.published}
         source={props.source}
+        state={props.state}
+        onGo={props.onGo}
       />
+    </div>
+  );
+}
+
+/**
+ * Under the Overview's window row when the size is only assumed: ask the
+ * model's server what it lists (the question the dialog asks on opening),
+ * and offer to use the answer.
+ */
+function AssumedWindow({
+  asked,
+  listed,
+  onAsk,
+  onUse,
+}: {
+  asked?: "asking" | "answered";
+  listed?: { contextLength?: number; note?: string };
+  onAsk: () => void;
+  onUse: (tokens: number) => void;
+}) {
+  const reported = listed?.contextLength;
+  return (
+    <div className="flex flex-col gap-1" data-testid="assumed-window">
+      <span className="text-2xs text-description-muted">
+        Set the real size, or ask the server.
+      </span>
+      <div className="flex flex-wrap items-center gap-x-2">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={asked === "asking"}
+          data-testid="ask-server-window"
+          onClick={onAsk}
+        >
+          {asked === "asking" ? "Asking..." : "Ask the server"}
+        </Button>
+        {reported !== undefined && (
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="use-reported-window"
+            onClick={() => onUse(reported)}
+          >
+            Use {reported.toLocaleString()} tokens
+          </Button>
+        )}
+      </div>
+      {asked === "answered" && (
+        <span className="text-2xs text-description-muted" role="status">
+          {reported !== undefined
+            ? (listed?.note ??
+              `The server lists ${reported.toLocaleString()} tokens.`)
+            : "The server did not say how large its window is."}
+        </span>
+      )}
     </div>
   );
 }
@@ -759,6 +1037,12 @@ interface FieldProps {
   update: (key: string, value: string | string[] | null) => void;
   provider: string;
   entry?: Record<string, unknown>;
+  /** The value state of a field, with the form's changes applied. */
+  stateOf: (key: string) => ResolvedValue;
+  /** Empty the input, so a save removes the key. */
+  reset: (key: string) => void;
+  /** Opens the layer an inherited value comes from, when there is a way to. */
+  goFor: (state: ResolvedValue) => (() => void) | undefined;
 }
 
 function FieldList({
@@ -790,6 +1074,9 @@ function FieldInput({
   errors,
   update,
   placeholder,
+  stateOf,
+  reset,
+  goFor,
 }: FieldProps & { field: ModelEditField; placeholder?: string }) {
   const key = pathKey(field.path);
   const id = `mc-${key.replace(/\./g, "-")}`;
@@ -797,10 +1084,15 @@ function FieldInput({
   const error = errors[key] ?? fieldError(field, value);
   const errorId = `${id}-error`;
   const helpId = `${id}-help`;
-  const described =
-    [error ? errorId : "", field.help ? helpId : ""]
-      .filter(Boolean)
-      .join(" ") || undefined;
+  const stateId = `${id}-state`;
+  const state = stateOf(key);
+  const described = [stateId, error ? errorId : "", field.help ? helpId : ""]
+    .filter(Boolean)
+    .join(" ");
+  // The empty choice: the line under the control says what it means
+  const emptyText = state.valueText
+    ? `Not set (${state.valueText})`
+    : "Not set";
   const common = {
     id,
     "aria-invalid": error ? true : undefined,
@@ -812,13 +1104,11 @@ function FieldInput({
     control = (
       <FormSelect
         {...common}
-        className="text-xs"
+        className="box-border text-xs"
         value={(value as BoolChoice) ?? "default"}
         onChange={(e) => update(key, e.target.value)}
       >
-        <option value="default">
-          Default{field.defaultText ? ` (${field.defaultText})` : ""}
-        </option>
+        <option value="default">{emptyText}</option>
         <option value="on">On</option>
         <option value="off">Off</option>
       </FormSelect>
@@ -827,13 +1117,11 @@ function FieldInput({
     control = (
       <FormSelect
         {...common}
-        className="text-xs"
+        className="box-border text-xs"
         value={(value as string) ?? ""}
         onChange={(e) => update(key, e.target.value)}
       >
-        <option value="">
-          Default{field.defaultText ? ` (${field.defaultText})` : ""}
-        </option>
+        <option value="">{emptyText}</option>
         {field.options?.map((o) => (
           <option key={o} value={o}>
             {o}
@@ -850,10 +1138,7 @@ function FieldInput({
         spellCheck={multiline ? undefined : false}
         className={`${inputClass} ${multiline ? "font-mono" : ""}`}
         value={(value as string) ?? ""}
-        placeholder={
-          placeholder ??
-          (field.defaultText ? `Default: ${field.defaultText}` : undefined)
-        }
+        placeholder={placeholder ?? emptyText}
         onChange={(e) => update(key, e.target.value)}
       />
     );
@@ -865,10 +1150,7 @@ function FieldInput({
         inputMode={field.kind === "number" ? "decimal" : undefined}
         className={inputClass}
         value={(value as string) ?? ""}
-        placeholder={
-          placeholder ??
-          (field.defaultText ? `Default: ${field.defaultText}` : undefined)
-        }
+        placeholder={placeholder ?? emptyText}
         onChange={(e) => update(key, e.target.value)}
       />
     );
@@ -880,6 +1162,15 @@ function FieldInput({
         {field.label}
       </label>
       {control}
+      <ValueState
+        id={stateId}
+        testId={`${id}-state`}
+        state={state}
+        label={field.label}
+        // A required key cannot be removed, only changed
+        onReset={field.required ? undefined : () => reset(key)}
+        onGo={goFor(state)}
+      />
       {field.help && (
         <span id={helpId} className="text-2xs text-description-muted">
           {field.help}
@@ -903,20 +1194,13 @@ function ConnectionPanel(
     setKey: (k: KeyChoice) => void;
     setSecret: (key: string, k: KeyChoice) => void;
     setHeaders: (h: HeaderRow[]) => void;
-    applySuggestions: (list: Suggestion[]) => void;
+    /** Headers the provider account sends, by name. */
+    accountHeaders?: { account: string; names: string[] };
+    connectionTest: React.ReactNode;
   },
 ) {
-  const { form, info, loaded, provider, modelId, title } = props;
+  const { form, info, provider } = props;
   const connection = info.entry?.connection;
-  const apiBase = String(form.fields.apiBase || "") || undefined;
-  const typedKey =
-    form.key.mode === "secret" && form.key.value ? form.key.value : undefined;
-  // The key the loaded model already uses; an unresolved reference is no key.
-  const loadedKey =
-    loaded?.apiKey && !loaded.apiKey.includes("${{")
-      ? loaded.apiKey
-      : undefined;
-  const isBedrock = provider === "bedrock" || provider === "bedrock-mantle";
   const secretFields = SECRET_FIELDS.filter(
     (f) =>
       !f.providers ||
@@ -942,6 +1226,8 @@ function ConnectionPanel(
         choice={form.key}
         error={props.errors.apiKey}
         onChange={props.setKey}
+        notSet={props.stateOf("apiKey").sentence}
+        id="mc-apiKey"
       />
       {secretFields.map((f) => {
         const k = pathKey(f.path);
@@ -957,6 +1243,8 @@ function ConnectionPanel(
             choice={form.secrets[k] ?? { mode: "keep" }}
             error={props.errors[k]}
             onChange={(c) => props.setSecret(k, c)}
+            notSet={props.stateOf(k).sentence}
+            id={`mc-${k.replace(/\./g, "-")}`}
           />
         );
       })}
@@ -964,50 +1252,89 @@ function ConnectionPanel(
         rows={form.headers}
         errors={props.errors}
         onChange={props.setHeaders}
+        account={props.accountHeaders}
       />
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium">Test connection</span>
-        {isBedrock ? (
-          <BedrockConnectionTester
-            connection={
-              Object.fromEntries(
-                Object.entries({
-                  region: form.fields["env.region"],
-                  profile: form.fields["env.profile"],
-                  apiBase,
-                  ...(provider === "bedrock-mantle"
-                    ? { endpoint: "mantle" }
-                    : {}),
-                }).filter(([, v]) => typeof v === "string" && v !== ""),
-              ) as Record<string, string>
-            }
-            model={modelId}
-            canTest={!!modelId}
-            onModelsLoaded={() => {}}
-          />
-        ) : hasConnectionTest(provider) ? (
-          <OpenAICompatConnectionTester
-            provider={provider}
-            apiBase={apiBase}
-            apiKey={typedKey ?? loadedKey}
-            model={modelId}
-            modelTitle={title}
-            canTest={!!provider}
-            onUseContextLength={(n) => props.update("contextLength", String(n))}
-            current={{
-              contextLength: parseTokens(form.fields[CONTEXT_KEY]),
-              toolDialect: String(form.fields.toolDialect ?? ""),
-              tools: form.tools,
-            }}
-            onApplySuggestions={props.applySuggestions}
-          />
-        ) : (
-          <span className="text-2xs text-description-muted">
-            Not available for {provider || "this provider"} yet. Uses the values
-            above before they are saved.
-          </span>
-        )}
+        {props.connectionTest}
       </div>
+    </>
+  );
+}
+
+/**
+ * "Test connection" with the values in the form, before they are saved. The
+ * Connection tab and the Overview both show it.
+ */
+function ConnectionTest({
+  form,
+  loaded,
+  provider,
+  modelId,
+  title,
+  update,
+  applySuggestions,
+}: {
+  form: ModelForm;
+  loaded?: ModelDescription;
+  provider: string;
+  modelId: string;
+  title: string;
+  update: (key: string, value: string | string[] | null) => void;
+  applySuggestions: (list: Suggestion[]) => void;
+}) {
+  const props = { update, applySuggestions };
+  const apiBase = String(form.fields.apiBase || "") || undefined;
+  const typedKey =
+    form.key.mode === "secret" && form.key.value ? form.key.value : undefined;
+  // The key the loaded model already uses; an unresolved reference is no key.
+  const loadedKey =
+    loaded?.apiKey && !loaded.apiKey.includes("${{")
+      ? loaded.apiKey
+      : undefined;
+  const isBedrock = provider === "bedrock" || provider === "bedrock-mantle";
+  return (
+    <>
+      {isBedrock ? (
+        <BedrockConnectionTester
+          connection={
+            Object.fromEntries(
+              Object.entries({
+                region: form.fields["env.region"],
+                profile: form.fields["env.profile"],
+                apiBase,
+                ...(provider === "bedrock-mantle"
+                  ? { endpoint: "mantle" }
+                  : {}),
+              }).filter(([, v]) => typeof v === "string" && v !== ""),
+            ) as Record<string, string>
+          }
+          model={modelId}
+          canTest={!!modelId}
+          onModelsLoaded={() => {}}
+        />
+      ) : hasConnectionTest(provider) ? (
+        <OpenAICompatConnectionTester
+          provider={provider}
+          apiBase={apiBase}
+          apiKey={typedKey ?? loadedKey}
+          model={modelId}
+          modelTitle={title}
+          canTest={!!provider}
+          onUseContextLength={(n) => props.update("contextLength", String(n))}
+          current={{
+            contextLength: parseTokens(form.fields[CONTEXT_KEY]),
+            toolDialect: String(form.fields.toolDialect ?? ""),
+            tools: form.tools,
+          }}
+          onApplySuggestions={props.applySuggestions}
+        />
+      ) : (
+        <span className="text-2xs text-description-muted">
+          Not available for {provider || "this provider"} yet. Uses the values
+          above before they are saved.
+        </span>
+      )}
     </>
   );
 }
@@ -1021,7 +1348,13 @@ function KeyEditor({
   choice,
   error,
   onChange,
+  notSet,
+  id,
 }: {
+  /** What an absent key means, as a "Not set: ..." sentence. */
+  notSet: string;
+  /** On the first choice, so the Overview can move focus here. */
+  id: string;
   label: string;
   /** What the secret holds, in the texts: "key" for an API key, else "value". */
   noun: "key" | "value";
@@ -1040,9 +1373,7 @@ function KeyEditor({
         ? "Written in plain text in config.yaml (hidden here). Move it to a secret so it is not in the file."
         : state.state === "template"
           ? `Read from ${state.text}.`
-          : noun === "key"
-            ? "No key is set."
-            : "Not set.";
+          : notSet;
   const secretChoice = (): KeyChoice => ({
     mode: "secret",
     secretName: state.state === "secret" ? state.secretName : defaultName,
@@ -1073,6 +1404,7 @@ function KeyEditor({
           <label key={mode} className="flex items-center gap-1">
             <input
               type="radio"
+              id={mode === "keep" ? id : undefined}
               name={`${groupId}-key`}
               checked={choice.mode === mode}
               onChange={() =>
@@ -1116,7 +1448,7 @@ function KeyEditor({
             <label className="flex flex-col gap-1 text-xs">
               Keep the {noun} in
               <FormSelect
-                className="text-xs"
+                className="box-border text-xs"
                 value={choice.storage}
                 onChange={(e) =>
                   onChange({
@@ -1145,18 +1477,28 @@ function HeadersEditor({
   rows,
   errors,
   onChange,
+  account,
 }: {
   rows: HeaderRow[];
   errors: Record<string, string>;
   onChange: (rows: HeaderRow[]) => void;
+  account?: { account: string; names: string[] };
 }) {
   const set = (id: string, p: Partial<HeaderRow>) =>
     onChange(rows.map((r) => (r.id === id ? { ...r, ...p } : r)));
+  const inherited = account && account.names.length > 0 ? account : undefined;
   return (
     <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
       <legend className="mb-1 text-xs font-medium">Request headers</legend>
       {rows.length === 0 && (
-        <span className="text-2xs text-description-muted">None.</span>
+        <span
+          className="text-2xs text-description-muted"
+          data-testid="mc-headers-state"
+        >
+          {inherited
+            ? `Not set: ${inherited.names.join(", ")} from the account ${inherited.account}`
+            : "Not set: none"}
+        </span>
       )}
       {rows.map((r) => {
         const sensitive = !!r.withheld || headerIsSensitive(r.name);
@@ -1234,6 +1576,8 @@ function CapabilitiesPanel(
   props: FieldProps & {
     loaded?: ModelDescription;
     modelId: string;
+    toolsState: ResolvedValue;
+    imagesState: ResolvedValue;
     systemToolsForced: boolean;
     setTri: (p: Partial<Pick<ModelForm, "tools" | "images">>) => void;
   },
@@ -1264,13 +1608,21 @@ function CapabilitiesPanel(
         <label className="flex items-center gap-1 text-xs">
           <input
             type="checkbox"
+            id="mc-roles"
             checked={roles === null}
             onChange={(e) =>
               update("roles", e.target.checked ? null : [...DEFAULT_ROLES])
             }
           />
-          Default ({DEFAULT_ROLES.join(", ")})
+          Not set ({DEFAULT_ROLES.join(", ")})
         </label>
+        <ValueState
+          testId="mc-roles-state"
+          state={props.stateOf("roles")}
+          label="Roles"
+          onReset={() => props.reset("roles")}
+          onGo={props.goFor(props.stateOf("roles"))}
+        />
         {roles !== null && (
           <div className="flex flex-wrap gap-x-3 gap-y-1 pl-4 text-xs">
             {MODEL_ROLES.map((r) => (
@@ -1319,6 +1671,7 @@ function CapabilitiesPanel(
             <label key={v} className="flex items-center gap-1">
               <input
                 type="radio"
+                id={v === "auto" ? "mc-tools" : undefined}
                 name={`${groupId}-tools`}
                 checked={form.tools === v}
                 onChange={() => props.setTri({ tools: v })}
@@ -1332,6 +1685,12 @@ function CapabilitiesPanel(
             </label>
           ))}
         </div>
+        <ValueState
+          testId="mc-tools-state"
+          state={props.toolsState}
+          label="How tools are sent"
+          onGo={props.goFor(props.toolsState)}
+        />
         {props.systemToolsForced && (
           <span className="text-2xs text-warning">
             "Only use system message tools" is on in settings, so every model
@@ -1368,6 +1727,7 @@ function CapabilitiesPanel(
             <label key={v} className="flex items-center gap-1">
               <input
                 type="radio"
+                id={v === "auto" ? "mc-images" : undefined}
                 name={`${groupId}-images`}
                 checked={form.images === v}
                 onChange={() => props.setTri({ images: v })}
@@ -1376,7 +1736,27 @@ function CapabilitiesPanel(
             </label>
           ))}
         </div>
+        <ValueState
+          testId="mc-images-state"
+          state={props.imagesState}
+          label="Image input"
+          onGo={props.goFor(props.imagesState)}
+        />
       </fieldset>
+      {(form.tools !== "auto" || form.images !== "auto") && (
+        <div className="flex flex-wrap items-baseline gap-x-2 text-2xs">
+          <span className="text-description-muted">
+            The two choices above are one list in the file (capabilities).
+          </span>
+          <button
+            type="button"
+            className="cursor-pointer border-none bg-transparent p-0 text-2xs text-link underline"
+            onClick={() => props.setTri({ tools: "auto", images: "auto" })}
+          >
+            Reset both
+          </button>
+        </div>
+      )}
       {errors.capabilities && (
         <span className="text-2xs text-error" role="alert">
           {errors.capabilities}
@@ -1389,12 +1769,12 @@ function CapabilitiesPanel(
         </label>
         <FormSelect
           id="mc-toolDialect"
-          className="text-xs"
+          className="box-border text-xs"
           value={(form.fields.toolDialect as string) ?? ""}
-          aria-describedby="mc-toolDialect-summary"
+          aria-describedby="mc-toolDialect-state mc-toolDialect-summary"
           onChange={(e) => update("toolDialect", e.target.value)}
         >
-          <option value="">{DIALECT_INFO.auto.label}</option>
+          <option value="">Not set (auto)</option>
           {Object.entries(DIALECT_INFO)
             .filter(([v]) => v !== "auto")
             .map(([v, d]) => (
@@ -1403,6 +1783,14 @@ function CapabilitiesPanel(
               </option>
             ))}
         </FormSelect>
+        <ValueState
+          id="mc-toolDialect-state"
+          testId="mc-toolDialect-state"
+          state={props.stateOf("toolDialect")}
+          label="Tool calls written as text"
+          onReset={() => props.reset("toolDialect")}
+          onGo={props.goFor(props.stateOf("toolDialect"))}
+        />
         <span
           id="mc-toolDialect-summary"
           className="text-2xs text-description-muted"
@@ -1489,7 +1877,7 @@ function TemplatesPanel(
         </label>
         <FormSelect
           id={previewId}
-          className="text-xs"
+          className="box-border text-xs"
           value={mode}
           onChange={(e) => setMode(e.target.value as typeof mode)}
         >
@@ -1599,6 +1987,14 @@ function ToolOverridesEditor({
         Describe a tool differently to this model, or turn it off for this model
         only. Other override settings written in the file are kept.
       </span>
+      {rows.length === 0 && (
+        <span
+          className="text-2xs text-description-muted"
+          data-testid="mc-toolOverrides-state"
+        >
+          Not set: none, each tool keeps its own description
+        </span>
+      )}
       {rows.map((r, i) => {
         const tool = byName.get(r.tool);
         const error =
@@ -1620,7 +2016,7 @@ function ToolOverridesEditor({
             <label className="flex flex-col gap-1 text-xs">
               Tool (override {n})
               <FormSelect
-                className="text-xs"
+                className="box-border text-xs"
                 value={r.tool}
                 aria-invalid={error ? true : undefined}
                 onChange={(e) => set(r.id, { tool: e.target.value })}

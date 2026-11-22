@@ -9,7 +9,7 @@ Nothing in `core/`, `gui/`, `extensions/`, `binary/` or `packages/` imports this
 | `cli-startup.mjs`   | CLI wall time, time to the first request, peak RSS and CPU for `--version`, `--help` and `-p` against a local stub, with and without a compile cache | a built CLI (`extensions/cli/dist/cn.js`)                                        |
 | `bundle-report.mjs` | Bytes per package in a bundle, from an esbuild metafile (`--meta`) or a chunk and its source map (`--map`)                                           | a build of the CLI, the VS Code extension or the gui                             |
 | `history-cost.mts`  | Session save and load, the stuck check and the whole-history token count at 10 to 5,000 messages                                                     | `npm ci` in `core/` and `extensions/cli/`; run with `tsx` from `extensions/cli`  |
-| `webview-chat.mjs`  | Chat mount time, DOM nodes, heap, time per streamed chunk and per scroll step at 10 to 1,000 messages                                                | `npm ci` in `gui/` and `bench/screenshots/`; Edge, Chrome or Playwright Chromium |
+| `webview-chat.mjs`  | Chat mount time, DOM nodes, heap, time per streamed chunk, per scroll jump and per 100 px wheel step at 10 to 1,000 messages                         | `npm ci` in `gui/` and `bench/screenshots/`; Edge, Chrome or Playwright Chromium |
 
 ```sh
 node bench/perf/cli-startup.mjs --out "$TMPDIR/perf"

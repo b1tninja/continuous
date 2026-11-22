@@ -54,7 +54,7 @@ plan:
   allowTerminal: true
 ```
 
-The default is `false`. With it set, `Bash` still goes through the normal permission engine, so each command is checked and asks as it would anywhere else; the setting only puts the tool back in the list. It applies to the CLI only, and a workspace file cannot set it.
+The default is `false`. With it set, `Bash` still goes through the normal permission engine; the setting only puts the tool back in the list. A command that only reads, such as `git log`, runs where your Context use level or an allow rule lets it. A command that changes files or state asks first, whatever your Tool use level or allow rules say; only the IDGAF level runs it without asking. It applies to the CLI only, and a workspace file cannot set it.
 
 ### MCP Tools Support
 

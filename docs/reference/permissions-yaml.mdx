@@ -98,7 +98,7 @@ A window that is not offered (7, or 30 for `headsUp`) is ignored, and a notice s
 ### `plan`
 
 - `maxNewItems`: at Plan edits **Permissive**, a re-plan in Loop mode that adds more new to-dos than this waits for you. It has no effect at the other levels.
-- `allowTerminal`: offer the shell tool in the terminal agent's plan mode. Each command still goes through the permission checks and asks. Terminal agent only.
+- `allowTerminal`: offer the shell tool in the terminal agent's plan mode. Each command still goes through the permission checks. One that changes files or state asks, whatever your levels (below IDGAF) or allow rules say; one that only reads runs where your Context use level lets it. Terminal agent only.
 - `mcpTools`: MCP tools that Plan mode may use, whatever the server says about them.
 
 ### `background`

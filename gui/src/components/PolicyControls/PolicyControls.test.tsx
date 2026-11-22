@@ -169,7 +169,9 @@ describe("PolicyControls", () => {
     // At the top-level preset the preset chip is the warning: one chip, not two
     expect(screen.queryByTestId("idgaf-chip")).toBeNull();
     const chip = screen.getAllByTestId("policy-preset")[0];
-    expect(chip.textContent).toContain("nothing asks");
+    // Only the name is drawn; what it means is the accessible name and description
+    expect(chip.textContent).not.toContain("nothing asks");
+    expect(chip.getAttribute("aria-label")).toContain("nothing asks");
     const description = document.getElementById(
       chip.getAttribute("aria-describedby")!,
     )!;

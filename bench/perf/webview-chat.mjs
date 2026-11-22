@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // What a long chat costs in the webview: mount time, DOM size, heap, the time
-// one streamed chunk takes to reach the screen, and scroll steps.
+// one streamed chunk takes to reach the screen, and two kinds of scroll step:
+// a jump of a twentieth of the transcript, and a wheel-sized step.
 //
-//   node bench/perf/webview-chat.mjs --out <file.json outside the repo> [--sizes 10,100,300,1000] [--browser edge]
+//   node bench/perf/webview-chat.mjs --out <file.json outside the repo> [--sizes 10,100,300,1000] [--wheel-px 100] [--browser edge]
 //
 // Uses the screenshot harness (bench/screenshots): the real <App/> and redux
 // store with MockIdeMessenger in a headless browser. Needs `npm ci` in gui/
@@ -35,6 +36,9 @@ if (
   process.exit(2);
 }
 const sizes = (flag("--sizes") ?? "10,100,300,1000").split(",").map(Number);
+// One notch of a mouse wheel is about 100 px in Chromium on Windows.
+const wheelPx = Number(flag("--wheel-px") ?? 100);
+const WHEEL_STEPS = 40;
 const shots = path.join(repo, "bench", "screenshots");
 const load = (p) => import(pathToFileURL(path.join(shots, p)).href);
 const { buildHarness, playwrightDir } = await load("src/build.mjs");
@@ -71,7 +75,7 @@ const results = {
 };
 
 /** Runs in the page: fills the store with n messages, streams 40 chunks, scrolls. */
-async function measure(n) {
+async function measure({ n, wheelPx, wheelSteps }) {
   const reply = (i) =>
     [
       `Step ${i}: the failure is in \`parseConfig\`: it reads \`opts.timeout\` before the defaults are merged.`,
@@ -163,6 +167,19 @@ async function measure(n) {
       scroll.push(performance.now() - t0);
     }
   }
+  // The jump lands on rows that are not mounted. A wheel moves less than the
+  // rows kept around the viewport, so this is what reading back up costs.
+  const wheel = [];
+  if (scroller) {
+    scroller.scrollTop = scroller.scrollHeight;
+    await settle();
+    for (let i = 0; i < wheelSteps; i++) {
+      t0 = performance.now();
+      scroller.scrollTop -= wheelPx;
+      await frame();
+      wheel.push(performance.now() - t0);
+    }
+  }
   return {
     rendered: store.getState().session.history.length,
     mountMs,
@@ -171,6 +188,7 @@ async function measure(n) {
     heapDeltaMB: (heapAfter - heapBefore) / 1048576,
     stream,
     scroll,
+    wheel,
   };
 }
 
@@ -188,9 +206,14 @@ for (const n of sizes) {
   await page.waitForFunction(() => window.__shotReady === true, null, {
     timeout: 30_000,
   });
-  const r = await page.evaluate(measure, n);
+  const r = await page.evaluate(measure, {
+    n,
+    wheelPx,
+    wheelSteps: WHEEL_STEPS,
+  });
   const stream = summarize(r.stream);
   const scroll = summarize(r.scroll);
+  const wheel = summarize(r.wheel);
   const row = {
     messages: n,
     rendered: r.rendered,
@@ -203,7 +226,16 @@ for (const n of sizes) {
       p95: round(stream.p95),
       max: round(stream.max),
     },
+    // A jump of a twentieth of the transcript, 20 times from the top
     scrollStepMs: { median: round(scroll.median), p95: round(scroll.p95) },
+    // wheelPx up from the end, WHEEL_STEPS times
+    wheelStepMs: {
+      px: wheelPx,
+      steps: r.wheel.length,
+      median: round(wheel.median),
+      p95: round(wheel.p95),
+      max: round(wheel.max),
+    },
     pageErrors: errors.length,
   };
   results.sizes.push(row);

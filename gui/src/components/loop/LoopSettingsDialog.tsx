@@ -117,7 +117,7 @@ export function LoopSettingsDialog({
 
           <Section title="How it runs">
             <div className="flex min-w-0 flex-wrap items-center gap-1">
-              <label className="flex items-center gap-1">
+              <label className="flex max-w-full min-w-0 items-center gap-1">
                 Strategy
                 <select
                   data-testid="loop-strategy"
@@ -128,7 +128,7 @@ export function LoopSettingsDialog({
                       setLoopStrategyThunk(e.target.value as LoopStrategy),
                     )
                   }
-                  className="shrink-0 cursor-pointer rounded border border-solid border-border bg-input px-1 py-1 text-xs text-foreground"
+                  className="min-w-0 cursor-pointer rounded border border-solid border-border bg-input px-1 py-1 text-xs text-foreground"
                 >
                   {LOOP_STRATEGY_ORDER.map((strategy) => (
                     <option key={strategy} value={strategy}>

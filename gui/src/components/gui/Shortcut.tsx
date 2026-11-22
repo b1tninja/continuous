@@ -91,8 +91,12 @@ const Shortcut: React.FC<ShortcutProps> = ({ children }) => {
               >
                 {key || "?"}
               </kbd>
+              {/* A chord too long for its line breaks after a "+", never inside a key */}
               {keyIndex < combo.length - 1 && (
-                <span className="separator">+</span>
+                <>
+                  <span className="separator">+</span>
+                  <wbr />
+                </>
               )}
             </React.Fragment>
           ))}
