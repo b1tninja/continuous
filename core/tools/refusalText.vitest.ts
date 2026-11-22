@@ -34,6 +34,9 @@ const sentences: Record<keyof typeof refusalText, string | boolean> = {
   ),
   toolOff: refusalText.toolOff("run_terminal_command", undefined),
   disabledByPolicy: refusalText.disabledByPolicy("rm -rf /"),
+  questionCapWaiting: refusalText.questionCapWaiting("Bash", 4),
+  questionCapStuck: refusalText.questionCapStuck("Bash"),
+  runEnded: refusalText.runEnded("Write"),
 };
 
 describe("refusalText", () => {
@@ -62,6 +65,12 @@ describe("refusalText", () => {
         "This tool is turned off in the user's tool settings.\n\nrun_terminal_command\n\nDo not work around this. Do what else the request needs, then say what you could not do and why.",
       disabledByPolicy:
         "This command has been disabled by security policy:\n\nrm -rf /\n\nDo not retry this call or reach the same result another way. Do what else the request needs, then say what you could not do and why.",
+      questionCapWaiting:
+        "Bash needs the person's approval, so it was not run. This item already has 4 questions open in their inbox, which is the limit, so its run ends here as waiting. The work so far and the open questions are kept. The item runs again once the person answers, and a call they allow then runs once without asking.",
+      questionCapStuck:
+        "Bash needs the person's approval, so it was not run. The loop cannot hold another question, so this item's run ends here as stuck. The work so far is kept. The item runs again when the person answers or writes a note on it.",
+      runEnded:
+        "Write was not run. An earlier call in this reply ended this item's run.",
     });
   });
 

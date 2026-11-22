@@ -67,6 +67,25 @@ export const refusalText = {
   toolOff: (command: string, reason: string | undefined): string =>
     `${reason ?? "This tool is turned off in the user's tool settings."}\n\n${command}\n\n${carryOnToolOff}`,
 
+  /**
+   * Loop mode: a call that would ask when the item can hold no more
+   * questions. The harness ends the item's run with this one result; the
+   * questions already open are what wake it.
+   */
+  questionCapWaiting: (toolName: string, open: number): string =>
+    `${toolName} needs the person's approval, so it was not run. This item already has ${open} questions open in their inbox, which is the limit, so its run ends here as waiting. The work so far and the open questions are kept. The item runs again once the person answers, and a call they allow then runs once without asking.`,
+
+  /**
+   * The same end with no question of the item open for the person (the
+   * loop's own cap): nothing would wake a waiting item, so it ends as stuck.
+   */
+  questionCapStuck: (toolName: string): string =>
+    `${toolName} needs the person's approval, so it was not run. The loop cannot hold another question, so this item's run ends here as stuck. The work so far is kept. The item runs again when the person answers or writes a note on it.`,
+
+  /** Loop mode: a later call of the reply whose earlier call ended the run. */
+  runEnded: (toolName: string): string =>
+    `${toolName} was not run. An earlier call in this reply ended this item's run.`,
+
   /** Refused by policy with no source named (IDE). */
   disabledByPolicy: (command: string): string =>
     `This command has been disabled by security policy:\n\n${command}\n\n${carryOn}`,
