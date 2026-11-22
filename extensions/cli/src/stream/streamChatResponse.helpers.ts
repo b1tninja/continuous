@@ -47,6 +47,7 @@ import {
   publishCountdown,
   spendTurnBudget,
 } from "../permissions/askCountdown.js";
+import type { AskWhy } from "../permissions/askWhy.js";
 import { noteCliToolResult } from "../permissions/cliTaint.js";
 import {
   evaluateWithCoreRules,
@@ -58,6 +59,7 @@ import {
   runsAtIdgaf,
   type CoreVerdict,
 } from "../permissions/coreRules.js";
+import { explainAsk } from "../permissions/explainAsk.js";
 import {
   headlessAskRefusal,
   noteHeadlessRefusal,
@@ -206,6 +208,14 @@ export interface TimedAsk {
   };
 }
 
+interface TimedAskOptions {
+  note?: string;
+  mode?: "normal" | "plan" | "auto";
+  verdictSource?: string;
+  /** Why the call asks and where that was decided, for the prompt to show */
+  why?: AskWhy;
+}
+
 /**
  * Like requestUserPermission, with the decision timer: when a window is set for
  * the call's level, the prompt shows a countdown and the ask is refused if it
@@ -215,11 +225,7 @@ export interface TimedAsk {
 export function requestUserPermissionTimed(
   toolCall: PreprocessedToolCall,
   callbacks: StreamCallbacks | undefined,
-  options: {
-    note?: string;
-    mode?: "normal" | "plan" | "auto";
-    verdictSource?: string;
-  } = {},
+  options: TimedAskOptions = {},
 ): Promise<TimedAsk> {
   if (!callbacks?.onToolPermissionRequest) {
     return Promise.resolve({ approved: false });
@@ -234,11 +240,7 @@ export function requestUserPermissionTimed(
 async function askTimed(
   toolCall: PreprocessedToolCall,
   callbacks: StreamCallbacks,
-  options: {
-    note?: string;
-    mode?: "normal" | "plan" | "auto";
-    verdictSource?: string;
-  },
+  options: TimedAskOptions,
 ): Promise<TimedAsk> {
   const hooked = await firePermissionRequest(
     toolCall.name,
@@ -311,11 +313,7 @@ async function askWithHooks(
 async function promptTimed(
   toolCall: PreprocessedToolCall,
   callbacks: StreamCallbacks,
-  options: {
-    note?: string;
-    mode?: "normal" | "plan" | "auto";
-    verdictSource?: string;
-  },
+  options: TimedAskOptions,
 ): Promise<TimedAsk> {
   const preview = toolCall.preprocessResult?.preview;
   const request: ToolCallRequest = {
@@ -327,6 +325,7 @@ async function promptTimed(
           { type: "text", content: options.note, color: "yellow" },
         ]
       : preview,
+    ...(options.why ? { why: options.why } : {}),
   };
 
   let held: Promise<Resolved | undefined> | undefined;
@@ -801,9 +800,24 @@ async function decideToolApproval(
     headless: !!isHeadless,
   });
 
+  const webLevelAsked =
+    permissionCheck.permission === "allow" && permission === "ask";
+
   // PreToolUse hooks adjust the CLI policy first; the CLI's own exclude
   // always stands.
   permission = permissionAfterHook(permission, hookDecision);
+
+  // What the prompt tells the person: why it asks and where that was decided
+  const whyAsked = (verdict?: CoreVerdict) =>
+    explainAsk({
+      toolName: toolCall.name,
+      args: toolCall.arguments,
+      tool: toolCall.tool,
+      verdict,
+      matchedPolicy: permissionCheck.matchedPolicy,
+      hookAsked: hookDecision === "ask",
+      webLevelAsked,
+    });
 
   // Then the rules in config.yaml (deny, protected paths, ask, allow) and the
   // reviewer may tighten the result, and an allow rule may loosen an "ask",
@@ -858,6 +872,7 @@ async function decideToolApproval(
               : undefined,
           mode,
           verdictSource: verdict.source,
+          why: whyAsked(verdict),
         }),
         trace,
       );
@@ -884,7 +899,10 @@ async function decideToolApproval(
     trace.askedPerson = true;
     return askResult(
       toolCall,
-      await requestUserPermissionTimed(toolCall, callbacks, { mode }),
+      await requestUserPermissionTimed(toolCall, callbacks, {
+        mode,
+        why: whyAsked(),
+      }),
       trace,
     );
   } else if (permission === "exclude") {

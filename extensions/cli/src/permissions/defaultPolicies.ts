@@ -1,4 +1,5 @@
 import { headlessLegacyAllow } from "./headlessPolicy.js";
+import { markPolicyOrigin } from "./policyOrigin.js";
 import { ToolPermissionPolicy } from "./types.js";
 
 /**
@@ -85,3 +86,7 @@ export const PLAN_MODE_POLICIES: ToolPermissionPolicy[] = [
 export const AUTO_MODE_POLICIES: ToolPermissionPolicy[] = [
   { tool: "*", permission: "allow" },
 ];
+
+// So a prompt can say the mode asked, not a rule (policyOrigin.ts)
+markPolicyOrigin(PLAN_MODE_POLICIES, { kind: "mode", mode: "plan" });
+markPolicyOrigin(AUTO_MODE_POLICIES, { kind: "mode", mode: "auto" });

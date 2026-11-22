@@ -2,6 +2,7 @@ import { AssistantUnrolled, ModelConfig } from "@continuedev/config-yaml";
 import { BaseLlmApi } from "@continuedev/openai-adapters";
 import type { Session } from "core/index.js";
 
+import type { AskWhy } from "../../permissions/askWhy.js";
 import { QuestionRequestedEvent } from "../../services/QuizService.js";
 import { ToolCallPreview } from "../../tools/types.js";
 
@@ -45,6 +46,8 @@ export interface ActivePermissionRequest {
   requestId: string;
   toolCallPreview?: ToolCallPreview[];
   hasDynamicEvaluation?: boolean;
+  /** Why the call asks and where that was decided */
+  why?: AskWhy;
 }
 
 export type ActiveQuizQuestion = QuestionRequestedEvent;
