@@ -29,6 +29,7 @@ import { ToolDialectNotice } from "../../components/mainInput/ToolDialectNotice"
 import { ColdCacheNotice } from "../../components/mainInput/ColdCacheNotice";
 import { NoModelNotice } from "../../components/mainInput/NoModelNotice";
 import { SessionLoadNotice } from "../../components/mainInput/SessionLoadNotice";
+import { SmallWindowNotice } from "../../components/mainInput/SmallWindowNotice";
 import { EditUndoLine } from "../../components/mainInput/EditUndoLine";
 import { IdgafNotice } from "../../components/mainInput/IdgafNotice";
 import { InstructionFileNotice } from "../../components/mainInput/InstructionFileNotice";
@@ -683,6 +684,7 @@ export function Chat() {
         <InstructionFileNotice />
         <CachingOffNotice />
         <PendingToolChangesNotice />
+        <SmallWindowNotice />
         <LargeMessageNotice />
         {/* A loop shows its own plan in its panel */}
         {!hasLoop && <TaskListPanel />}
