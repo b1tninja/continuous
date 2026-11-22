@@ -2,15 +2,23 @@
 title: "Set Up Providers and Models"
 ---
 
-Open the setup flow from **Settings > Providers** (Add provider, or an action on an existing row), from the model picker's **Manage models...**, from the first-run onboarding card, or from the command palette:
+Open the setup flow with **Add a model**: the **+** on **Settings > Models**, **Add a model...** in the model picker, the notice the chat shows when no model is selected, or the first-run onboarding card. It also opens from **Settings > Providers** (Add provider, or an action on an existing row), from the model picker's **Manage models...**, and from the command palette:
 
 - VS Code: `Continuous: Manage Models and Providers`
 
-The flow has three steps, and nothing is written until you confirm the last one.
+**Add a model** first asks what you have:
 
-1. **Credentials.** Choose the provider, enter the API key and any endpoint fields (API base, or region and profile for Amazon Bedrock), and choose where the key is kept.
-2. **Models.** Tick the models to use. Models already in your `config.yaml` start ticked. The list can be refreshed from the provider with the entered credentials.
-3. **Review.** Lists the models to add and remove, and where the key goes. Removing models needs a separate confirmation, and removed models are also taken out of the `modeModels` lists.
+- **An API key**: choose the provider, then paste the key.
+- **A server on this computer**: the servers that answer on the usual local ports are listed with their address and model count, for example "Found: Ollama at 127.0.0.1:11434, 2 models". Choosing one goes straight to its models. Only the loopback addresses in [Local servers](/customize/model-providers/more/local-servers) are asked, each for at most 1.5 seconds; after 5 seconds the line reads "None found".
+- **A server on my network**: enter the address of an OpenAI-compatible server on another machine.
+- **Nothing yet**: install Ollama and download one model, or open a provider's page to make a key. Nothing is downloaded or opened until you press its button.
+
+Every answer then takes the same four steps, and nothing is written until you confirm the last one.
+
+1. **Connection.** The provider, the API key or the server address, and where the key is kept. **More** holds what is rarely needed: the API base, the name the key is saved under, the proxy, certificates, and the request and connect timeouts. Each field there says what applies when it is not set (for example "Not set: 7,200 s for the whole reply"), and a field left alone is not written.
+2. **Models.** Tick the models to use. Each row gives the model's context window, its price per million input and output tokens, and whether it takes tools; what is not known reads "not published", "no price known" or "not reported". Models already in your `config.yaml` start ticked. The list can be refreshed from the provider with the entered credentials.
+3. **Use for.** Chat, Edit and Apply start ticked. Autocomplete is ticked only for a model the catalog recommends for it. Each line says what the role uses now and what it will use, for example "Chat: currently Claude Sonnet → will be Qwen 3": the first model you ticked becomes the selected model of each ticked role. With Chat, Edit and Apply ticked no `roles` are written; any other choice is written with the model. The step is skipped when no model is added.
+4. **Review.** Lists the models to add and remove, the roles, what **More** set, and where the key goes. Removing models needs a separate confirmation, and removed models are also taken out of the `modeModels` lists.
 
 ## The Providers page
 
@@ -29,7 +37,9 @@ With no connection yet, the page shows **Add a provider**.
 
 ## Test connection
 
-For OpenAI, Ollama, llama.cpp, LM Studio, llamafile, vLLM, text-gen-webui, Msty, OpenRouter, DeepSeek, Groq, Together, Mistral and any provider with an API base, the credentials step has **Test connection**. It lists the models the endpoint serves (`GET <api base>/models`), asks Ollama (`/api/show`) or llama.cpp (`/props`) whether the server parses this model's tool calls itself, and, when a model is chosen, sends one request offering a made-up tool and says how the model answered: `Tool use: ...` with the result, or `Tool use: could not tell (...)`. The tool is never run, the key is sent only as a bearer header and is never shown, and a failure shows `Could not connect` with the endpoint's error. Amazon Bedrock has its own form; see [Amazon Bedrock](/customize/model-providers/top-level/bedrock).
+In the setup flow the test runs by itself, and only lists the models (`GET <api base>/models`, which spends no tokens): at once when a server or a usual address is picked, 300 ms after a key or an address is pasted, and one second after typing stops when the key has 20 characters or more with no space (for a server, when the address is a full `http` or `https` address). It never runs on a keystroke, the same provider, address and key are tested by themselves only once, a change drops a test that is waiting or running, and **Stop** drops one that is running. Its line reads, for example, "Connected. 14 models. Tools: yes." **Test again** repeats it, and **Check tool calls** sends the one request described below, which a provider bills. A server on this computer or network that does not answer is described in words: which address, what happened, and what to check.
+
+For OpenAI, Ollama, llama.cpp, LM Studio, llamafile, vLLM, text-gen-webui, Msty, OpenRouter, DeepSeek, Groq, Together, Mistral and any provider with an API base, the model's settings (Configure, Connection) have **Test connection**. It lists the models the endpoint serves (`GET <api base>/models`), asks Ollama (`/api/show`) or llama.cpp (`/props`) whether the server parses this model's tool calls itself, and, when a model is chosen, sends one request offering a made-up tool and says how the model answered: `Tool use: ...` with the result, or `Tool use: could not tell (...)`. The tool is never run, the key is sent only as a bearer header and is never shown, and a failure shows `Could not connect` with the endpoint's error. Amazon Bedrock has its own form; see [Amazon Bedrock](/customize/model-providers/top-level/bedrock).
 
 The same check runs from a terminal:
 
