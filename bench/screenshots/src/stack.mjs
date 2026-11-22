@@ -12,7 +12,7 @@ export const MIN_TRANSCRIPT = 96;
  * Runs in the page. For the chat, the prompt, each approval button and the
  * first question's answer controls: how tall the element is and how much of
  * that shows, after the viewport and every scrolling or clipping ancestor have
- * cut it.
+ * cut it. For the first approval: the whole lines that show of what it asks for.
  */
 export function measureStack() {
   const shown = (el) => {
@@ -28,6 +28,46 @@ export function measureStack() {
     return {
       height: Math.round(r.height),
       shown: Math.max(0, Math.round(bottom - top)),
+    };
+  };
+  // What the first approval asks for (its command, arguments, paths or
+  // fields): how many whole lines of it show above that call's buttons and
+  // its pinned reason, which lie over the list when the call is taller
+  const whatIsApproved = () => {
+    const what = document.querySelector(
+      '[data-testid^="pending-action-what-"]',
+    );
+    if (!what) return null;
+    const text = what.querySelector("pre") ?? what;
+    const style = getComputedStyle(text);
+    const r = text.getBoundingClientRect();
+    const first =
+      r.top + parseFloat(style.borderTopWidth) + parseFloat(style.paddingTop);
+    const last =
+      r.bottom -
+      parseFloat(style.borderBottomWidth) -
+      parseFloat(style.paddingBottom);
+    let top = Math.max(first, 0);
+    let bottom = Math.min(last, window.innerHeight);
+    for (let p = text.parentElement; p; p = p.parentElement) {
+      if (getComputedStyle(p).overflowY === "visible") continue;
+      const b = p.getBoundingClientRect();
+      top = Math.max(top, b.top);
+      bottom = Math.min(bottom, b.bottom);
+    }
+    const id = what.getAttribute("data-testid").slice(20);
+    for (const over of [
+      document.querySelector(`[data-testid="accept-tool-call-button-${id}"]`)
+        ?.parentElement,
+      document.querySelector(`[data-testid="policy-note-${id}"]`),
+    ]) {
+      if (over) bottom = Math.min(bottom, over.getBoundingClientRect().top);
+    }
+    const line = parseFloat(style.lineHeight) || 16;
+    return {
+      lines: Math.max(0, Math.floor((bottom - top + 0.5) / line)),
+      // false when the text starts above what shows
+      fromStart: top - first < 1,
     };
   };
   const one = (selector) => {
@@ -47,6 +87,7 @@ export function measureStack() {
     ].map((el) => ({ name: el.getAttribute("data-testid"), ...shown(el) })),
     // The first question's: the others are further down a list that scrolls
     answers: one('[data-testid="question-controls"]'),
+    what: whatIsApproved(),
   };
 }
 
@@ -79,6 +120,12 @@ export function checkStack(facts, { minTranscript = MIN_TRANSCRIPT } = {}) {
     if (cut(b)) {
       findings.push(`${b.name} shows ${b.shown} of ${b.height} px`);
     }
+  }
+  // Accept must not be in reach with none of what it accepts in sight
+  if (facts.what && facts.what.lines < 1) {
+    findings.push(
+      "no whole line of what the first approval asks for shows above its buttons",
+    );
   }
   if (facts.answers && cut(facts.answers)) {
     findings.push(

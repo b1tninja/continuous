@@ -19,6 +19,11 @@ export interface PendingActionSummaryProps {
   note?: string;
   rule?: string;
   testId: string;
+  /**
+   * Keep the reason in sight above the buttons (28 px) of a call that is
+   * taller than the list it scrolls in. For the first call only.
+   */
+  pinNote?: boolean;
 }
 
 /**
@@ -35,6 +40,7 @@ export function PendingActionSummary({
   note,
   rule,
   testId,
+  pinNote,
 }: PendingActionSummaryProps) {
   const summary = describeAction(toolName, args, tool);
   const [open, setOpen] = useState(false);
@@ -58,6 +64,10 @@ export function PendingActionSummary({
   const isLong =
     !!block && (lineCount > VISIBLE_LINES || block.text.length > LONG_TEXT);
   const noun = block?.label.toLowerCase() ?? "";
+  // What is being approved: the command or arguments, else the paths, else
+  // the fields. A short list is scrolled to it (PendingToolCallToolbar).
+  const what = `pending-action-what-${testId}`;
+  const whatIs = block ? "block" : paths.length > 0 ? "paths" : "fields";
 
   return (
     <div
@@ -73,7 +83,10 @@ export function PendingActionSummary({
       </span>
 
       {fields.length > 0 && (
-        <dl className="m-0 flex min-w-0 flex-col gap-0.5">
+        <dl
+          className="m-0 flex min-w-0 flex-col gap-0.5"
+          data-testid={whatIs === "fields" ? what : undefined}
+        >
           {fields.map((f) => (
             <div key={f.label} className="flex min-w-0 flex-wrap gap-x-1">
               <dt className="text-description">{f.label}:</dt>
@@ -86,7 +99,7 @@ export function PendingActionSummary({
       )}
 
       {block && (
-        <div className="flex min-w-0 flex-col gap-0.5">
+        <div className="flex min-w-0 flex-col gap-0.5" data-testid={what}>
           <span className="text-description">{block.label}:</span>
           <pre
             id={blockId}
@@ -115,7 +128,10 @@ export function PendingActionSummary({
       )}
 
       {paths.length > 0 && (
-        <div className="flex min-w-0 flex-col">
+        <div
+          className="flex min-w-0 flex-col"
+          data-testid={whatIs === "paths" ? what : undefined}
+        >
           <span className="text-description">
             {paths.length === 1 ? "Path:" : "Paths:"}
           </span>
@@ -146,7 +162,11 @@ export function PendingActionSummary({
 
       {note && (
         <p
-          className="m-0 border-0 border-l-2 border-solid border-warning pl-1 text-2xs break-words whitespace-normal text-foreground"
+          className={
+            pinNote
+              ? "sticky bottom-7 m-0 border-0 border-l-2 border-solid border-warning bg-input pl-1 text-2xs break-words whitespace-normal text-foreground"
+              : "m-0 border-0 border-l-2 border-solid border-warning pl-1 text-2xs break-words whitespace-normal text-foreground"
+          }
           data-testid={`policy-note-${testId}`}
         >
           {maskCommandForDisplay(note)}

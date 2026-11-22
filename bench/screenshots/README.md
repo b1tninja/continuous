@@ -64,8 +64,10 @@ list open with three tasks and two queued messages, above the prompt. Shoot it
 with `--height 400`. It is also measured (`src/stack.mjs`): its manifest entry
 gets `stack`, the height of the chat, the prompt, each approval button and the
 first question's answer controls and how much of each shows, and a `stack:`
-error when under 96 px of the chat shows or the prompt, the first approval's
-buttons or those answer controls are cut.
+error when under 96 px of the chat shows, when the prompt, the first approval's
+buttons or those answer controls are cut, or when no whole line of what the
+first approval asks for (its command, arguments, paths or fields) shows above
+its buttons.
 
 Three more views are measured the same way. `approval` (three calls) and
 `tall-question` (a plan's three long decisions in the Questions panel, after a

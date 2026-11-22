@@ -68,6 +68,25 @@ describe("checkStack", () => {
     );
   });
 
+  it("reports a first approval with no whole line of what it asks for in sight", () => {
+    assert.deepEqual(
+      checkStack(facts({ what: { lines: 3, fromStart: true } })),
+      [],
+    );
+    assert.deepEqual(
+      checkStack(facts({ what: { lines: 1, fromStart: false } })),
+      [],
+    );
+    assert.deepEqual(
+      checkStack(facts({ what: { lines: 0, fromStart: true } })),
+      [
+        "no whole line of what the first approval asks for shows above its buttons",
+      ],
+    );
+    // no approval on the page
+    assert.deepEqual(checkStack(facts({ what: null })), []);
+  });
+
   it("reports a question's answer controls that are cut, and allows a pixel", () => {
     assert.deepEqual(checkStack(facts({ answers: part(52) })), []);
     assert.deepEqual(checkStack(facts({ answers: part(52, 51) })), []);

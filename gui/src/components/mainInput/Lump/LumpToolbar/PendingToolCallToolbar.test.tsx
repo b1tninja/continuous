@@ -402,6 +402,25 @@ describe("PendingToolCallToolbar: why it is asking", () => {
     ]);
   });
 
+  it("marks what each call asks for, and keeps the first call's reason above its buttons", async () => {
+    await setup([
+      { ...terminal("a"), policyNote: "Asks first." },
+      call("b", { policyNote: "Asks first." }),
+    ]);
+    // A short list is scrolled to this: the command, or the fields of a call
+    // that has none
+    expect(screen.getByTestId("pending-action-what-a")).toContainElement(
+      screen.getByTestId("pending-action-block-a"),
+    );
+    expect(screen.getByTestId("pending-action-what-b").tagName).toBe("DL");
+    expect(screen.getByTestId("policy-note-a").className).toContain(
+      "sticky bottom-7",
+    );
+    expect(screen.getByTestId("policy-note-b").className).not.toContain(
+      "sticky",
+    );
+  });
+
   it("Accept all says how many calls it runs and asks to check each one", async () => {
     await setup([terminal("a"), call("b"), call("c")]);
     expect(screen.getByTestId("accept-all-tool-calls").title).toBe(
