@@ -95,9 +95,7 @@ describe("remoteShellConflict: a choice of where commands run that a remote wind
     expect(
       remoteShellConflict("wsl", { CONTINUOUS_TERMINAL_SHELL: "wsl" }),
     ).toBeUndefined();
-    expect(remoteShellConflict("wsl", container)?.preference).toBe(
-      "container",
-    );
+    expect(remoteShellConflict("wsl", container)?.preference).toBe("container");
   });
 
   it("names what was asked for and where, in a remote window", () => {
