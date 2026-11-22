@@ -5,6 +5,7 @@ import {
   CubeIcon,
   DocumentIcon,
   PencilIcon,
+  PuzzlePieceIcon,
   QuestionMarkCircleIcon,
   ServerStackIcon,
   ShieldCheckIcon,
@@ -14,6 +15,7 @@ import { ConfigSection } from "./components/ConfigSection";
 import { ConfigsSection } from "./sections/ConfigsSection";
 import { HelpSection } from "./sections/HelpSection";
 import { IndexingSettingsSection } from "./sections/IndexingSettingsSection";
+import { McpServersSection } from "./sections/McpServersSection";
 import { ModelsSection } from "./sections/ModelsSection";
 import { PermissionsSection } from "./sections/permissions/PermissionsSection";
 import { ProvidersSection } from "./sections/ProvidersSection";
@@ -64,6 +66,17 @@ export const topTabSections: TabSection[] = [
           </ConfigSection>
         ),
         icon: <CubeIcon className="h-3 w-3 shrink-0 xs:h-4 xs:w-4" />,
+      },
+      {
+        // Second, so nobody scrolls past tools and permissions to reach it
+        id: "mcp",
+        label: "MCP servers",
+        component: (
+          <ConfigSection>
+            <McpServersSection />
+          </ConfigSection>
+        ),
+        icon: <PuzzlePieceIcon className="h-3 w-3 shrink-0 xs:h-4 xs:w-4" />,
       },
       {
         id: "providers",

@@ -233,11 +233,12 @@ describe("Settings > Providers", () => {
 });
 
 describe("Providers in the Settings navigation", () => {
-  it("is a tab right after Models, at /config?tab=providers", () => {
+  it("is a tab after Models and MCP servers, at /config?tab=providers", () => {
     const blocks = topTabSections.find((s) => s.id === "blocks")!;
     const ids = blocks.tabs.map((t) => t.id);
-    expect(ids.slice(0, 2)).toEqual(["models", "providers"]);
-    expect(blocks.tabs[1].label).toBe("Providers");
+    // MCP servers took the second place (the settings proposal of 2026-11-22)
+    expect(ids.slice(0, 3)).toEqual(["models", "mcp", "providers"]);
+    expect(blocks.tabs[2].label).toBe("Providers");
     expect(CONFIG_ROUTES.PROVIDERS).toBe("/config?tab=providers");
   });
 
