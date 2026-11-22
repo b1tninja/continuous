@@ -11,6 +11,7 @@ import { runAxe } from "./axe.mjs";
 import { countDiff, pageCompare, pairEntries, summarize } from "./diff.mjs";
 import { classify, measureOverflow } from "./overflow.mjs";
 import { serve } from "./server.mjs";
+import { checkStack, measureStack } from "./stack.mjs";
 
 async function loadPlaywright(playwrightDir) {
   const entry = path.join(playwrightDir, "index.mjs");
@@ -117,6 +118,19 @@ export async function shoot(o) {
           errors.push(`overflow: ${String(e.message).split("\n")[0]}`);
         }
       }
+      // A view about the stack above the prompt: what shows of the chat, the
+      // prompt and the approval buttons, and a "stack:" error when too little
+      let stack;
+      if (job.stack) {
+        try {
+          stack = await page.evaluate(measureStack);
+          for (const finding of checkStack(stack)) {
+            errors.push(`stack: ${finding}`);
+          }
+        } catch (e) {
+          errors.push(`stack: ${String(e.message).split("\n")[0]}`);
+        }
+      }
       const file = path.join(o.out, job.name);
       await page.screenshot({
         path: file,
@@ -138,6 +152,7 @@ export async function shoot(o) {
         errors,
         ...(axe ? { axe } : {}),
         ...(overflow ? { overflow } : {}),
+        ...(stack ? { stack } : {}),
       });
       console.error(
         `${job.name}  ${Date.now() - t1} ms${errors.length ? `  (${errors.length} errors, first: ${errors[0].slice(0, 120)})` : ""}`,

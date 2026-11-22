@@ -20,6 +20,7 @@ import { ProviderSetupFlow } from "@gui/components/ProviderSetup/ProviderSetupFl
 import type { MockIdeMessenger } from "@gui/context/MockIdeMessenger";
 import {
   addRequestUsageToSession,
+  enqueueMessage,
   newSession,
   setAllSessionMetadata,
   setContextPercentage,
@@ -654,6 +655,39 @@ export const FIXTURES: Record<string, Fixture> = {
         ]),
       ),
     );
+  },
+  /** A short panel's worst case: an approval waiting, a task list open, two queued messages */
+  "crowded-stack": async ({ store }) => {
+    const text = (t: string) => ({
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: t }] }],
+    });
+    store.dispatch(
+      newSession(
+        session([
+          user("Why does the parseConfig test fail?"),
+          assistant(MARKDOWN_REPLY),
+          user("Fix it and run the tests"),
+          assistant(
+            "I merged the defaults first. Now I will run the tests for that file.",
+            [runCommandCall("generated")],
+          ),
+        ]),
+      ),
+    );
+    store.dispatch(setTaskPlan(PLAN));
+    for (const t of [
+      "Also update the changelog",
+      "Then open a pull request against main",
+    ]) {
+      store.dispatch(
+        enqueueMessage({ editorState: text(t), modifiers: {} as never }),
+      );
+    }
+    await new Promise((r) => setTimeout(r, 300));
+    (
+      document.querySelector("[data-testid=task-list-toggle]") as HTMLElement
+    )?.click();
   },
   "tool-call-done": ({ store }) => {
     store.dispatch(

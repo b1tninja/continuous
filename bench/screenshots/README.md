@@ -59,6 +59,13 @@ reply at 62% context, so "Compact conversation" is spelled out under it),
 `long-prompt` (forty lines in the input; drawn with scrollbars, which every
 other view hides) and `zoom-150`.
 
+`crowded-stack` is a short panel's worst case: an approval waiting, the task
+list open with three tasks and two queued messages, above the prompt. Shoot it
+with `--height 400`. It is also measured (`src/stack.mjs`): its manifest entry
+gets `stack`, the height of the chat, the prompt and each approval button and
+how much of each shows, and a `stack:` error when under 96 px of the chat
+shows or the prompt or the first approval's buttons are cut.
+
 `zoom-150` is `status-row` at a zoom of 1.5. VS Code's window zoom is the
 browser's page zoom: the panel keeps its size on screen and the webview gets
 fewer CSS pixels across it, 1.2 times fewer per zoom level. So the view is
@@ -224,4 +231,5 @@ cd bench/screenshots && npm test
 ```
 
 Offline: the command line, the view list, the pixel counting, the file server's
-path check, the browser choice, and the overflow rules and baseline comparison.
+path check, the browser choice, the overflow rules and baseline comparison, and
+the height rule of `crowded-stack`.

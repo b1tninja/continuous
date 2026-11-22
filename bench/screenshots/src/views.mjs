@@ -19,6 +19,11 @@ export const VIEWS = {
     fixture: "approval",
     note: "three calls waiting for approval: a long command, a path outside the workspace, an MCP tool",
   },
+  "crowded-stack": {
+    fixture: "crowded-stack",
+    stack: true,
+    note: "an approval waiting, three tasks and two queued messages above the prompt; shoot it with --height 400 to see what a short panel leaves of the chat (measured: src/stack.mjs)",
+  },
   "tool-call-done": {
     fixture: "tool-call-done",
     note: "the same command after it ran",
@@ -332,6 +337,7 @@ export function planJobs({ views, widths, themes, height }) {
           name: shotName(view, width, theme),
           ...(VIEWS[view].zoom ? { zoom: VIEWS[view].zoom } : {}),
           ...(VIEWS[view].scrollbars ? { scrollbars: true } : {}),
+          ...(VIEWS[view].stack ? { stack: true } : {}),
         });
       }
     }
