@@ -6,10 +6,26 @@ import { Tool } from "core";
 import { useMemo, useState } from "react";
 import ToggleSwitch from "../../../components/gui/Switch";
 import { ToolTip } from "../../../components/gui/Tooltip";
-import { Card } from "../../../components/ui";
+import {
+  Card,
+  Listbox,
+  ListboxButton,
+  ListboxOption,
+  ListboxOptions,
+} from "../../../components/ui";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks";
 import { useToolChangeNote } from "../../../hooks/useToolChangeNote";
-import { toggleToolGroupSetting } from "../../../redux/slices/uiSlice";
+import {
+  setToolPolicies,
+  toggleToolGroupSetting,
+} from "../../../redux/slices/uiSlice";
+import {
+  GROUP_TOOL_POLICY_LABEL,
+  groupPolicyResultText,
+  groupPolicyState,
+  groupPolicyTargets,
+  GroupToolPolicy,
+} from "./toolGroupPolicy";
 import { ToolPolicyItem } from "./ToolPolicyItem";
 
 interface ToolPoliciesGroupProps {
@@ -18,6 +34,8 @@ interface ToolPoliciesGroupProps {
   displayName: string;
   allToolsOff: boolean;
   duplicateDetection: Record<string, boolean>;
+  /** Offer "set all to" on the header (an MCP server's group) */
+  setAllPolicy?: boolean;
 }
 
 export function ToolPoliciesGroup({
@@ -26,6 +44,7 @@ export function ToolPoliciesGroup({
   displayName,
   allToolsOff,
   duplicateDetection,
+  setAllPolicy = false,
 }: ToolPoliciesGroupProps) {
   const dispatch = useAppDispatch();
   const [isExpanded, setIsExpanded] = useState(false);
@@ -61,10 +80,31 @@ export function ToolPoliciesGroup({
     return `${enabledCount}/${totalCount}`;
   }, [enabledCount, totalCount]);
 
+  const { targets, skipped } = useMemo(
+    () => groupPolicyTargets(tools, toolSettings),
+    [tools, toolSettings],
+  );
+  const groupState = useMemo(
+    () => groupPolicyState(targets, toolSettings),
+    [targets, toolSettings],
+  );
+  const [setAllResult, setSetAllResult] = useState<string>();
+  const setAllDisabled = allToolsOff || !isGroupEnabled;
+  const setAll = (policy: GroupToolPolicy) => {
+    dispatch(
+      setToolPolicies({
+        toolNames: targets.map((tool) => tool.function.name),
+        policy,
+      }),
+    );
+    setSetAllResult(groupPolicyResultText(policy, targets.length, skipped));
+  };
+
   return (
     <Card className="flex flex-1 flex-col p-0">
       <div
-        className="flex cursor-pointer items-center justify-between gap-3 rounded-sm px-2 py-2 hover:bg-gray-50/5"
+        className="flex cursor-pointer flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-sm px-2 py-2 hover:bg-gray-50/5"
+        data-testid="tool-group-header"
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className="flex items-center gap-3">
@@ -81,29 +121,83 @@ export function ToolPoliciesGroup({
             </div>
           </div>
         </div>
-        <ToolTip
-          content={
-            allToolsOff
-              ? "Tools disabled in current mode"
-              : (isGroupEnabled
-                  ? `Disable all tools in ${groupName} group`
-                  : `Enable all tools in ${groupName} group`) +
-                (warmCacheNote
-                  ? `. This changes the tool list. ${warmCacheNote}`
-                  : "")
-          }
-        >
-          <div>
-            <ToggleSwitch
-              isToggled={isGroupEnabled}
-              onToggle={() => dispatch(toggleToolGroupSetting(groupName))}
-              text=""
-              size={10}
-              disabled={allToolsOff}
-            />
-          </div>
-        </ToolTip>
+        <div className="ml-auto flex items-center gap-2">
+          {setAllPolicy && groupState && (
+            // The menu is drawn elsewhere on the page but is a React child of
+            // the header: a choice must not also open or close the list.
+            <div onClick={(e) => e.stopPropagation()}>
+              <Listbox
+                value={groupState === "mixed" ? null : groupState}
+                onChange={(policy: GroupToolPolicy | null) => {
+                  if (policy) {
+                    setAll(policy);
+                  }
+                }}
+                disabled={setAllDisabled}
+              >
+                <ListboxButton
+                  className={
+                    setAllDisabled
+                      ? "h-7 cursor-not-allowed justify-between border-command-border px-2 whitespace-nowrap opacity-50"
+                      : "h-7 justify-between border-command-border px-2 whitespace-nowrap"
+                  }
+                  data-testid={`tool-group-policy-${groupName}`}
+                >
+                  <span className="text-xs">
+                    {groupState === "mixed"
+                      ? "Mixed"
+                      : `All: ${GROUP_TOOL_POLICY_LABEL[groupState]}`}
+                    {/* the name starts with the words on the button */}
+                    <span className="sr-only">
+                      {`, policy for all tools of ${groupName}`}
+                    </span>
+                  </span>
+                  <ChevronDownIcon className="h-3 w-3" />
+                </ListboxButton>
+                <ListboxOptions className="min-w-0" anchor="bottom end">
+                  <ListboxOption value="allowedWithoutPermission">
+                    Set all to Automatic
+                  </ListboxOption>
+                  <ListboxOption value="allowedWithPermission">
+                    Set all to Ask First
+                  </ListboxOption>
+                </ListboxOptions>
+              </Listbox>
+            </div>
+          )}
+          <ToolTip
+            content={
+              allToolsOff
+                ? "Tools disabled in current mode"
+                : (isGroupEnabled
+                    ? `Disable all tools in ${groupName} group`
+                    : `Enable all tools in ${groupName} group`) +
+                  (warmCacheNote
+                    ? `. This changes the tool list. ${warmCacheNote}`
+                    : "")
+            }
+          >
+            <div>
+              <ToggleSwitch
+                isToggled={isGroupEnabled}
+                onToggle={() => dispatch(toggleToolGroupSetting(groupName))}
+                text=""
+                size={10}
+                disabled={allToolsOff}
+              />
+            </div>
+          </ToolTip>
+        </div>
       </div>
+      {setAllPolicy && setAllResult && (
+        <div
+          role="status"
+          className="px-2 pb-2 text-xs text-description"
+          data-testid={`tool-group-policy-result-${groupName}`}
+        >
+          {setAllResult}
+        </div>
+      )}
 
       {isExpanded && (
         <div className="mt-3 space-y-1 pl-2">
