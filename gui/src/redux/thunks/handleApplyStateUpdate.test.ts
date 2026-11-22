@@ -1,5 +1,6 @@
 import { ApplyState, ApplyToFilePayload, ToolCallState } from "core";
 import { EDIT_MODE_STREAM_ID } from "core/edit/constants";
+import { EditNotAppliedReason } from "core/edit/editFailure";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { logAgentModeEditOutcome } from "../../util/editOutcomeLogger";
 import {
@@ -9,6 +10,7 @@ import {
 import { updateEditStateApplyState } from "../slices/editState";
 import {
   acceptToolCall,
+  cancelToolCall,
   errorToolCall,
   updateApplyState,
   updateToolCallOutput,
@@ -39,6 +41,7 @@ vi.mock("../slices/editState", () => ({
 
 vi.mock("../slices/sessionSlice", () => ({
   acceptToolCall: vi.fn(() => ({ type: "session/acceptToolCall" })),
+  cancelToolCall: vi.fn(() => ({ type: "session/cancelToolCall" })),
   errorToolCall: vi.fn(() => ({ type: "session/errorToolCall" })),
   updateApplyState: vi.fn(() => ({ type: "session/updateApplyState" })),
   updateToolCallOutput: vi.fn(() => ({ type: "session/updateToolCallOutput" })),
@@ -354,6 +357,72 @@ describe("handleApplyStateUpdate", () => {
       });
     });
 
+    it("a call that failed and said nothing says no cause is known, never the bare 'Failed to edit'", async () => {
+      const toolCallState: ToolCallState = {
+        toolCallId: "test-tool-call",
+        status: "errored",
+        toolCall: {
+          id: "test-tool-call",
+          type: "function",
+          function: { name: "multi_edit", arguments: "{}" },
+        },
+        parsedArgs: { filepath: "src/a.ts" },
+      };
+      vi.mocked(findToolCallById).mockReturnValue(toolCallState);
+      mockGetState.mockReturnValue({
+        session: { history: [], codeBlockApplyStates: { states: [] } },
+        config: { config: {} },
+      });
+
+      await handleApplyStateUpdate({
+        streamId: "chat-stream",
+        toolCallId: "test-tool-call",
+        status: "closed",
+      })(mockDispatch, mockGetState, mockExtra);
+
+      const content =
+        vi.mocked(updateToolCallOutput).mock.calls[0][0].contextItems[0]
+          .content;
+      expect(content).toBe(
+        "multi_edit did not change src/a.ts: the apply step failed and gave no reason.\nRead src/a.ts to see what it holds now, then send the edit again once. Do not rewrite the whole file.",
+      );
+      expect(content).not.toMatch(/Failed to edit/);
+    });
+
+    it("a diff rejected in the editor cancels the call: it is not reported as a successful edit", async () => {
+      const toolCallState: ToolCallState = {
+        toolCallId: "test-tool-call",
+        status: "calling",
+        ...UNUSED_TOOL_CALL_PARAMS,
+      };
+      vi.mocked(findToolCallById).mockReturnValue(toolCallState);
+      mockGetState.mockReturnValue({
+        session: { history: [], codeBlockApplyStates: { states: [] } },
+        config: { config: {} },
+      });
+
+      await handleApplyStateUpdate({
+        streamId: "chat-stream",
+        toolCallId: "test-tool-call",
+        status: "closed",
+        filepath: "test.txt",
+        rejected: true,
+      })(mockDispatch, mockGetState, mockExtra);
+
+      expect(cancelToolCall).toHaveBeenCalledWith({
+        toolCallId: "test-tool-call",
+      });
+      expect(acceptToolCall).not.toHaveBeenCalled();
+      expect(updateToolCallOutput).not.toHaveBeenCalled();
+      expect(streamResponseAfterToolCall).not.toHaveBeenCalled();
+      expect(logToolUsage).toHaveBeenCalledWith(
+        toolCallState,
+        false,
+        true,
+        mockExtra.ideMessenger,
+      );
+    });
+
     it("should handle closure when no tool call found", async () => {
       vi.mocked(findToolCallById).mockReturnValue(undefined);
       mockGetState.mockReturnValue({
@@ -542,7 +611,7 @@ describe("applyForEditTool", () => {
       expect(errorToolCall).toHaveBeenCalledWith({
         toolCallId: "test-tool-call",
       });
-      // The error's own text reaches the model
+      // The error's own text reaches the model, with what to do next
       expect(updateToolCallOutput).toHaveBeenCalledWith({
         toolCallId: "test-tool-call",
         contextItems: [
@@ -550,11 +619,54 @@ describe("applyForEditTool", () => {
             icon: "problems",
             name: "Apply Error",
             description: "Failed to apply changes",
-            content: `Error editing file: Request failed`,
+            content:
+              "unused did not change test.txt: the apply step failed.\nRequest failed.\nRead test.txt to see what it holds now, then send the edit again once. Do not rewrite the whole file.",
             hidden: false,
           },
         ],
       });
+    });
+
+    it("names the cause the IDE returned: the file changed since it was read", async () => {
+      const payload: ApplyToFilePayload & { toolCallId: string } = {
+        toolCallId: "test-tool-call",
+        streamId: "test-stream",
+        filepath: "file:///w/src/a.ts",
+        text: "new content",
+        isSearchAndReplace: true,
+      };
+      vi.mocked(selectToolCallById).mockReturnValue({
+        toolCallId: "test-tool-call",
+        status: "calling",
+        toolCall: {
+          id: "test-tool-call",
+          type: "function",
+          function: { name: "single_find_and_replace", arguments: "{}" },
+        },
+        parsedArgs: { filepath: "src/a.ts" },
+      });
+      vi.mocked(selectApplyStateByToolCallId).mockReturnValue({
+        status: "streaming",
+        streamId: "test-stream",
+      });
+      mockGetState.mockReturnValue({});
+      mockExtra.ideMessenger.request.mockResolvedValue({
+        status: "success",
+        content: { notApplied: EditNotAppliedReason.FileChanged },
+      });
+
+      await applyForEditTool(payload)(mockDispatch, mockGetState, mockExtra);
+
+      expect(errorToolCall).toHaveBeenCalledWith({
+        toolCallId: "test-tool-call",
+      });
+      // The path is the one the model gave, not the URI
+      expect(
+        vi.mocked(updateToolCallOutput).mock.calls[0][0].contextItems[0]
+          .content,
+      ).toBe(
+        "single_find_and_replace did not change src/a.ts: the file changed since it was read (it was typed in, or changed on disk). Nothing from this call was written. Read src/a.ts again and retry with the exact current text. Do not rewrite the whole file.",
+      );
     });
 
     it("should handle IDE messenger error response", async () => {
@@ -595,7 +707,8 @@ describe("applyForEditTool", () => {
             icon: "problems",
             name: "Apply Error",
             description: "Failed to apply changes",
-            content: `Error editing file: failed to apply changes to file.\n\nPlease try again with correct args or notify the user and request further instructions.`,
+            content:
+              "unused did not change test.txt: the apply step failed and gave no reason.\nRead test.txt to see what it holds now, then send the edit again once. Do not rewrite the whole file.",
             hidden: false,
           },
         ],

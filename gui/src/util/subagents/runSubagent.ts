@@ -49,6 +49,7 @@ import {
   cancelToolCall,
   errorToolCall,
   INITIAL_SESSION_STATE,
+  renameToolCall,
   sessionSlice,
   setProcessedToolCallArgs,
   setRepairedToolCallArgs,
@@ -57,6 +58,7 @@ import {
   updateSubagentRun,
   updateToolCallOutput,
 } from "../../redux/slices/sessionSlice";
+import { resolveToolAlias, unknownToolResult } from "core/tools/unknownTool";
 import { evaluateToolPolicy } from "../../redux/thunks/evaluateToolPolicies";
 import { findToolCallById } from "../../redux/util";
 import { constructMessages } from "../../redux/util/constructMessages";
@@ -583,7 +585,8 @@ export async function driveSubagent(
   }
 
   /** Runs one call; true when it ends the run (HandledCall.endRun). */
-  async function runChildToolCall(call: ToolCallState): Promise<boolean> {
+  async function runChildToolCall(given: ToolCallState): Promise<boolean> {
+    const call = aliasedCall(given);
     const name = call.toolCall.function.name;
     const summary: SubagentToolCallSummary = {
       name,
@@ -619,7 +622,12 @@ export async function driveSubagent(
     };
 
     if (!tools.some((t) => t.function.name === name)) {
-      fail(`${name} is not available to this subagent.`);
+      fail(
+        unknownToolResult(
+          name,
+          tools.map((t) => t.function.name),
+        ),
+      );
       return false;
     }
 
@@ -764,6 +772,34 @@ export async function driveSubagent(
 
   function findLocalCall(id: string): ToolCallState | undefined {
     return lastToolCalls(local).find((c) => c.toolCallId === id);
+  }
+
+  /**
+   * A call under the other surface's name for one of this subagent's tools
+   * (`Read` for `read_file`) becomes a call to that tool; any other call is
+   * returned as it is.
+   */
+  function aliasedCall(call: ToolCallState): ToolCallState {
+    const name = call.toolCall.function.name;
+    if (tools.some((t) => t.function.name === name)) return call;
+    const alias = resolveToolAlias(
+      name,
+      call.parsedArgs,
+      tools.map((t) => ({
+        name: t.function.name,
+        required: t.function.parameters?.required,
+      })),
+    );
+    if (!alias) return call;
+    reduce(
+      renameToolCall({
+        toolCallId: call.toolCallId,
+        name: alias.name,
+        args: alias.args,
+        tool: tools.find((t) => t.function.name === alias.name),
+      }),
+    );
+    return findLocalCall(call.toolCallId) ?? call;
   }
 }
 

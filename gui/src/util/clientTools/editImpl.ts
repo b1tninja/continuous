@@ -1,3 +1,4 @@
+import { ContinueError, ContinueErrorReason } from "core/util/errors";
 import {
   resolveRelativePathInDir,
   uniqueOpenFileInWorkspace,
@@ -40,7 +41,10 @@ export const editToolImpl: ClientToolImpl = async (
   }
 
   if (!firstUriMatch) {
-    throw new Error(`${filepath} does not exist`);
+    throw new ContinueError(
+      ContinueErrorReason.FileNotFound,
+      `${filepath} does not exist`,
+    );
   }
   // One edit at a time per file, so two diffs never open on it together
   await withFileLockUntilClosed(firstUriMatch, toolCallId, extras, async () => {

@@ -1,4 +1,9 @@
 import { ToolCallState } from "core";
+import {
+  editFailureCauseOf,
+  editFailureResult,
+  isIdeEditTool,
+} from "core/edit/editFailure";
 import { ContinueErrorReason } from "core/util/errors";
 import {
   incompleteToolCallResult,
@@ -102,6 +107,7 @@ export async function preprocessToolCalls(
         errorReason = ContinueErrorReason.Unknown;
       }
       if (errorReason) {
+        const toolName = tcState.toolCall.function.name;
         dispatch(
           errorToolCall({
             toolCallId: tcState.toolCallId,
@@ -115,7 +121,22 @@ export async function preprocessToolCalls(
                 icon: "problems",
                 name: "Invalid Tool Call",
                 description: "",
-                content: `${tcState.toolCall.function.name} failed because the arguments were invalid, with the following message: ${errorMessage}\n\nPlease try something else or request further instructions.`,
+                // The edit tools search for old_string here, so most edit
+                // failures end at this point: the result names the cause
+                content: isIdeEditTool(toolName)
+                  ? editFailureResult({
+                      tool: toolName,
+                      file: tcState.parsedArgs?.filepath,
+                      cause: editFailureCauseOf(errorReason),
+                      detail: errorMessage,
+                    })
+                  : errorReason === ContinueErrorReason.ToolNotFound &&
+                      errorMessage
+                    ? // A wrong name, not wrong arguments: core's text as it is
+                      errorMessage
+                    : // Not always the arguments' fault (a missing file, a
+                      // path outside the workspace): the message says which
+                      `${toolName} did not run: ${errorMessage}`,
                 hidden: false,
               },
             ],

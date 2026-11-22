@@ -8,6 +8,7 @@ import {
   ToolResultChatMessage,
   UserChatMessage,
 } from "core";
+import { cancelledEditResult } from "core/edit/editFailure";
 import { describeToolCall } from "core/llm/contextBreakdown";
 import { chatMessageIsEmpty } from "core/llm/messages";
 import {
@@ -344,7 +345,12 @@ function historyToMessages(
           let content: string = NO_TOOL_CALL_OUTPUT_MESSAGE;
 
           if (status === "canceled") {
-            content = CANCELLED_TOOL_CALL_MESSAGE;
+            // A cancelled edit says the file is as it was
+            content =
+              cancelledEditResult(
+                toolCall.function?.name,
+                toolCallState.parsedArgs,
+              ) ?? CANCELLED_TOOL_CALL_MESSAGE;
           } else if (output) {
             if (
               toolCall.function?.name == BuiltInToolNames.RunTerminalCommand

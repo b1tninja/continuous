@@ -1,3 +1,5 @@
+import { refusalText } from "../../tools/refusalText";
+
 /**
  * Typed outcomes of a web fetch and their exact texts (plans/research/
  * web-fetch-large-pages-and-policy.md, sections 6.1 and 6.2, row WB41).
@@ -116,9 +118,8 @@ export interface WebOutcome {
 /** The sentence the hard refusals gain. */
 export const DO_NOT_RETRY = "Do not retry it unchanged.";
 
-/** The second half of the permission refusals (`toolListHold.ts`). */
-export const CARRY_ON =
-  "Do not retry this call or reach the same result another way. Do what else the request needs, then say what you could not do and why.";
+/** The second half of the permission refusals. */
+export const CARRY_ON = refusalText.carryOn;
 
 /** Server text quoted in a result is cut to this many characters. */
 export const MAX_QUOTE_CHARS = 120;

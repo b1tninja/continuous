@@ -1,22 +1,19 @@
-/**
- * Why an edit was not applied, worded for the model that asked for it. The
- * chat turns the error of an `applyToFile` request into the tool call's
- * result (gui `applyForEditTool`), so every way an apply can stop without
- * writing must throw one of these. A quiet `return` left the tool call
- * running forever: the chat held every new message in its queue and Stop
- * could not end the turn.
- */
-export enum EditNotAppliedReason {
-  /** The document was typed in, or changed on disk, after the edit read it. */
-  FileChanged = "file-changed",
-  /** No editor could be opened or found for the file. */
-  NoEditor = "no-editor",
-  /** The diff view for the file could not be created. */
-  NoDiffView = "no-diff-view",
-  /** The config, or a model for the apply role, was not available. */
-  NoApplyModel = "no-apply-model",
-}
+import { EditNotAppliedReason } from "core/edit/editFailure";
 
+/**
+ * Why an edit was not applied. The `applyToFile` handler returns the reason
+ * to the chat, which words the tool call's result from it (gui
+ * `applyForEditTool`, core `editFailureResult`), so every way an apply can
+ * stop without writing must throw one of these. A quiet `return` left the
+ * tool call running forever: the chat held every new message in its queue
+ * and Stop could not end the turn.
+ *
+ * The reasons live in core, so the chat names the cause without reading it
+ * back out of a message.
+ */
+export { EditNotAppliedReason };
+
+// For the log and the error itself; the model's text is core's
 const MESSAGES: Record<EditNotAppliedReason, string> = {
   [EditNotAppliedReason.FileChanged]:
     "The file changed in the editor while the edit was being applied (it was typed in, or changed on disk), so nothing was written. Read the file again and retry the edit.",

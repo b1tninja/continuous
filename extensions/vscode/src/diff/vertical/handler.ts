@@ -30,6 +30,8 @@ export interface VerticalDiffHandlerOptions {
     status?: ApplyState["status"],
     numDiffs?: ApplyState["numDiffs"],
     fileContent?: ApplyState["fileContent"],
+    /** With "closed": the person rejected the diff */
+    rejected?: boolean,
   ) => void;
   streamId?: string;
 }
@@ -137,7 +139,12 @@ export class VerticalDiffHandler implements vscode.Disposable {
     return this.editor.document.uri.toString();
   }
 
-  async clear(accept: boolean) {
+  /**
+   * `rejectedByPerson`: the person rejected the diff, which the chat reports
+   * to the model. A clear that makes room for a new diff, or follows an
+   * error, is not a rejection.
+   */
+  async clear(accept: boolean, rejectedByPerson = false) {
     vscode.commands.executeCommand(
       "setContext",
       "continuous.streamingDiff",
@@ -158,6 +165,7 @@ export class VerticalDiffHandler implements vscode.Disposable {
       "closed",
       this.editorToVerticalDiffCodeLens.get(this.fileUri)?.length ?? 0,
       this.editor.document.getText(),
+      !accept && rejectedByPerson,
     );
 
     this.cancelled = true;

@@ -137,10 +137,14 @@ export class VerticalDiffManager {
   }
 
   /** Same as clearForfileUri, but waits until the editor edits have finished. */
-  async finishDiff(fileUri: string, accept: boolean): Promise<void> {
+  async finishDiff(
+    fileUri: string,
+    accept: boolean,
+    rejectedByPerson = false,
+  ): Promise<void> {
     const handler = this.fileUriToHandler.get(fileUri);
     if (handler) {
-      await handler.clear(accept);
+      await handler.clear(accept, rejectedByPerson);
       this.fileUriToHandler.delete(fileUri);
     }
     this.disableDocumentChangeListener();
@@ -155,7 +159,12 @@ export class VerticalDiffManager {
     );
   }
 
-  clearForfileUri(fileUri: string | undefined, accept: boolean) {
+  /** `rejectedByPerson`: see VerticalDiffHandler.clear */
+  clearForfileUri(
+    fileUri: string | undefined,
+    accept: boolean,
+    rejectedByPerson = false,
+  ) {
     if (!fileUri) {
       const activeEditor = vscode.window.activeTextEditor;
       if (!activeEditor) {
@@ -166,7 +175,7 @@ export class VerticalDiffManager {
 
     const handler = this.fileUriToHandler.get(fileUri);
     if (handler) {
-      handler.clear(accept);
+      handler.clear(accept, rejectedByPerson);
       this.fileUriToHandler.delete(fileUri);
     }
 
@@ -279,7 +288,7 @@ export class VerticalDiffManager {
       endLine,
       {
         instant,
-        onStatusUpdate: (status, numDiffs, fileContent) =>
+        onStatusUpdate: (status, numDiffs, fileContent, rejected) =>
           void this.webviewProtocol.request("updateApplyState", {
             streamId,
             status,
@@ -287,6 +296,7 @@ export class VerticalDiffManager {
             fileContent,
             filepath: fileUri,
             toolCallId,
+            ...(rejected ? { rejected } : {}),
           }),
         streamId,
       },
@@ -370,7 +380,7 @@ export class VerticalDiffManager {
       {
         instant: true,
         expectedVersion: documentVersion,
-        onStatusUpdate: (status, numDiffs, fileContent) =>
+        onStatusUpdate: (status, numDiffs, fileContent, rejected) =>
           void this.webviewProtocol.request("updateApplyState", {
             streamId,
             status,
@@ -378,6 +388,7 @@ export class VerticalDiffManager {
             fileContent,
             filepath,
             toolCallId,
+            ...(rejected ? { rejected } : {}),
           }),
         streamId,
       },
@@ -514,7 +525,7 @@ export class VerticalDiffManager {
       {
         instant: isFastApplyModel(llm),
         input,
-        onStatusUpdate: (status, numDiffs, fileContent) =>
+        onStatusUpdate: (status, numDiffs, fileContent, rejected) =>
           streamId &&
           void this.webviewProtocol.request("updateApplyState", {
             streamId,
@@ -523,6 +534,7 @@ export class VerticalDiffManager {
             fileContent,
             filepath: fileUri,
             toolCallId,
+            ...(rejected ? { rejected } : {}),
           }),
         streamId,
       },

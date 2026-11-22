@@ -169,7 +169,7 @@ describe("a streamed call whose arguments did not parse", () => {
     const { preprocessedCalls, errorChatEntries } =
       await preprocessStreamedToolCalls(true, [call], { onToolError } as never);
     expect(preprocessedCalls).toEqual([]);
-    // The cut-off line, not "Tool NoSuchTool not found": nothing was looked up
+    // The cut-off line, not "There is no tool named NoSuchTool": nothing was looked up
     expect(errorChatEntries).toEqual([
       {
         role: "tool",

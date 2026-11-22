@@ -1584,6 +1584,43 @@ export const sessionSlice = createSlice({
         }
       }
     },
+    // A call made under the name another surface uses for a tool on offer
+    // here (core/tools/unknownTool): it becomes a call to that tool, in the
+    // call's state and in the assistant message, so every later check, the
+    // run and the next request see the tool that ran
+    renameToolCall: (
+      state,
+      {
+        payload,
+      }: PayloadAction<{
+        toolCallId: string;
+        name: string;
+        args: Record<string, any>;
+        tool?: Tool;
+      }>,
+    ) => {
+      for (let i = state.history.length - 1; i >= 0; i--) {
+        const item = state.history[i];
+        const toolCallState = item.toolCallStates?.find(
+          (tc) => tc.toolCallId === payload.toolCallId,
+        );
+        if (!toolCallState) continue;
+        const argumentsText = JSON.stringify(payload.args);
+        toolCallState.toolCall.function.name = payload.name;
+        toolCallState.toolCall.function.arguments = argumentsText;
+        toolCallState.parsedArgs = payload.args;
+        if (payload.tool) toolCallState.tool = payload.tool;
+        if (item.message.role === "assistant") {
+          for (const call of item.message.toolCalls ?? []) {
+            if (call.id === payload.toolCallId && call.function) {
+              call.function.name = payload.name;
+              call.function.arguments = argumentsText;
+            }
+          }
+        }
+        return;
+      }
+    },
     updateToolCallOutput: (
       state,
       action: PayloadAction<{
@@ -2105,6 +2142,7 @@ export const {
   errorToolCall,
   acceptToolCall,
   setToolGenerated,
+  renameToolCall,
   updateToolCallOutput,
   setProcessedToolCallArgs,
   setRepairedToolCallArgs,

@@ -94,7 +94,8 @@ describe("handleToolCalls - duplicate tool_result prevention", () => {
         {
           role: "tool",
           tool_call_id: "tool-call-1",
-          content: "Tool invalid_tool not found",
+          content:
+            "There is no tool named invalid_tool. The tools available are: Read, Bash.",
         },
       ],
     });
@@ -115,7 +116,7 @@ describe("handleToolCalls - duplicate tool_result prevention", () => {
     // CRITICAL: addToolResult should be called to update the toolCallState
     expect(services.chatHistory.addToolResult).toHaveBeenCalledWith(
       "tool-call-1",
-      "Tool invalid_tool not found",
+      "There is no tool named invalid_tool. The tools available are: Read, Bash.",
       "errored",
     );
 
@@ -221,7 +222,8 @@ describe("handleToolCalls - duplicate tool_result prevention", () => {
             parsedArgs: {},
             output: [
               {
-                content: "Tool nonexistent not found",
+                content:
+                  "There is no tool named nonexistent. The tools available are: Read, Bash.",
                 name: "Tool Result",
                 description: "Tool execution result",
               },
@@ -242,7 +244,8 @@ describe("handleToolCalls - duplicate tool_result prevention", () => {
     expect(toolMessagesForCall).toHaveLength(1);
     expect(toolMessagesForCall[0]).toEqual({
       role: "tool",
-      content: "Tool nonexistent not found",
+      content:
+        "There is no tool named nonexistent. The tools available are: Read, Bash.",
       tool_call_id: "tool-call-error",
     });
   });
@@ -343,7 +346,8 @@ describe("handleToolCalls - duplicate tool_result prevention", () => {
         {
           role: "tool",
           tool_call_id: "fallback-tool-1",
-          content: "Tool broken_tool not found",
+          content:
+            "There is no tool named broken_tool. The tools available are: Read, Bash.",
         },
       ],
     });
@@ -382,7 +386,8 @@ describe("handleToolCalls - duplicate tool_result prevention", () => {
     expect(toolState!.status).toBe("errored");
     expect(toolState!.output).toEqual([
       {
-        content: "Tool broken_tool not found",
+        content:
+          "There is no tool named broken_tool. The tools available are: Read, Bash.",
         name: "Tool Result",
         description: "Tool execution result",
       },

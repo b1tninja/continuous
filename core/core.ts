@@ -91,6 +91,7 @@ import {
 import { terminalEndOf } from "./tools/permissions/audit/terminalEnd";
 import { callTool } from "./tools/callTool";
 import { coerceStringArgsToSchema } from "./tools/parseArgs";
+import { unknownToolResult } from "./tools/unknownTool";
 import { toolForPolicy } from "./tools/definitions/sessionMessaging";
 import { recordAutoAnswer } from "./tools/permissions/audit/autoAnswer";
 import { getAuditTrail } from "./tools/permissions/audit/global";
@@ -2853,7 +2854,16 @@ export class Core {
 
         const tool = config?.tools.find((t) => t.function.name === toolName);
         if (!tool) {
-          throw new Error(`Tool ${toolName} not found`);
+          // Answered, not thrown: a wrong name is not a failure of the
+          // arguments, and the caller says so with this text
+          return {
+            preprocessedArgs: undefined,
+            errorReason: ContinueErrorReason.ToolNotFound,
+            errorMessage: unknownToolResult(
+              toolName,
+              config.tools.map((t) => t.function.name),
+            ),
+          };
         }
 
         // Some models send an array, boolean or number as a string. Read here,
@@ -2939,7 +2949,12 @@ export class Core {
     );
 
     if (!tool) {
-      throw new Error(`Tool ${toolCall.function.name} not found`);
+      throw new Error(
+        unknownToolResult(
+          toolCall.function.name,
+          config.tools.map((t) => t.function.name),
+        ),
+      );
     }
 
     if (!config.selectedModelByRole.chat) {

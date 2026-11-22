@@ -12,6 +12,7 @@ import { userTextForReview } from "core/tools/permissions/auto/history";
 import type { ReviewHistory } from "core/tools/permissions/auto/prompt";
 import { isFlaggedOutput } from "core/tools/permissions/injection";
 import type { DecisionSource } from "core/tools/permissions/decide";
+import { refusalText } from "core/tools/refusalText";
 import { IIdeMessenger } from "../../context/IdeMessenger";
 import { isEditTool } from "../../util/toolCallState";
 import {
@@ -413,21 +414,22 @@ export function refusalMessage(
   // text never says to stop and ask: whether the model must stop is the
   // harness's decision (the refusal cap), not the prose's
   // (plans/policy-areas.md, "Decision order"; policy-areas-prompts.md, 7.1).
+  // The sentences are core's, shared with the CLI (core/tools/refusalText).
   switch (source) {
     case "auto":
       return {
         description: `Blocked by Auto${category ? ` [${category}]` : ""}`,
-        content: `A reviewer model refused this call${category ? ` (${category})` : ""}: ${reason ?? "no reason given"}\n\n${command}\n\nDo not retry this call or reach the same result another way. Find a safer route to the same end if one exists; otherwise do what else the request needs, then say what you could not do and why.`,
+        content: refusalText.reviewerRefused(command, reason, category),
       };
     case "deny-rule":
       return {
         description: "Blocked by your rule",
-        content: `${reason ?? "Blocked by a rule in the user's config.yaml."}\n\n${command}\n\n${CARRY_ON}`,
+        content: refusalText.denyRule(command, reason),
       };
     case "tool-setting":
       return {
         description: "Tool turned off",
-        content: `${reason ?? "This tool is turned off in the user's tool settings."}\n\n${command}\n\nDo not work around this. Do what else the request needs, then say what you could not do and why.`,
+        content: refusalText.toolOff(command, reason),
       };
     case "shell-hint":
       return {
@@ -437,14 +439,10 @@ export function refusalMessage(
     default:
       return {
         description: "Command Disabled",
-        content: `This command has been disabled by security policy:\n\n${command}\n\n${CARRY_ON}`,
+        content: refusalText.disabledByPolicy(command),
       };
   }
 }
-
-/** The second half of every refusal: no retry, no detour, finish the rest. */
-const CARRY_ON =
-  "Do not retry this call or reach the same result another way. Do what else the request needs, then say what you could not do and why.";
 
 /*
     1. Get arg-dependent tool policies from core

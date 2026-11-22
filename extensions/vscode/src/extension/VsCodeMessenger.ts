@@ -19,6 +19,7 @@ import { stripImages } from "core/util/messageContent";
 import * as vscode from "vscode";
 
 import { ApplyManager } from "../apply";
+import { EditNotAppliedError } from "../apply/editNotApplied";
 import { VerticalDiffManager } from "../diff/vertical/manager";
 import { addCurrentSelectionToEdit } from "../quickEdit/AddCurrentSelection";
 import EditDecorationManager from "../quickEdit/EditDecorationManager";
@@ -151,7 +152,15 @@ export class VsCodeMessenger {
         configHandler,
       );
 
-      await applyManager.applyToFile(data);
+      try {
+        await applyManager.applyToFile(data);
+      } catch (e) {
+        // The chat words the edit's result from the reason
+        if (e instanceof EditNotAppliedError) {
+          return { notApplied: e.reason };
+        }
+        throw e;
+      }
     });
 
     this.onWebview("showTutorial", async (msg) => {

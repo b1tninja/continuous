@@ -359,7 +359,7 @@ describe("askResult: what the model is told", () => {
     expect(r.denialMessage).toContain("No answer to Bash within 15 s");
     expect(r.denialMessage).toContain("did not refuse it");
     expect(r.denialMessage).not.toMatch(
-      /Permission denied by user|alternative approach|security policy/i,
+      /The person declined|alternative approach|security policy/i,
     );
   });
 
