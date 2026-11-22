@@ -1,9 +1,11 @@
-import type { AuditTrail } from "core/tools/permissions/audit/trail";
 import {
   POLICY_AREAS,
   POLICY_LEVELS,
   type PolicyLevel,
 } from "core/tools/permissions/policy";
+import { typedCommandRefusal } from "core/util/typedCommand";
+
+import type { AuditTrail } from "core/tools/permissions/audit/trail";
 
 /** The panel's policy/save body: known areas and known levels only. */
 export function policySavePayloadOk(data: unknown): boolean {
@@ -39,11 +41,40 @@ export function openUrlFromWebviewOk(data: unknown): data is string {
   }
 }
 
-export function runCommandFromWebviewOk(
+export type TypedCommand =
+  { ok: true; command: string } | { ok: false; reason: string };
+
+/**
+ * The panel's runCommand: the text is typed into the terminal and Enter is
+ * left to the person, so it must be one line of plain text
+ * (typedCommandRefusal). What was typed, and what was refused, is written to
+ * the audit trail.
+ */
+export function runCommandFromWebview(
   data: unknown,
-): data is { command: string } {
-  if (!data || typeof data !== "object" || Array.isArray(data)) return false;
-  return typeof (data as { command?: unknown }).command === "string";
+  trail: Pick<AuditTrail, "decision" | "outcome">,
+  now: () => number = Date.now,
+): TypedCommand {
+  const command =
+    data && typeof data === "object" && !Array.isArray(data)
+      ? (data as { command?: unknown }).command
+      : undefined;
+  const why = typedCommandRefusal(command);
+  const reason = why
+    ? `The command was not typed into the terminal: ${why}.`
+    : "Typed into the terminal and not run: it runs if the person presses Enter.";
+  const callId = `webview-runCommand-${now()}`;
+  trail.decision({
+    callId,
+    tool: "runCommand",
+    args: auditedArgs(typeof command === "string" ? { command } : data),
+    policy: why ? "deny" : "ask",
+    by: "system",
+    source: "webview-message",
+    reason,
+  });
+  trail.outcome({ callId, ran: false, ...(why ? { error: reason } : {}) });
+  return why ? { ok: false, reason } : { ok: true, command: command as string };
 }
 
 export function writeFileFromWebviewOk(
@@ -63,6 +94,16 @@ export const DENIED_FROM_WEBVIEW: readonly string[] = ["subprocess"];
 
 const MAX_AUDITED_ARGS = 4_000;
 
+/** What the panel asked for, as the audit row keeps it. */
+function auditedArgs(data: unknown): string {
+  try {
+    return (JSON.stringify(data) ?? "").slice(0, MAX_AUDITED_ARGS);
+  } catch {
+    // it could not be written; the row still is
+    return "";
+  }
+}
+
 /**
  * The refusal for a message the panel may not send, or undefined for any
  * other. A refusal is written to the audit trail with what was asked for.
@@ -80,12 +121,7 @@ export function refuseFromWebview(
     return undefined;
   }
   const reason = `The panel may not send "${messageType}": nothing was run.`;
-  let args = "";
-  try {
-    args = (JSON.stringify(data) ?? "").slice(0, MAX_AUDITED_ARGS);
-  } catch {
-    // what was asked for could not be written; the refusal still is
-  }
+  const args = auditedArgs(data);
   const callId = `webview-${messageType}-${now()}`;
   trail.decision({
     callId,

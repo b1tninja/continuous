@@ -68,6 +68,33 @@ object WebviewIdeGate {
         "applyToFile",
     )
 
+    /** As core/util/typedCommand.ts: MAX_TYPED_COMMAND_CHARS */
+    const val MAX_TYPED_COMMAND_CHARS = 8_000
+
+    // Line and paragraph separators, and direction marks: with these the
+    // person would read a command other than the one Enter runs
+    private val DIRECTION_MARKS =
+        setOf('\u061C', '\u200E', '\u200F', '\u2028', '\u2029') + ('\u202A'..'\u202E') + ('\u2066'..'\u2069')
+
+    /**
+     * Why the panel's runCommand text is not typed into the terminal, or null
+     * when it may be. The text is typed and Enter is left to the person, which
+     * holds only for one line of plain text: a line break runs what is before
+     * it, and any other control character reaches the shell as a key press.
+     * The same check as core/util/typedCommand.ts (typedCommandRefusal).
+     */
+    fun typedCommandRefusal(data: Any?): String? {
+        val command = (data as? Map<*, *>)?.get("command") as? String
+        if (command.isNullOrBlank()) return "there is no command"
+        if (command.length > MAX_TYPED_COMMAND_CHARS) {
+            return "it is longer than $MAX_TYPED_COMMAND_CHARS characters"
+        }
+        if (command.any { it.isISOControl() || it in DIRECTION_MARKS }) {
+            return "it has a line break or a control character"
+        }
+        return null
+    }
+
     fun route(messageType: String?): Route {
         if (messageType.isNullOrBlank()) return Route.REJECT
         if (messageType in DENIED_FROM_PANEL) return Route.REJECT
