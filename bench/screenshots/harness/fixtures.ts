@@ -16,10 +16,14 @@ import { createLoop, enterWait, stopLoop } from "core/util/loopMode";
 import { addBlockedCall } from "@gui/redux/slices/blockedCallsSlice";
 import { setPolicyLevel } from "@gui/redux/slices/uiSlice";
 import { POLICY_AREAS } from "core/tools/permissions/policy";
+import { ProviderSetupFlow } from "@gui/components/ProviderSetup/ProviderSetupFlow";
 import type { MockIdeMessenger } from "@gui/context/MockIdeMessenger";
 import {
   addRequestUsageToSession,
   newSession,
+  setAllSessionMetadata,
+  setContextPercentage,
+  setMainEditorContentTrigger,
   setLoop,
   setPromptCacheState,
   noteToolDialectLeak,
@@ -28,7 +32,12 @@ import {
   setRecoveryHold,
   setTaskPlan,
 } from "@gui/redux/slices/sessionSlice";
-import { setOnboardingCard } from "@gui/redux/slices/uiSlice";
+import {
+  setDialogMessage,
+  setOnboardingCard,
+  setShowDialog,
+} from "@gui/redux/slices/uiSlice";
+import { createElement } from "react";
 import type { setupStore } from "@gui/redux/store";
 import { AUDIT_FIXTURES } from "./auditFixtures";
 
@@ -1202,6 +1211,175 @@ Object.assign(FIXTURES, {
       new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }),
     );
     await sleep(600);
+  },
+});
+
+/** Model ids as long as the ones routers and Bedrock give, with no place to break. */
+const LONG_MODELS = [
+  {
+    name: "accounts/fireworks/models/llama-v3p3-70b-instruct-long-context-preview",
+    model:
+      "accounts/fireworks/models/llama-v3p3-70b-instruct-long-context-preview",
+  },
+  {
+    name: "Claude Sonnet 4.5 (cross-region inference profile, eu-west-1)",
+    model: "eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  },
+];
+
+const HOUR = 3_600_000;
+// Ages from the real clock, so the Today and older groups hold the same rows on every run
+const SESSIONS = [
+  ["Fix the failing parseConfig test", 1],
+  [
+    "Why does extensions/vscode/src/autocomplete/completionProvider.ts debounce twice when the document changes",
+    3,
+  ],
+  [
+    "refactor_the_whole_authentication_middleware_without_spaces_in_the_title",
+    30,
+  ],
+  ["Release notes for 2.22", 24 * 9],
+  [
+    "A question about context windows and how the meter counts tool output",
+    24 * 45,
+  ],
+].map(([title, hoursAgo], i) => ({
+  sessionId: `fixture-history-${i}`,
+  title: title as string,
+  dateCreated: String(Date.now() - (hoursAgo as number) * HOUR),
+  workspaceDirectory: "file:///Users/user/workspace1",
+  messageCount: 4 + i * 7,
+}));
+
+/** What core answers about the configured connections: one, with LONG_MODELS and a stored key. */
+function longModelSetup(provider: string) {
+  return {
+    connections: [
+      {
+        provider,
+        connection: {},
+        models: LONG_MODELS,
+        key: { state: "secret", secretName: "FIXTURE_API_KEY" },
+      },
+    ],
+    secureStorageAvailable: true,
+    preferredKeyStorage: "secure",
+    editable: true,
+  };
+}
+
+Object.assign(FIXTURES, {
+  /**
+   * The setup form where issue 982 was: the onboarding card's API key tab, a
+   * centred flex row, at the model list, with two configured models whose ids
+   * are long. A flex item is as wide as its longest row unless it may shrink.
+   */
+  "setup-long-model": async ({ store, messenger }: FixtureContext) => {
+    (messenger.responses as any)["config/getProviderSetup"] =
+      longModelSetup("anthropic");
+    store.dispatch(
+      setOnboardingCard({ show: true, activeTab: "API Key" as never }),
+    );
+    await sleep(700);
+    // the key is already stored, so the first step has nothing to ask for
+    clickButton("Next");
+    await sleep(500);
+  },
+  /** The same list in the app dialog, as "Manage models" opens it on a connection */
+  "setup-dialog": async ({ store, messenger }: FixtureContext) => {
+    (messenger.responses as any)["config/getProviderSetup"] =
+      longModelSetup("together");
+    store.dispatch(newSession());
+    store.dispatch(setShowDialog(true));
+    store.dispatch(
+      setDialogMessage(
+        createElement(ProviderSetupFlow, {
+          initialProvider: "together",
+          initialConnection: {},
+          initialStep: "models",
+          onDone: () => {},
+          onCancel: () => {},
+        }),
+      ),
+    );
+    await sleep(600);
+  },
+  /** History with sessions from today to last month, and its search box */
+  history: async ({ store, messenger, navigate }: FixtureContext) => {
+    (messenger.responses as any)["history/list"] = SESSIONS;
+    store.dispatch(setAllSessionMetadata(SESSIONS));
+    navigate("/history");
+    await sleep(600);
+  },
+  /**
+   * A reply whose render throws, so the error boundary round the message
+   * draws the error, its stack and Restart. The reply's reasoning text is a
+   * number: only the message body reads it, and it calls a string method on it.
+   */
+  "message-error": ({ store }: FixtureContext) => {
+    store.dispatch(
+      newSession(
+        session([
+          user("Why does the parseConfig test fail?"),
+          {
+            ...assistant(MARKDOWN_REPLY),
+            reasoning: { text: 5 as never, startAt: 0, endAt: 1 },
+          },
+        ]),
+      ),
+    );
+  },
+  /** A reply at 62% context: the compact button in the row under it gets its words */
+  "context-60": ({ store }: FixtureContext) => {
+    statusRowScene(store);
+    store.dispatch(setContextPercentage(0.62));
+  },
+  /**
+   * A reasoning model with a long name and a thinking level set for the mode,
+   * so the Thinking menu and the model name share the left of the input row.
+   */
+  "thinking-menu": async ({ store, messenger }: FixtureContext) => {
+    const model = {
+      ...CHAT_MODEL,
+      title: "Claude Sonnet 4.5 (Bedrock, eu-west-1)",
+    };
+    const info: any = structuredClone(
+      messenger.responses["config/getSerializedProfileInfo"],
+    );
+    const config = info.result.config;
+    config.modelsByRole.chat = [model];
+    config.selectedModelByRole.chat = model;
+    const mode = store.getState().session.mode;
+    config.modeModels = {
+      [mode]: { title: model.title, reasoningEffort: "medium" },
+    };
+    messenger.mockMessageToWebview("configUpdate", info);
+    statusRowScene(store);
+    await sleep(300);
+  },
+  /** A prompt of forty lines: the input stops growing and scrolls inside itself */
+  "long-prompt": async ({ store }: FixtureContext) => {
+    store.dispatch(newSession());
+    await sleep(600);
+    store.dispatch(
+      setMainEditorContentTrigger({
+        type: "doc",
+        content: Array.from({ length: 40 }, (_, i) => ({
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text:
+                i % 8 === 3
+                  ? "gui/src/components/mainInput/TipTapEditor/utils/resolveEditorContent.ts:214"
+                  : `Step ${i + 1}: read the failing test, then change only what it needs.`,
+            },
+          ],
+        })),
+      }),
+    );
+    await sleep(400);
   },
 });
 

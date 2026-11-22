@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 import { chooseBrowser } from "./browser.mjs";
 import { runAxe } from "./axe.mjs";
 import { countDiff, pageCompare, pairEntries, summarize } from "./diff.mjs";
+import { classify, measureOverflow } from "./overflow.mjs";
 import { serve } from "./server.mjs";
 
 async function loadPlaywright(playwrightDir) {
@@ -16,16 +17,21 @@ async function loadPlaywright(playwrightDir) {
   return (await import(pathToFileURL(entry).href)).chromium;
 }
 
-export function launchOptions(choice) {
+/**
+ * `scrollbars` draws them, for a view that is about one. Playwright hides
+ * them in a headless browser by itself, so leaving our switch out is not enough.
+ */
+export function launchOptions(choice, { scrollbars = false } = {}) {
   return {
     headless: true,
     executablePath: choice.executablePath,
     // the GPU is not needed and is absent in the sandbox
     args: [
       "--disable-gpu",
-      "--hide-scrollbars",
+      ...(scrollbars ? [] : ["--hide-scrollbars"]),
       "--force-device-scale-factor=1",
     ],
+    ...(scrollbars ? { ignoreDefaultArgs: ["--hide-scrollbars"] } : {}),
   };
 }
 
@@ -37,6 +43,7 @@ export function launchOptions(choice) {
  * @param {string} o.playwrightDir folder of playwright-core (index.mjs)
  * @param {string} o.browser auto|chromium|edge|chrome
  * @param {boolean} [o.axe] run axe-core after __shotReady and record violations per entry
+ * @param {boolean} [o.overflow] record what does not fit sideways per entry (src/overflow.mjs)
  */
 export async function shoot(o) {
   fs.mkdirSync(o.out, { recursive: true });
@@ -54,15 +61,30 @@ export async function shoot(o) {
   const t0 = Date.now();
   const entries = [];
   let browser;
+  // Scrollbars are a launch switch, so a view that shows them gets a second browser
+  let withScrollbars;
   try {
     browser = await chromium.launch(launchOptions(choice));
     const version = browser.version();
     for (const job of o.jobs) {
       const t1 = Date.now();
-      const context = await browser.newContext({
-        viewport: { width: job.width, height: job.height },
+      if (job.scrollbars) {
+        withScrollbars ??= await chromium.launch(
+          launchOptions(choice, { scrollbars: true }),
+        );
+      }
+      // A zoomed view is the same panel with fewer CSS pixels across it, as
+      // VS Code's window zoom gives a webview; the picture keeps its size.
+      const zoom = job.zoom ?? 1;
+      const context = await (
+        job.scrollbars ? withScrollbars : browser
+      ).newContext({
+        viewport: {
+          width: Math.round(job.width / zoom),
+          height: Math.round(job.height / zoom),
+        },
         colorScheme: job.theme === "light" ? "light" : "dark",
-        deviceScaleFactor: 1,
+        deviceScaleFactor: zoom,
         reducedMotion: "reduce",
       });
       const page = await context.newPage();
@@ -87,6 +109,14 @@ export async function shoot(o) {
           errors.push(`axe: ${String(e.message).split("\n")[0]}`);
         }
       }
+      let overflow;
+      if (o.overflow) {
+        try {
+          overflow = classify(await page.evaluate(measureOverflow));
+        } catch (e) {
+          errors.push(`overflow: ${String(e.message).split("\n")[0]}`);
+        }
+      }
       const file = path.join(o.out, job.name);
       await page.screenshot({
         path: file,
@@ -107,6 +137,7 @@ export async function shoot(o) {
         ms: Date.now() - t1,
         errors,
         ...(axe ? { axe } : {}),
+        ...(overflow ? { overflow } : {}),
       });
       console.error(
         `${job.name}  ${Date.now() - t1} ms${errors.length ? `  (${errors.length} errors, first: ${errors[0].slice(0, 120)})` : ""}`,
@@ -126,6 +157,7 @@ export async function shoot(o) {
     return manifest;
   } finally {
     await browser?.close().catch(() => {});
+    await withScrollbars?.close().catch(() => {});
     await server.close();
   }
 }

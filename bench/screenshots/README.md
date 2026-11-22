@@ -49,6 +49,86 @@ Views: `chat` (empty chat with the input and toolbar), `conversation`,
 rule that allows every command: the typed confirmation, diff and verdict). `audit-list` and `audit-inbox` (Settings, Permissions, the Recent calls and Inbox views, with fake audit answers). The
 policy chips are in every chat view, below the input. `catalogue` is OpenRouter provider setup with the one-time "Pull the latest model information" card.
 
+Views made for narrow panels: `setup-long-model` (the provider setup form in the
+onboarding card, at its model list, with long model ids) and `setup-dialog` (the
+same list in the app dialog), `history` (a few sessions with long titles, and
+the search box), `message-error` (a reply whose render throws: the error
+boundary's text, stack and Restart; it logs that one error), `context-60` (a
+reply at 62% context, so "Compact conversation" is spelled out under it),
+`thinking-menu` (a reasoning model with a long name and the Thinking menu),
+`long-prompt` (forty lines in the input; drawn with scrollbars, which every
+other view hides) and `zoom-150`.
+
+`zoom-150` is `status-row` at a zoom of 1.5. VS Code's window zoom is the
+browser's page zoom: the panel keeps its size on screen and the webview gets
+fewer CSS pixels across it, 1.2 times fewer per zoom level. So the view is
+drawn with a device scale factor of 1.5 in a viewport of the width divided by
+1.5 (`--width 300` is 200 CSS pixels; the picture is still 300 wide). CSS
+`zoom` on the page would not do: it leaves the viewport width, and so every
+breakpoint, as it was. 1.5 lies between zoom levels 2 (1.44) and 3 (1.73).
+
+### In your own browser
+
+```sh
+node bench/screenshots/screenshot.mjs --serve                 # every view; --view a,b limits the list, --port fixes the port
+```
+
+Builds the harness, serves it on 127.0.0.1 and prints one address per view
+(`?fixture=<fixture>&theme=dark|light|hc`). Open one, narrow the window or use
+the developer tools' device toolbar, and inspect. Ctrl+C stops it.
+
+### Overflow
+
+```sh
+cd bench/screenshots && npm run overflow -- --browser edge    # every view at 200, 250, 300 and 340 px
+npm run overflow -- --view history --report                   # one view, every finding
+npm run overflow -- --report --out "$TMPDIR/overflow"         # keep the pictures and overflow.json (each finding with its box)
+npm run overflow -- --update                                  # rewrite overflow-baseline.json from this run
+```
+
+Measures, after `window.__shotReady`, what does not fit sideways
+(`src/overflow.mjs`; the page reports facts, the rules run in Node and have
+tests). All amounts are CSS pixels. A finding is one of:
+
+- `outside left|right|both`: the element's box ends outside the viewport. Only
+  the outermost such element is named; its children would repeat it.
+- `clipped`: `overflow-x: hidden` or `clip`, and content wider than the box.
+- `scroll-x`: content wider than the box in an element that scrolls sideways
+  to show it, such as a dialog or a list that was meant to fit.
+- `squeezed`: text that truncates with an ellipsis and has under 16 px left,
+  so it shows the ellipsis alone or nothing.
+
+`clipped` and `scroll-x` also name the child that reaches furthest past the
+box ("widest inside").
+
+Not findings:
+
+- Text cut on purpose, with `text-overflow: ellipsis` or a line clamp, while it
+  still has room, and anything inside such an element.
+- Visually hidden elements (`sr-only`: a clipped box of 1 px out of the flow),
+  and anything with `display: none` or `visibility: hidden`. Opacity 0 is
+  measured: controls shown on hover must still fit.
+- What a sideways scroller can reach. A scroller reaches what lies after the
+  start of its content; a right-aligned or centred row that sticks out before
+  it cannot be scrolled to, and is reported as `outside`.
+- `pre`, `code` and `table` elements that scroll sideways: long lines and wide
+  tables are given a scrollbar on purpose.
+- `input`, `textarea` and `select`: they scroll their own text.
+- A pixel or less.
+
+`overflow-baseline.json` holds the known findings per view and width, as
+`"<kind> <element>": pixels`. `npm run overflow` exits 1 on a finding that is
+not listed or is more than 2 px larger than listed, and prints what went away
+or shrank so the baseline can be tightened with `--update` (with `--view` or
+`--width`, only those are rewritten). An element is named by its `data-testid`,
+`id` or `aria-label`, else by its tag and utility classes under the nearest
+named ancestor, so renaming a class renames the finding. The amounts depend on
+the fonts: the baseline was taken on Windows.
+
+The pass checks one state per view at four widths. It does not see overlap
+(two controls drawn over each other inside the viewport), height, or anything
+that needs a hover or a click the fixture does not make.
+
 ### Accessibility (axe-core)
 
 ```sh
@@ -118,6 +198,7 @@ starting; disconnect it.
 | `src/views.mjs`, `src/args.mjs`        | The view list and the command line.                                                     |
 | `src/shoot.mjs`                        | Serves the build on 127.0.0.1, drives the browser, writes pictures, compares two runs.  |
 | `src/diff.mjs`                         | The pure parts of the comparison.                                                       |
+| `src/overflow.mjs`, `overflow.mjs`     | The overflow pass: the measurement, the rules, the baseline, and its command.           |
 | `src/sandbox.mjs`, `sandbox-entry.mjs` | The Windows Sandbox route.                                                              |
 
 To add a view: add a fixture in `harness/fixtures.ts`, add it to `src/views.mjs`
@@ -143,4 +224,4 @@ cd bench/screenshots && npm test
 ```
 
 Offline: the command line, the view list, the pixel counting, the file server's
-path check and the browser choice.
+path check, the browser choice, and the overflow rules and baseline comparison.
