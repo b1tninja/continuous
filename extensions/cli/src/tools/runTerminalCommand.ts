@@ -166,6 +166,12 @@ export async function runCommandInBackground(command: string): Promise<{
   };
 }
 
+/** The first line of a failed command's result: how it ended. */
+function endLine(code: number | null, signal: NodeJS.Signals | null): string {
+  if (code !== null) return `Exit code ${code}.`;
+  return `No exit code: ended by ${signal ?? "an unknown signal"}.`;
+}
+
 export const runTerminalCommandTool: Tool = {
   name: "Bash",
   displayName: "Bash",
@@ -456,14 +462,6 @@ IMPORTANT: To edit files, use Edit/MultiEdit tools instead of bash commands (sed
           moveToBackground,
         );
 
-        // Only reject on non-zero exit code if there's also stderr
-        if (code !== 0 && stderr) {
-          reject(
-            `Error (exit code ${code === null ? (signal ?? "unknown") : code}): ${stripAnsi(stderr)}`,
-          );
-          return;
-        }
-
         // Track specific git operations only after successful execution
         if (code === 0) {
           if (isGitCommitCommand(command)) {
@@ -485,7 +483,26 @@ IMPORTANT: To edit files, use Edit/MultiEdit tools instead of bash commands (sed
         const finalOutput = truncationResult.wasTruncated
           ? appendParallelLimitNote(truncationResult.output)
           : truncationResult.output;
-        resolve(finalOutput);
+        if (code === 0) {
+          resolve(finalOutput);
+          return;
+        }
+
+        // A failure says how it ended, then gives stdout and stderr under
+        // the one cap: a failing test run prints its failures on stdout, and
+        // a command that fails with nothing on stderr used to look like a
+        // success. The line is added after the cap, which keeps the end of
+        // the output and would cut a first line.
+        const body = finalOutput.replace(/^\n/, "");
+        const failed = [endLine(code, signal), ...(body ? [body] : [])].join(
+          "\n",
+        );
+        // Only reject on non-zero exit code if there's also stderr
+        if (stderr) {
+          reject(failed);
+        } else {
+          resolve(failed);
+        }
       }
 
       child.on("error", (error) => {

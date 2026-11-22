@@ -53,7 +53,11 @@ function Row({
       />
       <span className="flex min-w-0 flex-col">
         <span
-          className={`truncate${row.accessNote ? "text-description-muted" : ""}`}
+          // Two whole strings: the class sorter removes a leading space inside
+          // a template expression, which joined the two names into one.
+          className={
+            row.accessNote ? "truncate text-description-muted" : "truncate"
+          }
         >
           {row.title}
           {row.configured && (
@@ -179,7 +183,7 @@ export function ModelChecklist({
 
   return (
     <div className="flex flex-col gap-2" data-testid="model-checklist">
-      <div className="flex items-center rounded-sm border border-solid border-border bg-background pl-2">
+      <div className="flex items-center rounded-sm border border-solid border-border bg-background pl-2 focus-within:border-border-focus">
         <MagnifyingGlassIcon className="h-4 w-4 text-description-muted" />
         <input
           type="text"

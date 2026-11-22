@@ -607,7 +607,8 @@ async function intermediateToFinalConfig({
   return { config: continueConfig, errors };
 }
 
-function llmToSerializedModelDescription(llm: ILLM): ModelDescription {
+/** The model as the GUI holds it (`modelsByRole`, `selectedModelByRole`). */
+export function llmToSerializedModelDescription(llm: ILLM): ModelDescription {
   return {
     provider: llm.providerName,
     underlyingProviderName: llm.underlyingProviderName,

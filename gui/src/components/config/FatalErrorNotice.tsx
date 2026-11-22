@@ -24,6 +24,10 @@ export const FatalErrorIndicator = () => {
   const currentPath = `${location.pathname}${location.search}`;
 
   const { selectedProfile } = useAuth();
+  // Buttons that look like the links they replace: the alert's own font and
+  // colour, no box
+  const linkButton =
+    "cursor-pointer border-none bg-transparent p-0 [font:inherit] text-inherit underline";
 
   if (!hasFatalErrors) {
     return null;
@@ -41,33 +45,35 @@ export const FatalErrorIndicator = () => {
       {". "}
       <span>{`Chat is disabled until a model is available.`}</span>
       <div className="mt-2 flex flex-row flex-wrap items-center gap-x-3 gap-y-1.5">
-        <div
+        <button
+          type="button"
           onClick={() => {
             ideMessenger.post(
               "openUrl",
               "https://b1tninja.github.io/continuous/troubleshooting",
             );
           }}
-          className="cursor-pointer underline"
+          className={linkButton}
         >
           Help
-        </div>
+        </button>
         {configLoading ? (
           <div>Reloading...</div>
         ) : (
-          <div
-            className={`cursor-pointer underline`}
+          <button
+            type="button"
+            className={linkButton}
             onClick={() => {
               refreshProfiles("Clicked reload in fatal indicator");
             }}
           >
             Reload
-          </div>
+          </button>
         )}
         {currentPath !== CONFIG_ROUTES.CONFIGS && (
-          <div onClick={showConfigPage} className="cursor-pointer underline">
+          <button type="button" onClick={showConfigPage} className={linkButton}>
             View
-          </div>
+          </button>
         )}
       </div>
     </Alert>

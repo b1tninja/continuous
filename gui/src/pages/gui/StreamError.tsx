@@ -31,6 +31,7 @@ import {
   describeTransientFailure,
   formatWait,
   MAX_AUTO_RETRY_SECONDS,
+  localServerFailureText,
   transientFailure,
 } from "../../util/transientFailure";
 
@@ -353,10 +354,20 @@ const StreamErrorDialog = ({ error }: StreamErrorProps) => {
     errorContent = (
       <div className="flex flex-col gap-2" data-testid="transient-failure">
         <span>
-          {describeTransientFailure(
-            transient,
-            selectedModel?.title ?? "The model",
-          )}
+          {(transient.kind === "connection" &&
+            localServerFailureText(
+              message,
+              selectedModel && {
+                provider:
+                  selectedModel.underlyingProviderName ||
+                  selectedModel.provider,
+                apiBase: selectedModel.apiBase,
+              },
+            )) ||
+            describeTransientFailure(
+              transient,
+              selectedModel?.title ?? "The model",
+            )}
         </span>
         <span className="text-description-muted">
           {transient.waitFromServer

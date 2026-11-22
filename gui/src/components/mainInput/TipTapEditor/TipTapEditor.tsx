@@ -204,6 +204,8 @@ function TipTapEditorInner(props: TipTapEditorProps) {
       blurTimeout.current = null;
     }
   }, [blurTimeout]);
+  // A blur just before the editor goes away must not set state afterwards
+  useEffect(() => cancelBlurTimeout, [cancelBlurTimeout]);
 
   const handleBlur = useCallback(
     (e: React.FocusEvent) => {

@@ -2,7 +2,7 @@
   "name": "continuous",
   "icon": "media/icon.png",
   "author": "b1tninja",
-  "version": "2.38.5",
+  "version": "2.38.6",
   "repository": {
     "type": "git",
     "url": "https://github.com/b1tninja/continuous"
@@ -140,7 +140,7 @@
     "grammars": [
       {
         "language": "promptLanguage",
-        "scopeName": "source.prompt",
+        "scopeName": "source.continuous-prompt",
         "path": "./media/prompt.tmLanguage.json"
       }
     ],

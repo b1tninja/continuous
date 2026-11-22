@@ -22,6 +22,7 @@ import { getRequestBodyHints } from "../contextManagement.js";
 import { withEnvironmentBlock } from "../environmentContext.js";
 
 import { getDefaultCompletionOptions } from "./streamChatResponse.types.js";
+import { argumentsUnparsed } from "./unparsedArguments.js";
 
 /**
  * The chat request the CLI sends for one model call, built from the pieces
@@ -184,6 +185,35 @@ function convertWithReplayedReasoning(
   return converted;
 }
 
+/**
+ * A stored call whose arguments did not parse keeps the text the model sent
+ * (handleToolCalls.ts). It goes out as `{}`, as it did before that text was
+ * kept: servers that parse the arguments of earlier calls (Ollama, llama.cpp)
+ * fail the whole request on text that is not JSON. A message without such a
+ * call comes back as it is.
+ */
+function withParseableArguments(conversation: ChatMessage[]): ChatMessage[] {
+  return conversation.map((message) => {
+    if (message.role !== "assistant") return message;
+    if (!message.toolCalls?.some(hasUnparsedArguments)) return message;
+    return {
+      ...message,
+      toolCalls: message.toolCalls.map((call) =>
+        hasUnparsedArguments(call)
+          ? { ...call, function: { ...call.function, arguments: "{}" } }
+          : call,
+      ),
+    };
+  });
+}
+
+function hasUnparsedArguments(call: {
+  function?: { arguments?: unknown };
+}): boolean {
+  const text = call.function?.arguments;
+  return typeof text === "string" && argumentsUnparsed(text);
+}
+
 export function buildChatRequestBody(args: {
   model: ModelConfig;
   chatHistory: ChatHistoryItem[];
@@ -209,7 +239,10 @@ export function buildChatRequestBody(args: {
   const messages = withTurnTail(
     withEnvironmentBlock([
       { role: "system", content: systemMessage },
-      ...convertWithReplayedReasoning(model.provider, conversation),
+      ...convertWithReplayedReasoning(
+        model.provider,
+        withParseableArguments(conversation),
+      ),
     ] as ChatCompletionMessageParam[]),
     args.turnTail,
   );

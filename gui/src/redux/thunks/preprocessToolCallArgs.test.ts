@@ -1,7 +1,11 @@
 import { ToolCallState } from "core";
 import { describe, expect, it } from "vitest";
 import { AppThunkDispatch } from "../store";
-import { refuseTruncatedToolCalls } from "./preprocessToolCallArgs";
+import { IIdeMessenger } from "../../context/IdeMessenger";
+import {
+  preprocessToolCalls,
+  refuseTruncatedToolCalls,
+} from "./preprocessToolCallArgs";
 
 function call(id: string, args: string): ToolCallState {
   return {
@@ -75,5 +79,48 @@ describe("refuseTruncatedToolCalls", () => {
       "tool_use",
     );
     expect(errored).toEqual(["b"]);
+  });
+});
+
+describe("preprocessToolCalls", () => {
+  async function run(content: Record<string, unknown>) {
+    const actions: { type: string; payload: any }[] = [];
+    const dispatch = ((action: { type: string; payload: any }) => {
+      actions.push(action);
+      return action;
+    }) as unknown as AppThunkDispatch;
+    const ideMessenger = {
+      request: async () => ({ status: "success", content }),
+    } as unknown as IIdeMessenger;
+    await preprocessToolCalls(dispatch, ideMessenger, [call("a", "{}")]);
+    return actions;
+  }
+
+  // A string sent for an array: core reads it, and the call keeps the result
+  it("takes the arguments core repaired, with what was changed", async () => {
+    const edits = [{ old_string: "a", new_string: "b" }];
+    const repairs = [
+      {
+        kind: "string-to-literal",
+        argument: "edits",
+        from: JSON.stringify(edits),
+        to: edits,
+      },
+    ];
+    const actions = await run({
+      preprocessedArgs: { edits },
+      args: { edits },
+      argRepairs: repairs,
+    });
+    expect(
+      actions.find((a) => a.type.endsWith("setRepairedToolCallArgs"))?.payload,
+    ).toEqual({ toolCallId: "a", args: { edits }, repairs });
+  });
+
+  it("leaves the arguments alone when nothing was repaired", async () => {
+    const actions = await run({ preprocessedArgs: {} });
+    expect(
+      actions.some((a) => a.type.endsWith("setRepairedToolCallArgs")),
+    ).toBe(false);
   });
 });

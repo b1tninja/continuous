@@ -82,6 +82,7 @@ import {
 import { EditAggregator } from "./nextEdit/context/aggregateEdits";
 import { createNewPromptFileV2 } from "./promptFiles/createNewPromptFile";
 import { BuiltInToolNames } from "./tools/builtIn";
+import { workingDirectoryFor } from "./tools/implementations/runTerminalCommand";
 import { effectiveCwdForPolicy } from "./tools/implementations/terminalCwd";
 import {
   readUserAdditionalFolders,
@@ -89,6 +90,7 @@ import {
 } from "./tools/permissions/additionalFolders";
 import { terminalEndOf } from "./tools/permissions/audit/terminalEnd";
 import { callTool } from "./tools/callTool";
+import { coerceStringArgsToSchema } from "./tools/parseArgs";
 import { toolForPolicy } from "./tools/definitions/sessionMessaging";
 import { recordAutoAnswer } from "./tools/permissions/audit/autoAnswer";
 import { getAuditTrail } from "./tools/permissions/audit/global";
@@ -182,6 +184,7 @@ import {
 } from "./util/retirementStartup";
 import { SESSION_LOG_STORAGE_DEFAULT } from "./util/sessionLog";
 import { searchSessions, titlesOf } from "./util/sessionSearch";
+import { runAuditedLoopCheck } from "./util/loopCheckRun";
 import { executionShell } from "./util/shell";
 import {
   credentialUrlNames,
@@ -249,6 +252,7 @@ import { CodebaseRulesCache } from "./config/markdown/loadCodebaseRules";
 import { registerMcpWizardHandlers } from "./config/mcpWizard/protocolHandlers";
 import { setupLocalConfig } from "./config/onboarding";
 import { openSecretLocation } from "./config/openSecretLocation";
+import { reloadConfigWhenLearned } from "./config/reloadConfigWhenLearned";
 import {
   moveCredentialsToSecrets,
   requestHasCredentials,
@@ -398,6 +402,7 @@ export class Core {
           SESSION_LOG_STORAGE_DEFAULT,
       );
       this.configHandler = new ConfigHandler(this.ide, this.llmLogger);
+      reloadConfigWhenLearned(this.configHandler);
 
       this.docsService = DocsService.createSingleton(
         this.configHandler,
@@ -1056,6 +1061,25 @@ export class Core {
     on("loop/dirtyFiles", async ({ data: { repo } }) =>
       dirtyFiles(repo, worktreeDeps),
     );
+    // An item's check starts where a terminal command starts, not in the
+    // editor's `subprocess`
+    on("loop/runCheck", async ({ data: { command, callId } }) => {
+      const where = workingDirectoryFor(
+        await this.ide.getWorkspaceDirs(),
+        undefined,
+      );
+      if (!where.ok) {
+        return { exitCode: null, output: where.error, notRun: true as const };
+      }
+      return runAuditedLoopCheck(
+        { command, callId },
+        {
+          trail: getAuditTrail(),
+          cwd: where.cwd,
+          remoteName: (await this.ide.getIdeInfo()).remoteName,
+        },
+      );
+    });
   }
 
   /**
@@ -2819,8 +2843,16 @@ export class Core {
           throw new Error(`Tool ${toolName} not found`);
         }
 
+        // Some models send an array, boolean or number as a string. Read here,
+        // and handed back so the checks and the tool see the same value.
+        const read = coerceStringArgsToSchema(args, tool.function.parameters);
+        const repaired =
+          read.repairs.length > 0
+            ? { args: read.args, argRepairs: read.repairs }
+            : {};
+
         try {
-          const preprocessedArgs = await tool.preprocessArgs?.(args, {
+          const preprocessedArgs = await tool.preprocessArgs?.(read.args, {
             ide: workspaceDirs?.length
               ? ideInWorkspace(this.ide, workspaceDirs)
               : this.ide,
@@ -2828,6 +2860,7 @@ export class Core {
           });
           return {
             preprocessedArgs,
+            ...repaired,
           };
         } catch (e) {
           let errorReason =
@@ -2840,6 +2873,7 @@ export class Core {
             preprocessedArgs: undefined,
             errorReason,
             errorMessage,
+            ...repaired,
           };
         }
       },
@@ -3041,8 +3075,8 @@ export class Core {
         ),
       );
       if (!facts) return;
+      // The reload that shows it follows from this (reloadConfigWhenLearned)
       rememberLearned(model.limitsKey, facts);
-      await this.configHandler.reloadConfig("Context window learned");
     } catch {
       // advisory: the default window stays
     }

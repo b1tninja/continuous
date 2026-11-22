@@ -79,6 +79,7 @@ export const ChatScreenContent: React.FC<ChatScreenContentProps> = ({
         requestId={activePermissionRequest.requestId}
         toolCallPreview={activePermissionRequest.toolCallPreview}
         hasDynamicEvaluation={activePermissionRequest.hasDynamicEvaluation}
+        why={activePermissionRequest.why}
         onResponse={handleToolPermissionResponse}
       />
     );

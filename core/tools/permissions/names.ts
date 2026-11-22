@@ -1,5 +1,5 @@
 import { ConfigValidationError } from "@continuedev/config-yaml";
-import * as posix from "node:path/posix";
+import { posixNormalize } from "../../util/posixPath";
 import { BuiltInToolNames } from "../builtIn";
 import { mcpServerSlug } from "../mcpToolName";
 import {
@@ -80,7 +80,7 @@ export function normalizeRelative(p: string | undefined): string | undefined {
 
 /** Resolve `.`/`..` and use forward slashes. A path that leaves the root keeps its `..`. */
 export function cleanPath(p: string): string {
-  return posix.normalize(normalizeRelative(p) ?? "");
+  return posixNormalize(normalizeRelative(p) ?? "");
 }
 
 /** True for a path an allow rule may be matched against: relative, inside the root. */

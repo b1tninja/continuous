@@ -6,8 +6,41 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseArgs, USAGE } from "./src/args.mjs";
 import { buildHarness, playwrightDir } from "./src/build.mjs";
+import { serve } from "./src/server.mjs";
 import { compareRuns, shoot } from "./src/shoot.mjs";
 import { VIEWS } from "./src/views.mjs";
+
+/** The address of one view on a served harness (harness/main.tsx reads the query). */
+function viewUrl(base, view, theme) {
+  return `${base}?fixture=${encodeURIComponent(VIEWS[view].fixture)}&theme=${theme}`;
+}
+
+/** --serve: the built harness stays up for a person's own browser until Ctrl+C. */
+async function serveHarness(opts) {
+  const dist = opts.dist ? path.resolve(opts.dist) : buildHarness();
+  const server = await serve(dist, opts.port);
+  const theme = opts.themes[0];
+  console.log(`Serving the harness at ${server.url}`);
+  console.log(
+    `A view is a fixture: ${server.url}?fixture=<fixture>&theme=dark|light|hc (&font=<px> sets the font size).`,
+  );
+  console.log(
+    "Size the window, or the device toolbar of the developer tools, to the panel width (200 to 340 px for a sidebar).\n",
+  );
+  for (const view of opts.views) {
+    const zoom = VIEWS[view].zoom
+      ? `  (set the browser zoom to ${VIEWS[view].zoom * 100}%)`
+      : "";
+    console.log(
+      `${view.padEnd(26)} ${viewUrl(server.url, view, theme)}${zoom}`,
+    );
+  }
+  console.log("\nCtrl+C stops the server.");
+  await new Promise((resolve) => process.once("SIGINT", resolve));
+  if (!opts.dist) fs.rmSync(dist, { recursive: true, force: true });
+  // An open browser tab keeps a connection, so close() would not return
+  process.exit(0);
+}
 
 async function main() {
   let opts;
@@ -27,6 +60,7 @@ async function main() {
     }
     return;
   }
+  if (opts.serve) return serveHarness(opts);
   const out = path.resolve(opts.out);
   const pw = playwrightDir();
   const dist = opts.dist ? path.resolve(opts.dist) : buildHarness();

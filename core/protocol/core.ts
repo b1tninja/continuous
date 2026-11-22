@@ -103,6 +103,7 @@ import {
   SiteIndexingConfig,
   SlashCommandDescWithSource,
   StreamDiffLinesPayload,
+  ToolArgRepair,
   ToolCall,
 } from "../";
 import { AutocompleteCodeSnippet } from "../autocomplete/snippets/types";
@@ -1008,6 +1009,12 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
       preprocessedArgs?: Record<string, unknown>;
       errorReason?: ContinueErrorReason;
       errorMessage?: string;
+      /**
+       * The arguments with strings read as the value the tool's schema
+       * declares, and what was read; both absent when nothing was changed.
+       */
+      args?: Record<string, unknown>;
+      argRepairs?: ToolArgRepair[];
     },
   ];
   "clipboardCache/add": [{ content: string }, void];
@@ -1110,6 +1117,15 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
   ];
   "loop/worktreeRemove": [{ repo: string; path: string; branch: string }, void];
   "loop/dirtyFiles": [{ repo: string }, string[]];
+  /**
+   * Runs a Loop item's check (TaskItem.check) through the command executor,
+   * in the workspace's first folder, and writes its outcome to the audit
+   * trail under `callId` (the id the decision was asked with).
+   */
+  "loop/runCheck": [
+    { command: string; callId: string },
+    import("../util/loopCheckRun").LoopCheckRun,
+  ];
   /**
    * The summary "conversation/compact" would save at `index`, without saving
    * it: planned compaction prepares it while the person is idle. Aborted by

@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   firstAttempt,
   learnedFactsFor,
   learnedKey,
+  onLearned,
   rememberLearned,
   resetLearned,
   usableLearnedFacts,
@@ -68,5 +69,36 @@ describe("remembering", () => {
     expect(firstAttempt("a")).toBe(true);
     expect(firstAttempt("a")).toBe(false);
     expect(firstAttempt("b")).toBe(true);
+  });
+});
+
+describe("onLearned", () => {
+  it("hears a new window and a changed one, not the same one again", () => {
+    const heard = vi.fn();
+    const stop = onLearned(heard);
+    rememberLearned("k", { contextLength: 4096 });
+    rememberLearned("k", { contextLength: 4096 });
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(heard).toHaveBeenCalledWith("k", { contextLength: 4096 });
+
+    rememberLearned("k", { contextLength: 8192 });
+    rememberLearned("other", { contextLength: 4096 });
+    expect(heard).toHaveBeenCalledTimes(3);
+    stop();
+  });
+
+  it("stops hearing once unsubscribed, and a listener that throws stops nothing", () => {
+    const heard = vi.fn();
+    const stopBad = onLearned(() => {
+      throw new Error("listener failed");
+    });
+    const stop = onLearned(heard);
+    rememberLearned("k", { contextLength: 4096 });
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(learnedFactsFor("k")).toEqual({ contextLength: 4096 });
+    stop();
+    stopBad();
+    rememberLearned("k", { contextLength: 8192 });
+    expect(heard).toHaveBeenCalledTimes(1);
   });
 });

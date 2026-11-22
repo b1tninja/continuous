@@ -12,6 +12,7 @@ import {
   clearToolCallArguments,
   errorToolCall,
   setProcessedToolCallArgs,
+  setRepairedToolCallArgs,
   updateToolCallOutput,
 } from "../slices/sessionSlice";
 import { AppThunkDispatch } from "../store";
@@ -84,6 +85,15 @@ export async function preprocessToolCalls(
         ...(allowOutsideWorkspace ? { allowOutsideWorkspace } : {}),
       });
       if (result.status === "success") {
+        if (result.content.args && result.content.argRepairs) {
+          dispatch(
+            setRepairedToolCallArgs({
+              toolCallId: tcState.toolCallId,
+              args: result.content.args,
+              repairs: result.content.argRepairs,
+            }),
+          );
+        }
         preprocessedArgs = result.content.preprocessedArgs;
         errorMessage = result.content.errorMessage;
         errorReason = result.content.errorReason;

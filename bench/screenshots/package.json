@@ -7,7 +7,8 @@
   "scripts": {
     "test": "node --test \"test/*.test.mjs\"",
     "shots": "node screenshot.mjs",
-    "axe": "node axe.mjs"
+    "axe": "node axe.mjs",
+    "overflow": "node overflow.mjs"
   },
   "dependencies": {
     "playwright-core": "1.64.0"

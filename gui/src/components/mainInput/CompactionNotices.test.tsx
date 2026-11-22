@@ -1,6 +1,6 @@
 import { act, createEvent, fireEvent, screen } from "@testing-library/react";
 import type { ModelDescription } from "core";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import strataMetrics from "core/llm/__fixtures__/strata/metrics-2026-11-15-live.trimmed.json";
 import { MockIdeMessenger } from "../../context/MockIdeMessenger";
 import { EMPTY_CONFIG, updateConfig } from "../../redux/slices/configSlice";
@@ -8,12 +8,18 @@ import {
   newSession,
   notePrewarmOff,
   type PreparedCompaction,
+  setActive,
   setCompactionHold,
+  setInactive,
   setPreparedCompaction,
+  streamUpdate,
 } from "../../redux/slices/sessionSlice";
 import { setupStore } from "../../redux/store";
 import type { RootState } from "../../redux/store";
-import { currentCompactionPlan } from "../../redux/thunks/prepareCompaction";
+import {
+  compactionSizes,
+  currentCompactionPlan,
+} from "../../redux/thunks/prepareCompaction";
 import { renderWithProviders } from "../../util/test/render";
 import { CompactionHoldNotice } from "./CompactionHoldNotice";
 import {
@@ -24,6 +30,15 @@ import {
 vi.mock("../../redux/util/getBaseSystemMessage", () => ({
   getBaseSystemMessage: vi.fn(() => "You are a helpful assistant."),
 }));
+
+// The estimate's one call into the sizing of the whole request, counted
+vi.mock("../../redux/thunks/prepareCompaction", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("../../redux/thunks/prepareCompaction")
+    >();
+  return { ...actual, compactionSizes: vi.fn(actual.compactionSizes) };
+});
 
 const strata: ModelDescription = {
   title: "Qwen on Strata",
@@ -287,5 +302,99 @@ describe("the forced-path hold", () => {
     expect(t.getState().session.compactionHold).toBeUndefined();
     expect(t.getState().session.compactionHoldContinued).toBe(held.planId);
     expect(screen.queryByTestId("compaction-hold")).toBeNull();
+  });
+});
+
+describe("the estimate behind both notices", () => {
+  const both = (
+    <>
+      <CompactionHoldNotice />
+      <CompactionPreparedNotice />
+    </>
+  );
+  const sized = vi.mocked(compactionSizes);
+  const stream = async (t: Awaited<ReturnType<typeof setup>>, n: number) => {
+    for (let i = 0; i < n; i++) {
+      await act(async () => {
+        t.store.dispatch(
+          streamUpdate([{ role: "assistant", content: `word ${i} ` }]),
+        );
+      });
+    }
+  };
+
+  // Braces: a function returned from beforeEach is run as a cleanup
+  beforeEach(() => {
+    sized.mockClear();
+  });
+
+  it("is not worked out during 100 streamed batches with no notice shown", async () => {
+    const t = await setup(both, 10, strataMetrics);
+    const before = t.getState().session.history.at(-1)!.message.content;
+    await act(async () => {
+      t.store.dispatch(setActive());
+    });
+    sized.mockClear();
+    await stream(t, 100);
+    // The batches did reach the history the estimate would have read
+    expect(t.getState().session.history.at(-1)!.message.content).not.toBe(
+      before,
+    );
+    expect(screen.queryByTestId("compaction-hold")).toBeNull();
+    expect(screen.queryByTestId("compaction-prepared-notice")).toBeNull();
+    expect(sized).toHaveBeenCalledTimes(0);
+  });
+
+  it("is not worked out with no notice shown and nothing streaming", async () => {
+    const t = await setup(both, 10, strataMetrics);
+    sized.mockClear();
+    await stream(t, 5);
+    expect(sized).toHaveBeenCalledTimes(0);
+  });
+
+  it("is worked out once the hold shows, and its line is in the hold", async () => {
+    const t = await setup(both, 12, strataMetrics);
+    sized.mockClear();
+    await act(async () => {
+      t.store.dispatch(
+        setCompactionHold({
+          planId: "cp-0-20-x",
+          rereadTokens: 390_000,
+          editorState: { type: "doc", content: [] },
+          modifiers: { useCodebase: false, noContext: true },
+        }),
+      );
+    });
+    expect(
+      (await screen.findByTestId("compaction-hold")).textContent,
+    ).toContain("Compact now (estimate)");
+    expect(sized).toHaveBeenCalled();
+  });
+
+  it("stands still while a reply streams over a shown hold", async () => {
+    const t = await setup(both, 12, strataMetrics);
+    await act(async () => {
+      t.store.dispatch(
+        setCompactionHold({
+          planId: "cp-0-20-x",
+          rereadTokens: 390_000,
+          editorState: { type: "doc", content: [] },
+          modifiers: { useCodebase: false, noContext: true },
+        }),
+      );
+    });
+    const shown = (await screen.findByTestId("compaction-hold")).textContent;
+    expect(shown).toContain("Compact now (estimate)");
+    await act(async () => {
+      t.store.dispatch(setActive());
+    });
+    sized.mockClear();
+    await stream(t, 20);
+    expect(sized).toHaveBeenCalledTimes(0);
+    expect(screen.getByTestId("compaction-hold").textContent).toBe(shown);
+    await act(async () => {
+      t.store.dispatch(setInactive());
+    });
+    expect(sized).toHaveBeenCalled();
   });
 });

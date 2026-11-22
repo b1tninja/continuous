@@ -1,11 +1,13 @@
 import { ChevronDownIcon } from "@heroicons/react/24/outline";
-import { useState } from "react";
+import { useKeptOpenState } from "../../../hooks/useKeptOpenState";
 
 interface CollapsibleContainerProps {
   children: React.ReactNode;
   maxHeight?: string;
   className?: string;
   collapsible?: boolean;
+  /** Names this container within its transcript row, so its state is kept. */
+  keptAs?: string;
 }
 
 export function CollapsibleContainer({
@@ -13,8 +15,9 @@ export function CollapsibleContainer({
   maxHeight = "max-h-40",
   className = "",
   collapsible = false,
+  keptAs,
 }: CollapsibleContainerProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useKeptOpenState(keptAs, false);
 
   // If not collapsible, just render children without any collapsible behavior
   if (!collapsible) {

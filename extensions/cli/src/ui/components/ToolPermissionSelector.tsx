@@ -10,6 +10,7 @@ import {
   keepWaitingFor,
   onCountdown,
 } from "../../permissions/askCountdown.js";
+import type { AskWhy } from "../../permissions/askWhy.js";
 import { generatePolicyRule } from "../../permissions/policyWriter.js";
 import { grantWebHostForSession } from "../../permissions/webSession.js";
 import { ToolCallPreview } from "../../tools/types.js";
@@ -18,8 +19,10 @@ import {
   confirmKeyAction,
   useInterruptConfirm,
 } from "../hooks/useInterruptConfirm.js";
-import { defaultBoxStyles } from "../styles.js";
+import { useTerminalSize } from "../hooks/useTerminalSize.js";
+import { baseBoxStyles, defaultBoxStyles } from "../styles.js";
 
+import { AskWhyLines } from "./AskWhyLines.js";
 import { ToolArgsDetail } from "./ToolArgsDetail.js";
 import { ToolPreview } from "./ToolPreview.js";
 
@@ -43,6 +46,8 @@ interface ToolPermissionSelectorProps {
   requestId: string;
   toolCallPreview?: ToolCallPreview[];
   hasDynamicEvaluation?: boolean;
+  /** Why the call asks and where that was decided (permissions/explainAsk.ts) */
+  why?: AskWhy;
   onResponse: (
     requestId: string,
     approved: boolean,
@@ -118,6 +123,9 @@ const getPermissionOptions = (rule: string): PermissionOption[] => {
   ];
 };
 
+/** The border and side padding of the prompt's box, in columns. */
+const BOX_CHROME_COLUMNS = 2 + 2 * Number(baseBoxStyles.paddingX ?? 0);
+
 /** "7 s", and "1:05" from a minute up. */
 function countdownText(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
@@ -131,16 +139,27 @@ export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
   requestId,
   toolCallPreview,
   hasDynamicEvaluation = false,
+  why,
   onResponse,
 }) => {
   // Named in full, because it is saved for every later session
   // The rule that is saved is the real one; the line that names it is masked
   const host = fetchHost(toolName, toolArgs);
+  const alwaysRule = host
+    ? undefined
+    : maskCommandForDisplay(generatePolicyRule(toolName, toolArgs));
   const permissionOptions = host
     ? getWebOptions(host)
-    : getPermissionOptions(
-        maskCommandForDisplay(generatePolicyRule(toolName, toolArgs)),
-      );
+    : getPermissionOptions(alwaysRule ?? "");
+  // r opens the whole reason and the rule that would allow the call
+  const [showDetail, setShowDetail] = useState(false);
+  const { columns } = useTerminalSize();
+  const textWidth = Math.max(20, columns - BOX_CHROME_COLUMNS);
+  // A warning the engine put in the preview is the reason: it is shown once,
+  // on the Why line, and whole, since it is there to be read before answering
+  const isReason = (p: ToolCallPreview) => !!why && p.content === why.reason;
+  const reasonIsWarning = !!toolCallPreview?.some(isReason);
+  const preview = toolCallPreview?.filter((p) => !isReason(p));
   // Enter passes the option as it is; the shortcuts pass booleans, as before
   const choose = (option: PermissionOption, asSelected = false) => {
     if (option.grantHost) grantWebHostForSession(option.grantHost);
@@ -206,6 +225,12 @@ export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
       return;
     }
 
+    // r shows or hides the detail; it answers nothing
+    if (input === "r" && !key.ctrl && !key.meta && why) {
+      setShowDetail((shown) => !shown);
+      return;
+    }
+
     // Tab to continue (approve; for a Fetch, for this session)
     if (key.tab && !key.shift) {
       choose(permissionOptions[0]);
@@ -253,17 +278,32 @@ export const ToolPermissionSelector: React.FC<ToolPermissionSelectorProps> = ({
         <ToolPreview
           toolName={toolName}
           toolArgs={toolArgs}
-          toolCallPreview={toolCallPreview}
+          toolCallPreview={preview}
         />
       </Box>
 
       <ToolArgsDetail toolArgs={toolArgs} />
 
       <Box marginTop={1} flexDirection="column">
+        {why && (
+          <AskWhyLines
+            why={why}
+            width={textWidth}
+            full={showDetail}
+            wholeReason={reasonIsWarning}
+            alwaysRule={alwaysRule}
+          />
+        )}
         {confirm.pending ? (
           <Text color="yellow">{CONFIRM_TEXT[confirm.pending]}</Text>
         ) : (
-          <Text color="dim">Would you like to continue?</Text>
+          <Text color="dim">
+            Would you like to continue?
+            {why &&
+              (showDetail
+                ? " (r: hide the detail)"
+                : " (r: full reason, and a rule to allow this)")}
+          </Text>
         )}
         {countdown && (
           <Text color="yellow">

@@ -80,9 +80,19 @@ body {
   height: 100%;
 }
 
-/* To override the default `-webkit-focus-ring-color` that is an ugly orange */
-*:focus {
+/*
+ * Focus. The browser's own ring (an orange `-webkit-focus-ring-color`) is
+ * replaced by the theme's focus colour, shown for keyboard focus only. Both
+ * rules sit in `:where()` so they have no specificity: a control that draws
+ * its own focus style (a ring, a border) still wins with a single class. The
+ * prompt editor is left out, since its box already changes border on focus.
+ */
+:where(:focus) {
   outline: none;
+}
+:where(:focus-visible:not(.ProseMirror)) {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
 }
 
 @keyframes fadeIn {
@@ -227,8 +237,8 @@ body.vscode-reduce-motion *::after {
  * Forced colours and VS Code's high contrast themes. The theme colours
  * disappear there, so what carried a state by colour keeps a visible border
  * and its words: chips are bordered in the system text colour, the input's
- * gradient border becomes a real one, and focus gets an outline (the global
- * `*:focus` rule above removes the default).
+ * gradient border becomes a real one, and focus gets an outline in the
+ * system's colour.
  */
 @media (forced-colors: active) {
   .gui-chip {

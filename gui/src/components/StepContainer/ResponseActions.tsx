@@ -84,7 +84,7 @@ export default function ResponseActions({
       label="Message actions"
       copyKey={copyKey}
       onItemFocus={() => rememberFocusedMessage(copyKey)}
-      className="mx-2 flex cursor-default items-center justify-end space-x-1 bg-transparent pb-0 text-xs text-description-muted"
+      className="mx-2 flex cursor-default flex-wrap items-center justify-end gap-1 bg-transparent pb-0 text-xs text-description-muted"
     >
       <HeaderButtonWithToolTip
         testId={`compact-button-${index}`}
@@ -101,8 +101,11 @@ export default function ResponseActions({
             className={`h-3.5 w-3.5 ${buttonColorClass || "text-description-muted"}`}
           />
           {showLabel && (
+            // From 380 px only: in a narrower panel the label does not fit
+            // on the row with the other actions. The button keeps its name
+            // (aria-label) at every width.
             <span
-              className={`text-xs ${buttonColorClass || "text-description-muted"}`}
+              className={`hidden text-xs whitespace-nowrap int:inline ${buttonColorClass || "text-description-muted"}`}
             >
               Compact conversation
             </span>

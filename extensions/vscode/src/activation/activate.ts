@@ -5,6 +5,7 @@ import { VsCodeExtension } from "../extension/VsCodeExtension";
 import { removeStaleYamlSchemaEntries } from "../lang-server/yamlSchemas";
 import { registerSessionCleanup } from "../sessionCleanup";
 import { isUnsupportedPlatform } from "../util/util";
+import { warnOptionalStartup } from "../util/warnOptionalStartup";
 import { migrateContinueSettings } from "../util/migrateSettings";
 
 import { GlobalContext } from "core/util/GlobalContext";
@@ -57,7 +58,7 @@ export async function activateExtension(context: vscode.ExtensionContext) {
   try {
     await removeStaleYamlSchemaEntries();
   } catch (error) {
-    console.warn("Could not clean up yaml.schemas", error);
+    warnOptionalStartup("could not clean up yaml.schemas", error);
   }
 
   const api = new VsCodeContinueApi(vscodeExtension);

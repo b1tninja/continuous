@@ -1,5 +1,7 @@
 import { ToolCallPreview } from "../tools/types.js";
 
+import type { AskWhy } from "./askWhy.js";
+
 export type PermissionPolicy = "allow" | "ask" | "exclude";
 
 export type PermissionMode = "normal" | "plan" | "auto";
@@ -32,6 +34,8 @@ export interface ToolCallRequest {
   name: string;
   arguments: Record<string, any>;
   preview?: ToolCallPreview[];
+  /** Why the call asks and where that was decided, for the prompt */
+  why?: AskWhy;
 }
 
 export interface PermissionCheckResult {

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import styled from "styled-components";
+import { useKeptOpenState } from "../../hooks/useKeptOpenState";
 import {
   lightGray,
   vscBackground,
@@ -91,7 +92,12 @@ export const SecureImageComponent: React.FC<SecureImageComponentProps> = ({
   title,
   className,
 }) => {
-  const [showImage, setShowImage] = useState(false);
+  // Kept, so an image the person chose to load is not gated again when its
+  // row scrolls back into view
+  const [showImage, setShowImage] = useKeptOpenState(
+    src ? `image-${src}` : undefined,
+    false,
+  );
   const [imageError, setImageError] = useState(false);
 
   if (!src) {

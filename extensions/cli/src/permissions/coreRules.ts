@@ -47,6 +47,7 @@ import type {
   PermissionMode,
   PermissionPolicy,
 } from "./types.js";
+import { verdictDetail, type VerdictDetail } from "./verdictDetail.js";
 
 /**
  * The `toolPermissions` rules of config.yaml and the Auto reviewer, applied in
@@ -242,7 +243,7 @@ export function getReviewer(
   return reviewer;
 }
 
-export interface CoreVerdict {
+export interface CoreVerdict extends VerdictDetail {
   /** allow runs it; ask needs a person (a refusal when headless); deny refuses. */
   decision: "allow" | "ask" | "deny";
   reason?: string;
@@ -502,6 +503,7 @@ function rulesVerdict(
     by: "rules",
     source: result.source,
     ...(result.rule ? { rule: result.rule } : {}),
+    ...verdictDetail(input.assistantPermissions, result),
     ...(result.idgafOverride ? { idgafOverride: result.idgafOverride } : {}),
     ...(ownAsk
       ? {

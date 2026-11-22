@@ -61,6 +61,25 @@ export type PinnedLookup = (
   ) => void,
 ) => void;
 
+/**
+ * Options for a connection made without a proxy. `localhost` can resolve to
+ * `::1`, `127.0.0.1` or both, and a local server often listens on only one,
+ * so every resolved address is tried instead of only the first.
+ */
+export function directAgentOptions(
+  hostname: string,
+  agentOptions: { [key: string]: any },
+  lookup?: unknown,
+): { [key: string]: any } {
+  return {
+    ...agentOptions,
+    ...(lookup ? { lookup } : {}),
+    ...(hostname.toLowerCase() === "localhost"
+      ? { autoSelectFamily: true }
+      : {}),
+  };
+}
+
 export async function createAgentForUrl(
   url: URL | string,
   requestOptions?: RequestOptions,
@@ -73,7 +92,11 @@ export async function createAgentForUrl(
   const bypass = shouldBypassProxy(target.hostname, requestOptions);
   const useProxy = !!proxy && !bypass;
   // A proxy resolves the target itself. Pinning applies to the direct connection.
-  const directOptions = lookup ? { ...agentOptions, lookup } : agentOptions;
+  const directOptions = directAgentOptions(
+    target.hostname,
+    agentOptions,
+    lookup,
+  );
 
   if (target.protocol === "https:") {
     return {

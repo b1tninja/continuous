@@ -90,7 +90,7 @@ describe("runTerminalCommandTool", () => {
         runTerminalCommandTool.run({
           command: `node -e "console.error('failed'); process.exit(3)"`,
         }),
-      ).rejects.toMatch(/^Error \(exit code 3\): failed/);
+      ).rejects.toMatch(/^Exit code 3\.\nStderr: failed/);
     }, 30_000);
   });
 
@@ -219,7 +219,7 @@ describe("runTerminalCommandTool", () => {
       process.env.CONTINUE_MISSING_BINARY_CHECK = "off";
       try {
         await expect(runTerminalCommandTool.run({ command })).rejects.toMatch(
-          /Error \(exit code|Command timed out|not found|not recognized/,
+          /Exit code|Command timed out|not found|not recognized/,
         );
       } finally {
         if (before === undefined) {

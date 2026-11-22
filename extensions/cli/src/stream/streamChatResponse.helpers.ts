@@ -1,12 +1,15 @@
 // Helper functions extracted from streamChatResponse.ts to reduce file size
 /* eslint-disable max-lines */
 
+import { randomUUID } from "node:crypto";
+
 import type { ToolStatus, Usage } from "core/index.js";
 import { totalInputTokens } from "core/llm/utils/cacheStats.js";
 import {
   calculateRequestCost,
   type CostBreakdown,
 } from "core/llm/utils/calculateRequestCost.js";
+import { coerceStringArgsToSchema } from "core/tools/parseArgs.js";
 import {
   modelNote,
   type Proposal,
@@ -44,6 +47,7 @@ import {
   publishCountdown,
   spendTurnBudget,
 } from "../permissions/askCountdown.js";
+import type { AskWhy } from "../permissions/askWhy.js";
 import { noteCliToolResult } from "../permissions/cliTaint.js";
 import {
   evaluateWithCoreRules,
@@ -55,6 +59,7 @@ import {
   runsAtIdgaf,
   type CoreVerdict,
 } from "../permissions/coreRules.js";
+import { explainAsk } from "../permissions/explainAsk.js";
 import {
   headlessAskRefusal,
   noteHeadlessRefusal,
@@ -203,6 +208,14 @@ export interface TimedAsk {
   };
 }
 
+interface TimedAskOptions {
+  note?: string;
+  mode?: "normal" | "plan" | "auto";
+  verdictSource?: string;
+  /** Why the call asks and where that was decided, for the prompt to show */
+  why?: AskWhy;
+}
+
 /**
  * Like requestUserPermission, with the decision timer: when a window is set for
  * the call's level, the prompt shows a countdown and the ask is refused if it
@@ -212,11 +225,7 @@ export interface TimedAsk {
 export function requestUserPermissionTimed(
   toolCall: PreprocessedToolCall,
   callbacks: StreamCallbacks | undefined,
-  options: {
-    note?: string;
-    mode?: "normal" | "plan" | "auto";
-    verdictSource?: string;
-  } = {},
+  options: TimedAskOptions = {},
 ): Promise<TimedAsk> {
   if (!callbacks?.onToolPermissionRequest) {
     return Promise.resolve({ approved: false });
@@ -231,11 +240,7 @@ export function requestUserPermissionTimed(
 async function askTimed(
   toolCall: PreprocessedToolCall,
   callbacks: StreamCallbacks,
-  options: {
-    note?: string;
-    mode?: "normal" | "plan" | "auto";
-    verdictSource?: string;
-  },
+  options: TimedAskOptions,
 ): Promise<TimedAsk> {
   const hooked = await firePermissionRequest(
     toolCall.name,
@@ -308,11 +313,7 @@ async function askWithHooks(
 async function promptTimed(
   toolCall: PreprocessedToolCall,
   callbacks: StreamCallbacks,
-  options: {
-    note?: string;
-    mode?: "normal" | "plan" | "auto";
-    verdictSource?: string;
-  },
+  options: TimedAskOptions,
 ): Promise<TimedAsk> {
   const preview = toolCall.preprocessResult?.preview;
   const request: ToolCallRequest = {
@@ -324,6 +325,7 @@ async function promptTimed(
           { type: "text", content: options.note, color: "yellow" },
         ]
       : preview,
+    ...(options.why ? { why: options.why } : {}),
   };
 
   let held: Promise<Resolved | undefined> | undefined;
@@ -798,9 +800,24 @@ async function decideToolApproval(
     headless: !!isHeadless,
   });
 
+  const webLevelAsked =
+    permissionCheck.permission === "allow" && permission === "ask";
+
   // PreToolUse hooks adjust the CLI policy first; the CLI's own exclude
   // always stands.
   permission = permissionAfterHook(permission, hookDecision);
+
+  // What the prompt tells the person: why it asks and where that was decided
+  const whyAsked = (verdict?: CoreVerdict) =>
+    explainAsk({
+      toolName: toolCall.name,
+      args: toolCall.arguments,
+      tool: toolCall.tool,
+      verdict,
+      matchedPolicy: permissionCheck.matchedPolicy,
+      hookAsked: hookDecision === "ask",
+      webLevelAsked,
+    });
 
   // Then the rules in config.yaml (deny, protected paths, ask, allow) and the
   // reviewer may tighten the result, and an allow rule may loosen an "ask",
@@ -855,6 +872,7 @@ async function decideToolApproval(
               : undefined,
           mode,
           verdictSource: verdict.source,
+          why: whyAsked(verdict),
         }),
         trace,
       );
@@ -881,7 +899,10 @@ async function decideToolApproval(
     trace.askedPerson = true;
     return askResult(
       toolCall,
-      await requestUserPermissionTimed(toolCall, callbacks, { mode }),
+      await requestUserPermissionTimed(toolCall, callbacks, {
+        mode,
+        why: whyAsked(),
+      }),
       trace,
     );
   } else if (permission === "exclude") {
@@ -969,6 +990,13 @@ export function processToolCallDelta(
   } else if (toolCallDelta.index !== undefined) {
     // No ID, but we have an index - look up the ID from our map
     toolCallId = indexToIdMap.get(toolCallDelta.index);
+    if (!toolCallId) {
+      // Some servers stream a call with an index and never an id. Dropping
+      // its deltas lost the call; an id made here lets it run and pairs it
+      // with its result. Random, so ids never repeat within a session.
+      toolCallId = `call_${randomUUID().replace(/-/g, "")}`;
+      indexToIdMap.set(toolCallDelta.index, toolCallId);
+    }
   }
 
   if (!toolCallId) {
@@ -1240,6 +1268,10 @@ export async function preprocessStreamedToolCalls(
   for (const toolCall of toolCalls) {
     const startTime = Date.now();
     try {
+      // Arguments that did not parse: the call is answered, never run
+      if (toolCall.unparsedArguments) {
+        throw new Error(toolCall.unparsedArguments);
+      }
       const availableTools: Tool[] = await getAllAvailableTools(isHeadless);
       const tool =
         availableTools.find((t) => t.name === toolCall.name) ??
@@ -1266,8 +1298,16 @@ export async function preprocessStreamedToolCalls(
 
       validateToolCallArgsPresent(toolCall, tool);
 
+      // Some models send an array, boolean or number as a string
+      const { args, repairs } = coerceStringArgsToSchema(
+        toolCall.arguments,
+        tool.parameters,
+      );
+
       const preprocessedCall: PreprocessedToolCall = {
         ...toolCall,
+        arguments: args,
+        ...(repairs.length > 0 ? { argRepairs: repairs } : {}),
         tool,
       };
 
@@ -1276,7 +1316,7 @@ export async function preprocessStreamedToolCalls(
           name: toolCall.name,
           arguments: toolCall.arguments,
         });
-        const preprocessed = await tool.preprocess(toolCall.arguments);
+        const preprocessed = await tool.preprocess(args);
         preprocessedCall.preprocessResult = preprocessed;
       }
 

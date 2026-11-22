@@ -2,7 +2,7 @@ import { RequestOptions } from "@continuedev/config-types";
 import * as followRedirects from "follow-redirects";
 import { HttpProxyAgent } from "http-proxy-agent";
 import { BodyInit, RequestInit, Response } from "node-fetch";
-import { HttpsProxyAgentWithTls } from "./agent.js";
+import { directAgentOptions, HttpsProxyAgentWithTls } from "./agent.js";
 import { DEFAULT_CONNECT_TIMEOUT_SECONDS } from "./connectTimeout.js";
 import { getAgentOptions } from "./getAgentOptions.js";
 import patchedFetch from "./node-fetch-patch.js";
@@ -99,9 +99,6 @@ export async function fetchwithRequestOptions(
   requestOptions?: RequestOptions,
 ): Promise<Response> {
   const url = typeof url_ === "string" ? new URL(url_) : url_;
-  if (url.host === "localhost") {
-    url.host = "127.0.0.1";
-  }
 
   const agentOptions = await getAgentOptions(requestOptions);
 
@@ -114,7 +111,7 @@ export async function fetchwithRequestOptions(
   // Create agent. A caller can pin `lookup` to addresses it already checked.
   const protocol = url.protocol === "https:" ? https : http;
   const lookup = (init as { lookup?: unknown } | undefined)?.lookup;
-  const directOptions = lookup ? { ...agentOptions, lookup } : agentOptions;
+  const directOptions = directAgentOptions(url.hostname, agentOptions, lookup);
   const agent =
     proxy && !shouldBypass
       ? protocol === https
@@ -151,11 +148,6 @@ export async function fetchwithRequestOptions(
     ...headers,
     ...requestOptions?.headers,
   };
-
-  // Replace localhost with 127.0.0.1
-  if (url.hostname === "localhost") {
-    url.hostname = "127.0.0.1";
-  }
 
   // add extra body properties if provided
   let updatedBody: string | undefined = undefined;

@@ -1,3 +1,4 @@
+import type { RepairNote } from "@continuedev/openai-adapters";
 import type { ToolPolicy } from "@continuedev/terminal-security";
 
 // JSON Schema compatible parameter definition
@@ -110,9 +111,16 @@ export interface ToolCall {
   argumentsStr: string;
   startNotified: boolean;
   extra_content?: Record<string, unknown>;
+  /**
+   * Set when `argumentsStr` did not parse: the result the model gets in
+   * place of a run. `arguments` is then `{}` and must not be used.
+   */
+  unparsedArguments?: string;
 }
 
 export interface PreprocessedToolCall extends ToolCall {
   tool: Tool;
+  /** Strings read as the value the tool's schema declares, when any were */
+  argRepairs?: RepairNote[];
   preprocessResult?: PreprocessToolCallResult;
 }

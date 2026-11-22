@@ -152,7 +152,6 @@ export const HeaderButton = styled.button<{
   cursor: ${({ disabled }) => (disabled ? "default" : "pointer")};
 
   &:focus {
-    outline: none;
     border: none;
   }
 

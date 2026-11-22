@@ -708,3 +708,52 @@ describe("sessionSlice moveQueuedMessage", () => {
     ).toBe(before);
   });
 });
+
+// A string core read as the array, boolean or number the tool declares
+describe("sessionSlice setRepairedToolCallArgs", () => {
+  it("replaces the call's arguments and keeps what was changed", () => {
+    const edits = [{ old_string: "a", new_string: "b" }];
+    const repairs = [
+      {
+        kind: "string-to-literal",
+        argument: "edits",
+        from: JSON.stringify(edits),
+        to: edits,
+      },
+    ];
+    const state = {
+      ...({} as any),
+      history: [
+        {
+          message: { role: "assistant", content: "", id: "m1" },
+          contextItems: [],
+          toolCallStates: [
+            {
+              toolCallId: "c1",
+              toolCall: {
+                id: "c1",
+                type: "function",
+                function: { name: "multi_edit", arguments: "{}" },
+              },
+              status: "generated",
+              parsedArgs: { filepath: "a.ts", edits: JSON.stringify(edits) },
+            },
+          ],
+        },
+      ],
+    };
+
+    const next = sessionSlice.reducer(
+      state,
+      sessionSlice.actions.setRepairedToolCallArgs({
+        toolCallId: "c1",
+        args: { filepath: "a.ts", edits },
+        repairs,
+      }),
+    );
+
+    const call = next.history[0].toolCallStates![0];
+    expect(call.parsedArgs).toEqual({ filepath: "a.ts", edits });
+    expect(call.argRepairs).toEqual(repairs);
+  });
+});

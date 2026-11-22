@@ -24,6 +24,7 @@ import {
   setModeModelOverride,
   setShowDialog,
 } from "../../redux/slices/uiSlice";
+import { isLocalModel } from "../../redux/thunks/prepareCompaction";
 import { updateSelectedModelByRole } from "../../redux/thunks/updateSelectedModelByRole";
 import { getMetaKeyLabel, isMetaEquivalentKeyPressed } from "../../util";
 import {
@@ -74,6 +75,11 @@ interface Option {
   model?: string;
   /** No window is set or published: 32,768 tokens is assumed. */
   contextUnknown?: boolean;
+  /**
+   * The window a local server reported for the model (Ollama: the one it
+   * loaded it with). It depends on the machine, so the row gives the number.
+   */
+  serverWindow?: number;
 }
 
 function modelSelectTitle(model: any): string {
@@ -156,6 +162,16 @@ function ModelOption({
                 title="No context window is known for this model, so 32,768 tokens is assumed. Open Configure to set it."
               >
                 (Window unknown)
+              </span>
+            )}
+            {option.serverWindow !== undefined && (
+              <span
+                className="ml-1.5 text-[10px] text-description-muted italic"
+                data-testid="model-option-server-window"
+                title={`This model's server reported a context window of ${option.serverWindow.toLocaleString("en-US")} tokens. Open Configure to set your own.`}
+              >
+                ({option.serverWindow.toLocaleString("en-US")} tokens, from the
+                server)
               </span>
             )}
             {retirement && (
@@ -263,6 +279,12 @@ function ModelSelect() {
           provider: model.provider,
           model: model.model,
           contextUnknown: model.contextLengthSource === "unknown",
+          serverWindow:
+            model.contextLengthSource === "provider" &&
+            model.contextLength &&
+            isLocalModel(model)
+              ? model.contextLength
+              : undefined,
         };
       }),
     );

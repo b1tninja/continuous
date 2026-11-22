@@ -106,7 +106,7 @@ function ModelSelectionListbox({
       }}
     >
       <div className="relative mt-1 mb-2">
-        <ListboxButton className="relative m-0 grid h-full w-full cursor-pointer grid-cols-[1fr_auto] items-center rounded-lg border border-solid border-border bg-background py-2 pr-10 pl-3 text-left text-foreground hover:bg-input focus:outline-hidden">
+        <ListboxButton className="relative m-0 grid h-full w-full cursor-pointer grid-cols-[1fr_auto] items-center rounded-lg border border-solid border-border bg-background py-2 pr-10 pl-3 text-left text-foreground hover:bg-input">
           <span className="flex items-center">
             {window.vscMediaUrl && selectedProvider.icon && (
               <img
@@ -133,7 +133,7 @@ function ModelSelectionListbox({
           <ListboxOptions className="absolute top-full left-0 z-10 mt-1 flex h-fit w-3/5 flex-col overflow-y-auto rounded-default bg-input p-0 focus:outline-hidden [&]:!max-h-[30vh]">
             {/* Search Box */}
             <div className="sticky top-0 border-b border-border p-2">
-              <div className="flex items-center rounded-sm border border-border bg-background pl-2">
+              <div className="flex items-center rounded-sm border border-border bg-background pl-2 focus-within:border-border-focus">
                 <MagnifyingGlassIcon className="h-4 w-4 text-description-muted" />
                 <input
                   type="text"

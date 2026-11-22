@@ -8,7 +8,7 @@ import {
   type LocalSpeeds,
   speedsFromStrataMetrics,
 } from "core/util/compactionEstimate";
-import { useContext, useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "react-redux";
 import { IdeMessengerContext } from "../context/IdeMessenger";
 import { useAppSelector } from "../redux/hooks";
@@ -122,17 +122,32 @@ function preparedLine(e: CompactionEstimate): string {
  * The estimate for the current session, for the context meter's Compact now
  * and the forced-path hold. On a local Strata server its `/metrics` is read
  * once while the component is shown (one read-only GET), for the speeds.
+ *
+ * The estimate sizes the whole request, which costs milliseconds on a long
+ * session, so a caller that is mounted but shows nothing passes
+ * `enabled: false` and gets undefined at no cost. While a reply streams the
+ * last estimate stands: the history changes with every batch, and the
+ * estimate is only acted on once the reply has ended.
  */
-export function useCompactionEstimate(): CompactionEstimateView | undefined {
+export function useCompactionEstimate(
+  opts: { enabled?: boolean } = {},
+): CompactionEstimateView | undefined {
+  const enabled = opts.enabled ?? true;
   const store = useStore<RootState>();
   const ideMessenger = useContext(IdeMessengerContext);
   const model = useAppSelector(selectSelectedChatModel);
-  const history = useAppSelector((s) => s.session.history);
+  const isStreaming = useAppSelector((s) => s.session.isStreaming);
+  // Not read while paused, so a streamed batch does not render the caller
+  const history = useAppSelector((s) =>
+    enabled && !isStreaming ? s.session.history : undefined,
+  );
   const plan = useAppSelector((s) => s.session.compactionPlan);
   const prepared = useAppSelector((s) => s.session.preparedCompaction);
   const cache = useAppSelector((s) => s.session.promptCache);
   const now = useNow();
   const [metricsSpeeds, setMetricsSpeeds] = useState<LocalSpeeds>();
+
+  const last = useRef<CompactionEstimateView | undefined>(undefined);
 
   const local = !!model && isLocalModel(model);
   useEffect(() => {
@@ -150,11 +165,28 @@ export function useCompactionEstimate(): CompactionEstimateView | undefined {
     };
   }, [ideMessenger, local, model?.apiBase]);
 
-  return useMemo(() => {
+  const fresh = useMemo(() => {
+    if (!enabled || isStreaming) return undefined;
     return compactionEstimateFor(store.getState(), {
       speeds: metricsSpeeds,
       now,
     });
     // The selections above are what the estimate reads
-  }, [store, model, history, plan, prepared, cache, metricsSpeeds, now]);
+  }, [
+    store,
+    enabled,
+    isStreaming,
+    model,
+    history,
+    plan,
+    prepared,
+    cache,
+    metricsSpeeds,
+    now,
+  ]);
+  useEffect(() => {
+    if (!isStreaming) last.current = enabled ? fresh : undefined;
+  }, [enabled, isStreaming, fresh]);
+  if (!enabled) return undefined;
+  return isStreaming ? last.current : fresh;
 }

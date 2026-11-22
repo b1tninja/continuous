@@ -653,7 +653,7 @@ export function ProviderSetupFlow({
           />
           <span className="mt-1 block text-xs text-description-muted">
             Every model of this provider refers to it as{" "}
-            <code>{`\${{ secrets.${secretName || "NAME"} }}`}</code>
+            <code className="break-all">{`\${{ secrets.${secretName || "NAME"} }}`}</code>
           </span>
         </div>
       )}
@@ -672,7 +672,7 @@ export function ProviderSetupFlow({
   if (envCopy) {
     return (
       <div
-        className="mx-auto flex max-w-md flex-col gap-4 p-4"
+        className="mx-auto box-border flex w-full max-w-[30rem] min-w-0 flex-col gap-4 p-4"
         data-testid="env-copy-prompt"
       >
         <h2 className="m-0 text-center text-lg">Key saved</h2>
@@ -704,7 +704,7 @@ export function ProviderSetupFlow({
 
   return (
     <div
-      className="mx-auto flex max-w-md flex-col gap-4 p-4"
+      className="mx-auto box-border flex w-full max-w-[30rem] min-w-0 flex-col gap-4 p-4"
       data-testid="provider-setup-flow"
     >
       <h2 className="m-0 text-center text-lg">
@@ -935,7 +935,7 @@ export function ProviderSetupFlow({
 
       {step === "models" && (
         <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-x-2">
             <label className="text-sm font-medium">Models</label>
             <button
               type="button"

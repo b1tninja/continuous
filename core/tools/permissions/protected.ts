@@ -1,5 +1,5 @@
 import * as os from "node:os";
-import * as posix from "node:path/posix";
+import { posixDirname, posixJoin, posixNormalize } from "../../util/posixPath";
 import {
   hasWindowsShortName,
   isConfigPath,
@@ -43,8 +43,24 @@ export interface ProtectedHit {
   path: string;
 }
 
+/**
+ * The home folder where there is one. The chat webview is a browser build in
+ * which `os` is an empty module, so `os.homedir` is not a function there:
+ * the answer is "none known" (an empty string), and the checks that read the
+ * shape of a path (`/home/<user>`, `C:/Users/<user>`, file names and
+ * extensions) still work. It used to throw, and snapshotFile caught the throw
+ * and recorded every file as unreadable.
+ */
+export function defaultHome(): string {
+  try {
+    return typeof os.homedir === "function" ? os.homedir() : "";
+  } catch {
+    return "";
+  }
+}
+
 /** Home directory as a forward-slash path, for turning absolute paths into `~/...`. */
-export function homeAsPosix(home: string = os.homedir()): string {
+export function homeAsPosix(home: string = defaultHome()): string {
   return home.replace(/\\/g, "/").replace(/\/+$/, "");
 }
 
@@ -58,7 +74,7 @@ function expandTilde(p: string, home: string): string {
     const slash = p.indexOf("/");
     const user = slash === -1 ? p.slice(1) : p.slice(1, slash);
     const rest = slash === -1 ? "" : p.slice(slash);
-    const parent = h ? posix.dirname(h) : "/home";
+    const parent = h ? posixDirname(h) : "/home";
     return `${parent}/${user}${rest}`;
   }
   return p;
@@ -83,7 +99,7 @@ function resolveAgainstCwd(p: string, cwd: string | undefined): string {
   let base = cwd.trim().replace(/\\/g, "/").replace(/\/+$/, "");
   base = base.replace(/^\/([a-zA-Z]:\/)/, "$1");
   if (!base || base.startsWith("file:")) return p;
-  return posix.join(base, p);
+  return posixJoin(base, p);
 }
 
 function rewriteHome(p: string, home: string): string {
@@ -144,7 +160,7 @@ export function normalizeProtectedPath(
   p = resolveAgainstCwd(p, cwd);
   // Fold `.` and `..` before the home-prefix test. Doing it afterwards leaves
   // a path that climbed back into the home directory looking unrelated.
-  if (!p.startsWith("~")) p = posix.normalize(p);
+  if (!p.startsWith("~")) p = posixNormalize(p);
   // A WSL path `/mnt/c/...` is the Windows drive `c:/...`.
   p = p.replace(
     /^\/mnt\/([a-zA-Z])(?=\/|$)/,
@@ -157,7 +173,7 @@ export function normalizeProtectedPath(
 export function protectedPathHit(
   raw: string | undefined,
   kinds: ProtectedKind[],
-  home: string = os.homedir(),
+  home: string = defaultHome(),
   cwd?: string,
 ): ProtectedHit | undefined {
   if (!raw) return undefined;

@@ -32,6 +32,7 @@ import {
   TaskPlan,
   ThinkingChatMessage,
   Tool,
+  ToolArgRepair,
   ToolCallDelta,
   ToolCallState,
   TurnCheckpoint,
@@ -1628,6 +1629,25 @@ export const sessionSlice = createSlice({
         toolCallState.processedArgs = action.payload.newArgs;
       }
     },
+    // Arguments core read as the tool's schema declares them (a string sent
+    // for an array, boolean or number), with what was changed
+    setRepairedToolCallArgs: (
+      state,
+      action: PayloadAction<{
+        toolCallId: string;
+        args: Record<string, any>;
+        repairs: ToolArgRepair[];
+      }>,
+    ) => {
+      const toolCallState = findToolCallById(
+        state.history,
+        action.payload.toolCallId,
+      );
+      if (toolCallState) {
+        toolCallState.parsedArgs = action.payload.args;
+        toolCallState.argRepairs = action.payload.repairs;
+      }
+    },
     cancelToolCall: (
       state,
       action: PayloadAction<{
@@ -2087,6 +2107,7 @@ export const {
   setToolGenerated,
   updateToolCallOutput,
   setProcessedToolCallArgs,
+  setRepairedToolCallArgs,
   setMode,
   setIsSessionMetadataLoading,
   setAllSessionMetadata,

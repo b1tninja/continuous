@@ -4,6 +4,7 @@ import { renderContextItems } from "core/util/messageContent";
 import { useContext, useEffect, useMemo, useState } from "react";
 import { IdeMessengerContext } from "../../../context/IdeMessenger";
 import { useIdeMessengerRequest } from "../../../hooks/useIdeMessengerRequest";
+import { useKeptOpenState } from "../../../hooks/useKeptOpenState";
 import { useWebviewListener } from "../../../hooks/useWebviewListener";
 import { getStatusIcon } from "../../../pages/gui/ToolCallDiv/utils";
 import { useAppSelector } from "../../../redux/hooks";
@@ -58,7 +59,10 @@ export function StepContainerPreToolbar({
 }: StepContainerPreToolbarProps) {
   const ideMessenger = useContext(IdeMessengerContext);
   const history = useAppSelector((state) => state.session.history);
-  const [isExpanded, setIsExpanded] = useState(expanded ?? true);
+  const [isExpanded, setIsExpanded] = useKeptOpenState(
+    `code-${codeBlockIndex}`,
+    expanded ?? true,
+  );
 
   const [relativeFilepathUri, setRelativeFilepathUri] = useState<string | null>(
     null,
@@ -331,7 +335,10 @@ export function StepContainerPreToolbar({
         </div>
       </div>
       {isExpanded && (
-        <CollapsibleContainer collapsible={collapsible}>
+        <CollapsibleContainer
+          collapsible={collapsible}
+          keptAs={`code-${codeBlockIndex}-full`}
+        >
           {children}
         </CollapsibleContainer>
       )}

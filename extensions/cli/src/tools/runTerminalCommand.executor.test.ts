@@ -142,7 +142,66 @@ describe("the CLI Bash tool starts commands through the executor", () => {
     await started();
     child.stderr.emit("data", Buffer.from("boom"));
     child.emit("close", 3);
-    await expect(pending).rejects.toBe("Error (exit code 3): boom");
+    await expect(pending).rejects.toBe("Exit code 3.\nStderr: boom");
+  });
+
+  /** Runs a command on a fake child that prints, then ends as told. */
+  function ended(
+    out: { stdout?: string; stderr?: string },
+    code: number | null,
+    signal: NodeJS.Signals | null = null,
+  ): Promise<string> {
+    const child = fakeChild();
+    executorBox.current = fakeExecutor(child).executor;
+    const pending = runTerminalCommandTool.run({ command: "npm test" });
+    return started().then(() => {
+      if (out.stdout) child.stdout.emit("data", Buffer.from(out.stdout));
+      if (out.stderr) child.stderr.emit("data", Buffer.from(out.stderr));
+      child.emit("close", code, signal);
+      return pending;
+    });
+  }
+
+  it("a failure with nothing on stderr shows the code", async () => {
+    await expect(ended({}, 2)).resolves.toBe("Exit code 2.");
+    await expect(ended({ stdout: "no match\n" }, 1)).resolves.toBe(
+      "Exit code 1.\nno match\n",
+    );
+  });
+
+  it("a failing test run shows its stdout beside stderr", async () => {
+    await expect(
+      ended(
+        { stdout: "FAIL a.test.ts\n1 failed\n", stderr: "npm ERR! failed" },
+        1,
+      ),
+    ).rejects.toBe(
+      "Exit code 1.\nFAIL a.test.ts\n1 failed\n\nStderr: npm ERR! failed",
+    );
+  });
+
+  it("a failure's stdout and stderr share the one cap, and the code survives it", async () => {
+    vi.stubEnv("CONTINUE_CLI_BASH_MAX_OUTPUT_CHARS", "200");
+    const text = await ended(
+      { stdout: "o".repeat(5000), stderr: "e".repeat(5000) + " last words" },
+      7,
+    ).catch((e: unknown) => String(e));
+    expect(text.startsWith("Exit code 7.\n")).toBe(true);
+    expect(text.endsWith("last words")).toBe(true);
+    expect(text).toContain("truncated");
+    expect(text.length).toBeLessThan(400);
+  });
+
+  it("a command a signal ended says so in place of a code", async () => {
+    await expect(ended({ stderr: "Killed" }, null, "SIGKILL")).rejects.toBe(
+      "No exit code: ended by SIGKILL.\nStderr: Killed",
+    );
+  });
+
+  it("a success is the output alone, as before", async () => {
+    await expect(ended({ stdout: "ok\n", stderr: "warn" }, 0)).resolves.toBe(
+      "ok\n\nStderr: warn",
+    );
   });
 
   it("asks PowerShell for the real exit code, and leaves bash's command as written", async () => {

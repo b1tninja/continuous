@@ -23,7 +23,8 @@ export function CompactionHoldNotice() {
   const dispatch = useAppDispatch();
   const hold = useAppSelector((s) => s.session.compactionHold);
   const historyLength = useAppSelector((s) => s.session.history.length);
-  const estimate = useCompactionEstimate();
+  // Always mounted, so the estimate is worked out only while a message waits
+  const estimate = useCompactionEstimate({ enabled: !!hold });
   const compact = useCompactConversation();
   if (!hold) return null;
 

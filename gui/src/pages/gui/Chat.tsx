@@ -15,7 +15,6 @@ import {
 } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 import styled from "styled-components";
-import { Button, lightGray, vscBackground } from "../../components";
 import { useFindWidget } from "../../components/find/FindWidget";
 import TimelineItem from "../../components/gui/TimelineItem";
 import { NewSessionButton } from "../../components/mainInput/belowMainInput/NewSessionButton";
@@ -27,7 +26,9 @@ import { CompactionPreparedNotice } from "../../components/mainInput/CompactionP
 import { CachingOffNotice } from "../../components/mainInput/CachingOffNotice";
 import { ToolDialectNotice } from "../../components/mainInput/ToolDialectNotice";
 import { ColdCacheNotice } from "../../components/mainInput/ColdCacheNotice";
+import { NoModelNotice } from "../../components/mainInput/NoModelNotice";
 import { SessionLoadNotice } from "../../components/mainInput/SessionLoadNotice";
+import { SmallWindowNotice } from "../../components/mainInput/SmallWindowNotice";
 import { EditUndoLine } from "../../components/mainInput/EditUndoLine";
 import { IdgafNotice } from "../../components/mainInput/IdgafNotice";
 import { InstructionFileNotice } from "../../components/mainInput/InstructionFileNotice";
@@ -102,6 +103,7 @@ import { ExploreDialogWatcher } from "./ExploreDialogWatcher";
 import { ChatDebugLog } from "./ChatDebugLog";
 import { ChatTranscript, useScrollBox } from "./ChatTranscript";
 import { JumpToLatest } from "./JumpToLatest";
+import { MessageErrorFallback } from "./MessageErrorFallback";
 import { TranscriptMessage } from "./TranscriptMessage";
 import { useAutoScroll } from "./useAutoScroll";
 
@@ -130,26 +132,6 @@ const StepsDiv = styled.div`
 
 export const MAIN_EDITOR_INPUT_ID = "main-editor-input";
 
-function fallbackRender({ error, resetErrorBoundary }: any) {
-  // Call resetErrorBoundary() to reset the error boundary and retry the render.
-
-  return (
-    <div
-      role="alert"
-      className="px-2"
-      style={{ backgroundColor: vscBackground }}
-    >
-      <p>Something went wrong:</p>
-      <pre style={{ color: "red" }}>{error.message}</pre>
-      <pre style={{ color: lightGray }}>{error.stack}</pre>
-
-      <div className="text-center">
-        <Button onClick={resetErrorBoundary}>Restart</Button>
-      </div>
-    </div>
-  );
-}
-
 export function Chat() {
   // Loop mode: take the next step whenever nothing is running
   useLoopDriver();
@@ -165,16 +147,34 @@ export function Chat() {
     (store) => store.config.config.ui?.showSessionTabs,
   );
   const isStreaming = useAppSelector((state) => state.session.isStreaming);
+  // A send found no model: said above the input until one is selected
+  const [sentWithNoModel, setSentWithNoModel] = useState(false);
+  const hasChatModel = useAppSelector(
+    (state) => !!state.config.config.selectedModelByRole.chat,
+  );
+  useEffect(() => {
+    if (hasChatModel) setSentWithNoModel(false);
+  }, [hasChatModel]);
   const [stepsOpen] = useState<(boolean | undefined)[]>([]);
   const mainTextInputRef = useRef<HTMLInputElement>(null);
   const stepsDivRef = useRef<HTMLDivElement>(null);
   const scrollElement = useScrollBox(stepsDivRef);
   const tabsRef = useRef<HTMLDivElement>(null);
   const history = useAppSelector((state) => state.session.history);
-  const transcriptItems = useMemo(
-    () => history.filter((item) => item.message.role !== "system"),
-    [history],
-  );
+  // A `system` item is not shown, so a row's place in the transcript can
+  // differ from its place in the history. Nothing here writes one, but a
+  // loaded session file is taken as it is, and Delete, Edit and "is last"
+  // all act on the history index.
+  const { transcriptItems, historyIndexOfRow } = useMemo(() => {
+    const transcriptItems: typeof history = [];
+    const historyIndexOfRow: number[] = [];
+    history.forEach((item, index) => {
+      if (item.message.role === "system") return;
+      transcriptItems.push(item);
+      historyIndexOfRow.push(index);
+    });
+    return { transcriptItems, historyIndexOfRow };
+  }, [history]);
   const showChatScrollbar = useAppSelector(
     (state) => state.config.config.ui?.showChatScrollbar,
   );
@@ -284,6 +284,8 @@ export function Chat() {
         : selectedModelByRole.chat;
 
       if (!model) {
+        // The editor is left as it is, so the message is not lost
+        setSentWithNoModel(true);
         return;
       }
 
@@ -616,22 +618,28 @@ export function Chat() {
           itemKey={(item, index) =>
             item.message.id ?? `${item.message.role}-${index}`
           }
-          renderItem={(item, index) => (
-            <TranscriptMessage
-              role={item.message.role}
-              minHeight={index === history.length - 1 ? "200px" : 0}
-            >
-              <ErrorBoundary
-                FallbackComponent={fallbackRender}
-                onReset={() => {
-                  dispatch(newSession());
-                }}
+          renderItem={(item, row) => {
+            const index = historyIndexOfRow[row] ?? row;
+            return (
+              <TranscriptMessage
+                role={item.message.role}
+                minHeight={index === history.length - 1 ? "200px" : 0}
               >
-                {renderChatHistoryItem(item, index)}
-              </ErrorBoundary>
-              {index === history.length - 1 && <InlineErrorMessage />}
-            </TranscriptMessage>
-          )}
+                <ErrorBoundary
+                  fallbackRender={({ error }) => (
+                    <MessageErrorFallback
+                      error={error}
+                      item={item}
+                      position={row + 1}
+                    />
+                  )}
+                >
+                  {renderChatHistoryItem(item, index)}
+                </ErrorBoundary>
+                {index === history.length - 1 && <InlineErrorMessage />}
+              </TranscriptMessage>
+            );
+          }}
         />
         <ResumeResponse />
         {/* Inside the scroll area, so it does not push the input down */}
@@ -645,10 +653,14 @@ export function Chat() {
         <CacheMissNotice />
         <ColdCacheNotice />
         <SessionLoadNotice />
+        {sentWithNoModel && !hasChatModel && (
+          <NoModelNotice onDismiss={() => setSentWithNoModel(false)} />
+        )}
         <EditUndoLine />
         <InstructionFileNotice />
         <CachingOffNotice />
         <PendingToolChangesNotice />
+        <SmallWindowNotice />
         <LargeMessageNotice />
         {/* A loop shows its own plan in its panel */}
         {!hasLoop && <TaskListPanel />}

@@ -64,6 +64,7 @@ export function RulesPeek({ appliedRules, icon }: RulesPeekProps) {
       icon={icon}
       title={`${rules.length} rule${rules.length > 1 ? "s" : ""}`}
       testId="rules-peek"
+      keptAs="rules"
     >
       {rules.map((rule, idx) => (
         <RulesPeekItem key={`rule-${idx}`} rule={rule} />

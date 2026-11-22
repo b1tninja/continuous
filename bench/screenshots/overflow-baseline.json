@@ -1,0 +1,547 @@
+{
+  "tool": "bench/screenshots overflow.mjs",
+  "note": "Known findings per view and width: \"<kind> <element>\" -> CSS pixels (outside: beyond the viewport edge; clipped, scroll-x, squeezed: content wider than the box). A finding is new when it is not listed or is more than 2 px larger; amounts up to 1 px are ignored. Taken with Windows fonts. Fix and tighten with --update; never add by hand.",
+  "views": {
+    "agents-ended": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "agents-running": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "approval": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "attach-open": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "audit-inbox": {
+      "200": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578,
+        "squeezed li[data-testid=audit-row-i1] > div.mt-1.flex.min-w-0.flex-wrap > code.min-w-0.flex-1.truncate.font-mono": 154,
+        "squeezed li[data-testid=audit-row-i2] > div.mt-1.flex.min-w-0.flex-wrap > code.min-w-0.flex-1.truncate.font-mono": 51
+      },
+      "250": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
+      },
+      "300": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
+      },
+      "340": {}
+    },
+    "audit-list": {
+      "200": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578,
+        "squeezed li[data-testid=audit-row-c1] > div.mt-1.flex.min-w-0.flex-wrap > code.min-w-0.flex-1.truncate.font-mono": 51,
+        "squeezed li[data-testid=audit-row-c2] > div.mt-1.flex.min-w-0.flex-wrap > code.min-w-0.flex-1.truncate.font-mono": 166,
+        "squeezed li[data-testid=audit-row-c4] > div.mt-1.flex.min-w-0.flex-wrap > code.min-w-0.flex-1.truncate.font-mono": 360
+      },
+      "250": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
+      },
+      "300": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
+      },
+      "340": {}
+    },
+    "bedrock-fail": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "bedrock-ok": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "catalogue": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "chat": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "chat-first-run": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "context-60": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "context-open": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "conversation": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "dialect": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "drop-refused": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "drop-snapshot": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "drop-target": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "held": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "history": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "long-prompt": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "loop": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "loop-blocked-open": {
+      "200": {
+        "scroll-x details[data-testid=loop-controls] > ul.m-0.mt-1.max-h-48.list-none": 38,
+        "squeezed div[data-testid=blocked-1] > div.flex.items-center.gap-1 > code.min-w-0.flex-1.truncate": 85,
+        "squeezed div[data-testid=blocked-3] > div.flex.items-center.gap-1 > code.min-w-0.flex-1.truncate": 85,
+        "squeezed div[data-testid=blocked-5] > div.flex.items-center.gap-1 > code.min-w-0.flex-1.truncate": 85,
+        "squeezed div[data-testid=loop-item-2] > span.min-w-0.flex-1.truncate.text-foreground": 254
+      },
+      "250": {
+        "squeezed div[data-testid=loop-item-2] > span.min-w-0.flex-1.truncate.text-foreground": 242
+      },
+      "300": {},
+      "340": {}
+    },
+    "loop-failed": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "loop-finished": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "loop-frame-failed": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "loop-frame-finished": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "loop-frame-running": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "loop-frame-stopped": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "loop-frame-waiting": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "loop-idgaf": {
+      "200": {
+        "scroll-x details[data-testid=loop-controls] > ul.m-0.mt-1.max-h-48.list-none": 38,
+        "squeezed div[data-testid=loop-item-2] > span.min-w-0.flex-1.truncate.text-foreground": 254
+      },
+      "250": {
+        "squeezed div[data-testid=loop-item-2] > span.min-w-0.flex-1.truncate.text-foreground": 242
+      },
+      "300": {},
+      "340": {}
+    },
+    "loop-plan-failed": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "loop-plan-finished": {
+      "200": {
+        "squeezed span[data-testid=loop-title]": 242
+      },
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "loop-plan-running": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "loop-plan-tile": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "loop-plan-waiting": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "loop-questions": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "loop-replan": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "loop-running": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "loop-settings-open": {
+      "200": {
+        "scroll-x ... > div > div > div[role=dialog].relative.z-50 > div.fixed.inset-0.flex.items-start": 23
+      },
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "loop-stopped": {
+      "200": {
+        "squeezed span[data-testid=loop-title]": 27
+      },
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "message-error": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "onboarding-local": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "onboarding-local-chooser": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "onboarding-local-server": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "permissions-editor": {
+      "200": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
+      },
+      "250": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
+      },
+      "300": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
+      },
+      "340": {}
+    },
+    "permissions-error": {
+      "200": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
+      },
+      "250": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
+      },
+      "300": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
+      },
+      "340": {}
+    },
+    "permissions-intro": {
+      "200": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
+      },
+      "250": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
+      },
+      "300": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
+      },
+      "340": {}
+    },
+    "permissions-loading": {
+      "200": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
+      },
+      "250": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
+      },
+      "300": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
+      },
+      "340": {}
+    },
+    "preset-open": {
+      "200": {
+        "outside div > div > div[role=listbox].flex.w-max.flex-col.overflow-auto": 2
+      },
+      "250": {
+        "outside div > div > div[role=listbox].flex.w-max.flex-col.overflow-auto": 2
+      },
+      "300": {
+        "outside div > div > div[role=listbox].flex.w-max.flex-col.overflow-auto": 2
+      },
+      "340": {
+        "outside div > div > div[role=listbox].flex.w-max.flex-col.overflow-auto": 2
+      }
+    },
+    "settings-configs": {
+      "200": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
+      },
+      "250": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
+      },
+      "300": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
+      },
+      "340": {}
+    },
+    "settings-general": {
+      "200": {
+        "clipped div[aria-label=\"Settings\"]": 37,
+        "clipped div[aria-label=\"Settings\"] > ... > div.flex.flex-col.gap-3 > form > div.flex.items-center.gap-2 > div.flex.w-full.flex-row.overflow-hidden": 47,
+        "outside div[aria-label=\"Settings\"] > ... > div.pl-6 > div.flex.flex-col.gap-x-1.gap-y-4 > div.flex.items-start.justify-start.gap-4 > div.flex.items-center.justify-between.gap-3": 5,
+        "outside div[aria-label=\"Settings\"] > ... > div.space-y-0.rounded-default.bg-editor.px-4 > div.flex.flex-col.gap-4 > div.flex.items-start.justify-start.gap-4 > button.m-0.flex.flex-1.cursor-pointer": 37,
+        "outside div[aria-label=\"Settings\"] > ... > div.space-y-0.rounded-default.bg-editor.px-4 > div.flex.flex-col.gap-4 > div.flex.items-start.justify-start.gap-4 > div.flex.w-20.items-center.rounded-md": 13,
+        "outside input[aria-label=\"Disable autocomplete in files\"]": 14,
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
+      },
+      "250": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
+      },
+      "300": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
+      },
+      "340": {}
+    },
+    "settings-help": {
+      "200": {
+        "clipped div[aria-label=\"Help\"] > ... > div.space-y-6 > div > div.space-y-0.rounded-default.bg-editor.px-4 > div.overflow-hidden.rounded-md.border.border-gray-600": 26,
+        "outside div[aria-label=\"Help\"] > ... > div.space-y-0.rounded-default.bg-editor.px-4 > div.overflow-hidden.rounded-md.border.border-gray-600 > div.flex.flex-col.items-start.p-3 > div.shrink-0.whitespace-nowrap": 9,
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
+      },
+      "250": {
+        "clipped div[aria-label=\"Help\"] > ... > div.space-y-6 > div > div.space-y-0.rounded-default.bg-editor.px-4 > div.overflow-hidden.rounded-md.border.border-gray-600": 4,
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
+      },
+      "300": {
+        "clipped div[aria-label=\"Help\"] > ... > div.space-y-6 > div > div.space-y-0.rounded-default.bg-editor.px-4 > div.overflow-hidden.rounded-md.border.border-gray-600": 4,
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
+      },
+      "340": {}
+    },
+    "settings-indexing": {
+      "200": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
+      },
+      "250": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
+      },
+      "300": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
+      },
+      "340": {}
+    },
+    "settings-models": {
+      "200": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
+      },
+      "250": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
+      },
+      "300": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
+      },
+      "340": {}
+    },
+    "settings-permissions": {
+      "200": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
+      },
+      "250": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
+      },
+      "300": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
+      },
+      "340": {}
+    },
+    "settings-rules": {
+      "200": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
+      },
+      "250": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
+      },
+      "300": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
+      },
+      "340": {}
+    },
+    "settings-tools": {
+      "200": {
+        "clipped div[aria-label=\"Tools\"]": 58,
+        "outside div[data-testid=policy-row-context] > div.relative": 3,
+        "outside div[data-testid=policy-row-questions] > div.relative": 5,
+        "outside label[data-testid=question-type-cost] > select.shrink-0.cursor-pointer.rounded.border": 43,
+        "outside label[data-testid=question-type-design] > select.shrink-0.cursor-pointer.rounded.border": 58,
+        "outside label[data-testid=question-type-detail] > select.shrink-0.cursor-pointer.rounded.border": 51,
+        "outside label[data-testid=question-type-irreversible] > select.shrink-0.cursor-pointer.rounded.border": 55,
+        "outside label[data-testid=question-type-scope] > select.shrink-0.cursor-pointer.rounded.border": 28,
+        "outside label[data-testid=question-type-security] > select.shrink-0.cursor-pointer.rounded.border": 57,
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 578
+      },
+      "250": {
+        "clipped div[aria-label=\"Tools\"]": 8,
+        "outside label[data-testid=question-type-design] > select.shrink-0.cursor-pointer.rounded.border": 8,
+        "outside label[data-testid=question-type-irreversible] > select.shrink-0.cursor-pointer.rounded.border": 5,
+        "outside label[data-testid=question-type-security] > select.shrink-0.cursor-pointer.rounded.border": 7,
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 568
+      },
+      "300": {
+        "scroll-x nav[aria-label=\"Settings\"] > div.thin-scrollbar.flex.flex-1.flex-row": 518
+      },
+      "340": {}
+    },
+    "setup-dialog": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "setup-long-model": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "status-row": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "streaming": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "thinking-menu": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "tool-call": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "tool-call-done": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "usage-open": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    },
+    "zoom-150": {
+      "200": {},
+      "250": {},
+      "300": {},
+      "340": {}
+    }
+  }
+}
