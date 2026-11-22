@@ -5,7 +5,10 @@ import { MockIdeMessenger } from "../../context/MockIdeMessenger";
 import { ProvidersCard } from "../../pages/config/components/ProvidersCard";
 import { renderWithProviders } from "../../util/test/render";
 import { MissingSecretsPanel } from "../config/MissingSecretsPanel";
+import { NoModelNotice } from "../mainInput/NoModelNotice";
+import { OnboardingCard } from "../OnboardingCard";
 import { OnboardingProvidersTab } from "../OnboardingCard/components/OnboardingProvidersTab";
+import { toReview } from "./testSteps";
 
 const SETUP = {
   connections: [
@@ -82,6 +85,66 @@ describe("Enter key in the missing-secret popover", () => {
   });
 });
 
+describe("Add a model opens the start screen", () => {
+  it("from the chat's notice when no model is selected", async () => {
+    const m = messenger();
+    m.responseHandlers["models/detectLocal"] = async () => [];
+    const { user, store } = await renderWithProviders(
+      <NoModelNotice onDismiss={() => {}} />,
+      { mockIdeMessenger: m },
+    );
+    await user.click(screen.getByTestId("no-model-notice-add"));
+    expect(store.getState().ui.showDialog).toBe(true);
+    const dialog = store.getState().ui.dialogMessage!;
+    expect(dialog.props.initialProvider).toBeUndefined();
+
+    // What the dialog draws: the four choices, not a provider form
+    await renderWithProviders(dialog, { mockIdeMessenger: m });
+    expect(screen.getByText("What do you have?")).toBeTruthy();
+    expect(screen.getByTestId("door-api-key")).toBeTruthy();
+    expect(screen.queryByLabelText("API key")).toBeNull();
+  });
+
+  it("in the first-run card, in place of its two tabs, with the card's frame kept", async () => {
+    const m = messenger();
+    m.responseHandlers["models/detectLocal"] = async () => [];
+    await renderWithProviders(<OnboardingCard />, { mockIdeMessenger: m });
+    const card = screen.getByTestId("onboarding-card");
+    expect(within(card).getByTestId("start-screen")).toBeTruthy();
+    expect(within(card).queryByTestId("onboarding-tab-API Key")).toBeNull();
+    expect(within(card).queryByTestId("onboarding-tab-Local")).toBeNull();
+  });
+
+  it("is reached in visual order with the Tab key", async () => {
+    const m = messenger();
+    m.responseHandlers["models/detectLocal"] = async () => [
+      {
+        title: "Ollama",
+        apiBase: "http://127.0.0.1:11434/v1/",
+        models: [{ name: "a" }],
+      },
+    ];
+    const { user } = await renderWithProviders(<OnboardingCard />, {
+      mockIdeMessenger: m,
+    });
+    await screen.findByTestId("found-11434");
+    const order: (string | null)[] = [];
+    for (let i = 0; i < 5; i++) {
+      await user.tab();
+      order.push(
+        (document.activeElement as HTMLElement).getAttribute("data-testid"),
+      );
+    }
+    expect(order).toEqual([
+      "door-api-key",
+      "door-this-computer",
+      "found-11434",
+      "door-network",
+      "door-nothing",
+    ]);
+  });
+});
+
 describe("ProvidersCard", () => {
   it("lists connections and opens the flow to edit one", async () => {
     const { user, store } = await renderWithProviders(<ProvidersCard />, {
@@ -151,7 +214,10 @@ describe("Onboarding API key tab", () => {
       mockIdeMessenger: messenger(),
     });
     expect(screen.getByTestId("provider-setup-flow")).toBeTruthy();
-    expect(screen.getByLabelText("API key")).toBeTruthy();
+    // No tabs and no key field yet: the first question is what the person has
+    expect(screen.getByTestId("start-screen")).toBeTruthy();
+    expect(screen.queryByLabelText("API key")).toBeNull();
+    expect(screen.queryByTestId("onboarding-tab-Local")).toBeNull();
   });
 
   it("completes onboarding after the review step is saved", async () => {
@@ -164,9 +230,10 @@ describe("Onboarding API key tab", () => {
     const { user } = await renderWithProviders(<OnboardingProvidersTab />, {
       mockIdeMessenger: m,
     });
+    await user.click(screen.getByTestId("door-api-key"));
     await user.type(screen.getByLabelText("API key"), "sk-ant-1");
     await user.click(screen.getByRole("button", { name: "Next" }));
-    await user.click(await screen.findByRole("button", { name: "Review" }));
+    await toReview(user);
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>

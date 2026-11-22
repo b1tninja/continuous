@@ -18,6 +18,13 @@ interface ReviewStepProps {
    * The name, when it is known before saving.
    */
   account?: { name?: string };
+  /**
+   * What "Use for" chose for the models being added: one line per role, and
+   * the `roles` that are written (undefined when no key is).
+   */
+  useFor?: { lines: string[]; roles?: string[] };
+  /** What was set under "More", one line each. Empty when nothing was. */
+  more?: string[];
 }
 
 /** The last step: what will change in config.yaml. Nothing is saved before. */
@@ -31,6 +38,8 @@ export function ReviewStep({
   warning,
   connectionChange,
   account,
+  useFor,
+  more,
 }: ReviewStepProps) {
   return (
     <div className="flex flex-col gap-3 text-xs" data-testid="review-step">
@@ -66,6 +75,43 @@ export function ReviewStep({
           </ul>
         )}
       </div>
+
+      {useFor && (
+        <div data-testid="review-use-for">
+          <div className="font-medium">Use for</div>
+          <ul className="m-0 pl-4">
+            {useFor.lines.map((line) => (
+              <li key={line} className="break-words">
+                {line}
+              </li>
+            ))}
+          </ul>
+          <div className="break-words text-description-muted">
+            {useFor.roles
+              ? useFor.roles.length > 0
+                ? `Written with each new model as roles: ${useFor.roles.join(", ")}.`
+                : "Written with each new model as an empty roles list: it is not used until you give it a role."
+              : "No roles are written: a model without them does chat, edit, apply and summarize."}
+          </div>
+        </div>
+      )}
+
+      {more && more.length > 0 && (
+        <div data-testid="review-more">
+          <div className="font-medium">
+            {account
+              ? "Write to the account in providers.yaml"
+              : "Write with each new model"}
+          </div>
+          <ul className="m-0 pl-4">
+            {more.map((line) => (
+              <li key={line} className="break-words">
+                {line}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {diff.remove.length > 0 && (
         <div>

@@ -380,6 +380,14 @@ function ModelSelect() {
   }
   chooseModelRef.current = chooseModel;
 
+  /** "Add a model": the setup flow from its start screen (what the person has). */
+  function onClickAddNewModel(e: MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    closeDropDown(buttonRef.current);
+    openSetup();
+  }
+
   function onClickAddModel(e: MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
@@ -439,7 +447,9 @@ function ModelSelect() {
         // Enter on the Providers... row opens the page, as a click does
         val === "providers"
           ? navigate(CONFIG_ROUTES.PROVIDERS)
-          : chooseModel(val)
+          : val === "addNewModel"
+            ? openSetup()
+            : chooseModel(val)
       }
     >
       <div className="relative flex min-w-0">
@@ -561,6 +571,18 @@ function ModelSelect() {
               <ModelSwitchCacheNotice />
               <Divider className="!mb-0" />
               <ListboxOption
+                key={options.length + 2}
+                onClick={onClickAddNewModel}
+                value={"addNewModel" as any}
+                fontSizeModifier={-2}
+                className="px-2 py-2"
+              >
+                <span className="flex flex-row items-center text-2xs text-description">
+                  <PlusIcon className="mr-1.5 h-3.5 w-3.5" />
+                  Add a model...
+                </span>
+              </ListboxOption>
+              <ListboxOption
                 key={options.length}
                 onClick={onClickAddModel}
                 value={"addModel" as any}
@@ -568,7 +590,7 @@ function ModelSelect() {
                 className="px-2 py-2"
               >
                 <span className="flex flex-row items-center text-2xs text-description">
-                  <PlusIcon className="mr-1.5 h-3.5 w-3.5" />
+                  <Cog6ToothIcon className="mr-1.5 h-3.5 w-3.5" />
                   Manage models...
                 </span>
               </ListboxOption>

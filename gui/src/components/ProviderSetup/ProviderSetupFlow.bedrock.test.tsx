@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { MockIdeMessenger } from "../../context/MockIdeMessenger";
 import { renderWithProviders } from "../../util/test/render";
 import { ProviderSetupFlow } from "./ProviderSetupFlow";
+import { toReview } from "./testSteps";
 
 // Carries over the Bedrock coverage of the removed AddModelForm test.
 describe("ProviderSetupFlow - Amazon Bedrock", () => {
@@ -67,7 +68,7 @@ describe("ProviderSetupFlow - Amazon Bedrock", () => {
     expect(screen.getByTestId("model-checklist").textContent).toContain(
       "1 model selected",
     );
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await toReview(user);
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(saves).toHaveLength(1));
@@ -131,7 +132,7 @@ describe("ProviderSetupFlow - Amazon Bedrock", () => {
     await user.click(next);
     const nova = (await screen.findByLabelText(/Nova Pro/)) as HTMLInputElement;
     await waitFor(() => expect(nova.checked).toBe(true));
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await toReview(user);
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(saves).toHaveLength(1));
