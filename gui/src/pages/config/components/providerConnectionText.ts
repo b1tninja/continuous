@@ -7,7 +7,7 @@ import {
 } from "../../AddNewModel/configs/providers";
 
 /**
- * Texts for one provider connection on the Providers page. Every one is
+ * Texts for one provider connection under Connections on the Models tab. Every one is
  * built from the setup info, which carries key names and where a key is
  * kept, never a key.
  */

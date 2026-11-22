@@ -1,10 +1,13 @@
 import { ArrowPathIcon } from "@heroicons/react/24/outline";
+import { fieldFor, notSetText } from "core/config/modelEdit/modelEditFields";
 import type {
   KeyStorage,
   ProviderConnectionKey,
   ProviderSetupInfo,
+  SetupSelectRole,
 } from "core/config/providerSetup";
 import { defaultSecretName } from "core/config/providerSecretName";
+import type { DetectedLocalServer } from "core/llm/localServers";
 import { hasConnectionTest } from "core/util/anthropicSurfaceTest";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -48,28 +51,58 @@ import {
   ProviderInfo,
   providers,
 } from "../../pages/AddNewModel/configs/providers";
+import { useAppSelector } from "../../redux/hooks";
 import ModelSelectionListbox from "../modelSelection/ModelSelectionListbox";
 import { ModelInfoFreshness } from "../ModelInfoFreshness";
 import { OpenRouterCataloguePrompt } from "./CataloguePrompt";
+import { ConnectionMore } from "./ConnectionMore";
 import { LocalServerPicker } from "./LocalServerPicker";
 import { ModelChecklist } from "./ModelChecklist";
+import { FactsTarget, toolsFact, toolsSummary } from "./modelFacts";
+import { NothingYet } from "./NothingYet";
 import {
   buildChecklistRows,
   buildSaveRequest,
   connectionFromModel,
+  defaultUseFor,
   describeConnection,
   describeKeyPlan,
   diffSelection,
+  EMPTY_MORE_OPTIONS,
   findConnection,
   initialChecked,
   isOpenAICloud,
   KeyChoice,
   keyProblem,
   keyStorageOptions,
+  MoreOptionsForm,
+  notACompletionModel,
+  notSetApiBase,
+  NUMBERED_STEPS,
+  plainConnectionFailure,
+  requestOptionsFromForm,
+  rolesToWrite,
   sameConnection,
   SetupStep,
+  timeoutProblem,
+  USE_FOR,
+  useForLine,
 } from "./providerSetupUtils";
 import { ReviewStep } from "./ReviewStep";
+import { StartScreen } from "./StartScreen";
+import {
+  looksLikeAddress,
+  looksLikeCompleteKey,
+  useAutoTest,
+} from "./useAutoTest";
+import { UseForStep } from "./UseForStep";
+import { hostPort, useLocalServerDetection } from "./useLocalServerDetection";
+
+// The words after "Not set: " for the AWS profile, from the field table
+const profileField = fieldFor(["env", "profile"]);
+const PROFILE_NOT_SET = profileField
+  ? notSetText(profileField, { provider: "bedrock", model: "" })
+  : "the default credential chain";
 
 export interface ProviderSetupFlowProps {
   /** Provider id to start with (for example "anthropic"). */
@@ -143,9 +176,11 @@ function providerLists() {
 }
 
 /**
- * One flow to connect a provider and choose its models: credentials, a model
- * checklist, then a review. Used by the onboarding card, "Manage models" and
- * "Enter key". Nothing is written until the review step is confirmed.
+ * One flow to add a model. Opened with nothing to go on ("Add a model", the
+ * onboarding card) it first asks what the person has; every answer then takes
+ * the same path: the connection, a model checklist, what to use the model
+ * for, and a review. Also used by "Manage models" and "Enter key", which
+ * start further in. Nothing is written until the review step is confirmed.
  */
 export function ProviderSetupFlow({
   initialProvider,
@@ -163,9 +198,16 @@ export function ProviderSetupFlow({
   );
   const startAtModels =
     initialStep === "models" && !!initialConnection && !enterKey;
+  // Nothing says which provider: the first question is what the person has.
+  const startAtStart = !initialProvider && !initialConnection && !enterKey;
   const [step, setStep] = useState<SetupStep>(
-    startAtModels ? "models" : "credentials",
+    startAtModels ? "models" : startAtStart ? "start" : "credentials",
   );
+  // "Nothing yet" is a second page of the start screen, not a step.
+  const [showNothing, setShowNothing] = useState(false);
+  // The address is on another machine: no search of this one, no usual ports.
+  const [onNetwork, setOnNetwork] = useState(false);
+  const detection = useLocalServerDetection(startAtStart);
   const [setup, setSetup] = useState<ProviderSetupInfo>();
   const formMethods = useForm();
   const values = formMethods.watch();
@@ -186,6 +228,16 @@ export function ProviderSetupFlow({
 
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [windows, setWindows] = useState<Record<string, string>>({});
+  // "More" on the connection step. Empty fields are not written anywhere.
+  const [moreApiBase, setMoreApiBase] = useState("");
+  const [moreOptions, setMoreOptions] =
+    useState<MoreOptionsForm>(EMPTY_MORE_OPTIONS);
+  // The "Use for" ticks, once the person has changed one; until then they
+  // follow the models being added (defaultUseFor).
+  const [useForChoice, setUseForChoice] = useState<Set<SetupSelectRole>>();
+  const selectedByRole = useAppSelector(
+    (state) => state.config.config.selectedModelByRole,
+  );
   const [confirmedRemoval, setConfirmedRemoval] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
@@ -221,10 +273,16 @@ export function ProviderSetupFlow({
     }
   }, [initialConnection]);
 
+  // Set when a found server is chosen on the start screen: its list arrives
+  // with the provider change and must survive it.
+  const keepList = useRef(false);
+
   // New provider: new default name, no leftover list.
   useEffect(() => {
-    setLiveModels([]);
+    if (keepList.current) keepList.current = false;
+    else setLiveModels([]);
     setRefreshError(undefined);
+    setMoreApiBase("");
     if (!enterKey) {
       setSecretName(defaultSecretName(secretSlug(provider)));
       setKeyTouched(false);
@@ -245,14 +303,20 @@ export function ProviderSetupFlow({
     (!!provider.apiKeyUrl &&
       (!keyIsOptionalAuth || isFieldVisible(apiKeyField, values, allFields)));
 
-  // The connection the form describes, as core will match it.
-  const connection = useMemo(
-    () =>
-      connectionFromModel(
-        buildModelFromForm(provider, provider.packages[0], values),
-      ),
-    [provider, values],
+  // The form asks for the address itself (a local server, watsonx). Any other
+  // provider has its API base under "More".
+  const hasAddressField = getRenderableFields(provider, values).some(
+    (f) => f.key === "apiBase",
   );
+
+  // The connection the form describes, as core will match it.
+  const connection = useMemo(() => {
+    const model = buildModelFromForm(provider, provider.packages[0], values);
+    const base = moreApiBase.trim();
+    return connectionFromModel(
+      base && !model.apiBase ? { ...model, apiBase: base } : model,
+    );
+  }, [provider, values, moreApiBase]);
   // When editing, the connection in config.yaml is the one the form started
   // from, even after its endpoint field is changed: that edit moves it.
   const editing = !enterKey ? initialConnection : undefined;
@@ -367,9 +431,14 @@ export function ProviderSetupFlow({
     provider,
     hasStoredKey && !values.apiKey ? { ...values, apiKey: "stored" } : values,
   );
+  const requestOptions = requestOptionsFromForm(moreOptions);
+  const moreSet = Object.keys(requestOptions).length > 0;
+  const moreIssue =
+    timeoutProblem(moreOptions.timeout) ??
+    timeoutProblem(moreOptions.connectTimeout);
   const canContinue = enterKey
     ? !keyIssue && keyChoice.value !== ""
-    : fieldsFilled && !keyIssue;
+    : fieldsFilled && !keyIssue && !moreIssue;
 
   // The key section is sent only when there is something to say about it.
   const sendKey =
@@ -377,9 +446,107 @@ export function ProviderSetupFlow({
   const keyForRequest = sendKey ? keyChoice : undefined;
 
   const diff = diffSelection(groups, configuredModels, checked);
+  // What was set under "More" goes to the account, or to models being added
+  const moreChanges = moreSet && (!!accountForSave || diff.add.length > 0);
   const hasChanges =
-    diff.add.length > 0 || diff.remove.length > 0 || sendKey || connectionMoved;
+    diff.add.length > 0 ||
+    diff.remove.length > 0 ||
+    sendKey ||
+    connectionMoved ||
+    moreChanges;
   const needsConfirm = diff.remove.length > 0 && !confirmedRemoval;
+
+  // "Use for" is about the models being added; with none there is no such step.
+  const adding = diff.add.map((row) => ({
+    model: row.model,
+    title: row.title,
+  }));
+  const addingKey = adding.map((m) => m.model).join("|");
+  const useForDefault = useMemo(
+    () =>
+      defaultUseFor(
+        provider.provider,
+        adding.map((m) => m.model),
+      ),
+    [provider.provider, addingKey],
+  );
+  const useFor = useForChoice ?? useForDefault;
+  const steps = NUMBERED_STEPS.filter(
+    (s) => s !== "useFor" || adding.length > 0,
+  );
+  const currentByRole: Partial<Record<SetupSelectRole, string>> = {};
+  for (const { role } of USE_FOR) {
+    const title = selectedByRole?.[role]?.title;
+    if (title) currentByRole[role] = title;
+  }
+
+  const factsFor: FactsTarget = {
+    provider: provider.provider,
+    localServer: isLocal,
+    apiBase: connection.apiBase,
+  };
+  /** "yes", "9 of 14" or "not reported" for the ids a server listed. */
+  function toolsFor(ids: string[]): string {
+    const known = new Map(
+      [...liveModels, ...modelLists.top, ...(modelLists.other ?? [])].map(
+        (p) => [p.params.model, p] as const,
+      ),
+    );
+    return toolsSummary(
+      ids.map((id) => toolsFact(factsFor, known.get(id), id)),
+    );
+  }
+
+  // The address a test goes to: the form's own field, or the one under "More"
+  const testBase = isLocal
+    ? connection.apiBase
+    : values.apiBase || moreApiBase.trim() || undefined;
+  const autoTest = useAutoTest({
+    signature: `${provider.provider}|${testBase ?? ""}|${values.apiKey ?? ""}`,
+    canTest:
+      step === "credentials" &&
+      !enterKey &&
+      isOpenAICompat &&
+      fieldsFilled &&
+      // A key goes only to the provider chosen here, and only once there is one
+      (isLocal ? looksLikeAddress(connection.apiBase) : !!values.apiKey),
+    looksComplete: isLocal
+      ? looksLikeAddress(connection.apiBase)
+      : looksLikeCompleteKey(values.apiKey),
+  });
+
+  /** Go on with a server found on this computer: its address and list are known. */
+  function chooseServer(server: DetectedLocalServer) {
+    const local = providers["openai-compatible"]!;
+    if (provider !== local) {
+      keepList.current = true;
+      setProvider(local);
+    }
+    formMethods.setValue("apiBase", server.apiBase);
+    formMethods.setValue("apiKey", "");
+    setDetectedName(server.title);
+    setRefreshError(undefined);
+    setLiveModels(fetchedToPackages(server.models, local.provider));
+    setOnNetwork(false);
+    setShowNothing(false);
+    autoTest.picked();
+    // A server that wants a key, or has no model loaded, has something to
+    // sort out on the connection step first.
+    setStep(
+      server.needsKey || server.models.length === 0 ? "credentials" : "models",
+    );
+  }
+
+  /** Go to the connection step for one of the start screen's other answers. */
+  function chooseProvider(next: ProviderInfo, network = false) {
+    if (provider !== next) setProvider(next);
+    formMethods.setValue("apiKey", "");
+    // A server on another machine has no usual address to start from
+    if (network) formMethods.setValue("apiBase", "");
+    setOnNetwork(network);
+    setShowNothing(false);
+    setStep("credentials");
+  }
 
   const catalogueHost = CATALOGUE_HOSTS[provider.provider];
   const canRefresh =
@@ -440,7 +607,9 @@ export function ProviderSetupFlow({
         forProvider,
         formMethods.getValues("apiKey"),
         // The form's value, or the field's default when it was not edited.
-        isLocal ? connection.apiBase : formMethods.getValues("apiBase"),
+        isLocal
+          ? connection.apiBase
+          : formMethods.getValues("apiBase") || moreApiBase.trim() || undefined,
       );
       if (fetched.length === 0) {
         setRefreshError(
@@ -534,6 +703,9 @@ export function ProviderSetupFlow({
         useLiveTitles: isBedrock && modelLists.isLive,
         account: accountForSave,
         windows,
+        apiBase: moreApiBase,
+        useFor,
+        requestOptions,
       });
       const res = await ideMessenger.request(
         "config/saveProviderModels",
@@ -605,6 +777,8 @@ export function ProviderSetupFlow({
                 : `Enter your ${provider.title} API key`
           }
           {...formMethods.register("apiKey")}
+          onPaste={autoTest.pasted}
+          onInput={autoTest.typed}
         />
         {provider.apiKeyUrl && (
           <span className="mt-1 block text-xs text-description-muted">
@@ -634,29 +808,6 @@ export function ProviderSetupFlow({
           ))}
         </FormSelect>
       </div>
-      {storage !== "inline" && !enterKey && (
-        <div>
-          <label
-            className="mb-1 block text-sm font-medium"
-            htmlFor="secretName"
-          >
-            Name
-          </label>
-          <Input
-            id="secretName"
-            className="w-full"
-            value={secretName}
-            onChange={(e) => {
-              setSecretName(e.target.value);
-              setKeyTouched(true);
-            }}
-          />
-          <span className="mt-1 block text-xs text-description-muted">
-            Every model of this provider refers to it as{" "}
-            <code className="break-all">{`\${{ secrets.${secretName || "NAME"} }}`}</code>
-          </span>
-        </div>
-      )}
       {enterKey && (
         <span className="text-xs text-description-muted">
           Saved as <code>{enterKey.secretName}</code>. config.yaml already
@@ -702,9 +853,54 @@ export function ProviderSetupFlow({
     );
   }
 
+  // The secret's name as "More" shows it: empty until the person types one
+  const defaultName =
+    configured?.key.secretName ?? defaultSecretName(secretSlug(provider));
+  const secretNameMore =
+    hasKeyField && storage !== "inline" && !enterKey
+      ? {
+          value: keyTouched ? secretName : "",
+          inUse: defaultName,
+          why: configured?.key.secretName
+            ? "the name this connection already uses"
+            : "built from the provider's name",
+          onChange: (value: string) => {
+            setSecretName(value === "" ? defaultName : value);
+            setKeyTouched(value !== "");
+          },
+        }
+      : undefined;
+
+  // What "More" will write, in words, for the review
+  const moreLines = [
+    moreApiBase.trim() ? `API base ${moreApiBase.trim()}` : undefined,
+    requestOptions.timeout !== undefined
+      ? `Request timeout ${requestOptions.timeout} s`
+      : undefined,
+    requestOptions.connectTimeout !== undefined
+      ? `Connect timeout ${requestOptions.connectTimeout} s`
+      : undefined,
+    requestOptions.proxy ? `Proxy ${requestOptions.proxy}` : undefined,
+    requestOptions.verifySsl !== undefined
+      ? `Verify TLS certificates: ${requestOptions.verifySsl ? "on" : "off"}`
+      : undefined,
+    requestOptions.useSystemCa !== undefined
+      ? `Trust the system certificate store: ${requestOptions.useSystemCa ? "on" : "off"}`
+      : undefined,
+    requestOptions.caBundlePath
+      ? `CA bundle files: ${requestOptions.caBundlePath.join(", ")}`
+      : undefined,
+  ].filter((line): line is string => !!line);
+
+  const wide = step === "start" || step === "models";
   return (
     <div
-      className="mx-auto box-border flex w-full max-w-[30rem] min-w-0 flex-col gap-4 p-4"
+      // Two whole strings: the class sorter strips a space inside a template
+      className={
+        wide
+          ? "mx-auto box-border flex w-full max-w-[36rem] min-w-0 flex-col gap-4 p-4"
+          : "mx-auto box-border flex w-full max-w-[30rem] min-w-0 flex-col gap-4 p-4"
+      }
       data-testid="provider-setup-flow"
     >
       <h2 className="m-0 text-center text-lg">
@@ -712,16 +908,67 @@ export function ProviderSetupFlow({
           ? `Enter your ${provider.title} key`
           : initialConnection
             ? `Edit ${provider.title}`
-            : "Set up models"}
+            : "Add a model"}
       </h2>
 
-      {!enterKey && (
-        <div className="text-center text-xs text-description-muted">
-          Step {step === "credentials" ? 1 : step === "models" ? 2 : 3} of 3
+      {!enterKey && step !== "start" && (
+        <div
+          className="text-center text-xs text-description-muted"
+          data-testid="setup-step-count"
+        >
+          Step {steps.indexOf(step) + 1} of {steps.length}
         </div>
       )}
 
-      {showCataloguePrompt && !enterKey && isOpenRouter && (
+      {step === "start" && !showNothing && (
+        <>
+          <StartScreen
+            detection={detection}
+            onApiKey={() =>
+              // Coming back from a server: a key is for a provider again
+              chooseProvider(
+                provider.localServer ? providers["anthropic"]! : provider,
+              )
+            }
+            onServer={chooseServer}
+            onLocalAddress={() =>
+              chooseProvider(providers["openai-compatible"]!)
+            }
+            onNetwork={() =>
+              chooseProvider(providers["openai-compatible"]!, true)
+            }
+            onNothing={() => setShowNothing(true)}
+          />
+          {onCancel && (
+            <div className="flex">
+              <Button variant="secondary" onClick={onCancel} className="flex-1">
+                Cancel
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+
+      {step === "start" && showNothing && (
+        <>
+          <NothingYet
+            detection={detection}
+            onUseServer={chooseServer}
+            onHaveKey={(id) => chooseProvider(providers[id]!)}
+          />
+          <div className="flex">
+            <Button
+              variant="secondary"
+              className="flex-1"
+              onClick={() => setShowNothing(false)}
+            >
+              Back
+            </Button>
+          </div>
+        </>
+      )}
+
+      {step !== "start" && showCataloguePrompt && !enterKey && isOpenRouter && (
         <OpenRouterCataloguePrompt
           onPull={(dontAskAgain) => {
             if (dontAskAgain) void saveCatalogPolicy(ideMessenger, "never");
@@ -740,40 +987,43 @@ export function ProviderSetupFlow({
         />
       )}
 
-      {showCataloguePrompt && !enterKey && !isOpenRouter && (
-        <div
-          role="region"
-          aria-label="Download model list"
-          className="flex flex-col gap-2 rounded border border-solid border-description-muted p-2 text-xs"
-        >
-          <span>
-            Download the latest model list from {catalogueHost}? This contacts
-            that site.
-          </span>
-          <div className="flex gap-2">
-            <Button
-              className="flex-1"
-              onClick={() => {
-                markCatalogueAnswered(provider.provider);
-                setAnswerTick((v) => v + 1);
-                void refreshModels();
-              }}
-            >
-              Download
-            </Button>
-            <Button
-              variant="secondary"
-              className="flex-1"
-              onClick={() => {
-                markCatalogueAnswered(provider.provider);
-                setAnswerTick((v) => v + 1);
-              }}
-            >
-              Not now
-            </Button>
+      {step !== "start" &&
+        showCataloguePrompt &&
+        !enterKey &&
+        !isOpenRouter && (
+          <div
+            role="region"
+            aria-label="Download model list"
+            className="flex flex-col gap-2 rounded border border-solid border-description-muted p-2 text-xs"
+          >
+            <span>
+              Download the latest model list from {catalogueHost}? This contacts
+              that site.
+            </span>
+            <div className="flex gap-2">
+              <Button
+                className="flex-1"
+                onClick={() => {
+                  markCatalogueAnswered(provider.provider);
+                  setAnswerTick((v) => v + 1);
+                  void refreshModels();
+                }}
+              >
+                Download
+              </Button>
+              <Button
+                variant="secondary"
+                className="flex-1"
+                onClick={() => {
+                  markCatalogueAnswered(provider.provider);
+                  setAnswerTick((v) => v + 1);
+                }}
+              >
+                Not now
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
       {step === "credentials" && (
         <div className="flex flex-col gap-4">
@@ -798,10 +1048,11 @@ export function ProviderSetupFlow({
             </div>
           )}
 
-          {!enterKey && isLocal && (
+          {!enterKey && isLocal && !onNetwork && (
             <LocalServerPicker
               apiBase={connection.apiBase}
               onPick={(apiBase, server) => {
+                autoTest.picked();
                 formMethods.setValue("apiBase", apiBase);
                 setDetectedName(server?.title);
                 setRefreshError(undefined);
@@ -814,7 +1065,8 @@ export function ProviderSetupFlow({
             />
           )}
 
-          {!keyIsOptionalAuth && keySection}
+          {/* A server is known by its address: that comes before its optional key */}
+          {!keyIsOptionalAuth && !isLocal && keySection}
 
           {!enterKey &&
             getRenderableFields(provider, values)
@@ -852,9 +1104,23 @@ export function ProviderSetupFlow({
                       type={
                         field.inputType === "password" ? "password" : "text"
                       }
-                      defaultValue={field.defaultValue}
-                      placeholder={`${field.placeholder ?? ""}`}
+                      defaultValue={
+                        onNetwork && field.key === "apiBase"
+                          ? ""
+                          : field.defaultValue
+                      }
+                      placeholder={
+                        onNetwork && field.key === "apiBase"
+                          ? "e.g. http://192.168.1.50:8080/v1/"
+                          : `${field.placeholder ?? ""}`
+                      }
                       {...formMethods.register(field.key)}
+                      {...(field.key === "apiBase"
+                        ? {
+                            onPaste: autoTest.pasted,
+                            onInput: autoTest.typed,
+                          }
+                        : {})}
                     />
                   )}
                   {field.description && (
@@ -865,7 +1131,7 @@ export function ProviderSetupFlow({
                 </div>
               ))}
 
-          {keyIsOptionalAuth && keySection}
+          {(keyIsOptionalAuth || isLocal) && keySection}
 
           {!enterKey && isBedrock && (
             <BedrockConnectionTester
@@ -887,11 +1153,49 @@ export function ProviderSetupFlow({
           {!enterKey && isOpenAICompat && (
             <OpenAICompatConnectionTester
               provider={provider.provider}
-              apiBase={isLocal ? connection.apiBase : values.apiBase}
+              apiBase={testBase}
               apiKey={values.apiKey}
               model={provider.packages[0].params.model}
               modelTitle={provider.packages[0].title}
               canTest={fieldsFilled}
+              autoRunToken={autoTest.token}
+              addressRequired={isLocal}
+              toolsFor={toolsFor}
+              describeError={(error) =>
+                plainConnectionFailure(
+                  { provider: provider.provider, apiBase: testBase },
+                  error,
+                )
+              }
+            />
+          )}
+
+          {!enterKey && (
+            <ConnectionMore
+              apiBase={
+                hasAddressField
+                  ? undefined
+                  : {
+                      value: moreApiBase,
+                      onChange: (value) => {
+                        autoTest.typed();
+                        setMoreApiBase(value);
+                      },
+                      notSet: notSetApiBase(provider.provider),
+                    }
+              }
+              aws={
+                isBedrock
+                  ? {
+                      region: connection.region,
+                      profile: connection.profile,
+                      profileNotSet: PROFILE_NOT_SET,
+                    }
+                  : undefined
+              }
+              secretName={secretNameMore}
+              options={moreOptions}
+              onOptions={setMoreOptions}
             />
           )}
 
@@ -903,10 +1207,24 @@ export function ProviderSetupFlow({
           {warning && <div className="text-xs text-warning">{warning}</div>}
 
           <div className="flex gap-2">
-            {onCancel && (
-              <Button variant="secondary" onClick={onCancel} className="flex-1">
-                Cancel
+            {startAtStart ? (
+              <Button
+                variant="secondary"
+                className="flex-1"
+                onClick={() => setStep("start")}
+              >
+                Back
               </Button>
+            ) : (
+              onCancel && (
+                <Button
+                  variant="secondary"
+                  onClick={onCancel}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              )
             )}
             {enterKey ? (
               <Button
@@ -934,7 +1252,18 @@ export function ProviderSetupFlow({
       )}
 
       {step === "models" && (
-        <div className="flex flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-3">
+          {isLocal && detectedName && liveModels.length > 0 && (
+            <span
+              className="text-xs break-words text-description-muted"
+              data-testid="found-connection-line"
+            >
+              Connected to {detectedName} at{" "}
+              {hostPort(connection.apiBase ?? "")}. {liveModels.length} model
+              {liveModels.length === 1 ? "" : "s"}. Tools:{" "}
+              {toolsFor(liveModels.map((p) => p.params.model))}.
+            </span>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-x-2">
             <label className="text-sm font-medium">Models</label>
             <button
@@ -1000,6 +1329,7 @@ export function ProviderSetupFlow({
             onWindow={(model, value) =>
               setWindows((current) => ({ ...current, [model]: value }))
             }
+            factsFor={factsFor}
           />
           <div className="flex gap-2">
             <Button
@@ -1012,8 +1342,41 @@ export function ProviderSetupFlow({
             <Button
               className="flex-1"
               disabled={!hasChanges}
-              onClick={() => setStep("review")}
+              onClick={() => setStep(adding.length > 0 ? "useFor" : "review")}
             >
+              {adding.length > 0 ? "Next" : "Review"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {step === "useFor" && (
+        <div className="flex min-w-0 flex-col gap-3">
+          <UseForStep
+            models={adding}
+            useFor={useFor}
+            onToggle={(role) => {
+              const next = new Set(useFor);
+              if (next.has(role)) next.delete(role);
+              else next.add(role);
+              setUseForChoice(next);
+            }}
+            current={currentByRole}
+            notCompletionModel={
+              useFor.has("autocomplete")
+                ? undefined
+                : notACompletionModel(provider.provider, adding)
+            }
+          />
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              className="flex-1"
+              onClick={() => setStep("models")}
+            >
+              Back
+            </Button>
+            <Button className="flex-1" onClick={() => setStep("review")}>
               Review
             </Button>
           </div>
@@ -1040,12 +1403,24 @@ export function ProviderSetupFlow({
             account={accountForSave}
             error={error}
             warning={warning}
+            useFor={
+              adding.length > 0
+                ? {
+                    lines: USE_FOR.map(
+                      ({ role, label }) =>
+                        `${label}: ${useForLine(useFor.has(role), currentByRole[role], adding[0].title)}`,
+                    ),
+                    roles: rolesToWrite(useFor),
+                  }
+                : undefined
+            }
+            more={moreLines}
           />
           <div className="flex gap-2">
             <Button
               variant="secondary"
               className="flex-1"
-              onClick={() => setStep("models")}
+              onClick={() => setStep(adding.length > 0 ? "useFor" : "models")}
             >
               Back
             </Button>

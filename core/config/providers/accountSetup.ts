@@ -15,6 +15,7 @@ import {
   removeFromModeModels,
   SaveProviderModelsRequest,
   secretReference,
+  setRequestOptions,
 } from "../providerSetup";
 import { modelDescriptionToYamlModel } from "../util";
 import { getGlobalModelsPath } from "./modelsFile";
@@ -108,9 +109,18 @@ export function findOrAddAccount(
         : secretReference(req.key.secretName!);
   }
 
+  // Only what the person set under "More"; keys already there stay.
+  const requestOptions = setRequestOptions(req.requestOptions);
+
   if (match) {
     const index = list.indexOf(match);
     if (apiKey) list[index] = { ...match, apiKey };
+    if (requestOptions) {
+      list[index] = {
+        ...list[index],
+        requestOptions: { ...match.requestOptions, ...requestOptions },
+      };
+    }
     return { providers: list, name: match.name };
   }
 
@@ -126,6 +136,7 @@ export function findOrAddAccount(
   if (req.connection?.profile) env.profile = req.connection.profile;
   if (Object.keys(env).length > 0) account.env = env;
   if (apiKey) account.apiKey = apiKey;
+  if (requestOptions) account.requestOptions = requestOptions;
   list.push(account);
   return { providers: list, name };
 }
@@ -200,7 +211,14 @@ const isFromEntry = (m: Entry, name: string) =>
 export function applyAccountSetup(
   docs: { providers: Doc; models: Doc; config: ConfigYaml },
   req: SaveProviderModelsRequest & { accountName?: string },
-): { providers: Doc; models: Doc; config: ConfigYaml; account: string } {
+): {
+  providers: Doc;
+  models: Doc;
+  config: ConfigYaml;
+  account: string;
+  /** The names the added models have in the catalog and the config. */
+  added: string[];
+} {
   const { providers, name: account } = findOrAddAccount(
     (docs.providers.providers ?? []) as Entry[],
     req,
@@ -260,7 +278,10 @@ export function applyAccountSetup(
   );
   for (const name of addedNames) {
     if (configModels.some((m) => isFromEntry(m, name))) continue;
-    configModels.push({ from: name });
+    configModels.push({
+      from: name,
+      ...(req.roles ? { roles: [...req.roles] } : {}),
+    });
   }
 
   const config = removeFromModeModels(
@@ -272,6 +293,7 @@ export function applyAccountSetup(
     models: { ...docs.models, models: catalog },
     config,
     account,
+    added: addedNames,
   };
 }
 
@@ -442,6 +464,13 @@ function editFile(
 export function saveProviderModelsToAccount(
   req: SaveProviderModelsRequest & { accountName?: string },
 ): string | undefined {
+  return saveAccountSetup(req)?.account;
+}
+
+/** saveProviderModelsToAccount, with the names the added models ended up with. */
+export function saveAccountSetup(
+  req: SaveProviderModelsRequest & { accountName?: string },
+): { account: string; added: string[] } | undefined {
   const configPath = getEditableConfigYamlPath();
   if (!configPath) return undefined;
   const parse = (s: string | undefined): Doc => {
@@ -473,7 +502,7 @@ export function saveProviderModelsToAccount(
     () => planned.models,
   );
 
-  let account: string | undefined;
+  let saved: { account: string; added: string[] } | undefined;
   editConfigFile(
     (config) => config, // config.json is not edited
     (config) => {
@@ -481,9 +510,9 @@ export function saveProviderModelsToAccount(
         { providers: planned.providers, models: planned.models, config },
         req,
       );
-      account = result.account;
+      saved = { account: result.account, added: result.added };
       return result.config;
     },
   );
-  return account;
+  return saved;
 }

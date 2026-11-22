@@ -1,6 +1,7 @@
 import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { useMemo, useState } from "react";
 import { ContextLengthControl } from "../ModelConfig/ContextLengthControl";
+import { FACT_HEADINGS, FactsTarget, modelFacts } from "./modelFacts";
 import {
   ChecklistGroups,
   ChecklistRow,
@@ -16,7 +17,17 @@ interface ModelChecklistProps {
   /** Typed context-length overrides, keyed by model id. Empty means the published window. */
   windows?: Record<string, string>;
   onWindow?: (model: string, value: string) => void;
+  /**
+   * Whose models these are. With it each row says the model's context
+   * window, price and tool support, or in words that it is not known.
+   */
+  factsFor?: FactsTarget;
 }
+
+// One grid for the header and every row, so the columns line up. Under 30rem
+// of list width there are no columns: the three facts go under the name.
+const COLUMNS =
+  "@[30rem]:grid @[30rem]:grid-cols-[minmax(0,1fr)_5.5rem_8.5rem_4rem] @[30rem]:gap-x-2";
 
 const USE_CASE_ROW_TITLE =
   "Won't work until the Anthropic use-case form is completed in the Bedrock console. You can still select it.";
@@ -27,14 +38,20 @@ function Row({
   row,
   checked,
   onToggle,
+  factsFor,
 }: {
   row: ChecklistRow;
   checked: boolean;
   onToggle: () => void;
+  factsFor?: FactsTarget;
 }) {
+  const facts = factsFor ? modelFacts(factsFor, row.pkg, row.model) : undefined;
+  // A listing that has no description repeats the id: once is enough
+  const description =
+    row.description === row.title ? undefined : row.description;
   return (
     <label
-      className="flex cursor-pointer items-start gap-2 rounded-sm px-1 py-1 text-xs hover:bg-input"
+      className="box-border flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-sm px-1 py-1 text-xs hover:bg-input"
       data-testid={`model-row-${row.model}`}
     >
       <input
@@ -51,65 +68,86 @@ function Row({
               : undefined
         }
       />
-      <span className="flex min-w-0 flex-col">
-        <span
-          // Two whole strings: the class sorter removes a leading space inside
-          // a template expression, which joined the two names into one.
-          className={
-            row.accessNote ? "truncate text-description-muted" : "truncate"
-          }
-        >
-          {row.title}
-          {row.configured && (
-            <span className="ml-1.5 text-description-muted">(in config)</span>
-          )}
-          {row.deprecated && (
-            <span className="ml-1.5 text-description-muted">(legacy)</span>
-          )}
-        </span>
-        {row.priceNote && (
+      <span className={`min-w-0 flex-1 ${facts ? COLUMNS : ""}`}>
+        <span className="flex min-w-0 flex-col">
           <span
-            className="truncate text-description-muted"
-            data-testid={`model-row-price-${row.model}`}
+            // Two whole strings: the class sorter removes a leading space inside
+            // a template expression, which joined the two names into one.
+            // A long id wraps, so all of it can be read in a narrow panel.
+            className={
+              row.accessNote
+                ? "[overflow-wrap:anywhere] text-description-muted"
+                : "[overflow-wrap:anywhere]"
+            }
           >
-            {row.priceNote}
-          </span>
-        )}
-        {(row.description || row.needsAnthropicUseCase || row.accessNote) && (
-          <span className="truncate text-description-muted">
-            {/* First on the line, so truncation can't hide it */}
-            {row.accessNote && (
-              <span
-                className="text-warning"
-                title={ACCESS_ROW_TITLE}
-                data-testid={`model-row-access-${row.model}`}
-              >
-                {row.accessNote}
-                {row.needsAnthropicUseCase || row.description ? " · " : ""}
-              </span>
+            {row.title}
+            {row.configured && (
+              <span className="ml-1.5 text-description-muted">(in config)</span>
             )}
-            {row.needsAnthropicUseCase && (
-              <span
-                className="text-warning"
-                title={USE_CASE_ROW_TITLE}
-                data-testid={`model-row-needs-use-case-${row.model}`}
-              >
-                Needs use-case form
-                {row.description ? " · " : ""}
-              </span>
+            {row.deprecated && (
+              <span className="ml-1.5 text-description-muted">(legacy)</span>
             )}
-            {row.description}
           </span>
-        )}
-        {typeof row.pkg?.params.contextLength === "number" &&
-          row.pkg.params.contextLength > 0 && (
-            <span
-              className="text-description-muted"
-              data-testid={`model-window-${row.model}`}
-            >
-              {row.pkg.params.contextLength.toLocaleString()} token window
+          {(description || row.needsAnthropicUseCase || row.accessNote) && (
+            <span className="truncate text-description-muted">
+              {/* First on the line, so truncation can't hide it */}
+              {row.accessNote && (
+                <span
+                  className="text-warning"
+                  title={ACCESS_ROW_TITLE}
+                  data-testid={`model-row-access-${row.model}`}
+                >
+                  {row.accessNote}
+                  {row.needsAnthropicUseCase || description ? " · " : ""}
+                </span>
+              )}
+              {row.needsAnthropicUseCase && (
+                <span
+                  className="text-warning"
+                  title={USE_CASE_ROW_TITLE}
+                  data-testid={`model-row-needs-use-case-${row.model}`}
+                >
+                  Needs use-case form
+                  {description ? " · " : ""}
+                </span>
+              )}
+              {description}
             </span>
           )}
+        </span>
+        {facts && (
+          <>
+            {/* Narrow: one wrapping line under the name. Wide: three cells. */}
+            <span
+              className="break-words text-description-muted @[30rem]:hidden"
+              data-testid={`model-row-facts-${row.model}`}
+            >
+              Context: {facts.context} · Price: {facts.price} · Tools:{" "}
+              {facts.tools}
+            </span>
+            <span
+              className="hidden text-description-muted @[30rem]:block"
+              data-testid={`model-window-${row.model}`}
+            >
+              <span className="sr-only">{FACT_HEADINGS.context}: </span>
+              {facts.contextCell}
+            </span>
+            <span
+              className="hidden break-words text-description-muted @[30rem]:block"
+              data-testid={`model-row-price-${row.model}`}
+            >
+              <span className="sr-only">{FACT_HEADINGS.price}: </span>
+              {facts.priceCell}
+            </span>
+            <span
+              className="hidden text-description-muted @[30rem]:block"
+              data-testid={`model-row-tools-${row.model}`}
+            >
+              <span className="sr-only">{FACT_HEADINGS.tools}: </span>
+              {facts.tools}
+            </span>
+          </>
+        )}
       </span>
     </label>
   );
@@ -126,6 +164,7 @@ export function ModelChecklist({
   isLive,
   windows,
   onWindow,
+  factsFor,
 }: ModelChecklistProps) {
   const [query, setQuery] = useState("");
 
@@ -158,6 +197,7 @@ export function ModelChecklist({
                 row={row}
                 checked={checked.has(row.model)}
                 onToggle={() => onToggle(row.model)}
+                factsFor={factsFor}
               />
               {showWindow && (
                 <div className="py-1 pr-1 pl-6">
@@ -182,7 +222,10 @@ export function ModelChecklist({
     );
 
   return (
-    <div className="flex flex-col gap-2" data-testid="model-checklist">
+    <div
+      className="@container flex min-w-0 flex-col gap-2"
+      data-testid="model-checklist"
+    >
       <div className="flex items-center rounded-sm border border-solid border-border bg-background pl-2 focus-within:border-border-focus">
         <MagnifyingGlassIcon className="h-4 w-4 text-description-muted" />
         <input
@@ -194,6 +237,22 @@ export function ModelChecklist({
           className="w-full border-none bg-transparent px-2 py-1.5 text-xs text-foreground outline-hidden"
         />
       </div>
+      {factsFor && (
+        <div
+          className="hidden px-1 text-xs font-medium text-description-muted @[30rem]:flex @[30rem]:gap-2"
+          data-testid="model-columns"
+          aria-hidden="true"
+        >
+          {/* As wide as a row's checkbox, so the header sits over the cells */}
+          <span className="w-[13px] shrink-0" />
+          <span className={`min-w-0 flex-1 ${COLUMNS}`}>
+            <span>Model</span>
+            <span>{FACT_HEADINGS.context}</span>
+            <span>{FACT_HEADINGS.price}</span>
+            <span>{FACT_HEADINGS.tools}</span>
+          </span>
+        </div>
+      )}
       <div className="flex max-h-72 flex-col gap-3 overflow-y-auto">
         {section(
           "Configured, not offered by the provider",

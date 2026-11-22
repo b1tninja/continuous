@@ -48,12 +48,32 @@ const OPTIONS: {
   },
 ];
 
-const SOURCE_TEXT: Record<Status["source"], string> = {
-  env: "the CONTINUE_TERMINAL_ENV environment variable",
-  "user-config": "your config.yaml",
-  "assistant-config": "the assistant configuration (tighter than the default)",
-  default: "the default",
+/** Who chose the mode in use. Nobody, when no file or variable names one. */
+const SOURCE_STATE: Record<Status["source"], string> = {
+  env: "Set by the CONTINUE_TERMINAL_ENV environment variable",
+  "user-config": "Set by you in config.yaml",
+  "assistant-config":
+    "Set by the assistant configuration (tighter than the built-in mode)",
+  default: "Not set",
 };
+
+/** What each mode does to a command's variables, for the one-line state. */
+const MODE_STATE: Record<TerminalEnvironmentMode, string> = {
+  scrub: "commands run with secret-named variables hidden",
+  inherit: "commands see every variable, secrets included",
+  allowlist: "commands get only the basics and the variables you list",
+};
+
+/** The fold header's line: who set the mode, what it does, and the counts now. */
+export function terminalEnvironmentSummary(
+  status: Pick<Status, "mode" | "source">,
+  counts?: { removed: number; kept: number },
+): string {
+  const now = counts
+    ? ` ${counts.removed} hidden now, ${counts.kept} passed`
+    : "";
+  return `${SOURCE_STATE[status.source]}: ${MODE_STATE[status.mode]}.${now}`;
+}
 
 const noteKey = (mode: string) => `terminalEnvNoteDismissed:${mode}`;
 
@@ -72,7 +92,18 @@ function NameList({ names, empty }: { names: string[]; empty: string }) {
   );
 }
 
-export function TerminalEnvironmentControl() {
+/**
+ * Settings > Permissions > Protections: which environment variables the
+ * agent's commands can read. `folded`: a fold header above names it and
+ * shows `onSummary`'s line.
+ */
+export function TerminalEnvironmentControl({
+  folded = false,
+  onSummary,
+}: {
+  folded?: boolean;
+  onSummary?: (text: string, warning: boolean) => void;
+}) {
   const ideMessenger = useContext(IdeMessengerContext);
   const [status, setStatus] = useState<Status | undefined>();
   const [draftMode, setDraftMode] = useState<TerminalEnvironmentMode>("scrub");
@@ -115,6 +146,21 @@ export function TerminalEnvironmentControl() {
     );
   }, [status, draftMode, passEnv]);
 
+  useEffect(() => {
+    if (!status) return;
+    onSummary?.(
+      terminalEnvironmentSummary(
+        status,
+        // The counts are of the saved mode, not of an option being tried
+        preview && draftMode === status.mode
+          ? { removed: preview.removed.length, kept: preview.kept.length }
+          : undefined,
+      ),
+      status.mode === "inherit",
+    );
+    // onSummary is a state setter of the page
+  }, [status, preview, draftMode]);
+
   const save = async (next: {
     environment?: TerminalEnvironmentMode;
     passEnv?: string[];
@@ -152,21 +198,28 @@ export function TerminalEnvironmentControl() {
   };
 
   return (
-    <section className="mb-4" data-testid="terminal-env">
-      <ConfigHeader
-        title="Commands and secrets"
-        variant="sm"
-        subtext="What the commands the agent runs can read from the editor's environment variables"
-        showAddButton={false}
-        className="mb-2"
-      />
+    <section className={folded ? "" : "mb-4"} data-testid="terminal-env">
+      {folded ? (
+        <p className="mt-0 mb-2 text-sm text-description">
+          What the commands the agent runs can read from the editor's
+          environment variables
+        </p>
+      ) : (
+        <ConfigHeader
+          title="Commands and secrets"
+          variant="sm"
+          subtext="What the commands the agent runs can read from the editor's environment variables"
+          showAddButton={false}
+          className="mb-2"
+        />
+      )}
       {!dismissed && (
         <div className="mb-2" data-testid="terminal-env-note">
           <Alert type="info" size="sm">
             <div className="flex items-start justify-between gap-2">
               <span className="text-2xs">
-                Commands currently run in "{savedLabel}" mode, from{" "}
-                {SOURCE_TEXT[status.source]}.
+                {SOURCE_STATE[status.source]}: commands run in "{savedLabel}"
+                mode.
               </span>
               <Button
                 variant="ghost"

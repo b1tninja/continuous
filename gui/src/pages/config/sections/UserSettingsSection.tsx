@@ -5,13 +5,17 @@ import {
 import { SESSION_LOG_STORAGE_DEFAULT } from "core/util/constants";
 import { DEFAULT_AUTOCOMPLETE_OPTS } from "core/util/parameters";
 import { useContext, useEffect, useState } from "react";
-import { Card, Toggle, useFontSize } from "../../../components/ui";
+import { Card, Fold, Toggle, useFontSize } from "../../../components/ui";
 import { IdeMessengerContext } from "../../../context/IdeMessenger";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks";
 import { updateConfig } from "../../../redux/slices/configSlice";
 import { setLocalStorage } from "../../../util/localStorage";
 import { ConfigHeader } from "../components/ConfigHeader";
 import { UserSetting } from "../components/UserSetting";
+import {
+  IndexingSettingsSection,
+  indexingSummary,
+} from "./IndexingSettingsSection";
 
 export function UserSettingsSection() {
   /////// User settings section //////
@@ -102,7 +106,7 @@ export function UserSettingsSection() {
   return (
     <div>
       <div className="flex flex-col">
-        <ConfigHeader title="User Settings" />
+        <ConfigHeader title="General" />
         <div className="space-y-6">
           {/* Chat Interface Settings */}
           <div>
@@ -335,6 +339,16 @@ export function UserSettingsSection() {
               </Toggle>
             </Card>
           </div>
+
+          {/* What the Indexing tab held */}
+          <Fold
+            id="index"
+            title="Codebase index and docs"
+            mark="deprecated"
+            summary={indexingSummary(config)}
+          >
+            <IndexingSettingsSection />
+          </Fold>
         </div>
       </div>
     </div>

@@ -19,8 +19,11 @@ export const PLAN_MODE_HOLD_REASON =
 export interface PlanModeCall {
   /** The tool is marked read-only, or the command was vouched as only reading */
   readOnly: boolean;
-  /** The call's area is IDGAF, which runs every call in every mode */
-  idgaf?: boolean;
+  /**
+   * The level of the call's area runs what a lower level would hold
+   * (levelText.ts levelRunsHeld): the call runs in every mode
+   */
+  levelRunsHeld?: boolean;
 }
 
 /**
@@ -31,7 +34,9 @@ export interface PlanModeCall {
  *
  * It does not matter what would have run the call: the tool's own setting, a
  * level (Permissive, or the reviewer at Automatic) or an allow rule the person
- * wrote. Only IDGAF passes, because that level says every call runs.
+ * wrote. Only the top level, IDGAF, passes: it runs what a lower level holds.
+ * The engine records what it ran past, and a heads-up window set for that
+ * level shows the call first (decisionTimer.ts).
  *
  * The one copy of this rule: the engine applies it (evaluate.ts) for the IDE
  * and the CLI, and the webview calls it for the verdicts it makes itself.
@@ -40,7 +45,7 @@ export function planModeVerdict<
   V extends { policy: ToolPolicy; source?: string; reason?: string },
 >(verdict: V, call: PlanModeCall): V {
   if (verdict.policy !== "allowedWithoutPermission") return verdict;
-  if (call.readOnly || call.idgaf) return verdict;
+  if (call.readOnly || call.levelRunsHeld) return verdict;
   return {
     ...verdict,
     policy: "allowedWithPermission",

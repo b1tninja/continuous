@@ -55,14 +55,33 @@ function parseTimeout(text: string): Parsed {
   return { value: n };
 }
 
+/** The fold header's line: on or off, and what was spent. */
+export function shadowReviewSummary(view: ShadowSettingsView): string {
+  if (!view.form.enabled) {
+    return "Not set: off. No call is sent to the reviewer a second time";
+  }
+  const used = view.spentUsd + view.reservedUsd;
+  const reviews = `${view.reviews} ${view.reviews === 1 ? "review" : "reviews"}`;
+  return view.form.budgetUsd === undefined
+    ? `Set by you: on. ${money(view.spentUsd)} spent on ${reviews}`
+    : `Set by you: on. ${money(used)} of ${money(view.form.budgetUsd)} spent on ${reviews}`;
+}
+
 /**
- * Settings > Tools: shadow review. A second opinion from the reviewer model on
+ * Settings > Permissions > Protections: shadow review. A second opinion from the reviewer model on
  * calls you or your rules settled, written to the audit trail beside the real
  * answer. It never changes an answer. The switch lives in your own config.yaml
  * and nowhere else; turning it on is confirmed in the editor's own dialog,
  * because it sends tool-call text to a model.
+ * `folded`: a fold header above names it and shows `onSummary`'s line.
  */
-export function ShadowReviewControl() {
+export function ShadowReviewControl({
+  folded = false,
+  onSummary,
+}: {
+  folded?: boolean;
+  onSummary?: (text: string) => void;
+}) {
   const ideMessenger = useContext(IdeMessengerContext);
   const [view, setView] = useState<ShadowSettingsView | undefined>();
   const [budget, setBudget] = useState("");
@@ -84,6 +103,11 @@ export function ShadowReviewControl() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (view) onSummary?.(shadowReviewSummary(view));
+    // onSummary is a state setter of the page
+  }, [view]);
 
   const send = async (change: {
     enabled?: boolean;
@@ -145,7 +169,10 @@ export function ShadowReviewControl() {
 
   return (
     <section data-testid="shadow-review" aria-labelledby="shadow-review-title">
-      <h3 id="shadow-review-title" className="my-0 mb-1 text-sm font-semibold">
+      <h3
+        id="shadow-review-title"
+        className={folded ? "sr-only" : "my-0 mb-1 text-sm font-semibold"}
+      >
         Shadow review
       </h3>
       <p className="mt-0 mb-2 text-xs text-description">
@@ -217,7 +244,6 @@ export function ShadowReviewControl() {
                 inputMode="decimal"
                 className={INPUT}
                 value={budget}
-                placeholder="0.25"
                 aria-invalid={budget !== "" && "error" in budgetCheck}
                 aria-describedby="shadow-review-budget-hint"
                 onChange={(e) => setBudget(e.target.value)}
@@ -227,6 +253,9 @@ export function ShadowReviewControl() {
                 id="shadow-review-budget-hint"
                 className="text-2xs text-description"
               >
+                {form.budgetUsd === undefined
+                  ? "Not set: shadow review cannot be turned on without one."
+                  : `Set by you: ${money(form.budgetUsd)}.`}{" "}
                 All shadow reviews kept in the trail, up to{" "}
                 {money(MAX_SHADOW_BUDGET_USD)}.
               </span>
@@ -250,6 +279,9 @@ export function ShadowReviewControl() {
                 id="shadow-review-timeout-hint"
                 className="text-2xs text-description"
               >
+                {form.timeoutMs === DEFAULT_SHADOW_TIMEOUT_MS
+                  ? `Not set: ${DEFAULT_SHADOW_TIMEOUT_MS} ms.`
+                  : `Set by you: ${form.timeoutMs} ms.`}{" "}
                 A slower review is dropped.
               </span>
             </div>

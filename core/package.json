@@ -5,6 +5,7 @@
   "scripts": {
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
     "vitest": "vitest run",
+    "test:page": "node ../scripts/ci/page-tests.mjs",
     "eval:reviewer": "node scripts/reviewer-eval.mjs",
     "capture:live": "node scripts/capture-live.mjs",
     "eval:turns": "node scripts/turns-eval.mjs",

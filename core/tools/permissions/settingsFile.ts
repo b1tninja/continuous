@@ -18,11 +18,7 @@ import {
 } from "./policy.js";
 import { validateRuleText } from "./ruleAnalysis.js";
 import { builtinForDegree } from "./safetyDegrees.js";
-import {
-  HEADS_UP_SECONDS,
-  parseTimerSettings,
-  type TimerSettings,
-} from "./decisionTimer.js";
+import { parseTimerSettings, type TimerSettings } from "./decisionTimer.js";
 import { storedWebLevel } from "./webPolicy.js";
 
 /**
@@ -259,7 +255,7 @@ export function parsePolicyFile(text: string | undefined): PolicyFileRead {
   }
   const rawHeadsUp = raw.levels?.headsUp;
   if (rawHeadsUp !== undefined) {
-    const headsUp = parseTimerSettings(rawHeadsUp, HEADS_UP_SECONDS);
+    const headsUp = parseTimerSettings(rawHeadsUp, "headsUp");
     if (Object.keys(headsUp).length > 0) settings.headsUp = headsUp;
     else if (JSON.stringify(rawHeadsUp) !== "{}") {
       notices.push(
@@ -364,12 +360,10 @@ export function policyUpdateProblem(
   }
   if (update.headsUp) {
     const given = Object.keys(update.headsUp);
-    const kept = Object.keys(
-      parseTimerSettings(update.headsUp, HEADS_UP_SECONDS),
-    );
+    const kept = Object.keys(parseTimerSettings(update.headsUp, "headsUp"));
     const bad = given.filter((k) => !kept.includes(k));
     if (bad.length > 0) {
-      return `levels.headsUp: ${bad.join(", ")} cannot be set. Use manual, cautious, automatic or permissive, with 5 or 10 seconds (IDGAF has none).`;
+      return `levels.headsUp: ${bad.join(", ")} cannot be set. Use manual, cautious, automatic, permissive or idgaf, with 5 or 10 seconds.`;
     }
   }
   return undefined;
@@ -538,7 +532,7 @@ export function applyPolicyUpdate(
     doc.setIn(
       [...HEADS_UP_PATH],
       doc.createNode({
-        ...parseTimerSettings(update.headsUp, HEADS_UP_SECONDS),
+        ...parseTimerSettings(update.headsUp, "headsUp"),
       }),
     );
   }

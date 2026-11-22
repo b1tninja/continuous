@@ -28,21 +28,20 @@ const PROFILE = {
 } as any;
 
 describe("Providers... links", () => {
-  it("Settings > Models links to the Providers page", async () => {
-    const { user } = await renderWithProviders(
+  it("Settings > Models shows the connections itself, with no link to another page", async () => {
+    await renderWithProviders(
       <>
         <ModelsSection />
         <Where />
       </>,
       { routerProps: { initialEntries: [CONFIG_ROUTES.MODELS] } as never },
     );
-    await user.click(screen.getByRole("button", { name: "Providers…" }));
-    expect(screen.getByTestId("where").textContent).toBe(
-      CONFIG_ROUTES.PROVIDERS,
-    );
+    expect(screen.queryByRole("button", { name: "Providers…" })).toBeNull();
+    expect(screen.getByTestId("models-connections")).toBeTruthy();
+    expect(screen.getByTestId("where").textContent).toBe(CONFIG_ROUTES.MODELS);
   });
 
-  it("the model picker's add/manage area links to the Providers page", async () => {
+  it("the model picker's add/manage area links to the connections on Settings > Models", async () => {
     const ideMessenger = new MockIdeMessenger();
     const store = setupStore({ ideMessenger });
     const { user } = await renderWithProviders(

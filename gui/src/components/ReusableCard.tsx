@@ -32,7 +32,7 @@ export function ReusableCard({
       data-testid={testId}
     >
       {showCloseButton && (
-        <CloseButton onClick={onClose}>
+        <CloseButton onClick={onClose} aria-label="Close">
           <XMarkIcon className="flex h-5 w-5 hover:brightness-125" />
         </CloseButton>
       )}

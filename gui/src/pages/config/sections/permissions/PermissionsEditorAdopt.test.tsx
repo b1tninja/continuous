@@ -29,6 +29,10 @@ async function setup(
   await renderWithProviders(<PermissionsSection />, {
     store,
     mockIdeMessenger: ideMessenger,
+    // The page opens on Levels; these tests are about the Rules view
+    routerProps: {
+      initialEntries: ["/config?tab=permissions&view=rules"],
+    } as never,
   });
   await act(async () => {});
 }

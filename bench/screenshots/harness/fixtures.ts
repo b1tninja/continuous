@@ -16,6 +16,7 @@ import { createLoop, enterWait, stopLoop } from "core/util/loopMode";
 import { addBlockedCall } from "@gui/redux/slices/blockedCallsSlice";
 import { setPolicyLevel } from "@gui/redux/slices/uiSlice";
 import { POLICY_AREAS } from "core/tools/permissions/policy";
+import { McpServerDialog } from "@gui/components/McpServerDialog/McpServerDialog";
 import {
   ModelConfigDialog,
   type ModelConfigTab,
@@ -46,6 +47,7 @@ import {
 import { createElement } from "react";
 import type { setupStore } from "@gui/redux/store";
 import { AUDIT_FIXTURES } from "./auditFixtures";
+import { installWalkMock } from "./walkMock";
 
 export type Store = ReturnType<typeof setupStore>;
 export interface FixtureContext {
@@ -77,6 +79,8 @@ export function seedMessenger(messenger: MockIdeMessenger): void {
   messenger.responses["config/getSerializedProfileInfo"] = info;
   Object.assign(messenger.responses, {
     "models/fetch": [],
+    // The setup flow's start screen asks; nothing is running unless a fixture says so
+    "models/detectLocal": [],
     "config/getTerminalEnvironment": {
       mode: "scrub",
       source: "default",
@@ -145,6 +149,10 @@ const MARKDOWN_REPLY = [
   "- merge the defaults first",
   "- convert the unit last",
 ].join("\n");
+
+/** The rest of a question long enough to fill a short panel. */
+const LONG_QUESTION =
+  "Its checks ran against the old runner, the branch is forty commits behind main, and two of its files were moved by the migration since. Merging it as it is keeps the history simple but may break the gate; leaving it open keeps the gate green and the work unfinished. Which do you want?";
 
 function runCommandCall(status: ToolCallState["status"]): ToolCallState {
   return {
@@ -283,7 +291,7 @@ const permissionsEditor: Fixture = async ({ messenger, navigate }) => {
       },
     },
   });
-  navigate("/config?tab=permissions");
+  navigate("/config?tab=permissions&view=rules");
   await wait(600);
   const add = document.querySelector<HTMLButtonElement>(
     "button[aria-label='Add a rule']",
@@ -833,6 +841,69 @@ export const FIXTURES: Record<string, Fixture> = {
       ],
     }));
   },
+  /** A plan leaves three long decisions to the person, after a conversation: the Questions panel in a short panel */
+  "tall-question": ({ store }) => {
+    const decision = (question: string) => ({
+      question: `${question} ${LONG_QUESTION}`,
+      options: ["Merge it as it is", "Leave it open"],
+      pick: "Merge it as it is",
+    });
+    const call = planCall();
+    store.dispatch(
+      newSession(
+        session([
+          user("Why does the parseConfig test fail?"),
+          assistant(MARKDOWN_REPLY),
+          user("Plan the migration"),
+          assistant("Here is the plan. Three things are yours to decide.", [
+            {
+              ...call,
+              parsedArgs: {
+                ...call.parsedArgs,
+                decisions: [
+                  decision("PR #7 is open and green by its own report."),
+                  decision("The migration can land on main or on a branch."),
+                  decision("The gate record is not in the repo yet."),
+                ],
+              },
+            },
+          ]),
+        ]),
+      ),
+    );
+  },
+  /** A loop asks one long question, after a conversation: the Needs you tray in a short panel */
+  "loop-tall-question": ({ store }) => {
+    store.dispatch(
+      newSession(
+        session(
+          [
+            user("Why does the parseConfig test fail?"),
+            assistant(MARKDOWN_REPLY),
+          ],
+          "Fix parseConfig",
+        ),
+      ),
+    );
+    store.dispatch(setMode("loop" as never));
+    store.dispatch(setTaskPlan(PLAN));
+    store.dispatch(
+      setLoop({
+        ...loopState(),
+        status: "waiting",
+        questions: [
+          {
+            id: "q1",
+            itemId: "2",
+            question: `PR #7 is open and green by its own report. ${LONG_QUESTION} ${LONG_QUESTION}`,
+            kind: "blocking" as const,
+            options: ["Merge it as it is (recommended)", "Leave it open"],
+            askedAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    );
+  },
   /** A re-plan waits to be accepted: the tray holds Review diff, Keep planning, Accept plan */
   "loop-replan": ({ store }) => {
     loopScene(store, (loop) => ({
@@ -934,20 +1005,32 @@ export const FIXTURES: Record<string, Fixture> = {
     )?.click();
   },
   "permissions-editor": permissionsEditor,
-  /** The Settings page, Tools tab, with "Commands and secrets" */
+  /** The Settings page, Tools tab, from the top: built-in tools, then MCP servers */
   "settings-tools": async (ctx) => {
     addMcpServer(ctx);
     ctx.navigate("/config?tab=tools");
     await new Promise((r) => setTimeout(r, 500));
-    // the section lower on the page
-    document
-      .querySelector("[data-testid=terminal-env]")
-      ?.scrollIntoView({ block: "start" });
   },
-  /** The same page at its MCP server, with the server's tools listed */
+  /** Settings, MCP servers, at a server with its tools listed (the list lived on the Tools tab before) */
   "settings-tools-mcp": async (ctx) => {
     addMcpServer(ctx);
-    ctx.navigate("/config?tab=tools");
+    (ctx.messenger.responses as any)["mcp/scopes"] = mcpScopes();
+    (ctx.messenger.responses as any)["mcp/list"] = {
+      servers: [
+        {
+          name: "github",
+          scope: "user",
+          file: MCP_USER_FILE,
+          transport: "stdio",
+          target: "github-mcp-server",
+          secrets: [],
+          envNames: [],
+          headerNames: [],
+        },
+      ],
+      problems: [],
+    };
+    ctx.navigate("/config?tab=mcp");
     await new Promise((r) => setTimeout(r, 500));
     const server = document.querySelector("[data-testid=mcp-server-github]");
     (
@@ -956,6 +1039,11 @@ export const FIXTURES: Record<string, Fixture> = {
     // after the list has opened
     await new Promise((r) => setTimeout(r, 200));
     server?.scrollIntoView({ block: "start" });
+  },
+  /** Where `npm run walk` starts: the chat page, the same MCP server, and the walk's answers (walkMock.ts) */
+  "walk-start": (ctx) => {
+    installWalkMock(ctx);
+    addMcpServer(ctx);
   },
 };
 
@@ -1063,10 +1151,104 @@ function agentsSession(
   };
 }
 
+/** Three provider connections, two accounts in providers.yaml and a pulled model list. */
+function seedModelConnections(ctx: FixtureContext): void {
+  Object.assign(ctx.messenger.responses, {
+    "config/getProviderSetup": {
+      connections: [
+        {
+          provider: "anthropic",
+          connection: {},
+          account: "anthropic-work",
+          models: [
+            { name: "Claude Opus", model: "claude-opus-4-5" },
+            { name: "Claude Sonnet", model: "claude-sonnet-4-5" },
+          ],
+          key: {
+            state: "secret",
+            secretName: "CONTINUOUS_ANTHROPIC_API_KEY",
+            storedIn: { secure: true, env: false },
+          },
+        },
+        {
+          provider: "bedrock",
+          connection: { region: "us-east-1", profile: "work" },
+          models: [
+            { name: "Bedrock Opus", model: "anthropic.claude-opus-4-5" },
+          ],
+          key: { state: "none" },
+        },
+        {
+          provider: "openai",
+          connection: { apiBase: "http://localhost:1234/v1" },
+          models: [{ name: "Local", model: "qwen3-coder-30b-a3b-instruct" }],
+          key: {
+            state: "secret",
+            secretName: "LOCAL_KEY",
+            storedIn: { secure: false, env: false },
+          },
+        },
+      ],
+      secureStorageAvailable: true,
+      preferredKeyStorage: "secure",
+      editable: true,
+    },
+    "providers/list": {
+      instances: [
+        {
+          name: "anthropic-work",
+          provider: "anthropic",
+          source: "global",
+          sourceUri: "file:///home/u/.continuous/providers.yaml",
+          key: {
+            state: "secret",
+            secretName: "CONTINUOUS_ANTHROPIC_API_KEY",
+            storedIn: { secure: true, env: false },
+          },
+          usedBy: [{ config: "Main Config", model: "Claude Sonnet" }],
+        },
+        {
+          name: "strata",
+          provider: "openai",
+          apiBase: "https://strata.example/v1",
+          source: "global",
+          sourceUri: "file:///home/u/.continuous/providers.yaml",
+          key: { state: "none" },
+          usedBy: [],
+        },
+      ],
+      globalFileUri: "file:///home/u/.continuous/providers.yaml",
+      secureStorageAvailable: true,
+    },
+    "modelCatalog/status": {
+      policy: "automatic",
+      refreshHours: 24,
+      openrouter: { fetchedAt: "2026-11-09T08:30:00.000Z", count: 312 },
+    },
+  });
+}
+
+/** A Settings tab; `tab` may carry more of the query ("permissions&view=rules"). */
 function settingsTab(tab: string): Fixture {
   return async ({ navigate }) => {
     navigate(`/config?tab=${tab}`);
     await sleep(600);
+  };
+}
+
+/** Permissions with the first-run card dismissed, so the view itself is at the top. */
+function permissionsView(query: string): Fixture {
+  return async (ctx) => {
+    // The page reads the rules in every view (Custom policy needs them)
+    ctx.messenger.responseHandlers["policy/rules"] = (async () =>
+      permissionsReport()) as never;
+    await settingsTab(`permissions&${query}`)(ctx);
+    document
+      .querySelector<HTMLButtonElement>(
+        "[data-testid=permissions-intro-dismiss]",
+      )
+      ?.click();
+    await sleep(300);
   };
 }
 
@@ -1139,6 +1321,16 @@ Object.assign(FIXTURES, {
   "loop-frame-finished": noop,
   "loop-frame-stopped": noop,
   "settings-models": settingsTab("models"),
+  /** Models with three provider connections, two accounts and a pulled model list */
+  "settings-models-connections": async (ctx) => {
+    seedModelConnections(ctx);
+    await settingsTab("models")(ctx);
+  },
+  /** The same page with the Accounts fold opened by its link */
+  "settings-models-accounts": async (ctx) => {
+    seedModelConnections(ctx);
+    await settingsTab("models&section=accounts")(ctx);
+  },
   "settings-rules": settingsTab("rules"),
   "settings-permissions": async (ctx) => {
     ctx.messenger.responseHandlers["policy/rules"] = (async () =>
@@ -1156,11 +1348,17 @@ Object.assign(FIXTURES, {
         maxNewPlanItems: 3,
         notices: [],
       } as never)) as never;
-    await settingsTab("permissions")(ctx);
+    await settingsTab("permissions&view=rules")(ctx);
   },
+  "permissions-levels": permissionsView("view=levels"),
+  "permissions-protections": permissionsView("view=protections"),
+  "permissions-protections-open": permissionsView(
+    "view=protections&section=commands-secrets",
+  ),
   "settings-configs": settingsTab("configs"),
-  "settings-indexing": settingsTab("indexing"),
-  "settings-general": settingsTab("settings"),
+  // The old Indexing link: General, with "Codebase index and docs" opened by it
+  "settings-general-index": settingsTab("indexing"),
+  "settings-general": settingsTab("general"),
   "settings-help": settingsTab("help"),
   "agents-running": agentsSession([
     { status: "running" },
@@ -1197,7 +1395,7 @@ Object.assign(FIXTURES, {
   "permissions-loading": async (ctx: FixtureContext) => {
     ctx.messenger.responseHandlers["policy/rules"] = (() =>
       new Promise(() => {})) as never;
-    await settingsTab("permissions")(ctx);
+    await settingsTab("permissions&view=rules")(ctx);
     await sleep(4500);
   },
   /** The read failed: an error that names the files, with Retry */
@@ -1205,7 +1403,7 @@ Object.assign(FIXTURES, {
     ctx.messenger.responseHandlers["policy/rules"] = (async () => {
       throw new Error("unreadable");
     }) as never;
-    await settingsTab("permissions")(ctx);
+    await settingsTab("permissions&view=rules")(ctx);
   },
   /** The first-run overview card on the Permissions page */
   "permissions-intro": async (ctx: FixtureContext) => {
@@ -1219,19 +1417,71 @@ Object.assign(FIXTURES, {
   },
 });
 
-/** The onboarding card on its Local tab, with Ollama running and one model installed. */
-function onboardingLocal(
+/** What core's search of this computer answers: Ollama and LM Studio, one model id long. */
+const FOUND_SERVERS = [
+  {
+    title: "Ollama",
+    apiBase: "http://127.0.0.1:11434/v1/",
+    models: [
+      {
+        name: "llama3.1:8b",
+        modelId: "llama3.1:8b",
+        contextLength: 131072,
+        supportsTools: true,
+      },
+      { name: "qwen3:8b", modelId: "qwen3:8b" },
+    ],
+  },
+  {
+    title: "LM Studio",
+    apiBase: "http://127.0.0.1:1234/v1/",
+    models: [
+      {
+        name: "lmstudio-community/Qwen2.5-Coder-32B-Instruct-GGUF/qwen2.5-coder-32b-instruct-q4_k_m.gguf",
+        modelId:
+          "lmstudio-community/Qwen2.5-Coder-32B-Instruct-GGUF/qwen2.5-coder-32b-instruct-q4_k_m.gguf",
+        contextLength: 32768,
+      },
+    ],
+  },
+];
+
+/** What the search of this computer answers, for the start screen. */
+function foundServers(messenger: MockIdeMessenger, servers: unknown[]): void {
+  (messenger.responses as any)["models/detectLocal"] = servers;
+}
+
+/** The onboarding card on its start screen, after `servers` were found. */
+function onboardingStart(
+  servers: unknown[],
   steps: (ctx: FixtureContext) => Promise<void> | void = () => {},
 ): Fixture {
   return async (ctx) => {
-    ctx.messenger.responseHandlers["llm/listModels"] = (async () => [
-      "llama3.1:8b",
-      "qwen3:8b",
-    ]) as never;
-    ctx.store.dispatch(
-      setOnboardingCard({ show: true, activeTab: "Local" as never }),
-    );
+    foundServers(ctx.messenger, servers);
+    ctx.store.dispatch(setOnboardingCard({ show: true }));
     await sleep(700);
+    await steps(ctx);
+  };
+}
+
+/** "Add a model" in the app dialog, from its start screen. */
+function addModelDialog(
+  servers: unknown[],
+  steps: (ctx: FixtureContext) => Promise<void> | void = () => {},
+): Fixture {
+  return async (ctx) => {
+    foundServers(ctx.messenger, servers);
+    ctx.store.dispatch(newSession());
+    ctx.store.dispatch(setShowDialog(true));
+    ctx.store.dispatch(
+      setDialogMessage(
+        createElement(ProviderSetupFlow, {
+          onDone: () => {},
+          onCancel: () => {},
+        }),
+      ),
+    );
+    await sleep(600);
     await steps(ctx);
   };
 }
@@ -1242,31 +1492,54 @@ const clickButton = (name: string) => {
     ?.click();
 };
 
+const clickTestId = (id: string) =>
+  document.querySelector<HTMLElement>(`[data-testid="${id}"]`)?.click();
+
 Object.assign(FIXTURES, {
-  /** Onboarding, Local tab: the suggested model and the two buttons */
-  "onboarding-local": onboardingLocal(),
-  /** The Configure model chooser, open on Ollama with an installed model picked */
-  "onboarding-local-chooser": onboardingLocal(async () => {
-    clickButton("Configure model");
+  /** Onboarding, "Nothing yet": Ollama running with the suggested model, and the key links */
+  "onboarding-local": onboardingStart([FOUND_SERVERS[0]], async () => {
+    clickTestId("door-nothing");
     await sleep(400);
   }),
-  /** The chooser on an OpenAI-compatible server, with More open */
-  "onboarding-local-server": onboardingLocal(async () => {
-    clickButton("Configure model");
-    await sleep(300);
-    const select = document.querySelector<HTMLSelectElement>(
-      '[data-testid="local-model-chooser"] select',
-    )!;
-    const setter = Object.getOwnPropertyDescriptor(
-      HTMLSelectElement.prototype,
-      "value",
-    )!.set!;
-    setter.call(select, "openai");
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-    await sleep(300);
-    clickButton("More");
+  /** Onboarding, the start screen with two servers found on this computer */
+  "onboarding-local-chooser": onboardingStart(FOUND_SERVERS),
+  /** Onboarding, "A server on my network": the connection step with More open */
+  "onboarding-local-server": onboardingStart([], async () => {
+    clickTestId("door-network");
+    await sleep(400);
+    document
+      .querySelector<HTMLDetailsElement>('[data-testid="connection-more"]')
+      ?.setAttribute("open", "");
     await sleep(300);
   }),
+  /** "Add a model" in the dialog: what do you have, with two servers found */
+  "setup-start-found": addModelDialog(FOUND_SERVERS),
+  /** The same with nothing answering on this computer */
+  "setup-start-none": addModelDialog([]),
+  /** The models step of a found server: the three columns, one long model id */
+  "setup-models-local": addModelDialog(FOUND_SERVERS, async () => {
+    clickTestId("found-1234");
+    await sleep(500);
+  }),
+  /** "Use for": what the new model is used for, and what each role uses now */
+  "setup-use-for": addModelDialog(FOUND_SERVERS, async () => {
+    clickTestId("found-11434");
+    await sleep(500);
+    clickButton("Next");
+    await sleep(400);
+  }),
+  /** The connection step after a test that got no answer from a local server */
+  "setup-test-failed": async (ctx: FixtureContext) => {
+    (ctx.messenger.responses as any)["openaiCompat/testConnection"] = {
+      ok: false,
+      error: "Could not reach http://127.0.0.1:8080/v1/models: fetch failed.",
+    };
+    await addModelDialog([])(ctx);
+    clickTestId("door-this-computer");
+    await sleep(400);
+    clickButton("Test connection");
+    await sleep(500);
+  },
 });
 
 Object.assign(FIXTURES, AUDIT_FIXTURES);
@@ -1397,10 +1670,10 @@ Object.assign(FIXTURES, {
   "setup-long-model": async ({ store, messenger }: FixtureContext) => {
     (messenger.responses as any)["config/getProviderSetup"] =
       longModelSetup("anthropic");
-    store.dispatch(
-      setOnboardingCard({ show: true, activeTab: "API Key" as never }),
-    );
+    store.dispatch(setOnboardingCard({ show: true }));
     await sleep(700);
+    clickTestId("door-api-key");
+    await sleep(400);
     // the key is already stored, so the first step has nothing to ask for
     clickButton("Next");
     await sleep(500);
@@ -1805,3 +2078,286 @@ function statusRowScene(store: Store): void {
     }),
   );
 }
+
+// ---- Settings, MCP servers, and the Add / Edit dialog ----
+
+const MCP_USER_FILE = String.raw`C:\Users\dev\.continuous\config.yaml`;
+const MCP_FOLDER = String.raw`D:\code\shop-frontend`;
+const MCP_FOLDER_DIR = String.raw`D:\code\shop-frontend\.continuous\mcpServers`;
+
+function mcpScopes(trust: "trusted" | "untrusted" | "none" = "trusted") {
+  return {
+    user: { file: MCP_USER_FILE, exists: true },
+    folders: [
+      {
+        dir: MCP_FOLDER,
+        name: "shop-frontend",
+        mcpDir: MCP_FOLDER_DIR,
+        trust,
+      },
+    ],
+    secretStore: {
+      kind: "secure",
+      envFile: String.raw`C:\Users\dev\.continuous\.env`,
+    },
+    defaults: {
+      connectionTimeoutMs: 20_000,
+      probeTimeoutMs: 20_000,
+      toolCallTimeoutMs: 60_000,
+      inheritedEnv: [
+        "PATH",
+        "HOME",
+        "USER",
+        "USERPROFILE",
+        "LOGNAME",
+        "USERNAME",
+      ],
+      cwd: MCP_FOLDER,
+    },
+  };
+}
+
+/** Servers of both places, one that failed to start and one this page cannot write. */
+function addMcpServersOfBothScopes(ctx: FixtureContext): void {
+  addMcpServer(ctx);
+  const { messenger } = ctx;
+  const info: any = structuredClone(
+    messenger.responses["config/getSerializedProfileInfo"],
+  );
+  const blank = {
+    errors: [],
+    infos: [],
+    prompts: [],
+    resources: [],
+    resourceTemplates: [],
+    tools: [],
+  };
+  info.result.config.mcpServerStatuses = [
+    { ...info.result.config.mcpServerStatuses[0], configSource: "user" },
+    {
+      ...blank,
+      id: "shop-database",
+      name: "shop-database",
+      type: "stdio",
+      command: "uvx",
+      args: ["mcp-server-postgres", "--read-only"],
+      status: "connected",
+      configSource: "workspace",
+      sourceFile: `${MCP_FOLDER_DIR}\\shop-database.yaml`,
+    },
+    {
+      ...blank,
+      id: "design-tokens",
+      name: "design-tokens",
+      type: "stdio",
+      command: "npx",
+      args: ["-y", "@acme/design-tokens-mcp"],
+      status: "error",
+      errors: [
+        'Failed to connect to "design-tokens"\nError: command "npx" not found',
+      ],
+      configSource: "user",
+    },
+    {
+      ...blank,
+      id: "sentry",
+      name: "sentry",
+      url: "https://mcp.sentry.dev/mcp",
+      status: "connected",
+      configSource: "user",
+      sourceFile: String.raw`C:\Users\dev\.continuous\mcpServers\claude_desktop_config.json`,
+    },
+  ];
+  messenger.responses["config/getSerializedProfileInfo"] = info;
+  sendConfig(messenger);
+  const listing = (
+    name: string,
+    scope: "user" | "project",
+    file: string,
+    target: string,
+  ) => ({
+    name,
+    scope,
+    file,
+    transport: "stdio",
+    ...(scope === "project" ? { folder: MCP_FOLDER } : {}),
+    target,
+    secrets: [],
+    envNames: [],
+    headerNames: [],
+  });
+  (messenger.responses as any)["mcp/list"] = {
+    servers: [
+      listing("github", "user", MCP_USER_FILE, "github-mcp-server"),
+      listing(
+        "design-tokens",
+        "user",
+        MCP_USER_FILE,
+        "npx -y @acme/design-tokens-mcp",
+      ),
+      listing(
+        "shop-database",
+        "project",
+        `${MCP_FOLDER_DIR}\\shop-database.yaml`,
+        "uvx mcp-server-postgres --read-only",
+      ),
+    ],
+    problems: [],
+  };
+  (messenger.responses as any)["mcp/scopes"] = mcpScopes();
+}
+
+/** The Add dialog with a command server filled in, as after a paste. */
+async function openMcpDialog(
+  { store, messenger, navigate }: FixtureContext,
+  mode: object = {
+    kind: "add",
+    prefillName: "filesystem",
+    prefill: {
+      name: "filesystem",
+      transport: "stdio",
+      command: "npx",
+      args: [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        String.raw`D:\code\shop-frontend\docs and notes`,
+      ],
+      env: [{ name: "GITHUB_TOKEN", value: "", secret: true }],
+    },
+  },
+): Promise<void> {
+  (messenger.responses as any)["mcp/list"] = { servers: [], problems: [] };
+  (messenger.responses as any)["mcp/scopes"] = mcpScopes("none");
+  (messenger.responses as any)["mcp/analyzeLaunch"] = {
+    analysis: { findings: [], blocked: false, display: "" },
+    expired: false,
+  };
+  navigate("/config?tab=mcp");
+  await sleep(300);
+  store.dispatch(setShowDialog(true));
+  store.dispatch(
+    setDialogMessage(
+      createElement(McpServerDialog, {
+        mode: mode as never,
+        onDone: () => {},
+        onCancel: () => {},
+      }),
+    ),
+  );
+  await sleep(300);
+  // "For all my projects"
+  (
+    document.querySelector(
+      "[data-testid=mcp-scope] input[type=radio]",
+    ) as HTMLElement
+  )?.click();
+  await sleep(100);
+}
+
+const MCP_FIXTURES: Record<string, Fixture> = {
+  /** Settings, MCP servers: servers of both places */
+  "settings-mcp": async (ctx) => {
+    addMcpServersOfBothScopes(ctx);
+    ctx.navigate("/config?tab=mcp");
+    await sleep(500);
+  },
+  /** The same with a folder whose servers are not trusted */
+  "settings-mcp-untrusted": async (ctx) => {
+    addMcpServersOfBothScopes(ctx);
+    (ctx.messenger.responses as any)["mcp/scopes"] = mcpScopes("untrusted");
+    ctx.navigate("/config?tab=mcp");
+    await sleep(500);
+  },
+  /** Settings, MCP servers, with none */
+  "settings-mcp-empty": async (ctx) => {
+    (ctx.messenger.responses as any)["mcp/list"] = {
+      servers: [],
+      problems: [],
+    };
+    (ctx.messenger.responses as any)["mcp/scopes"] = mcpScopes("none");
+    ctx.navigate("/config?tab=mcp");
+    await sleep(500);
+  },
+  /** The Add dialog, basic part */
+  "mcp-dialog": (ctx) => openMcpDialog(ctx),
+  /** The Add dialog with Advanced open, scrolled to it */
+  "mcp-dialog-advanced": async (ctx) => {
+    await openMcpDialog(ctx);
+    const toggle = document.querySelector(
+      "[data-testid=mcp-server-dialog] button[aria-expanded]",
+    ) as HTMLElement;
+    toggle?.click();
+    await sleep(150);
+    toggle?.scrollIntoView({ block: "start" });
+  },
+  /** The Add dialog for a remote server, Advanced open */
+  "mcp-dialog-url": async (ctx) => {
+    await openMcpDialog(ctx, {
+      kind: "add",
+      prefillName: "linear",
+      prefill: {
+        name: "linear",
+        transport: "http",
+        autoTransport: true,
+        url: "https://mcp.linear.app/mcp",
+        headers: [{ name: "Authorization", value: "", secret: true }],
+      },
+    });
+    const toggle = document.querySelector(
+      "[data-testid=mcp-server-dialog] button[aria-expanded]",
+    ) as HTMLElement;
+    toggle?.click();
+    await sleep(150);
+    toggle?.scrollIntoView({ block: "start" });
+  },
+  /** The Add dialog after a Test that failed: the command was not found */
+  "mcp-dialog-failed-test": async (ctx) => {
+    (ctx.messenger.responses as any)["mcp/probe"] = {
+      ran: true,
+      result: {
+        ok: false,
+        status: "error",
+        durationMs: 180,
+        timeoutMs: 20_000,
+        transport: "stdio",
+        tools: [],
+        resources: [],
+        prompts: [],
+        errors: ['Failed to connect to "filesystem"\nError: spawn npx ENOENT'],
+        infos: [],
+        stderr: { lines: [], truncated: false },
+        hints: [
+          {
+            code: "install-node",
+            text: "`npx` was not found. Install Node.js (it includes npx), then restart your editor so the PATH is refreshed.",
+            link: "https://docs.npmjs.com/downloading-and-installing-node-js-and-npm",
+          },
+        ],
+        needsSignIn: false,
+        notice: "",
+        pathSearched: [
+          String.raw`C:\Windows\system32`,
+          String.raw`C:\Windows`,
+          String.raw`C:\Program Files\Git\cmd`,
+        ],
+      },
+    };
+    await openMcpDialog(ctx);
+    (document.querySelector("[data-testid=mcp-test]") as HTMLElement)?.click();
+    await sleep(200);
+    (
+      document.querySelector("[data-testid=mcp-confirm-run-yes]") as HTMLElement
+    )?.click();
+    await sleep(300);
+    document
+      .querySelector("[data-testid=mcp-test-result]")
+      ?.scrollIntoView({ block: "end" });
+  },
+  /** The Add dialog asking before it runs the command */
+  "mcp-dialog-confirm-run": async (ctx) => {
+    await openMcpDialog(ctx);
+    (document.querySelector("[data-testid=mcp-test]") as HTMLElement)?.click();
+    await sleep(200);
+  },
+};
+Object.assign(FIXTURES, MCP_FIXTURES);

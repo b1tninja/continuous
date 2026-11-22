@@ -4,6 +4,20 @@ title: "Permissions page"
 
 **Settings, Permissions** shows every permission rule in effect, where it came from, whether it is being obeyed, and lets you try a call against them. It answers "why did this ask?" and "which rule refused that?" without reading the config files. You can also add, change and remove your own rules here, and adopt a rule that came from elsewhere.
 
+## Five views
+
+Everything that decides what the agent may do is on this page, in five views. The page opens on **Levels**.
+
+| View         | What is in it                                                                                                                               |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Levels       | The preset and the level of each of the five areas, **Plans and questions** (folded), and **Skip the confirmation when permissions change** |
+| Rules        | One tab for each policy area with its rules, the audit figures, **Add a rule** and **Try a call**                                           |
+| Protections  | The locks, then four folded groups: **Built-in rules**, **Commands and secrets**, **Decision timer** and **Shadow review**                  |
+| Recent calls | What the agent did and who decided, from the [audit trail](/ide-extensions/agent/audit-trail)                                               |
+| Inbox        | Questions nobody has answered                                                                                                               |
+
+A folded group shows its state in one line while it is closed, for example "Not set: 11 of 11 on" or "Set by you: asks wait Manual 15 s". **Not set** means the file has no value and names what is in use; **Set by you** means you chose it. These settings were on the Tools tab before; a link of the form `/config?tab=tools&section=<name>` (`approval`, `skip-confirmation`, `plans-questions`, `builtin-rules`, `commands-secrets`, `decision-timer`, `shadow-review`) opens them here.
+
 ## Words used here
 
 One word for each idea, in the page, the toolbar, `/policy` in the terminal agent and these docs. No stored key changed: the files keep the names on the right.
@@ -33,6 +47,7 @@ IDGAF is the top level, and the last preset. It is short for "I don't give a f--
 - Nothing is refused by the permission layer either, with one exception (below). Never rules, Ask rules, the locked (`floor`) rules, protected paths and secret files, the built-in rule check and safety floor, a command that hides what it runs, a write to a path built when it runs, the locked policy and configuration files, the tainted-session rule and a changed MCP tool definition are all ignored, including rules you set as Never.
 - The exception: a secret, then a network call. Once a secret's content has been read in the session (a protected secret file such as `.env`, `~/.npmrc` or `~/.aws/credentials` read with a file tool or a command such as `cat`, or a command that prints a credential; only naming the file does not count), a call that can send data out (a fetch, `curl`, `git push`, `npm publish`, a tool of an MCP server you have not marked trusted) is **refused** at IDGAF, with or without Questions at IDGAF. It is never asked: IDGAF still asks nothing. The refusal starts `Refused at IDGAF:` and names what read the secret and where the call would send it. To send it anyway, set that area below IDGAF, where the call asks you, or run it yourself. See [A secret, then a network call](/ide-extensions/agent/prompt-injection#a-secret-then-a-network-call).
 - What would have stopped a call is still recorded: the decision says `Below IDGAF this call would have been refused` (or `asked`) with the rule or guard and its reason, in the decision chip and the [audit trail](/ide-extensions/agent/audit-trail). The model is not told.
+- IDGAF has a delay, and it is 0: each call runs at once. You can set it to 5 or 10 seconds in the [decision timer](#decision-timer). Then a call that runs only because the level is IDGAF is shown first, with what a lower level would have done, and runs when the delay ends.
 - What stays: a tool you switched off (it is not offered to the model at all), Plan mode (a mode with its own role, including `--readonly`), the tools an `--agent` file gives its agent, a subagent's limits (it cannot start a subagent or write the parent's task list), and hooks you wrote yourself, which run at every level.
 - Edits can land anywhere the agent can write, not only in the workspace.
 
@@ -46,7 +61,7 @@ An organisation cannot cap or disable this level yet. A managed policy layer tha
 
 ## Five areas
 
-The page has one tab for each policy area. Each tab shows the area's level (change it in **Settings, Tools** or the toolbar), the built-in protections that apply to it, and its rules.
+The **Rules** view has one tab for each policy area. Each tab shows the area's level (change it in the **Levels** view or the toolbar), how many built-in rules apply to it and which are off or exempted by an Always rule of yours (the rules and their switches are in the **Protections** view), and its rules. The locks, which no rule can turn into a yes, are listed in **Protections**.
 
 | Tab         | Rules that appear here                                                                                                 |
 | ----------- | ---------------------------------------------------------------------------------------------------------------------- |
@@ -112,11 +127,12 @@ A rule that is **Ignored** is struck through with the reason: an `allow` rule th
 A decision timer holds a decision for a short, visible countdown before it takes effect, so you can allow or deny it without a refusal and a retry. The policy decides exactly as it does without the timer. The timer only shows what it decided and gives you the window to answer differently.
 
 - **Asks.** A call that would ask shows "Refused in 12 s unless you answer" with **Keep waiting**. If nobody answers, the ask is refused, which is what the policy does when no one can be asked. Windows are 5, 10, 15 or 30 seconds.
-- **Allowed calls.** A call the policy allows shows "Runs in 5 s unless you answer". Reject stops it, Accept runs it now, and if nobody answers it runs. Windows are 5 or 10 seconds.
+- **Allowed calls.** A call the policy allows shows "Runs in 5 s unless you answer". **Don't run** stops it, **Run now** runs it at once, and if nobody answers it runs. Windows are 5 or 10 seconds.
+- **IDGAF.** IDGAF never asks, so it has no window for asks. Its window for allowed calls is 0 seconds unless you set it, and it covers fewer calls than at the other levels: only a call that a lower level would have asked about or refused, such as one Plan mode holds, one an Ask or Never rule matches, or one a locked rule would stop. A protected path whose check you left on still asks at IDGAF, and waits for you as any ask does. That call shows "Runs in 5 s unless you answer. Below IDGAF this call would have been asked: Plan mode asks before anything that changes files or state." It runs when the window ends. **Don't run** declines that one call and leaves the level as it is. A call that would have run at a lower level anyway is never delayed.
 
-Set a window for each level in **Decision timer** on the Approval card, or under `levels.timer` and `levels.headsUp` in [`permissions.yaml`](/reference/permissions-yaml). Both are off until you set them.
+Set a window for each level in **Decision timer** in the **Protections** view, or under `levels.timer` and `levels.headsUp` in [`permissions.yaml`](/reference/permissions-yaml). Both are off until you set them. The IDGAF row shows "IDGAF delay: 0 seconds. Every call runs at once." until you choose 5 or 10 seconds. The terminal UI of `cn` reads the same file: it has the windows for asks and the IDGAF window, and it does not hold allowed calls at the other levels.
 
-Some decisions never get a countdown: a refusal from a rule you wrote, a floor or a guard, an ask that a rule or a guard raised (an ask rule, a protected path, a taint or egress check), anything at IDGAF, and any run with no one at the screen. They wait or refuse as they always did.
+Some decisions never get a countdown: a refusal from a rule you wrote, a floor or a guard, an ask that a rule or a guard raised (an ask rule, a protected path, a taint or egress check), a call at IDGAF that a lower level would also have run, and any run with no one at the screen (`cn -p`, `cn serve`, a Loop item). They wait, refuse or run as they always did.
 
 The agent is told who decided. If the window ran out it hears that no one answered and that you did not refuse the call; if you declined it hears that you did. It is not told to try another way round.
 
@@ -134,7 +150,7 @@ At IDGAF the locked policy and configuration files and the **locked rules** you 
 
 ## Custom policy
 
-Every policy control (the preset and each area, in the toolbar and in **Settings, Tools**) ends with **Custom…**. It opens the **Custom policy** editor at the top of this page, started from the preset you are on (or from the current levels when they match none). The page's **Custom policy…** button opens it too. From an area's control it opens at the levels with that area selected.
+Every policy control (the preset and each area, in the toolbar and in the **Levels** view) ends with **Custom…**. It opens the **Custom policy** editor at the top of this page, started from the preset you are on (or from the current levels when they match none). The page's **Custom policy…** button opens it too. From an area's control it opens at the levels with that area selected.
 
 1. **Start from**: a preset, or what is set now. This sets the five levels; your rules and settings start as they are.
 2. **Levels and settings**: the five levels, the built-in rules, the plan limit, what happens while a question waits, and who decides each type of question.
@@ -144,7 +160,7 @@ Every policy control (the preset and each area, in the toolbar and in **Settings
 
 A save that loosens `permissions.yaml` (an area's level raised, a built-in rule switched off, a locked rule removed, an MCP server trusted, an MCP tool added for Plan mode, the terminal offered in Plan mode) waits for your editor's own confirmation dialog, listing each of them, as rule changes do; there is no checkbox in the page. The review lists what the dialog will ask. If you decline, nothing is saved: not `permissions.yaml` and not one rule. The same dialog guards the toolbar and **Settings, Tools**: raising a level or switching a built-in rule off there asks too, and a "no" leaves the control as it was.
 
-**Settings, Tools** has **Skip the confirmation when permissions change**. It is off, so the dialog still appears. Turning it on asks once; after that, a permission change is saved without that dialog. Rule changes still use the editor's dialog. An ask before a command runs is unchanged, including a dangerous command. The setting is `skipPermissionConfirm` in [`permissions.yaml`](/reference/permissions-yaml).
+The **Levels** view has **Skip the confirmation when permissions change**. It is not set, so the dialog still appears. Turning it on asks once; after that, a permission change is saved without that dialog. Rule changes still use the editor's dialog. An ask before a command runs is unchanged, including a dangerous command. The setting is `skipPermissionConfirm` in [`permissions.yaml`](/reference/permissions-yaml).
 
 When the levels you save match no preset, the set is kept in `permissions.yaml` (`levels.custom`) with the preset it started from. The chip then says **Custom (from Careful)** rather than **Custom**, and after you choose a preset, the preset menu offers your custom set back. Choosing it is a save like any other: a raised level asks first.
 

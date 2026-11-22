@@ -1,6 +1,20 @@
 import { spawnSync } from "node:child_process";
-import { describe, expect, it } from "vitest";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
 import { containerArgs, containerWorkdir } from "./containerArgs";
+import {
+  MAX_READ_ONLY_MOUNTS,
+  protectedMounts,
+} from "./containerProtectedMounts";
 import {
   containerStatus,
   containerUnavailableMessage,
@@ -105,6 +119,213 @@ describe("containerArgs", () => {
     expect(wslArgs("echo hi", "Ubuntu").slice(-3)).toEqual(
       sourceEncodedArgs("echo hi"),
     );
+  });
+});
+
+describe("the read-only mounts over the workspace (PS7)", () => {
+  // A space and a comma in the path: `--mount` takes a line of CSV
+  const base = mkdtempSync(join(tmpdir(), "ro mounts, "));
+  afterAll(() => rmSync(base, { recursive: true, force: true }));
+
+  /** A workspace with some of the protected paths present and some absent. */
+  const workspace = (name: string, make: (ws: string) => void): string => {
+    const ws = join(base, name);
+    mkdirSync(ws);
+    make(ws);
+    return ws;
+  };
+  // Walked by hand: the extension's type check compiles this file with Node
+  // types that do not have readdirSync's `recursive` option
+  const tree = (dir: string, prefix = ""): string[] =>
+    readdirSync(dir, { withFileTypes: true })
+      .flatMap((entry) => {
+        const rel = prefix ? join(prefix, entry.name) : entry.name;
+        return entry.isDirectory()
+          ? [rel, ...tree(join(dir, entry.name), rel)]
+          : [rel];
+      })
+      .sort();
+  const mountsOf = (args: string[]) =>
+    args.flatMap((a, i) => (args[i - 1] === "--mount" ? [a] : []));
+
+  const ws = workspace("project", (w) => {
+    mkdirSync(join(w, ".git", "hooks"), { recursive: true });
+    writeFileSync(join(w, ".git", "config"), "[core]\n");
+    writeFileSync(join(w, ".git", "HEAD"), "ref: refs/heads/main\n");
+    mkdirSync(join(w, ".vscode"));
+    mkdirSync(join(w, ".github", "workflows"), { recursive: true });
+    mkdirSync(join(w, ".github", "ISSUE_TEMPLATE"));
+    writeFileSync(join(w, ".envrc"), "");
+    writeFileSync(join(w, "Jenkinsfile"), "");
+    // The same names deeper in the tree are not looked for
+    mkdirSync(join(w, "packages", "a", ".vscode"), { recursive: true });
+    mkdirSync(join(w, "src"));
+  });
+
+  it("mounts each protected path that exists, and none that does not", () => {
+    const before = tree(ws);
+    const linux = protectedMounts(ws, { platform: "linux" });
+    expect(linux).toEqual(
+      [
+        [".git", "hooks"],
+        [".git", "config"],
+        [".vscode"],
+        [".github", "workflows"],
+        [".envrc"],
+        ["Jenkinsfile"],
+      ].map((names) => ({
+        host: [ws, ...names].join("/"),
+        container: [ws, ...names].join("/"),
+      })),
+    );
+    const said = linux.map((m) => m.container).join("\n");
+    // Absent: no mount. Present but not on the list: no mount
+    for (const absent of [".idea", ".devcontainer", ".husky", ".mcp.json"]) {
+      expect(said).not.toContain(absent);
+    }
+    expect(said).not.toContain("ISSUE_TEMPLATE");
+    expect(said).not.toContain("packages");
+    expect(said).not.toContain("HEAD");
+    // Nothing was created on the host
+    expect(tree(ws)).toEqual(before);
+  });
+
+  it("is in the run arguments after the workspace mount, read-only, with the path quoted for CSV", () => {
+    const args = containerArgs("git status", {
+      runtime: "docker",
+      cwd: ws,
+      platform: "linux",
+      readOnly: protectedMounts(ws, { platform: "linux" }),
+    });
+    const mounts = mountsOf(args);
+    expect(mounts).toHaveLength(6);
+    expect(mounts[0]).toBe(
+      `type=bind,"src=${ws}/.git/hooks","dst=${ws}/.git/hooks",readonly`,
+    );
+    expect(mounts.every((m) => m.endsWith(",readonly"))).toBe(true);
+    expect(args.indexOf("--mount")).toBeGreaterThan(args.indexOf("-v"));
+    // The workspace itself is still the one read-write mount
+    expect(args[args.indexOf("-v") + 1]).toBe(`${ws}:${ws}:rw`);
+    expect(args.filter((a) => a === "-v")).toHaveLength(1);
+  });
+
+  it("leaves a path without a comma or a quote as it is", () => {
+    const args = containerArgs("x", {
+      runtime: "podman",
+      cwd: "/home/me/my project",
+      platform: "linux",
+      readOnly: [
+        {
+          host: "/home/me/my project/.vscode",
+          container: "/home/me/my project/.vscode",
+        },
+        { host: '/w/a"b/.envrc', container: '/w/a"b/.envrc' },
+      ],
+    });
+    expect(mountsOf(args)).toEqual([
+      "type=bind,src=/home/me/my project/.vscode,dst=/home/me/my project/.vscode,readonly",
+      'type=bind,"src=/w/a""b/.envrc","dst=/w/a""b/.envrc",readonly',
+    ]);
+  });
+
+  it("on Windows names the host path with backslashes and the container path under /workspace", () => {
+    const mounts = protectedMounts(ws, { platform: "win32" });
+    expect(mounts[0]).toEqual({
+      host: `${ws}\\.git\\hooks`,
+      container: "/workspace/.git/hooks",
+    });
+    expect(mounts.map((m) => m.container)).toEqual([
+      "/workspace/.git/hooks",
+      "/workspace/.git/config",
+      "/workspace/.vscode",
+      "/workspace/.github/workflows",
+      "/workspace/.envrc",
+      "/workspace/Jenkinsfile",
+    ]);
+  });
+
+  it("mounts a name in the spelling on disk, whatever its case", () => {
+    const odd = workspace("case", (w) => mkdirSync(join(w, ".VSCode")));
+    expect(protectedMounts(odd, { platform: "linux" })).toEqual([
+      { host: `${odd}/.VSCode`, container: `${odd}/.VSCode` },
+    ]);
+  });
+
+  it("mounts a .git that is a file (a worktree), since it names the hooks that run", () => {
+    const worktree = workspace("worktree", (w) =>
+      writeFileSync(join(w, ".git"), "gitdir: /elsewhere/.git/worktrees/w\n"),
+    );
+    expect(protectedMounts(worktree, { platform: "linux" })).toEqual([
+      { host: `${worktree}/.git`, container: `${worktree}/.git` },
+    ]);
+  });
+
+  it("looks up the rest of an entry when the workspace is its first part", () => {
+    const gitDir = workspace(".git", (w) => {
+      mkdirSync(join(w, "hooks"));
+      writeFileSync(join(w, "config"), "");
+      mkdirSync(join(w, "objects"));
+    });
+    expect(
+      protectedMounts(gitDir, { platform: "linux" }).map((m) => m.container),
+    ).toEqual([`${gitDir}/hooks`, `${gitDir}/config`]);
+  });
+
+  it("keeps a workspace inside a protected folder writable, with the list still applied in it", () => {
+    const inside = workspace(".claude", (w) => {
+      mkdirSync(join(w, "worktrees", "x", ".vscode"), { recursive: true });
+    });
+    const cwd = join(inside, "worktrees", "x");
+    const args = containerArgs("x", {
+      runtime: "docker",
+      cwd,
+      platform: "linux",
+      readOnly: protectedMounts(cwd, { platform: "linux" }),
+    });
+    expect(args[args.indexOf("-v") + 1]).toBe(`${cwd}:${cwd}:rw`);
+    expect(mountsOf(args)).toHaveLength(1);
+    expect(mountsOf(args)[0]).toContain(`${cwd}/.vscode`);
+  });
+
+  it("skips a symbolic link, which would mount what it points at", () => {
+    const linked = workspace("linked", (w) => {
+      mkdirSync(join(w, "real"));
+      mkdirSync(join(w, ".idea"));
+    });
+    try {
+      symlinkSync(join(linked, "real"), join(linked, ".vscode"), "junction");
+    } catch {
+      // No right to make a link here: the rest still holds
+    }
+    expect(
+      protectedMounts(linked, { platform: "linux" }).map((m) => m.container),
+    ).toEqual([`${linked}/.idea`]);
+  });
+
+  it("stops at the cap, in the list's order, and is empty for a folder that is not there", () => {
+    expect(MAX_READ_ONLY_MOUNTS).toBe(64);
+    expect(
+      protectedMounts(ws, { platform: "linux", max: 2 }).map(
+        (m) => m.container,
+      ),
+    ).toEqual([`${ws}/.git/hooks`, `${ws}/.git/config`]);
+    expect(protectedMounts(join(base, "missing"))).toEqual([]);
+    expect(readdirSync(base)).not.toContain("missing");
+  });
+
+  it("the executor adds them for the folder the command starts in", () => {
+    const executor = getCommandExecutor({
+      platform: "linux",
+      terminalShell: { kind: "container" },
+      containerStatus: ready,
+    });
+    const before = tree(ws);
+    const mounts = mountsOf(executor.invocation("ls", ws).args);
+    expect(mounts).toHaveLength(6);
+    expect(mounts.join("\n")).toContain(".git/hooks");
+    expect(mounts.join("\n")).not.toContain(".devcontainer");
+    expect(tree(ws)).toEqual(before);
+    expect(executor.describe()).toContain("read-only");
   });
 });
 

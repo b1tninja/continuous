@@ -11,7 +11,7 @@ import {
   type CurrentSettings,
   type Suggestion,
 } from "core/util/suggestedSettings";
-import { useContext, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import Alert from "../components/gui/Alert";
 import { Button } from "../components/ui/Button";
 import { IdeMessengerContext } from "../context/IdeMessenger";
@@ -35,6 +35,23 @@ interface Props {
   current?: CurrentSettings;
   /** Puts the suggested settings into the Configure form (reviewed and saved there). */
   onApplySuggestions?: (suggestions: Suggestion[]) => void;
+  /**
+   * The setup flow's automatic test. Each time the number goes up the model
+   * listing runs by itself: one GET, no tokens spent. With it the button
+   * also only lists, the tool-call request (which a provider bills) gets a
+   * button of its own, and a result is dropped when the provider, the
+   * address or the key changes.
+   */
+  autoRunToken?: number;
+  /** "yes", "9 of 14" or "not reported" for the listed model ids: the "Tools:" part of the line. */
+  toolsFor?: (models: string[]) => string;
+  /** Plain words for a failure, when the caller has better ones than the raw error. */
+  describeError?: (error: string) => string;
+  /**
+   * The address must be typed: a server of the person's own, which has none
+   * to fall back on. Without this an empty address means the provider's.
+   */
+  addressRequired?: boolean;
 }
 
 /**
@@ -52,6 +69,10 @@ export function OpenAICompatConnectionTester({
   onUseContextLength,
   current,
   onApplySuggestions,
+  autoRunToken,
+  toolsFor,
+  describeError,
+  addressRequired,
 }: Props) {
   const ideMessenger = useContext(IdeMessengerContext);
   const [busy, setBusy] = useState(false);
@@ -61,6 +82,9 @@ export function OpenAICompatConnectionTester({
   const [recovery, setRecovery] = useState<
     "on" | "declined" | { snippet: string[] }
   >();
+  const inFlow = autoRunToken !== undefined;
+  // Counts the runs, so the answer of one that was stopped or overtaken is dropped
+  const runSeq = useRef(0);
 
   async function run(withModel?: string, checkModel?: string) {
     const res = await ideMessenger.request("openaiCompat/testConnection", {
@@ -78,24 +102,36 @@ export function OpenAICompatConnectionTester({
         } as OpenAICompatTestResult);
   }
 
-  async function testConnection() {
+  /** `listOnly` asks for the model listing and nothing else: no request a provider bills. */
+  async function testConnection(listOnly = false) {
+    const seq = ++runSeq.current;
+    const stillWanted = () => runSeq.current === seq;
     setBusy(true);
     setResult(undefined);
     setApplied(false);
     setProbedModel(undefined);
     setRecovery(undefined);
     try {
+      if (listOnly) {
+        const listed = await run();
+        if (stillWanted()) setResult(listed);
+        return;
+      }
       if (provider === "anthropic") {
         // Read-only: the listing and the configured id; no tool probe here.
-        return setResult(await run(model || undefined));
+        const read = await run(model || undefined);
+        if (stillWanted()) setResult(read);
+        return;
       }
       // The listing, and the configured id checked against the server
       const listed = await run(undefined, model || undefined);
+      if (!stillWanted()) return;
       if (!listed.ok || listed.models.length === 0) return setResult(listed);
       const pick =
         model && listed.models.includes(model) ? model : listed.models[0];
       setProbedModel(pick);
       const probed = await run(pick);
+      if (!stillWanted()) return;
       setResult(
         probed.ok && listed.ok
           ? {
@@ -109,13 +145,20 @@ export function OpenAICompatConnectionTester({
           : probed,
       );
     } catch (e) {
+      if (!stillWanted()) return;
       setResult({
         ok: false,
         error: e instanceof Error ? e.message : String(e),
       });
     } finally {
-      setBusy(false);
+      if (stillWanted()) setBusy(false);
     }
+  }
+
+  /** The request already sent cannot be recalled; its answer is not used. */
+  function stop() {
+    runSeq.current++;
+    setBusy(false);
   }
 
   const probe = result?.ok ? result.probe : undefined;
@@ -150,19 +193,65 @@ export function OpenAICompatConnectionTester({
     }
   }
 
-  const defaultBase = connectionTestDefaultBase(provider);
+  const defaultBase = addressRequired
+    ? undefined
+    : connectionTestDefaultBase(provider);
   const needsBase = !defaultBase && !apiBase?.trim();
+  const testable = canTest && !needsBase;
+
+  // The setup flow says when (useAutoTest holds the rule); 0 is "not yet".
+  useEffect(() => {
+    if (autoRunToken && testable) void testConnection(true);
+  }, [autoRunToken]);
+
+  // In the flow a result is about one provider, address and key: a change to
+  // any of them takes it off the screen and drops a test that is on its way.
+  useEffect(() => {
+    if (!inFlow) return;
+    runSeq.current++;
+    setBusy(false);
+    setResult(undefined);
+  }, [inFlow, provider, apiBase, apiKey]);
+
   return (
     <div className="flex flex-col gap-2">
       <div>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={testConnection}
-          disabled={!canTest || busy || needsBase}
-        >
-          {busy ? "Connecting…" : "Test connection"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-x-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void testConnection(inFlow)}
+            disabled={!testable || busy}
+          >
+            {busy
+              ? "Connecting…"
+              : inFlow && result
+                ? "Test again"
+                : "Test connection"}
+          </Button>
+          {inFlow && busy && (
+            <Button type="button" variant="ghost" onClick={stop}>
+              Stop
+            </Button>
+          )}
+          {inFlow &&
+            // Anthropic's test only reads; it has no tool-call request
+            provider !== "anthropic" &&
+            result?.ok &&
+            !probe &&
+            result.models.length > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                data-testid="check-tool-calls"
+                title="Sends one short request with a made-up tool, to see how the model answers. The tool is never run. A provider bills the few tokens it uses."
+                onClick={() => void testConnection(false)}
+                disabled={!testable || busy}
+              >
+                Check tool calls
+              </Button>
+            )}
+        </div>
         {(needsBase || (defaultBase && !apiBase?.trim())) && (
           <span
             className="mt-1 block text-xs text-description-muted"
@@ -178,17 +267,30 @@ export function OpenAICompatConnectionTester({
       {result && !result.ok && (
         <Alert type="error" size="sm" role="alert">
           <span className="block text-xs font-medium">Could not connect</span>
-          <code className="block text-xs break-all whitespace-pre-wrap">
-            {result.error}
-          </code>
+          {describeError ? (
+            <span
+              className="block text-xs break-words"
+              data-testid="test-connection-error"
+            >
+              {describeError(result.error)}
+            </span>
+          ) : (
+            <code className="block text-xs break-all whitespace-pre-wrap">
+              {result.error}
+            </code>
+          )}
         </Alert>
       )}
 
       {result?.ok && (
         <Alert type="success" size="sm" role="status">
-          <span className="block text-xs font-medium">
+          <span
+            className="block text-xs font-medium"
+            data-testid="test-connection-line"
+          >
             Connected. {result.models.length} model
-            {result.models.length === 1 ? "" : "s"} listed.
+            {result.models.length === 1 ? "" : "s"}
+            {toolsFor ? `. Tools: ${toolsFor(result.models)}.` : " listed."}
           </span>
         </Alert>
       )}

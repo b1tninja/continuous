@@ -17,6 +17,7 @@ export const VIEWS = {
   },
   approval: {
     fixture: "approval",
+    stack: true,
     note: "three calls waiting for approval: a long command, a path outside the workspace, an MCP tool",
   },
   "crowded-stack": {
@@ -68,6 +69,16 @@ export const VIEWS = {
     fixture: "loop-questions",
     note: "Loop mode with three questions waiting: the Needs you tray shows one at a time",
   },
+  "tall-question": {
+    fixture: "tall-question",
+    stack: true,
+    note: "a plan's three long decisions in the Questions panel, after a conversation; shoot it with --height 400 (measured: src/stack.mjs)",
+  },
+  "loop-tall-question": {
+    fixture: "loop-tall-question",
+    stack: true,
+    note: "Loop mode after a conversation, with one long question in the Needs you tray; shoot it with --height 440 (measured: src/stack.mjs)",
+  },
   "loop-replan": {
     fixture: "loop-replan",
     note: "Loop mode with a re-plan waiting: the Needs you tray holds Review diff, Keep planning and Accept plan",
@@ -118,24 +129,44 @@ export const VIEWS = {
   },
   "settings-models": {
     fixture: "settings-models",
-    note: "Settings, Models tab",
+    note: "Settings, Models tab: In use, Connections (none yet), four folds",
+  },
+  "settings-models-connections": {
+    fixture: "settings-models-connections",
+    note: "Settings, Models tab with three provider connections under In use, and the folds' one-line states",
+  },
+  "settings-models-accounts": {
+    fixture: "settings-models-accounts",
+    note: "Settings, Models tab with the Accounts fold open (opened by &section=accounts): the provider accounts of providers.yaml",
   },
   "settings-rules": { fixture: "settings-rules", note: "Settings, Rules tab" },
   "settings-permissions": {
     fixture: "settings-permissions",
-    note: "Settings, Permissions tab (render only)",
+    note: "Settings, Permissions tab, Rules view (render only)",
+  },
+  "permissions-levels": {
+    fixture: "permissions-levels",
+    note: "Settings, Permissions, Levels: the preset, the five levels, Plans and questions folded, Skip the confirmation",
+  },
+  "permissions-protections": {
+    fixture: "permissions-protections",
+    note: "Settings, Permissions, Protections: the locks, then four folds closed, each with its one-line state",
+  },
+  "permissions-protections-open": {
+    fixture: "permissions-protections-open",
+    note: "Settings, Permissions, Protections, with Commands and secrets open (opened by &section=commands-secrets)",
   },
   "settings-configs": {
     fixture: "settings-configs",
     note: "Settings, Configs tab",
   },
-  "settings-indexing": {
-    fixture: "settings-indexing",
-    note: "Settings, Indexing tab",
+  "settings-general-index": {
+    fixture: "settings-general-index",
+    note: "Settings, General, with Codebase index and docs open, reached through the old Indexing link (?tab=indexing)",
   },
   "settings-general": {
     fixture: "settings-general",
-    note: "Settings, Settings tab",
+    note: "Settings, General tab, with Codebase index and docs folded to its one-line state",
   },
   "settings-help": { fixture: "settings-help", note: "Settings, Help tab" },
   "agents-running": {
@@ -172,7 +203,7 @@ export const VIEWS = {
   },
   "permissions-intro": {
     fixture: "permissions-intro",
-    note: "Settings, Permissions, with the first-run overview card",
+    note: "Settings, Permissions, Levels, with the first-run overview card",
   },
   "chat-first-run": {
     fixture: "chat-first-run",
@@ -188,15 +219,15 @@ export const VIEWS = {
   },
   "onboarding-local": {
     fixture: "onboarding-local",
-    note: "Onboarding, Local tab: the suggested model with Connect and Configure model",
+    note: 'Onboarding, "Nothing yet": Ollama running with the suggested model, and the links to get a key',
   },
   "onboarding-local-chooser": {
     fixture: "onboarding-local-chooser",
-    note: "Onboarding, Local tab, with the Configure model chooser open",
+    note: "Onboarding, the start screen (What do you have?) with two servers found on this computer",
   },
   "onboarding-local-server": {
     fixture: "onboarding-local-server",
-    note: "The chooser on an OpenAI-compatible server, with More open",
+    note: 'Onboarding, "A server on my network": the connection step with More open',
   },
   "loop-frame-running": {
     fixture: "loop-frame-running",
@@ -220,11 +251,43 @@ export const VIEWS = {
   },
   "settings-tools": {
     fixture: "settings-tools",
-    note: "Settings, Tools tab, with Commands and secrets",
+    note: "Settings, Tools tab from the top: built-in tools, then MCP servers",
   },
   "settings-tools-mcp": {
     fixture: "settings-tools-mcp",
-    note: "Settings, Tools tab, at an MCP server with its tools listed and the control that sets them all",
+    note: "Settings, MCP servers tab, at a server with its tools listed and the control that sets them all",
+  },
+  "settings-mcp": {
+    fixture: "settings-mcp",
+    note: "Settings, MCP servers tab: servers saved for all projects and for the workspace, one that failed to start, one read-only",
+  },
+  "settings-mcp-untrusted": {
+    fixture: "settings-mcp-untrusted",
+    note: "the same with the notice for a folder whose MCP servers are not trusted",
+  },
+  "settings-mcp-empty": {
+    fixture: "settings-mcp-empty",
+    note: "Settings, MCP servers tab with no server: what one is, and Add a server",
+  },
+  "mcp-dialog": {
+    fixture: "mcp-dialog",
+    note: "Add MCP server: the basic part, a command with arguments and a secret",
+  },
+  "mcp-dialog-advanced": {
+    fixture: "mcp-dialog-advanced",
+    note: "Add MCP server with Advanced open: each setting says what happens while it is not set",
+  },
+  "mcp-dialog-url": {
+    fixture: "mcp-dialog-url",
+    note: "Add MCP server for a remote server, Advanced open at the transport",
+  },
+  "mcp-dialog-confirm-run": {
+    fixture: "mcp-dialog-confirm-run",
+    note: "Add MCP server asking before Test runs the command: exactly what will run",
+  },
+  "mcp-dialog-failed-test": {
+    fixture: "mcp-dialog-failed-test",
+    note: "Add MCP server after a Test that failed: command not found, with the PATH searched",
   },
   "drop-target": {
     fixture: "drop-target",
@@ -245,6 +308,26 @@ export const VIEWS = {
   "setup-dialog": {
     fixture: "setup-dialog",
     note: "the same model list in the app dialog, as Manage models opens it",
+  },
+  "setup-start-found": {
+    fixture: "setup-start-found",
+    note: '"Add a model" in the app dialog: What do you have?, with two servers found on this computer',
+  },
+  "setup-start-none": {
+    fixture: "setup-start-none",
+    note: '"Add a model" start screen when nothing answers on this computer',
+  },
+  "setup-models-local": {
+    fixture: "setup-models-local",
+    note: "the models step of a found server: context, price and tools, with a long model id",
+  },
+  "setup-use-for": {
+    fixture: "setup-use-for",
+    note: '"Use for": the roles the new model gets, with what each role uses now',
+  },
+  "setup-test-failed": {
+    fixture: "setup-test-failed",
+    note: "the connection step after a test that got no answer from a server on this computer",
   },
   history: {
     fixture: "history",

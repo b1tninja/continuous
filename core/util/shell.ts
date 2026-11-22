@@ -333,3 +333,37 @@ export function executionShell(
   const shell = resolveShell(opts);
   return { kind: shell.kind, source: "spawned", label: shellLabel(shell) };
 }
+
+/** A `terminal.shell` choice that cannot hold in the window it was made for. */
+export interface RemoteShellConflict {
+  remoteName: string;
+  /** What was asked for: commands in WSL, or in a container */
+  preference: TerminalShellPreference["kind"];
+  /** Where it was asked: the editor's setting, or `CONTINUOUS_TERMINAL_SHELL` */
+  from: "setting" | "environment";
+}
+
+/**
+ * Set when the window is remote and commands were asked to run in WSL or in a
+ * container. That choice is about this machine. In a remote window the command
+ * is typed into the editor's terminal on the other one, where nothing confines
+ * it, so the terminal tool does not run it and says which setting to change.
+ */
+export function remoteShellConflict(
+  remoteName?: string,
+  env: Record<string, string | undefined> = process.env,
+): RemoteShellConflict | undefined {
+  if (remoteName === undefined || LOCAL_REMOTE_NAMES.includes(remoteName)) {
+    return undefined;
+  }
+  const preference = getTerminalShellPreference(env);
+  if (!preference) return undefined;
+  // A WSL remote window already runs its commands in WSL, which is what
+  // the wsl preference asks for, so there is nothing to refuse
+  if (preference.kind === "wsl" && remoteName === "wsl") return undefined;
+  return {
+    remoteName,
+    preference: preference.kind,
+    from: configuredShell ? "setting" : "environment",
+  };
+}

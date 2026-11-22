@@ -1,21 +1,17 @@
 import {
-  BUILTIN_RULES,
-  LOCKED_FLOOR_RULES,
-  DEFAULT_AGENT_DECIDES,
-  DEFAULT_MAX_NEW_PLAN_ITEMS,
-  DEFAULT_YOU_DECIDE,
+  DEFAULT_POLICY_LEVELS,
   POLICY_AREA_LABELS,
   POLICY_AREAS,
-  QUESTION_TYPE_DESCRIPTIONS,
-  QUESTION_TYPES,
-  type QuestionType,
+  POLICY_PRESETS,
+  policyLevelLabel,
 } from "core/tools/permissions/policy";
 import ToggleSwitch from "../gui/Switch";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import { changePolicyExtras } from "../../redux/thunks/policySettings";
-import { DecisionTimerCard } from "./DecisionTimerCard";
-import { Card } from "../ui";
+import { Card, Fold } from "../ui";
+import { PlansAndQuestions } from "./PlansAndQuestions";
 import { AreaLevelSelect } from "./PolicyControls";
+import { plansAndQuestionsSummary, skipConfirmState } from "./policySummaries";
 import { PresetSelect } from "./PresetSelect";
 
 const AREA_HINTS = {
@@ -27,42 +23,16 @@ const AREA_HINTS = {
   questions: "Loop only. Whether the agent answers its own questions.",
 } as const;
 
-type WhoDecides = "you" | "agent" | "level";
-
-/** Who decides questions of this type, from the two lists. */
-function whoDecides(
-  type: QuestionType,
-  youDecide: readonly QuestionType[],
-  agentDecides: readonly QuestionType[],
-): WhoDecides {
-  if (youDecide.includes(type)) return "you";
-  if (agentDecides.includes(type)) return "agent";
-  return "level";
-}
-
 /**
- * Settings > Tools: the same five controls as the toolbar, with their
- * explanations, then the settings beside them. Deny rules, ask rules and
- * protected paths always win, except for an area set to IDGAF.
+ * Settings > Permissions > Levels: the same five controls as the toolbar,
+ * with their explanations, then the settings beside them. Deny rules, ask
+ * rules and protected paths always win, except for an area set to IDGAF.
  */
 export function PolicyCard() {
   const dispatch = useAppDispatch();
   const extras = useAppSelector((s) => s.ui.policyExtras);
-  const youDecide = extras.questions?.youDecide ?? DEFAULT_YOU_DECIDE;
-  const agentDecides = extras.questions?.agentDecides ?? DEFAULT_AGENT_DECIDES;
-  const floor = extras.floor ?? [];
-
-  const setWho = (type: QuestionType, who: WhoDecides) => {
-    const you = youDecide.filter((t) => t !== type);
-    const agent = agentDecides.filter((t) => t !== type);
-    if (who === "you") you.push(type);
-    if (who === "agent") agent.push(type);
-    void dispatch(
-      changePolicyExtras({
-        questions: { youDecide: you, agentDecides: agent },
-      }),
-    );
-  };
+  const levels = useAppSelector((s) => s.ui.policyLevels);
+  const plans = plansAndQuestionsSummary(extras);
 
   return (
     <div data-testid="policy-card">
@@ -78,7 +48,8 @@ export function PolicyCard() {
             <div className="flex flex-col">
               <span className="text-sm">Preset</span>
               <span className="text-2xs text-description">
-                Sets all five areas at once.
+                Sets all five areas at once. A new install starts at{" "}
+                {POLICY_PRESETS.careful.label}.
               </span>
             </div>
             <PresetSelect placement="settings" />
@@ -95,10 +66,26 @@ export function PolicyCard() {
                 <span className="text-2xs text-description">
                   {AREA_HINTS[area]}
                 </span>
+                {/* The file always holds five levels, so "set" means changed from the built-in one */}
+                <span
+                  className="text-2xs text-description"
+                  data-testid={`policy-state-${area}`}
+                >
+                  {levels[area] === DEFAULT_POLICY_LEVELS[area]
+                    ? `Not set: ${policyLevelLabel(area, levels[area])} is the built-in level.`
+                    : `Set by you. The built-in level is ${policyLevelLabel(area, DEFAULT_POLICY_LEVELS[area])}.`}
+                </span>
               </div>
               <AreaLevelSelect area={area} variant="row" />
             </div>
           ))}
+          <Fold
+            id="plans-questions"
+            title="Plans and questions"
+            summary={plans.text}
+          >
+            <PlansAndQuestions />
+          </Fold>
           <div data-testid="skip-permission-confirm">
             <ToggleSwitch
               isToggled={extras.skipPermissionConfirm === true}
@@ -113,118 +100,13 @@ export function PolicyCard() {
               text="Skip the confirmation when permissions change"
             />
             <div className="text-2xs text-description">
-              The dialog that asks before a permission change is saved. Off, so
-              the dialog still appears. Turning this on asks once. An ask before
-              a command runs is unchanged.
+              The dialog that asks before a permission change is saved.{" "}
+              {skipConfirmState(extras)} Turning this on asks once. An ask
+              before a command runs is unchanged.
             </div>
           </div>
         </div>
       </Card>
-
-      <h4 className="mt-3 mb-1 text-xs font-semibold">Built-in rules</h4>
-      <p className="mt-0 mb-1 text-2xs text-description">
-        Protections you can see and switch off. IDGAF ignores them.
-      </p>
-      <Card>
-        <div className="flex flex-col gap-2 py-1">
-          {BUILTIN_RULES.map((rule) => (
-            <div key={rule.id} data-testid={`builtin-${rule.id}`}>
-              <ToggleSwitch
-                isToggled={extras.builtin?.[rule.id] !== false}
-                onToggle={() =>
-                  void dispatch(
-                    changePolicyExtras({
-                      builtin: {
-                        ...extras.builtin,
-                        [rule.id]: extras.builtin?.[rule.id] === false,
-                      },
-                    }),
-                  )
-                }
-                text={rule.label}
-              />
-              <div className="text-2xs text-description">
-                {rule.description}
-              </div>
-            </div>
-          ))}
-          {LOCKED_FLOOR_RULES.map((rule) => (
-            <div key={rule.id} data-testid={`locked-${rule.id}`}>
-              <div className="text-xs">{rule.label} (locked)</div>
-              <div className="text-2xs text-description">
-                {rule.description} No setting turns this off; at IDGAF it is
-                recorded, not applied.
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      <h4 className="mt-3 mb-1 text-xs font-semibold">Plans and questions</h4>
-      <Card>
-        <div className="flex flex-col gap-2 py-1">
-          <label
-            className="flex items-center justify-between gap-2 text-xs"
-            data-testid="policy-max-new-items"
-          >
-            <span>
-              New to-dos a re-plan may add by itself
-              <span className="block text-2xs text-description">
-                Plan edits at Permissive. Default {DEFAULT_MAX_NEW_PLAN_ITEMS}.
-              </span>
-            </span>
-            <input
-              type="number"
-              min={0}
-              className="w-14 rounded border border-solid border-border bg-input px-1 text-xs text-foreground"
-              value={extras.maxNewPlanItems ?? DEFAULT_MAX_NEW_PLAN_ITEMS}
-              onChange={(e) => {
-                const n = Number(e.target.value);
-                if (Number.isInteger(n) && n >= 0) {
-                  void dispatch(changePolicyExtras({ maxNewPlanItems: n }));
-                }
-              }}
-            />
-          </label>
-          {QUESTION_TYPES.map((type) => (
-            <label
-              key={type}
-              className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs"
-              data-testid={`question-type-${type}`}
-            >
-              {/* The select is about 150 px wide; in a narrow panel it goes under the text */}
-              <span className="min-w-0 flex-1 basis-32">
-                {type}
-                <span className="block text-2xs text-description">
-                  {QUESTION_TYPE_DESCRIPTIONS[type]}
-                </span>
-              </span>
-              <select
-                value={whoDecides(type, youDecide, agentDecides)}
-                onChange={(e) => setWho(type, e.target.value as WhoDecides)}
-                className="box-border max-w-full shrink-0 cursor-pointer rounded border border-solid border-border bg-input px-1 text-xs text-foreground"
-              >
-                <option value="you">You decide</option>
-                <option value="agent">Agent may decide</option>
-                <option value="level">Questions level decides</option>
-              </select>
-            </label>
-          ))}
-        </div>
-      </Card>
-
-      <DecisionTimerCard />
-
-      {floor.length > 0 && (
-        <p
-          className="mt-2 mb-0 text-2xs text-description"
-          data-testid="policy-floor"
-        >
-          {floor.length} locked rule{floor.length === 1 ? "" : "s"} in
-          permissions.yaml block these calls at every level below IDGAF. At
-          IDGAF they are recorded, not applied. Edit the file to change them.
-        </p>
-      )}
     </div>
   );
 }

@@ -32,8 +32,9 @@ import {
   type PermissionsView,
 } from "./audit/ViewSwitch";
 import { FirstRunOverview } from "./FirstRunOverview";
-import { LocksSection } from "./Locks";
+import { PolicyCard } from "../../../../components/PolicyControls";
 import { PermissionsError, PermissionsSkeleton } from "./PermissionsStates";
+import { ProtectionsView } from "./ProtectionsView";
 import { BuiltinList, RuleList } from "./RuleList";
 import { RuleTester } from "./RuleTester";
 import { auditKeyOf, useAuditOverview } from "./useAuditOverview";
@@ -103,6 +104,9 @@ function QuestionSettings({ area }: { area: AreaReport }) {
   );
 }
 
+const LINK =
+  "cursor-pointer border-0 bg-transparent p-0 text-2xs text-link underline";
+
 function AreaPanel({
   area,
   report,
@@ -110,6 +114,7 @@ function AreaPanel({
   audit,
   review,
   onReviewOpened,
+  onOpenView,
 }: {
   area: PolicyArea;
   report: EffectiveRulesReport;
@@ -117,6 +122,7 @@ function AreaPanel({
   audit?: AuditOverview;
   review?: ReviewRequest & { nonce: number };
   onReviewOpened?: () => void;
+  onOpenView: (view: PermissionsView) => void;
 }) {
   const levels = useAppSelector((s) => s.ui.policyLevels);
   const [result, setResult] = useState<ToolCallTestResult | undefined>();
@@ -135,7 +141,16 @@ function AreaPanel({
           {a.label}: <strong data-testid="area-level">{a.levelLabel}</strong>
         </div>
         <div className="text-2xs text-description-muted">
-          {a.levelDescription} Change it in Settings &gt; Tools or the toolbar.
+          {a.levelDescription} Change it in{" "}
+          <button
+            type="button"
+            className={LINK}
+            data-testid="open-levels"
+            onClick={() => onOpenView("levels")}
+          >
+            Levels
+          </button>{" "}
+          or the toolbar.
         </div>
       </section>
       <PlanSettings area={a} />
@@ -148,8 +163,28 @@ function AreaPanel({
           {report.decisionOrder}
         </p>
       )}
-      {hasRules && <LocksSection />}
-      <BuiltinList builtins={a.builtins} />
+      {/* The locks themselves are listed once, in Protections; a person about to write an Always rule is told here that they exist */}
+      {hasRules && (
+        <p
+          className="m-0 text-2xs text-description-muted"
+          data-testid="locks-pointer"
+        >
+          Locked rules, protected paths and your policy files always win over a
+          rule here.{" "}
+          <button
+            type="button"
+            className={LINK}
+            data-testid="open-protections"
+            onClick={() => onOpenView("protections")}
+          >
+            See the locks in Protections
+          </button>
+        </p>
+      )}
+      <BuiltinList
+        builtins={a.builtins}
+        onOpen={() => onOpenView("protections")}
+      />
       {hasRules && (
         <>
           {report.userFile?.state === "broken" ? (
@@ -184,11 +219,14 @@ function AreaPanel({
 }
 
 /**
- * Settings > Permissions: every rule in effect by area, with its source and
- * whether it is obeyed, a tester that runs the real check, and the controls to
- * add, change, remove and adopt rules in your own config.yaml. Only the core
- * dialect is written; a config.yaml that cannot be read turns editing off
- * instead of showing an empty list.
+ * Settings > Permissions: everything that decides what the agent may do, in
+ * five views. Levels: who decides a call no rule decides. Rules: every rule in
+ * effect by area, with its source and whether it is obeyed, a tester that runs
+ * the real check, and the controls to add, change, remove and adopt rules in
+ * your own config.yaml. Protections: the locks and the built-in safeguards.
+ * Recent calls and Inbox: the audit trail. Only the core dialect is written; a
+ * config.yaml that cannot be read turns editing off instead of showing an
+ * empty list.
  * The Reviewer tab joins the area tabs here later.
  */
 export function PermissionsSection() {
@@ -221,7 +259,7 @@ export function PermissionsSection() {
   // even after the person switched views by hand.
   const viewParam = params.get("view");
   const [view, setView] = useState<PermissionsView>(
-    isPermissionsView(viewParam) ? viewParam : "rules",
+    isPermissionsView(viewParam) ? viewParam : "levels",
   );
   useEffect(() => {
     if (!isPermissionsView(viewParam)) return;
@@ -309,7 +347,9 @@ export function PermissionsSection() {
         showAddButton={false}
         className="mb-2"
       />
-      {showIntro && <FirstRunOverview onDismiss={dismissIntro} />}
+      {showIntro && view === "levels" && (
+        <FirstRunOverview onDismiss={dismissIntro} />
+      )}
       {report && isBaseName(customBase) ? (
         <CustomPolicy
           key={`${customBase}:${customArea ?? ""}`}
@@ -445,6 +485,7 @@ export function PermissionsSection() {
             audit={audit.overview}
             review={review}
             onReviewOpened={() => setReview(undefined)}
+            onOpenView={setView}
           />
         )}
         {report && report.unscoped.length > 0 && (
@@ -458,6 +499,24 @@ export function PermissionsSection() {
           </section>
         )}
       </div>
+      {view === "levels" && (
+        <div
+          role="tabpanel"
+          id="permissions-view-levels"
+          aria-labelledby="permissions-view-tab-levels"
+        >
+          <PolicyCard />
+        </div>
+      )}
+      {view === "protections" && (
+        <div
+          role="tabpanel"
+          id="permissions-view-protections"
+          aria-labelledby="permissions-view-tab-protections"
+        >
+          <ProtectionsView />
+        </div>
+      )}
       {view === "recent" && (
         <div
           role="tabpanel"

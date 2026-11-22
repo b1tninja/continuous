@@ -74,6 +74,25 @@ export async function promptForWorkspaceConfigTrust(
 }
 
 /**
+ * The webview's `projectTrust/ask`: the "Trust this folder" button of the MCP
+ * servers tab. In Restricted Mode it opens VS Code's own workspace trust
+ * page; otherwise it shows the question above again, even after "not now".
+ * Trust is only ever recorded by the person's answer to that question.
+ */
+export async function askForWorkspaceConfigTrust(
+  configHandler: ConfigHandler,
+): Promise<{ shown: "config" | "workspace" | "none" }> {
+  if (vscode.workspace.isTrusted === false) {
+    await vscode.commands.executeCommand("workbench.trust.manage");
+    return { shown: "workspace" };
+  }
+  if (pendingProjectTrust().length === 0) return { shown: "none" };
+  dismissed.clear();
+  await promptForWorkspaceConfigTrust(configHandler);
+  return { shown: "config" };
+}
+
+/**
  * ROADMAP X20: in a workspace VS Code has not trusted (Restricted Mode),
  * `AGENTS.md` and the other agent files are not read. Call before the first
  * config load. When the person trusts the workspace, config reloads and the

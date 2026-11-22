@@ -56,7 +56,7 @@ A model is built from four layers, each over the one before: the account (`provi
 
 A variant changes a model's settings, never which model it is or where it is served from: `name`, `model`, `provider`, `connection`, `apiKey` and `apiBase` cannot be set in a variant. Use variants for reasoning effort, sampling, `contextManagement` and similar.
 
-**Set up models** adds a variant for each reasoning effort the server reports: llama.cpp when the model's chat template takes `reasoning_effort` (the levels from `/props`), and Strata (`none`, `low`, `medium`, `high`). Each one sets `reasoning_effort` in the request body, so `Qwen3.8 Flash#high` is the model at high effort.
+**Add a model** adds a variant for each reasoning effort the server reports: llama.cpp when the model's chat template takes `reasoning_effort` (the levels from `/props`), and Strata (`none`, `low`, `medium`, `high`). Each one sets `reasoning_effort` in the request body, so `Qwen3.8 Flash#high` is the model at high effort.
 
 Switching between variants of one model on the same server does not warn about losing the prompt cache when they reason the same way, for example variants that only change sampling. A variant with another reasoning effort still warns: the effort can change the prompt itself. Strata, for instance, puts it at the start of the prompt unless its model config sets `"effort_position": "end"`, and does not report which.
 
@@ -108,17 +108,17 @@ A workspace's `.continuous/models.yaml` adds models for that workspace, and a mo
 
 ## Set up in the GUI
 
-**Set up models** (onboarding, **Manage models**, and **Local server**) writes all three for a new provider:
+**Add a model** (onboarding, **Manage models**, and **Local server**) writes all three for a new provider:
 
 - the connection as an account in `~/.continuous/providers.yaml`, with its key in secure storage or `~/.continuous/.env` (the file has only the reference). A server found with **Detect** gives the account its name, such as `strata`;
 - each chosen model in `~/.continuous/models.yaml`, with the context window, tools and image support the provider reported;
 - a `from:` entry in the selected config.
 
-Setting up the same endpoint again reuses its account and catalog models. A connection set up before this, with its provider, address and key on every model, keeps working and is edited as it is. **Settings > Providers > Turn into an account** converts it: the connection becomes an account, the models move to the catalog, and each model keeps its place, name and roles in the config.
+Setting up the same endpoint again reuses its account and catalog models. A connection set up before this, with its provider, address and key on every model, keeps working and is edited as it is. **Turn into an account** on its row under **Settings > Models > Connections** converts it: the connection becomes an account, the models move to the catalog, and each model keeps its place, name and roles in the config.
 
 ## Assign models to roles and modes
 
-**Settings > Models > Assign models** lists every model in the catalog, each variant on its own row, and the models that are only in the config, with the account each one uses. Tick what each model is for: Chat, Edit, Apply, Autocomplete, Subagents or Compaction (the `summarize` role). Saving writes the selected config: a catalog model gets a `from:` entry with those roles, and the entry goes again when no role is left. Roles the table does not show, such as `embed`, are kept.
+**Settings > Models > Roles > Assign models** lists every model in the catalog, each variant on its own row, and the models that are only in the config, with the account each one uses. Tick what each model is for: Chat, Edit, Apply, Autocomplete, Subagents or Compaction (the `summarize` role). Saving writes the selected config: a catalog model gets a `from:` entry with those roles, and the entry goes again when no role is left. Roles the table does not show, such as `embed`, are kept.
 
 **Models per mode** also offers catalog models that the config does not list yet; choosing one for a mode adds it.
 

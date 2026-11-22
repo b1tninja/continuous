@@ -36,12 +36,14 @@ export function convertYamlMcpConfigToInternalMcpOptions(
   config: MCPServer,
   globalRequestOptions?: RequestOptions,
 ): InternalMcpOptions {
-  const { connectionTimeout, faviconUrl, name, sourceFile } = config;
+  const { connectionTimeout, toolTimeout, faviconUrl, name, sourceFile } =
+    config;
   const shared = {
     id: name,
     name,
     faviconUrl: faviconUrl,
     timeout: connectionTimeout,
+    toolTimeout,
     sourceFile,
   };
   // Stdio

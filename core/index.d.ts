@@ -1620,6 +1620,15 @@ interface ToolCallState {
     seconds: number;
     proposed: "allow" | "refuse";
     kept?: boolean;
+    /**
+     * A call the level ran past an ask or a refusal: what a lower level would
+     * have decided, shown beside the countdown.
+     */
+    override?: {
+      policy: "allowedWithPermission" | "disabled";
+      source?: string;
+      reason?: string;
+    };
   };
   /** Why the call ran or was refused, for the decision chip. Set by the policy check. */
   decision?: ToolCallDecision;
@@ -2787,7 +2796,10 @@ type BaseInternalMCPOptions = {
   id: string;
   name: string;
   faviconUrl?: string;
+  /** `connectionTimeout`, in milliseconds */
   timeout?: number;
+  /** `toolTimeout`, in milliseconds: the limit of one tool call */
+  toolTimeout?: number;
   requestOptions?: RequestOptions;
   sourceFile?: string;
   /**

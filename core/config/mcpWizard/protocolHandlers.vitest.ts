@@ -44,6 +44,10 @@ const MESSAGES = [
   "mcp/save",
   "mcp/list",
   "mcp/remove",
+  "mcp/scopes",
+  "mcp/getDraft",
+  "mcp/update",
+  "mcp/move",
 ] as const;
 
 const MOCK = path.join(
@@ -331,6 +335,7 @@ const fakeResult = (): McpProbeResult => ({
   ok: true,
   status: "connected",
   durationMs: 5,
+  timeoutMs: 20_000,
   transport: "stdio",
   tools: [],
   resources: [],
@@ -675,5 +680,283 @@ describe("scrubSecrets", () => {
       n: 1,
       s: "abc",
     });
+  });
+});
+
+describe("mcp/scopes", () => {
+  it("gives the real paths, the folder's trust and what the code does by itself", async () => {
+    register({ folderTrust: () => "none" });
+    const r = await call("mcp/scopes");
+    expect(r.user).toEqual({ file: configPath, exists: true });
+    expect(r.folders).toEqual([
+      {
+        dir: projectDir,
+        name: "project",
+        mcpDir: path.join(projectDir!, ".continuous", "mcpServers"),
+        trust: "none",
+      },
+    ]);
+    expect(r.secretStore).toEqual({
+      kind: "env",
+      envFile: path.join(continueDir, ".env"),
+    });
+    // The numbers are the code's own (MCPConnection, probeMcpServer)
+    expect(r.defaults).toEqual({
+      connectionTimeoutMs: 20_000,
+      probeTimeoutMs: 20_000,
+      toolCallTimeoutMs: 60_000,
+      inheritedEnv: [
+        "PATH",
+        "HOME",
+        "USER",
+        "USERPROFILE",
+        "LOGNAME",
+        "USERNAME",
+      ],
+      cwd: projectDir,
+    });
+  });
+
+  it("lists no folder and no working folder when none is open", async () => {
+    projectDir = undefined;
+    register();
+    const r = await call("mcp/scopes");
+    expect(r.folders).toEqual([]);
+    expect(r.defaults).not.toHaveProperty("cwd");
+  });
+
+  it("reads a folder's trust from its MCP files: none without files, untrusted with new ones", async () => {
+    expect((await call("mcp/scopes")).folders[0].trust).toBe("none");
+    const mcpDir = path.join(projectDir!, ".continuous", "mcpServers");
+    fs.mkdirSync(mcpDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(mcpDir, "a.yaml"),
+      "name: a\nversion: 0.0.1\nschema: v1\nmcpServers:\n  - name: a\n    command: npx\n",
+    );
+    expect((await call("mcp/scopes")).folders[0].trust).toBe("untrusted");
+  });
+});
+
+describe("mcp/getDraft and mcp/update", () => {
+  it("hands a credential written in the file to the page as a held marker only", async () => {
+    const r = await call("mcp/getDraft", {
+      name: "inline-token",
+      scope: "user",
+    });
+    expect(r.ok).toBe(true);
+    expect(r.listing).toMatchObject({ scope: "user", file: configPath });
+    expect(r.draft.command).toBe("npx");
+    expect(r.draft.args).toEqual(["-y", "some-server@1.0.0"]);
+    expect(r.draft.env[0].name).toBe("GITHUB_TOKEN");
+    expect(r.draft.env[0].secret).toBe(true);
+    expect(r.draft.env[0].value).toMatch(/^\$\{\{ held\.[0-9a-f-]{36} \}\}$/);
+  });
+
+  it("saves the edit in place; the held credential becomes a secret", async () => {
+    const { draft } = await call("mcp/getDraft", {
+      name: "inline-token",
+      scope: "user",
+    });
+    const r = await call("mcp/update", {
+      target: { name: "inline-token", scope: "user" },
+      draft: { ...draft, args: ["-y", "some-server@2.0.0"] },
+    });
+    expect(r).toMatchObject({ ok: true, scope: "user", file: configPath });
+    const text = fs.readFileSync(configPath, "utf8");
+    expect(text).not.toContain(CANARY);
+    expect(text).toContain("some-server@2.0.0");
+    expect(text).toContain("${{ secrets.INLINE_TOKEN_GITHUB_TOKEN }}");
+    expect(fs.readFileSync(path.join(continueDir, ".env"), "utf8")).toContain(
+      CANARY,
+    );
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("says so when the server is gone", async () => {
+    expect(
+      await call("mcp/getDraft", { name: "nope", scope: "user" }),
+    ).toMatchObject({ ok: false });
+    expect(
+      await call("mcp/update", {
+        target: { name: "nope", scope: "user" },
+        draft: { name: "nope", transport: "stdio", command: "npx" },
+      }),
+    ).toMatchObject({ ok: false, reason: "no-file" });
+    expect(reload).not.toHaveBeenCalled();
+  });
+});
+
+describe("mcp/save and mcp/probe follow the folder", () => {
+  const draft: McpServerDraft = {
+    name: "local",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "a@1.0.0"],
+  };
+
+  it("writes only under a folder core lists, whatever the page names", async () => {
+    const outside = path.join(dir, "elsewhere");
+    fs.mkdirSync(outside);
+    const r = await call("mcp/save", {
+      draft,
+      scope: "project",
+      folder: outside,
+    });
+    expect(r).toMatchObject({ ok: false, reason: "no-project" });
+    expect(fs.existsSync(path.join(outside, ".continuous"))).toBe(false);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("saves to the chosen one of several folders", async () => {
+    const second = path.join(dir, "second");
+    fs.mkdirSync(second);
+    register({ projectDirs: async () => [projectDir!, second] });
+    const r = await call("mcp/save", {
+      draft,
+      scope: "project",
+      folder: second,
+    });
+    expect(r).toMatchObject({
+      ok: true,
+      file: path.join(second, ".continuous", "mcpServers", "local.yaml"),
+    });
+    const listed = (await call("mcp/list")).servers.find(
+      (s: any) => s.name === "local",
+    );
+    expect(listed).toMatchObject({ scope: "project", folder: second });
+  });
+
+  it("does not test a workspace server while the folder is not trusted", async () => {
+    probeSpy = vi.fn(async () => fakeResult());
+    register({ folderTrust: () => "untrusted" });
+    const r = await call("mcp/probe", {
+      draft,
+      consent: true,
+      scope: "project",
+    });
+    expect(r).toMatchObject({ ran: false, reason: "untrusted" });
+    expect(probeSpy).not.toHaveBeenCalled();
+  });
+
+  it.each(["trusted", "none"] as const)(
+    "tests a workspace server when the folder's trust is %s",
+    async (trust) => {
+      probeSpy = vi.fn(async () => fakeResult());
+      register({ folderTrust: () => trust });
+      const r = await call("mcp/probe", {
+        draft,
+        consent: true,
+        scope: "project",
+      });
+      expect(r.ran).toBe(true);
+    },
+  );
+
+  it("tests a server for all projects whatever the folder's trust", async () => {
+    probeSpy = vi.fn(async () => fakeResult());
+    register({ folderTrust: () => "untrusted" });
+    expect(
+      (await call("mcp/probe", { draft, consent: true, scope: "user" })).ran,
+    ).toBe(true);
+  });
+});
+
+describe("mcp/move", () => {
+  const projectFile = () =>
+    path.join(projectDir!, ".continuous", "mcpServers", "inline-token.yaml");
+
+  it("moves to the workspace with the credential as a reference", async () => {
+    const r = await call("mcp/move", {
+      target: { name: "inline-token", scope: "user" },
+      to: { scope: "project" },
+    });
+    expect(r).toMatchObject({
+      ok: true,
+      scope: "project",
+      to: projectFile(),
+      removedFromSource: true,
+    });
+    const text = fs.readFileSync(projectFile(), "utf8");
+    expect(text).not.toContain(CANARY);
+    expect(text).toContain("${{ secrets.INLINE_TOKEN_GITHUB_TOKEN }}");
+    expect(fs.readFileSync(configPath, "utf8")).not.toContain("inline-token");
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("needs a yes to bring a folder's server to all projects", async () => {
+    const loosened: unknown[] = [];
+    register({
+      onLoosened: async (change) => {
+        loosened.push(change);
+      },
+    });
+    await call("mcp/move", {
+      target: { name: "inline-token", scope: "user" },
+      to: { scope: "project" },
+    });
+    reload.mockClear();
+    for (const consent of [undefined, false, "true", 1]) {
+      const r = await call("mcp/move", {
+        target: { name: "inline-token", scope: "project" },
+        to: { scope: "user" },
+        consent,
+      });
+      expect(r).toMatchObject({ ok: false, reason: "no-consent" });
+    }
+    expect(fs.existsSync(projectFile())).toBe(true);
+    expect(reload).not.toHaveBeenCalled();
+    const r = await call("mcp/move", {
+      target: { name: "inline-token", scope: "project" },
+      to: { scope: "user" },
+      consent: true,
+    });
+    expect(r).toMatchObject({
+      ok: true,
+      scope: "user",
+      sourceFileDeleted: true,
+    });
+    expect(fs.existsSync(projectFile())).toBe(false);
+    // Only the move out of the folder loosens; the host is told once, after the write
+    expect(loosened).toEqual([
+      { name: "inline-token", from: projectFile(), to: configPath },
+    ]);
+  });
+
+  it("refuses a copy whose name the destination has, and says which file", async () => {
+    const r = await call("mcp/move", {
+      target: { name: "inline-token", scope: "user" },
+      to: { scope: "project" },
+      copy: true,
+    });
+    expect(r).toMatchObject({ ok: false, reason: "duplicate" });
+    expect(r.error).toContain(configPath);
+    const ok = await call("mcp/move", {
+      target: { name: "inline-token", scope: "user" },
+      to: { scope: "project" },
+      copy: true,
+      newName: "inline-token-2",
+    });
+    expect(ok).toMatchObject({
+      ok: true,
+      name: "inline-token-2",
+      removedFromSource: false,
+    });
+  });
+
+  it("refuses when no folder is open, and for a server that is not there", async () => {
+    projectDir = undefined;
+    register();
+    expect(
+      await call("mcp/move", {
+        target: { name: "inline-token", scope: "user" },
+        to: { scope: "project" },
+      }),
+    ).toMatchObject({ ok: false, reason: "no-project" });
+    expect(
+      await call("mcp/move", {
+        target: { name: "missing", scope: "user" },
+        to: { scope: "project" },
+      }),
+    ).toMatchObject({ ok: false, reason: "not-found" });
   });
 });

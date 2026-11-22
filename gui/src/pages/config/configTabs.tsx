@@ -1,22 +1,20 @@
 import {
   ArrowLeftIcon,
-  CircleStackIcon,
   Cog6ToothIcon,
   CubeIcon,
   DocumentIcon,
   PencilIcon,
+  PuzzlePieceIcon,
   QuestionMarkCircleIcon,
-  ServerStackIcon,
   ShieldCheckIcon,
   WrenchScrewdriverIcon,
 } from "@heroicons/react/24/outline";
 import { ConfigSection } from "./components/ConfigSection";
 import { ConfigsSection } from "./sections/ConfigsSection";
 import { HelpSection } from "./sections/HelpSection";
-import { IndexingSettingsSection } from "./sections/IndexingSettingsSection";
+import { McpServersSection } from "./sections/McpServersSection";
 import { ModelsSection } from "./sections/ModelsSection";
 import { PermissionsSection } from "./sections/permissions/PermissionsSection";
-import { ProvidersSection } from "./sections/ProvidersSection";
 import { RulesSection } from "./sections/RulesSection";
 import { ToolsSection } from "./sections/ToolsSection";
 import { UserSettingsSection } from "./sections/UserSettingsSection";
@@ -66,24 +64,15 @@ export const topTabSections: TabSection[] = [
         icon: <CubeIcon className="h-3 w-3 shrink-0 xs:h-4 xs:w-4" />,
       },
       {
-        id: "providers",
-        label: "Providers",
+        // Second, so nobody scrolls past tools and permissions to reach it
+        id: "mcp",
+        label: "MCP servers",
         component: (
           <ConfigSection>
-            <ProvidersSection />
+            <McpServersSection />
           </ConfigSection>
         ),
-        icon: <ServerStackIcon className="h-3 w-3 shrink-0 xs:h-4 xs:w-4" />,
-      },
-      {
-        id: "rules",
-        label: "Rules",
-        component: (
-          <ConfigSection>
-            <RulesSection />
-          </ConfigSection>
-        ),
-        icon: <PencilIcon className="h-3 w-3 shrink-0 xs:h-4 xs:w-4" />,
+        icon: <PuzzlePieceIcon className="h-3 w-3 shrink-0 xs:h-4 xs:w-4" />,
       },
       {
         id: "tools",
@@ -107,6 +96,16 @@ export const topTabSections: TabSection[] = [
         ),
         icon: <ShieldCheckIcon className="h-3 w-3 shrink-0 xs:h-4 xs:w-4" />,
       },
+      {
+        id: "rules",
+        label: "Rules",
+        component: (
+          <ConfigSection>
+            <RulesSection />
+          </ConfigSection>
+        ),
+        icon: <PencilIcon className="h-3 w-3 shrink-0 xs:h-4 xs:w-4" />,
+      },
     ],
   },
   {
@@ -125,22 +124,6 @@ export const topTabSections: TabSection[] = [
       },
     ],
   },
-  {
-    id: "indexing",
-    showTopDivider: true,
-    tabs: [
-      {
-        id: "indexing",
-        label: "Indexing",
-        component: (
-          <ConfigSection>
-            <IndexingSettingsSection />
-          </ConfigSection>
-        ),
-        icon: <CircleStackIcon className="h-3 w-3 shrink-0 xs:h-4 xs:w-4" />,
-      },
-    ],
-  },
 ];
 
 export const bottomTabSections: TabSection[] = [
@@ -148,8 +131,8 @@ export const bottomTabSections: TabSection[] = [
     id: "bottom",
     tabs: [
       {
-        id: "settings",
-        label: "Settings",
+        id: "general",
+        label: "General",
         component: (
           <ConfigSection>
             <UserSettingsSection />

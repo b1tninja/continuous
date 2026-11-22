@@ -1,13 +1,12 @@
 // Valid config tab names
 export type ConfigTab =
   | "models"
-  | "providers"
-  | "rules"
+  | "mcp"
   | "tools"
   | "permissions"
+  | "rules"
   | "configs"
-  | "indexing"
-  | "settings"
+  | "general"
   | "help";
 
 // TODO: Move all the routes here
@@ -28,13 +27,16 @@ export const buildConfigRoute = (tab?: ConfigTab): string => {
 // Typed config route builders for common tabs
 export const CONFIG_ROUTES = {
   MODELS: buildConfigRoute("models"),
-  PROVIDERS: buildConfigRoute("providers"),
+  MCP: buildConfigRoute("mcp"),
+  // The Providers tab merged into Models; its connections are a block there
+  PROVIDERS: `${buildConfigRoute("models")}&section=connections`,
   RULES: buildConfigRoute("rules"),
   TOOLS: buildConfigRoute("tools"),
   PERMISSIONS: buildConfigRoute("permissions"),
   CONFIGS: buildConfigRoute("configs"),
-  INDEXING: buildConfigRoute("indexing"),
-  SETTINGS: buildConfigRoute("settings"),
+  GENERAL: buildConfigRoute("general"),
+  // The Indexing tab is a folded group on General
+  INDEXING: `${buildConfigRoute("general")}&section=index`,
   HELP: buildConfigRoute("help"),
 } as const;
 

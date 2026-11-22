@@ -1,21 +1,27 @@
 import { ModelRole } from "@continuedev/config-yaml";
 import { ModelDescription } from "core";
-import { useContext, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState } from "react";
 import Shortcut from "../../../components/gui/Shortcut";
 import { useProviderSetupDialog } from "../../../components/ProviderSetup/useProviderSetupDialog";
 import { useModelConfigDialog } from "../../../components/ModelConfig/useModelConfigDialog";
-import { Button, Card, Divider, Toggle } from "../../../components/ui";
+import { Card, Divider, Fold, useSectionLink } from "../../../components/ui";
 import { useAuth } from "../../../context/Auth";
-import { IdeMessengerContext } from "../../../context/IdeMessenger";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks";
 import { updateSelectedModelByRole } from "../../../redux/thunks/updateSelectedModelByRole";
-import { getMetaKeyLabel, isJetBrains } from "../../../util";
-import { CONFIG_ROUTES } from "../../../util/navigation";
+import { isJetBrains } from "../../../util";
 import { ConfigHeader } from "../components/ConfigHeader";
 import { ModelRoleRow } from "../components/ModelRoleRow";
 import { AssignModelsCard } from "../components/AssignModelsCard";
 import { ModeModelsTable } from "../components/ModeModelsTable";
+import { ProviderInstancesCard } from "../components/ProviderInstancesCard";
+import { ProvidersCard } from "../components/ProvidersCard";
+import {
+  accountsSummary,
+  modeModelsSummary,
+  modelInformationSummary,
+  rolesSummary,
+  type ModelInformationStatus,
+} from "../modelsSummaries";
 import { ModelInformationControl } from "./ModelInformationControl";
 
 const MODEL_DOCS_URLS = {
@@ -39,16 +45,23 @@ const MODEL_DOCS_URLS = {
   },
 } as const;
 
+/**
+ * Settings > Models: the models in use and the provider connections they come
+ * from, then four folded groups (per-mode models, the other roles, the named
+ * accounts, model information), each with its state in one line. The
+ * connections and accounts were the Providers tab; `?tab=providers` lands on
+ * Connections here.
+ */
 export function ModelsSection() {
   const { selectedProfile } = useAuth();
   const dispatch = useAppDispatch();
-  const ideMessenger = useContext(IdeMessengerContext);
-  const navigate = useNavigate();
 
   const config = useAppSelector((state) => state.config.config);
   const jetbrains = isJetBrains();
-  const metaKey = getMetaKeyLabel();
-  const [showAdditionalRoles, setShowAdditionalRoles] = useState(false);
+  // The folds whose state is read by the control inside them
+  const [accounts, setAccounts] = useState<string[]>();
+  const [modelInfo, setModelInfo] = useState<ModelInformationStatus>();
+  const connectionsRef = useSectionLink<HTMLDivElement>("connections");
 
   function handleRoleUpdate(role: ModelRole, model: ModelDescription | null) {
     if (!model) {
@@ -80,6 +93,7 @@ export function ModelsSection() {
         addButtonTooltip="Manage models"
       />
 
+      <h3 className="my-0 text-sm font-semibold">In use</h3>
       <Card>
         <ModelRoleRow
           role="chat"
@@ -172,95 +186,111 @@ export function ModelsSection() {
         )}
       </Card>
 
-      <Card>
-        <div className="flex items-center justify-between gap-2 px-3 py-2">
-          <div className="text-xs text-description-muted">
-            Provider connections, keys and accounts are on their own page.
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="my-0 shrink-0"
-            onClick={() => navigate(CONFIG_ROUTES.PROVIDERS)}
-            data-testid="open-providers"
-          >
-            Providers…
-          </Button>
-        </div>
-      </Card>
+      <div ref={connectionsRef} data-testid="models-connections">
+        <ProvidersCard />
+      </div>
 
-      {!jetbrains && <ModeModelsTable />}
-
-      <AssignModelsCard />
-
-      <Card>
-        <Toggle
-          isOpen={showAdditionalRoles}
-          onToggle={() => setShowAdditionalRoles(!showAdditionalRoles)}
-          title="Additional model roles"
-          subtitle="Apply, Embed, Rerank, Reviewer"
+      {!jetbrains && (
+        <Fold
+          id="modes"
+          title="Models per mode"
+          summary={modeModelsSummary(config)}
         >
-          <div className="flex flex-col">
-            <ModelRoleRow
-              role="apply"
-              displayName="Apply"
-              description="Used to apply generated codeblocks to files"
-              models={config.modelsByRole.apply}
-              selectedModel={config.selectedModelByRole.apply ?? undefined}
-              onSelect={(model) => handleRoleUpdate("apply", model)}
-              onConfigure={handleConfigureModel}
-              setupURL="https://b1tninja.github.io/continuous/customize/model-roles/apply"
-            />
+          <ModeModelsTable />
+          {config.modelsByRole.chat.length === 0 && (
+            <p className="my-0 text-xs text-description">
+              Add a chat model first: a mode offers the chat models of the
+              selected config.
+            </p>
+          )}
+        </Fold>
+      )}
 
-            <Divider />
+      <Fold id="roles" title="Roles" summary={rolesSummary(config)}>
+        <div className="space-y-4">
+          <AssignModelsCard />
 
-            <ModelRoleRow
-              role="embed"
-              displayName="Embed"
-              description="Used to generate and query embeddings for the @codebase and @docs context providers"
-              models={config.modelsByRole.embed}
-              selectedModel={config.selectedModelByRole.embed ?? undefined}
-              onSelect={(model) => handleRoleUpdate("embed", model)}
-              onConfigure={handleConfigureModel}
-              setupURL="https://b1tninja.github.io/continuous/customize/model-roles/embeddings"
-            />
+          <Card>
+            <div className="mb-2">
+              <div className="text-sm font-semibold">
+                Additional model roles
+              </div>
+              <p className="my-1 text-xs text-description">
+                Apply, Embed, Rerank, Reviewer
+              </p>
+            </div>
+            <div className="flex flex-col">
+              <ModelRoleRow
+                role="apply"
+                displayName="Apply"
+                description="Used to apply generated codeblocks to files"
+                models={config.modelsByRole.apply}
+                selectedModel={config.selectedModelByRole.apply ?? undefined}
+                onSelect={(model) => handleRoleUpdate("apply", model)}
+                onConfigure={handleConfigureModel}
+                setupURL="https://b1tninja.github.io/continuous/customize/model-roles/apply"
+              />
 
-            <Divider />
+              <Divider />
 
-            <ModelRoleRow
-              role="rerank"
-              displayName="Rerank"
-              description="Used for reranking results from the @codebase and @docs context providers"
-              models={config.modelsByRole.rerank}
-              selectedModel={config.selectedModelByRole.rerank ?? undefined}
-              onSelect={(model) => handleRoleUpdate("rerank", model)}
-              onConfigure={handleConfigureModel}
-              setupURL="https://b1tninja.github.io/continuous/customize/model-roles/reranking"
-            />
+              <ModelRoleRow
+                role="embed"
+                displayName="Embed"
+                description="Used to generate and query embeddings for the @codebase and @docs context providers"
+                models={config.modelsByRole.embed}
+                selectedModel={config.selectedModelByRole.embed ?? undefined}
+                onSelect={(model) => handleRoleUpdate("embed", model)}
+                onConfigure={handleConfigureModel}
+                setupURL="https://b1tninja.github.io/continuous/customize/model-roles/embeddings"
+              />
 
-            {config.experimental?.enableAutoApproval && (
-              <>
-                <Divider />
+              <Divider />
 
-                <ModelRoleRow
-                  role="reviewer"
-                  displayName="Reviewer (experimental)"
-                  description="Reviews tool calls in Auto approval mode. Your messages and the tool calls are sent to this model's provider. Add roles: [reviewer] to a model in config.yaml to list it here."
-                  models={config.modelsByRole.reviewer}
-                  selectedModel={
-                    config.selectedModelByRole.reviewer ?? undefined
-                  }
-                  onSelect={(model) => handleRoleUpdate("reviewer", model)}
-                  onConfigure={handleConfigureModel}
-                  setupURL="https://b1tninja.github.io/continuous/customize/model-roles/reviewer"
-                />
-              </>
-            )}
-          </div>
-        </Toggle>
-      </Card>
+              <ModelRoleRow
+                role="rerank"
+                displayName="Rerank"
+                description="Used for reranking results from the @codebase and @docs context providers"
+                models={config.modelsByRole.rerank}
+                selectedModel={config.selectedModelByRole.rerank ?? undefined}
+                onSelect={(model) => handleRoleUpdate("rerank", model)}
+                onConfigure={handleConfigureModel}
+                setupURL="https://b1tninja.github.io/continuous/customize/model-roles/reranking"
+              />
 
-      <ModelInformationControl />
+              {config.experimental?.enableAutoApproval && (
+                <>
+                  <Divider />
+
+                  <ModelRoleRow
+                    role="reviewer"
+                    displayName="Reviewer (experimental)"
+                    description="Reviews tool calls in Auto approval mode. Your messages and the tool calls are sent to this model's provider. Add roles: [reviewer] to a model in config.yaml to list it here."
+                    models={config.modelsByRole.reviewer}
+                    selectedModel={
+                      config.selectedModelByRole.reviewer ?? undefined
+                    }
+                    onSelect={(model) => handleRoleUpdate("reviewer", model)}
+                    onConfigure={handleConfigureModel}
+                    setupURL="https://b1tninja.github.io/continuous/customize/model-roles/reviewer"
+                  />
+                </>
+              )}
+            </div>
+          </Card>
+        </div>
+      </Fold>
+
+      <Fold id="accounts" title="Accounts" summary={accountsSummary(accounts)}>
+        <ProviderInstancesCard onAccounts={setAccounts} />
+      </Fold>
+
+      <Fold
+        id="model-information"
+        title="Model information"
+        summary={modelInformationSummary(modelInfo)}
+      >
+        <ModelInformationControl onStatus={setModelInfo} />
+      </Fold>
     </div>
   );
 }

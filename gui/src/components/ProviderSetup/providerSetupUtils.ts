@@ -1,11 +1,19 @@
+import { fieldFor, notSetText } from "core/config/modelEdit/modelEditFields";
 import type {
   KeyStorage,
   ProviderConnectionKey,
   ProviderSetupConnection,
   ProviderSetupModel,
   SaveProviderModelsRequest,
+  SetupRequestOptions,
+  SetupSelectRole,
 } from "core/config/providerSetup";
-import { catalogPriceNote } from "core/llm/utils/catalogPricing";
+import { isRecommendedForAutocomplete } from "core/llm/completionModels";
+import {
+  connectionFailureKind,
+  describeLocalServerFailure,
+} from "core/llm/localServerError";
+import { connectionTestDefaultBase } from "core/util/anthropicSurfaceTest";
 import { contextLengthOverride } from "../ModelConfig/ContextLengthControl";
 import { buildModelFromForm, FormValues } from "../../forms/addModelFormUtils";
 import type { ModelLists } from "../../forms/modelListUtils";
@@ -13,7 +21,20 @@ import type { ModelPackage } from "../../pages/AddNewModel/configs/models";
 import type { ProviderInfo } from "../../pages/AddNewModel/configs/providers";
 import { fuzzyScore } from "../modelSelection/ModelSelectionListbox";
 
-export type SetupStep = "credentials" | "models" | "review";
+/**
+ * "start" asks what the person has; then the one path every answer takes:
+ * the connection, the models, what to use them for, and the review.
+ */
+export type SetupStep =
+  "start" | "credentials" | "models" | "useFor" | "review";
+
+/** The steps that are counted ("Step 2 of 4"); the start screen is before them. */
+export const NUMBERED_STEPS: SetupStep[] = [
+  "credentials",
+  "models",
+  "useFor",
+  "review",
+];
 
 /** How many curated "popular" models start checked for a new provider. */
 export const DEFAULT_CHECKED_COUNT = 3;
@@ -33,8 +54,6 @@ export interface ChecklistRow {
   needsAnthropicUseCase?: boolean;
   /** Bedrock: why the account cannot use the model yet (needs access, pending, legacy). */
   accessNote?: string;
-  /** OpenRouter: the downloaded list's price for the model, with its date. */
-  priceNote?: string;
 }
 
 export interface ChecklistGroups {
@@ -54,9 +73,6 @@ function rowOf(pkg: ModelPackage, configured: Set<string>): ChecklistRow {
     deprecated: pkg.deprecated,
     needsAnthropicUseCase: pkg.needsAnthropicUseCase,
     accessNote: pkg.accessNote,
-    ...(pkg.providerOptions?.includes("openrouter")
-      ? { priceNote: catalogPriceNote(pkg.params.model) }
-      : {}),
   };
 }
 
@@ -284,6 +300,15 @@ export interface BuildRequestArgs {
   account?: { name?: string };
   /** Typed context-length overrides from the model step. Empty keeps the published window. */
   windows?: Record<string, string>;
+  /**
+   * The address typed under "More", for a provider whose form has no address
+   * field of its own. Empty means the provider's own address, and no key.
+   */
+  apiBase?: string;
+  /** The roles ticked in "Use for". Undefined when no model is added. */
+  useFor?: ReadonlySet<SetupSelectRole>;
+  /** What was set under "More"; unset fields are not in it. */
+  requestOptions?: SetupRequestOptions;
 }
 
 /**
@@ -299,7 +324,13 @@ export function buildSaveRequest({
   useLiveTitles,
   account,
   windows,
+  apiBase,
+  useFor,
+  requestOptions,
 }: BuildRequestArgs): SaveProviderModelsRequest {
+  const moreBase = apiBase?.trim();
+  const withBase = <T extends Record<string, any>>(model: T): T =>
+    moreBase && !model.apiBase ? { ...model, apiBase: moreBase } : model;
   const contextWindows = Object.entries(windows ?? {}).flatMap(
     ([model, raw]) => {
       const contextLength = contextLengthOverride(raw);
@@ -313,11 +344,13 @@ export function buildSaveRequest({
     .filter((row) => row.pkg)
     .map((row) => {
       const pkg = row.pkg!;
-      const model = buildModelFromForm(
-        provider,
-        pkg,
-        { ...values, apiKey: undefined },
-        { title: useLiveTitles ? pkg.params.title : undefined },
+      const model = withBase(
+        buildModelFromForm(
+          provider,
+          pkg,
+          { ...values, apiKey: undefined },
+          { title: useLiveTitles ? pkg.params.title : undefined },
+        ),
       );
       delete model.apiKey;
       const override = byModel.get(pkg.params.model);
@@ -327,11 +360,13 @@ export function buildSaveRequest({
 
   const connection = connectionFromModel(
     add[0] ??
-      buildModelFromForm(
-        provider,
-        provider.packages[0],
-        { ...values, apiKey: undefined },
-        {},
+      withBase(
+        buildModelFromForm(
+          provider,
+          provider.packages[0],
+          { ...values, apiKey: undefined },
+          {},
+        ),
       ),
   );
 
@@ -346,6 +381,15 @@ export function buildSaveRequest({
   }
   if (account) request.account = account;
   if (contextWindows.length > 0) request.contextWindows = contextWindows;
+  if (useFor && add.length > 0) {
+    const roles = rolesToWrite(useFor);
+    if (roles) request.roles = roles;
+    const selectFor = USE_FOR.map((u) => u.role).filter((r) => useFor.has(r));
+    if (selectFor.length > 0) request.selectFor = selectFor;
+  }
+  if (requestOptions && Object.keys(requestOptions).length > 0) {
+    request.requestOptions = requestOptions;
+  }
   if (key) {
     request.key = {
       storage: key.storage,
@@ -378,4 +422,182 @@ export function describeKeyPlan(
     case "inline":
       return `The ${providerTitle} key is written into config.yaml.`;
   }
+}
+
+/** The roles "Use for" offers, in the order shown, each with what it does. */
+export const USE_FOR: { role: SetupSelectRole; label: string; what: string }[] =
+  [
+    { role: "chat", label: "Chat", what: "answers in Chat, Plan and Agent" },
+    { role: "edit", label: "Edit", what: "rewrites the code you select" },
+    {
+      role: "apply",
+      label: "Apply",
+      what: "writes a suggested change into the file",
+    },
+    {
+      role: "autocomplete",
+      label: "Autocomplete",
+      what: "completes code as you type",
+    },
+  ];
+
+const BASE_USE_FOR: SetupSelectRole[] = ["chat", "edit", "apply"];
+
+/**
+ * What is ticked before the person changes anything: Chat, Edit and Apply,
+ * and Autocomplete only when the catalogue recommends every model being
+ * added for it (isRecommendedForAutocomplete; a chat model is not).
+ */
+export function defaultUseFor(
+  provider: string,
+  models: string[],
+): Set<SetupSelectRole> {
+  const completion =
+    models.length > 0 &&
+    models.every((m) => isRecommendedForAutocomplete(m, provider));
+  return new Set(completion ? [...BASE_USE_FOR, "autocomplete"] : BASE_USE_FOR);
+}
+
+/** The first model the catalogue does not recommend for autocomplete, if any. */
+export function notACompletionModel(
+  provider: string,
+  models: { model: string; title: string }[],
+): string | undefined {
+  return models.find((m) => !isRecommendedForAutocomplete(m.model, provider))
+    ?.title;
+}
+
+/**
+ * The `roles` to write for the ticks, or undefined when they are Chat, Edit
+ * and Apply: a model with no `roles` key has those (and summarize), so
+ * nothing is written. Any other choice is written out, and keeps summarize
+ * with Chat, as an entry without the key would have it.
+ */
+export function rolesToWrite(
+  useFor: ReadonlySet<SetupSelectRole>,
+): string[] | undefined {
+  const isBase =
+    useFor.size === BASE_USE_FOR.length &&
+    BASE_USE_FOR.every((r) => useFor.has(r));
+  if (isBase) return undefined;
+  const roles: string[] = USE_FOR.map((u) => u.role).filter((r) =>
+    useFor.has(r),
+  );
+  return useFor.has("chat") ? [...roles, "summarize"] : roles;
+}
+
+/** One line of "Use for": what the role uses now and what it will use. */
+export function useForLine(
+  ticked: boolean,
+  current: string | undefined,
+  next: string,
+): string {
+  if (!ticked) {
+    return current ? `stays ${current}` : "nothing chosen, and stays so";
+  }
+  if (!current) return `nothing chosen yet → will be ${next}`;
+  if (current === next) return `stays ${current}`;
+  return `currently ${current} → will be ${next}`;
+}
+
+/** The fields of the "More" fold that become `requestOptions`, as typed. */
+export interface MoreOptionsForm {
+  timeout: string;
+  connectTimeout: string;
+  proxy: string;
+  verifySsl: "" | "on" | "off";
+  useSystemCa: "" | "on" | "off";
+  /** One path per line. */
+  caBundlePath: string;
+}
+
+export const EMPTY_MORE_OPTIONS: MoreOptionsForm = {
+  timeout: "",
+  connectTimeout: "",
+  proxy: "",
+  verifySsl: "",
+  useSystemCa: "",
+  caBundlePath: "",
+};
+
+// The words after "Not set: " for a request option, from the field table.
+// These fields' words do not depend on the model, so no model is named.
+const notSetOf = (key: string): string | undefined => {
+  const field = fieldFor(["requestOptions", key]);
+  return field ? notSetText(field, { provider: "", model: "" }) : undefined;
+};
+
+/**
+ * What applies when a "More" field is not set, from the same table the
+ * Configure dialog reads (core/config/modelEdit/modelEditFields.ts), whose
+ * values are the code's own: 7,200 s is `TIMEOUT` in
+ * packages/fetch/src/getAgentOptions.ts and 10 s is
+ * `DEFAULT_CONNECT_TIMEOUT_SECONDS` in packages/fetch/src/connectTimeout.ts.
+ */
+export const MORE_NOT_SET = {
+  timeout: notSetOf("timeout") ?? "7,200 s",
+  connectTimeout: notSetOf("connectTimeout") ?? "10 s",
+  proxy: notSetOf("proxy") ?? "no proxy",
+  verifySsl: notSetOf("verifySsl") ?? "on",
+  useSystemCa: notSetOf("useSystemCa") ?? "on",
+  // No file is read unless one is named (CertsCache.getCa in packages/fetch)
+  caBundlePath: "none",
+} as const;
+
+/** The address requests go to when no API base is set, where the code knows it. */
+export function notSetApiBase(provider: string): string {
+  return (
+    connectionTestDefaultBase(provider) ??
+    "the provider's own address, built into Continuous"
+  );
+}
+
+/** Why a typed timeout cannot be used, or undefined. */
+export function timeoutProblem(text: string): string | undefined {
+  if (text.trim() === "") return undefined;
+  const n = Number(text);
+  return Number.isFinite(n) && n > 0
+    ? undefined
+    : "Enter a number of seconds above 0";
+}
+
+/** The request options that were set; a field left alone is not in it. */
+export function requestOptionsFromForm(
+  form: MoreOptionsForm,
+): SetupRequestOptions {
+  const out: SetupRequestOptions = {};
+  for (const key of ["timeout", "connectTimeout"] as const) {
+    if (form[key].trim() !== "" && !timeoutProblem(form[key])) {
+      out[key] = Number(form[key]);
+    }
+  }
+  if (form.proxy.trim() !== "") out.proxy = form.proxy.trim();
+  if (form.verifySsl !== "") out.verifySsl = form.verifySsl === "on";
+  if (form.useSystemCa !== "") out.useSystemCa = form.useSystemCa === "on";
+  const paths = form.caBundlePath
+    .split(/\r?\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (paths.length > 0) out.caBundlePath = paths;
+  return out;
+}
+
+/**
+ * A failed test in the words the local-server helper uses
+ * (core/llm/localServerError.ts), when the address is on this computer or
+ * this network and no answer came at all. Anything else is kept as it is: a
+ * rejected key or a 404 already says what happened.
+ */
+export function plainConnectionFailure(
+  target: { provider: string; apiBase?: string },
+  error: string,
+): string {
+  // The tester writes "Could not reach <url>: <reason>."
+  const reason = /^Could not reach \S+: (.*)\.$/.exec(error)?.[1];
+  if (reason === undefined) return error;
+  const kind =
+    reason === "timed out"
+      ? "timed-out"
+      : (connectionFailureKind(new Error(reason)) ?? "failed");
+  return describeLocalServerFailure(target, kind) ?? error;
 }

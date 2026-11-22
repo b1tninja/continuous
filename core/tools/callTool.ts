@@ -2,6 +2,7 @@ import type { RepairNote } from "@continuedev/openai-adapters";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { ContextItem, McpUiState, Tool, ToolCall, ToolExtras } from "..";
 import { MCPManagerSingleton } from "../context/mcp/MCPManagerSingleton";
+import { mcpToolCallTimeout } from "../context/mcp/mcpTimeouts";
 import { ContinueError, ContinueErrorReason } from "../util/errors";
 import { canParseUrl } from "../util/url";
 import { BuiltInToolNames } from "./builtIn";
@@ -123,7 +124,7 @@ async function callToolFromUri(
           arguments: coercedArgs,
         },
         CallToolResultSchema,
-        { timeout: client.options.timeout },
+        { timeout: mcpToolCallTimeout(client.options) },
       );
 
       // It ran, so it was approved: pin its definition (mcpToolPins.ts)

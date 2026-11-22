@@ -89,6 +89,15 @@ export interface McpProbeResult {
   needsSignIn: boolean;
   /** One line for the success screen. */
   notice: string;
+  /** What the server calls itself. Its own words: untrusted text. */
+  server?: { name: string; version: string };
+  /**
+   * Set when the command was not found: the folders of the PATH it was
+   * looked for in, as the server process was given it.
+   */
+  pathSearched?: string[];
+  /** The time limit this test ran with. */
+  timeoutMs: number;
 }
 
 /** The connection a real run would make, with pin evaluation left out. */
@@ -97,6 +106,19 @@ class ProbeConnection extends MCPConnection {
   // saved yet and the person has not approved a call. Pin at Add is MCPW16, after TR4 (#901).
   override async refreshPins(): Promise<void> {}
   override async recordToolUse(): Promise<void> {}
+
+  serverInfo(): { name: string; version: string } | undefined {
+    const info = this.client.getServerVersion?.() as
+      { name?: unknown; version?: unknown } | undefined;
+    if (!info || typeof info.name !== "string") return undefined;
+    return {
+      name: normalizeUntrustedText(info.name, 128).text,
+      version: normalizeUntrustedText(
+        typeof info.version === "string" ? info.version : "",
+        64,
+      ).text,
+    };
+  }
 }
 
 export function draftToOptions(
@@ -126,6 +148,11 @@ export function draftToOptions(
     url: draft.url ?? "",
     ...(Object.keys(headers).length ? { requestOptions: { headers } } : {}),
   };
+  // No type: MCPConnection tries Streamable HTTP and then SSE, as it does
+  // for a saved entry without one
+  if (draft.autoTransport) {
+    return remote satisfies InternalStreamableHttpMcpOptions;
+  }
   return draft.transport === "sse"
     ? ({ ...remote, type: "sse" } satisfies InternalSseMcpOptions)
     : ({
@@ -185,6 +212,8 @@ export async function probeMcpServer(
   // (#738); the probe masks again with the draft's own values and keeps the
   // last lines.
   const stderrRaw = conn.getCapturedStderr();
+  const server = status.status === "connected" ? conn.serverInfo() : undefined;
+  const pathUsed = conn.getStdioPath();
   try {
     await conn.disconnect();
   } catch {
@@ -286,6 +315,23 @@ export async function probeMcpServer(
     hints,
     needsSignIn,
     notice: "Results from this server are treated as untrusted text.",
+    timeoutMs,
+    ...(server ? { server } : {}),
+    ...(pathUsed !== undefined &&
+    hints.some((h) =>
+      [
+        "command-not-found",
+        "install-node",
+        "install-uv",
+        "install-docker",
+      ].includes(h.code),
+    )
+      ? {
+          pathSearched: pathUsed
+            .split(platform === "win32" ? ";" : ":")
+            .filter(Boolean),
+        }
+      : {}),
   };
 }
 

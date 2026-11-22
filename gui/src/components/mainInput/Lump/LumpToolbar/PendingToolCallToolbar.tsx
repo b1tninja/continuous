@@ -1,6 +1,6 @@
 import { BuiltInToolNames } from "core/tools/builtIn";
-import { countdownLabel } from "core/tools/permissions/decisionTimer";
-import { useRef } from "react";
+import { proposalLine } from "core/tools/permissions/decisionTimer";
+import { useLayoutEffect, useRef } from "react";
 
 import { useAppDispatch, useAppSelector } from "../../../../redux/hooks";
 import { selectPendingToolCalls } from "../../../../redux/selectors/selectToolCalls";
@@ -31,6 +31,14 @@ const itemNoun = (t: { toolCall: { function: { name: string } } }) =>
 
 const actionId = (toolCallId: string) => `pending-action-${toolCallId}`;
 
+/**
+ * A heads-up is counting down on the call: it runs when the window ends, so
+ * the buttons say "Run now" and "Don't run", not Accept and Reject.
+ */
+const runsByItself = (t: {
+  askTimer?: { proposed: "allow" | "refuse"; kept?: boolean };
+}) => !!t.askTimer && !t.askTimer.kept && t.askTimer.proposed === "allow";
+
 export function PendingToolCallToolbar() {
   const dispatch = useAppDispatch();
   const metaKey = getMetaKeyLabel() === "⌘" ? "Meta" : "Control";
@@ -52,6 +60,29 @@ export function PendingToolCallToolbar() {
     pendingToolCalls.length > 0,
     () => editor.mainEditor?.commands.focus(),
   );
+
+  // In a short panel the first call can be taller than the list, and its
+  // buttons stay in sight (below). Then show what is being approved above
+  // them: the end of the call, or from the start of its command when that
+  // would be cut. Once per call, so the person's own scrolling is left alone.
+  const listRef = useRef<HTMLDivElement>(null);
+  const firstId = pendingToolCalls[0]?.toolCallId;
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const call = list?.firstElementChild;
+    if (!list || !call) return;
+    const over = call.getBoundingClientRect().height - list.clientHeight;
+    if (over <= 0) return;
+    // The text itself, not its label: under a pinned reason a line may be
+    // all there is room for
+    const what =
+      call.querySelector('[data-testid^="pending-action-block-"]') ??
+      call.querySelector('[data-testid^="pending-action-what-"]');
+    const start = what
+      ? what.getBoundingClientRect().top - call.getBoundingClientRect().top
+      : 0;
+    list.scrollTop = Math.min(over, start);
+  }, [firstId]);
 
   if (pendingToolCalls.length === 0) {
     return null;
@@ -101,7 +132,15 @@ export function PendingToolCallToolbar() {
           </Button>
         )}
       </div>
-      <div className="flex max-h-[50vh] flex-col overflow-y-auto">
+      {/* In a short panel the list takes what the chat (100 px), the prompt
+          with its rows (153 px at 300 wide) and the lines above (35 px)
+          leave, and never under 96 px, a call with a one-line command. A
+          sum, not a measurement: with more above the prompt the chat gets
+          less. */}
+      <div
+        ref={listRef}
+        className="flex max-h-[min(50vh,max(96px,calc(100vh_-_288px)))] flex-col overflow-y-auto"
+      >
         {pendingToolCalls.map((toolCall, index) => (
           <div
             key={toolCall.toolCallId}
@@ -115,20 +154,30 @@ export function PendingToolCallToolbar() {
               tool={toolCall.tool}
               note={toolCall.policyNote}
               rule={toolCall.policyRule}
+              pinNote={index === 0}
             />
 
-            <div className="ml-auto flex flex-wrap items-center justify-end gap-x-1">
+            {/* The first call's buttons stay in sight when the list is
+                shorter than the call: its text scrolls under them */}
+            <div
+              className={
+                index === 0
+                  ? "sticky bottom-0 ml-auto flex basis-full flex-wrap items-center justify-end gap-x-1 bg-input"
+                  : "ml-auto flex flex-wrap items-center justify-end gap-x-1"
+              }
+            >
               {toolCall.askTimer && !toolCall.askTimer.kept && (
                 <span
                   role="timer"
                   aria-live="off"
-                  className="text-2xs text-description"
+                  className={`text-2xs text-description ${
+                    // What the level ran past is a sentence: it gets its own line
+                    toolCall.askTimer.override ? "min-w-0 basis-full" : ""
+                  }`}
                   data-testid={`ask-timer-${toolCall.toolCallId}`}
                 >
-                  {toolCall.askTimer.proposed === "refuse"
-                    ? "Refused in "
-                    : "Runs in "}
-                  {countdownLabel(
+                  {proposalLine(
+                    toolCall.askTimer.proposed,
                     Math.ceil(
                       Math.max(
                         0,
@@ -137,8 +186,8 @@ export function PendingToolCallToolbar() {
                           now,
                       ) / 1000,
                     ),
-                  )}{" "}
-                  unless you answer
+                    toolCall.askTimer.override,
+                  )}
                 </span>
               )}
               {toolCall.askTimer && !toolCall.askTimer.kept && (
@@ -173,7 +222,11 @@ export function PendingToolCallToolbar() {
                 variant="ghost"
                 size="sm"
                 className="my-0.5 min-h-6 min-w-6 font-medium text-description"
-                title={`Reject this ${itemNoun(toolCall)}`}
+                title={
+                  runsByItself(toolCall)
+                    ? `Do not run this ${itemNoun(toolCall)}. The agent is told you declined it`
+                    : `Reject this ${itemNoun(toolCall)}`
+                }
                 aria-describedby={actionId(toolCall.toolCallId)}
                 onClick={() => handleReject(toolCall.toolCallId)}
                 data-testid={generateToolCallButtonTestId(
@@ -181,7 +234,7 @@ export function PendingToolCallToolbar() {
                   toolCall.toolCallId,
                 )}
               >
-                <span>Reject</span>
+                <span>{runsByItself(toolCall) ? "Don't run" : "Reject"}</span>
               </Button>
 
               <Button
@@ -190,7 +243,11 @@ export function PendingToolCallToolbar() {
                 size="sm"
                 className="my-0.5 min-h-6 min-w-6 font-medium"
                 aria-keyshortcuts={`${metaKey}+Enter`}
-                title={`Run this ${itemNoun(toolCall)} once`}
+                title={
+                  runsByItself(toolCall)
+                    ? `Run this ${itemNoun(toolCall)} now, without waiting for the countdown`
+                    : `Run this ${itemNoun(toolCall)} once`
+                }
                 aria-describedby={actionId(toolCall.toolCallId)}
                 onClick={() => handleAccept(toolCall.toolCallId)}
                 data-testid={generateToolCallButtonTestId(
@@ -203,7 +260,7 @@ export function PendingToolCallToolbar() {
                     {getMetaKeyLabel()}⏎
                   </span>
                 )}
-                <span>Accept</span>
+                <span>{runsByItself(toolCall) ? "Run now" : "Accept"}</span>
               </Button>
             </div>
           </div>

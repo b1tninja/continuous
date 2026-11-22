@@ -45,13 +45,21 @@ describe("ProviderSetupFlow: prices from the downloaded list", () => {
     );
     await user.type(await screen.findByLabelText(/API key/i), "test-key");
     await user.click(screen.getByRole("button", { name: "Next" }));
-    const priced = await screen.findByTestId("model-row-price-zz-test/priced");
-    expect(priced.textContent).toBe(
-      "$1 in / $2 out per MTok, prices as of 2026-11-01",
+    // The line under the name (a narrow panel) says it in full
+    const priced = await screen.findByTestId("model-row-facts-zz-test/priced");
+    expect(priced.textContent).toContain(
+      "Price: $1 in / $2 out per 1M tokens, prices as of 2026-11-01",
     );
     expect(
-      screen.getByTestId("model-row-price-zz-test/free:free").textContent,
-    ).toBe("free, prices as of 2026-11-01");
-    expect(screen.queryByTestId("model-row-price-zz-test/unpriced")).toBeNull();
+      screen.getByTestId("model-row-facts-zz-test/free:free").textContent,
+    ).toContain("Price: free, prices as of 2026-11-01");
+    // No figure is not a blank and not $0
+    expect(
+      screen.getByTestId("model-row-facts-zz-test/unpriced").textContent,
+    ).toContain("Price: no price known");
+    // The column (a wide panel) leaves the unit to its heading
+    expect(
+      screen.getByTestId("model-row-price-zz-test/priced").textContent,
+    ).toBe("Price in / out per 1M tokens: $1 / $2, prices as of 2026-11-01");
   });
 });

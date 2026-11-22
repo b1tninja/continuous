@@ -2,7 +2,7 @@
 title: "Command environment"
 ---
 
-Commands the agent runs do not inherit secrets from your environment by default. API keys, tokens, passwords, cloud credentials and agent sockets are removed before a command starts. This applies to terminal commands, loop checks, hook commands, background jobs, and the host variables passed to a stdio MCP server. You choose the policy in **Settings, Tools, Commands and secrets**: three options, each with what it does, a live list of the variable names (never values) your editor's environment has that the chosen option would remove or keep, and a box for variables to pass through. You can also edit `config.yaml` directly:
+Commands the agent runs do not inherit secrets from your environment by default. API keys, tokens, passwords, cloud credentials and agent sockets are removed before a command starts. This applies to terminal commands, loop checks, hook commands, background jobs, and the host variables passed to a stdio MCP server. You choose the policy in **Settings, Permissions, Protections, Commands and secrets**: three options, each with what it does, a live list of the variable names (never values) your editor's environment has that the chosen option would remove or keep, and a box for variables to pass through. You can also edit `config.yaml` directly:
 
 ```yaml title="config.yaml"
 terminal:

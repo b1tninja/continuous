@@ -17,7 +17,7 @@ import {
 } from "./config/modelEdit/modelBlockEdit";
 import {
   convertConnectionToAccount,
-  saveProviderModelsToAccount,
+  saveAccountSetup,
 } from "./config/providers/accountSetup";
 import {
   getGlobalModelsPath,
@@ -172,6 +172,7 @@ import {
 import {
   editConfigFile,
   getConfigYamlPath,
+  getGlobalFolderWithName,
   getContinueGlobalPath,
   migrateV1DevDataFiles,
 } from "./util/paths";
@@ -222,6 +223,7 @@ import {
   ContextItemId,
   ContextItemWithId,
   IdeSettings,
+  InternalMcpOptions,
   McpOauthSettings,
   ModelDescription,
   Position,
@@ -278,7 +280,7 @@ import {
   ProviderSetupError,
   readProviderConnections,
   removeProviderConnection,
-  saveProviderModels,
+  saveProviderModelsNamed,
   validateSaveRequest,
 } from "./config/providerSetup";
 import {
@@ -293,6 +295,7 @@ import {
   createNewWorkspaceBlockFile,
 } from "./config/workspace/workspaceBlocks";
 import { MCPManagerSingleton } from "./context/mcp/MCPManagerSingleton";
+import { getToolPinStore, pinKey } from "./context/mcp/mcpToolPins";
 import { performAuth, removeMCPAuth } from "./context/mcp/MCPOauth";
 import { oauthOptionsFromSettings } from "./context/mcp/mcpOauthSettings";
 import { myersDiff } from "./diff/myers";
@@ -1199,6 +1202,33 @@ export class Core {
         const dirs = await this.ide.getWorkspaceDirs();
         return dirs[0] ? localPathOrUriToPath(dirs[0]) : undefined;
       },
+      projectDirs: async () =>
+        (await this.ide.getWorkspaceDirs()).map(localPathOrUriToPath),
+      globalMcpDir: () => getGlobalFolderWithName("mcpServers"),
+      onLoosened: async ({ name, from, to }) => {
+        // Approvals kept from an earlier server of this name do not carry
+        // over: every tool waits for approval again
+        const pins = getToolPinStore() as {
+          delete?: (key: string) => Promise<boolean>;
+        };
+        await pins.delete?.(
+          pinKey({ name, configSource: "user" } as InternalMcpOptions),
+        );
+        recordSettingChanges(
+          getAuditTrail(),
+          [
+            {
+              kind: "mcp-trust",
+              op: "grant",
+              name,
+              from: `workspace file ${from}`,
+              to: `all projects, ${to}`,
+              loosens: true,
+            },
+          ],
+          { source: "gui-settings", confirmed: "prompt" },
+        );
+      },
       ide: this.ide,
       probeIde: this.ide,
       secretStorage: async () =>
@@ -1868,23 +1898,23 @@ export class Core {
               key: { storage: key.storage, secretName: key.secretName },
             }
           : req;
-      let saved: boolean;
+      let added: string[] | undefined;
       try {
         // A setup that names an account becomes an account, catalog models
         // and `from:` entries; one without keeps writing models inline
-        saved = toSave.account
-          ? saveProviderModelsToAccount({
+        added = toSave.account
+          ? saveAccountSetup({
               ...toSave,
               accountName: toSave.account.name,
-            }) !== undefined
-          : saveProviderModels(toSave);
+            })?.added
+          : saveProviderModelsNamed(toSave);
       } catch (e) {
         if (e instanceof ProviderSetupError) {
           return { saved: false, error: e.message };
         }
         throw e;
       }
-      if (!saved) {
+      if (!added) {
         void this.ide.showToast(
           "warning",
           "Models can only be saved to a local YAML config, and the selected config is not one.",
@@ -1893,6 +1923,15 @@ export class Core {
           saved: false,
           error: "The selected config is not a local YAML file",
         };
+      }
+      // "Use for": the first added model becomes the pick for the roles the
+      // person ticked. Set before the reload, which resolves picks by name.
+      const profileId =
+        this.configHandler.currentProfile?.profileDescription.id;
+      if (profileId && added[0]) {
+        for (const role of toSave.selectFor ?? []) {
+          this.globalContext.updateSelectedModel(profileId, role, added[0]);
+        }
       }
       await this.configHandler.reloadConfig(
         "Provider models changed (config/saveProviderModels message)",

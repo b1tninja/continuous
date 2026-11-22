@@ -25,6 +25,17 @@ MCP Servers can be added to your config using `mcpServers`.
 
 For ready-to-use configurations for popular MCP servers, see [Example MCP Servers](./mcp-examples.mdx).
 
+## Add a server in the editor
+
+Open **Settings > MCP servers** and press **+**. The dialog asks for a name, a command or a URL, and where to save the server. You can also paste a command line, a URL, or the JSON another tool uses into the box at the top, and it fills in the form. Nothing is saved before you press **Save**, and no command runs before you have seen it and pressed **Test** or **Save**.
+
+- **For all my projects** saves the server in your own `config.yaml`. It starts whatever folder is open.
+- **For this workspace only** saves it as `.continuous/mcpServers/<name>.yaml` in the open folder, so it can be committed. It starts only after you trust the folder, and its tools always ask first.
+
+A value you mark **Store as a secret** goes to your secret store, and the file gets `${{ secrets.NAME }}`. Each server's menu has **Edit…**, **Move to all my projects** or **Move to this workspace**, **Duplicate to…** and **Remove**. Moving a server out of a workspace loosens it (it then starts without the folder being trusted), so the editor asks first and its tools wait for your approval again.
+
+The rest of this page describes the files the dialog writes, for when you prefer to edit them yourself.
+
 ## Quick Start: How to Set Up Your First MCP Server
 
 A server file in the workspace is not started until you trust the folder (see [Workspace Trust](/customize/workspace-trust)). Once trusted, the command runs as you, in that folder, with no further approval, and changing the file asks again. Read the command, arguments and environment names before you trust a folder or commit a server file.
@@ -152,6 +163,18 @@ MCP components include a few additional properties specific to MCP servers.
 - `command`: The command to run to start the MCP server.
 - `args`: Arguments to pass to the command.
 - `env`: Secrets to be injected into the command as environment variables.
+- `cwd`: The folder the command starts in. Not set: the open workspace folder.
+- `connectionTimeout`: How long to wait for the server to connect, in milliseconds. Not set: 20000 (20 seconds).
+- `toolTimeout`: How long one tool call may take, in milliseconds. Not set: tool calls follow `connectionTimeout` when you set that one, and otherwise may take 60000 (60 seconds).
+
+```yaml title="A slow tool, a quick connection"
+mcpServers:
+  - name: Reports
+    command: uvx
+    args: ["reports-mcp"]
+    connectionTimeout: 20000
+    toolTimeout: 300000
+```
 
 ### How to Choose MCP Transport Types
 

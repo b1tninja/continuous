@@ -2,6 +2,7 @@ export { Button } from "./Button";
 export { Card } from "./Card";
 export { Divider } from "./Divider";
 export { EmptyState } from "./EmptyState";
+export { Fold, useSectionLink } from "./Fold";
 export { useFontSize } from "./font";
 export {
   Listbox,

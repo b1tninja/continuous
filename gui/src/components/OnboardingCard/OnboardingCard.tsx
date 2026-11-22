@@ -1,11 +1,7 @@
 import { OnboardingModes } from "core/protocol/core";
-import type { LocalOnboardingChoice } from "core";
-import { useEffect, useState } from "react";
 import { useAppSelector } from "../../redux/hooks";
 import { getLocalStorage, setLocalStorage } from "../../util/localStorage";
 import { ReusableCard } from "../ReusableCard";
-import { OnboardingCardTabs } from "./components/OnboardingCardTabs";
-import { OnboardingLocalTab } from "./components/OnboardingLocalTab";
 import { OnboardingProvidersTab } from "./components/OnboardingProvidersTab";
 import { useOnboardingCard } from "./hooks/useOnboardingCard";
 
@@ -18,39 +14,18 @@ interface OnboardingCardProps {
   isDialog?: boolean;
 }
 
+/**
+ * The first-run card. It holds the "Add a model" flow from its start screen
+ * ("What do you have?"), which took the place of the "API Key" and "Local"
+ * tabs: a key, a server on this computer and nothing yet are answers there.
+ */
 export function OnboardingCard({ isDialog }: OnboardingCardProps) {
-  const { activeTab, close, setActiveTab } = useOnboardingCard();
+  const { close } = useOnboardingCard();
   const config = useAppSelector((store) => store.config.config);
-  // Kept here so it survives a look at the other tab.
-  const [localChoice, setLocalChoice] = useState<LocalOnboardingChoice>();
 
   if (getLocalStorage("onboardingStatus") === undefined) {
     setLocalStorage("onboardingStatus", "Started");
   }
-
-  useEffect(() => {
-    if (!activeTab) {
-      setActiveTab(OnboardingModes.API_KEY);
-    }
-  }, [activeTab, setActiveTab]);
-
-  function renderTabContent() {
-    switch (activeTab) {
-      case OnboardingModes.API_KEY:
-        return <OnboardingProvidersTab />;
-      case OnboardingModes.LOCAL:
-        return (
-          <OnboardingLocalTab
-            choice={localChoice}
-            onChoiceChange={setLocalChoice}
-          />
-        );
-      default:
-        return <OnboardingProvidersTab />;
-    }
-  }
-
-  const currentTab = activeTab || OnboardingModes.API_KEY;
 
   return (
     <ReusableCard
@@ -58,8 +33,7 @@ export function OnboardingCard({ isDialog }: OnboardingCardProps) {
       onClose={close}
       testId="onboarding-card"
     >
-      <OnboardingCardTabs activeTab={currentTab} onTabClick={setActiveTab} />
-      {renderTabContent()}
+      <OnboardingProvidersTab isDialog={isDialog} />
     </ReusableCard>
   );
 }

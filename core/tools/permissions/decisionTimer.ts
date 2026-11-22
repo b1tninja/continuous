@@ -1,6 +1,12 @@
 import { refusalText } from "../refusalText";
 
-import { POLICY_LEVELS, type PolicyLevel } from "./levelText";
+import {
+  levelAsks,
+  levelRunsHeld,
+  POLICY_LEVELS,
+  wouldHaveSentence,
+  type PolicyLevel,
+} from "./levelText";
 
 /**
  * The decision timer. The policy evaluates as it always has and gives a
@@ -33,24 +39,37 @@ export type TimerSettings = Partial<Record<PolicyLevel, TimerSeconds>>;
  * you answer"). These are not the ask windows: setting a window for asks must
  * not start delaying every allowed call, so the two are separate settings.
  * None is longer than ALLOW_PROPOSAL_MAX_SECONDS.
+ *
+ * Every level has one, the top level too. IDGAF's is 0 unless set, and then
+ * it holds only the calls IDGAF ran past an ask or a refusal (propose).
  */
 export const HEADS_UP_SECONDS = [0, 5, 10] as const;
 
+/** The two window settings: for asks (`levels.timer`) and for a heads-up (`levels.headsUp`). */
+export type WindowSetting = "asks" | "headsUp";
+
+const WINDOWS: Readonly<Record<WindowSetting, readonly number[]>> = {
+  asks: TIMER_SECONDS,
+  headsUp: HEADS_UP_SECONDS,
+};
+
 /**
  * Settings from a file or a flag. A level that is not known, or a value that
- * is not one of the windows, is off, so a typo never starts a delay. IDGAF is
- * always off: nothing is checked there, so there is nothing to propose.
+ * is not one of the windows, is off, so a typo never starts a delay. An ask
+ * window is read only for a level that asks: the top level never does, so it
+ * has none. A heads-up window is read for every level.
  */
 export function parseTimerSettings(
   value: unknown,
-  windows: readonly number[] = TIMER_SECONDS,
+  which: WindowSetting = "asks",
 ): TimerSettings {
+  const windows = WINDOWS[which];
   const out: TimerSettings = {};
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return out;
   }
   for (const level of POLICY_LEVELS) {
-    if (level === "idgaf") continue;
+    if (which === "asks" && !levelAsks(level)) continue;
     const raw = (value as Record<string, unknown>)[level];
     const n = typeof raw === "string" ? Number(raw.trim()) : raw;
     if (windows.includes(n as number) && n !== 0) {
@@ -67,6 +86,50 @@ export interface PolicyFact {
   /** The protection that decided, if any */
   protection?: string;
   reason?: string;
+  /**
+   * The level ran the call past this: what a lower level would have decided
+   * (the engine's `idgafOverride`)
+   */
+  override?: LowerDecision;
+}
+
+/** What a lower level would have done with a call: asked or refused, and why. */
+export interface LowerDecision {
+  policy: "allowedWithPermission" | "disabled";
+  source?: string;
+  reason?: string;
+}
+
+/**
+ * The engine's decision as the timer reads it. A call the level ran past an
+ * ask or a refusal carries what it ran past.
+ */
+export function factOfDecision(d: {
+  policy: PolicyFact["policy"];
+  source?: string;
+  protection?: string;
+  reason?: string;
+  idgafOverride?: LowerDecision;
+}): PolicyFact {
+  return {
+    policy: d.policy,
+    ...(d.source ? { source: d.source } : {}),
+    ...(d.protection ? { protection: d.protection } : {}),
+    ...(d.reason ? { reason: d.reason } : {}),
+    ...(d.idgafOverride
+      ? {
+          override: {
+            policy: d.idgafOverride.policy,
+            ...(d.idgafOverride.source
+              ? { source: d.idgafOverride.source }
+              : {}),
+            ...(d.idgafOverride.reason
+              ? { reason: d.idgafOverride.reason }
+              : {}),
+          },
+        }
+      : {}),
+  };
 }
 
 /**
@@ -111,15 +174,19 @@ export interface TimerContext {
 
 /**
  * The proposal for a decision, or undefined when no timer applies: no window
- * at this level, nobody to see it, IDGAF, a refusal that is final, or an ask
- * that a rule or guard raised. An allow proposes to run, and an ask proposes
- * to refuse, which is what the policy does when nobody can answer.
+ * at this level, nobody to see it, a refusal that is final, or an ask that a
+ * rule or guard raised. An allow proposes to run, and an ask proposes to
+ * refuse, which is what the policy does when nobody can answer.
+ *
+ * At a level that runs what a lower level would hold (the top level), the
+ * heads-up is only for a call it ran past an ask or a refusal. A call that
+ * would have run lower down anyway is not delayed.
  */
 export function propose(
   fact: PolicyFact,
   ctx: TimerContext,
 ): Proposal | undefined {
-  if (!ctx.attended || ctx.level === "idgaf") return undefined;
+  if (!ctx.attended) return undefined;
   if (isFinalRefusal(fact)) return undefined;
   // An ask has the ask windows; an allowed call has its own, separate ones
   const seconds =
@@ -128,12 +195,14 @@ export function propose(
       : ctx.headsUp?.[ctx.level];
   if (!seconds) return undefined;
   if (fact.policy === "allowedWithPermission") {
+    if (!levelAsks(ctx.level)) return undefined;
     if (fact.protection !== undefined) return undefined;
     if (fact.source === undefined || !TIMED_ASK_SOURCES.has(fact.source)) {
       return undefined;
     }
     return { proposed: "refuse", decision: fact, seconds, startedAt: ctx.now };
   }
+  if (levelRunsHeld(ctx.level) && !fact.override) return undefined;
   return {
     proposed: "allow",
     decision: fact,
@@ -163,6 +232,21 @@ export function countdownLabel(seconds: number): string {
   if (s < 60) return `${s} s`;
   const m = Math.floor(s / 60);
   return `${m}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/**
+ * The line under a countdown: what happens when the window ends, and for a
+ * call the level ran past an ask or a refusal, what would otherwise have
+ * happened. "Runs in 5 s unless you answer. Below IDGAF this call would have
+ * been asked: Plan mode asks before anything that changes files or state."
+ */
+export function proposalLine(
+  proposed: Proposed,
+  secondsLeft: number,
+  override?: LowerDecision,
+): string {
+  const head = `${proposed === "refuse" ? "Refused in" : "Runs in"} ${countdownLabel(secondsLeft)} unless you answer`;
+  return override ? `${head}. ${wouldHaveSentence(override)}` : head;
 }
 
 /** How a proposal ended. The audit keeps these three apart. */

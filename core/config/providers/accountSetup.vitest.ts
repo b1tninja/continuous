@@ -234,3 +234,47 @@ describe("catalogEntryFor with reported reasoning efforts", () => {
     });
   });
 });
+
+describe("applyAccountSetup with what the setup's Use for and More steps chose", () => {
+  const empty = () => ({ providers: {}, models: {}, config: {} as any });
+  const request = {
+    provider: "openai",
+    connection: { apiBase: "http://127.0.0.1:8083/v1/" },
+    add: [strataModel],
+    accountName: "Strata",
+  };
+
+  it("writes no roles and no requestOptions when neither was set", () => {
+    const out = applyAccountSetup(empty(), request);
+    expect(out.config.models).toEqual([{ from: strataModel.title }]);
+    expect(out.providers.providers[0]).not.toHaveProperty("requestOptions");
+    expect(out.added).toEqual([strataModel.title]);
+  });
+
+  it("puts the chosen roles on the from: entry and the set request options on the account", () => {
+    const out = applyAccountSetup(empty(), {
+      ...request,
+      roles: ["chat", "autocomplete"],
+      requestOptions: { timeout: 600, proxy: "", caBundlePath: [] },
+    });
+    expect(out.config.models).toEqual([
+      { from: strataModel.title, roles: ["chat", "autocomplete"] },
+    ]);
+    expect(out.providers.providers[0].requestOptions).toEqual({ timeout: 600 });
+  });
+
+  it("keeps an account's other request options when one is set later", () => {
+    const first = applyAccountSetup(empty(), {
+      ...request,
+      requestOptions: { connectTimeout: 3 },
+    });
+    const second = applyAccountSetup(
+      { ...first, config: first.config },
+      { ...request, add: [], requestOptions: { verifySsl: false } },
+    );
+    expect(second.providers.providers[0].requestOptions).toEqual({
+      connectTimeout: 3,
+      verifySsl: false,
+    });
+  });
+});

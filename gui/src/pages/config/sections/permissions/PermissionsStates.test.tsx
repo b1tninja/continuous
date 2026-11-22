@@ -15,7 +15,12 @@ const report = listEffectiveRules({
   maxNewPlanItems: 3,
 });
 
-async function setup(handler: () => Promise<unknown>) {
+// The rules are read for the Rules view; the first-run card is on Levels,
+// where the page opens.
+async function setup(
+  handler: () => Promise<unknown>,
+  view: "rules" | "levels" = "rules",
+) {
   const ideMessenger = new MockIdeMessenger();
   ideMessenger.responseHandlers["policy/rules"] = handler as any;
   const post = vi.spyOn(ideMessenger, "post");
@@ -23,6 +28,9 @@ async function setup(handler: () => Promise<unknown>) {
   await renderWithProviders(<PermissionsSection />, {
     store,
     mockIdeMessenger: ideMessenger,
+    routerProps: {
+      initialEntries: [`/config?tab=permissions&view=${view}`],
+    } as never,
   });
   await act(async () => {});
   return { post, store };
@@ -94,7 +102,7 @@ describe("Permissions loading and error states", () => {
 
 describe("Permissions first-run overview", () => {
   it("shows once, names the five areas and the presets, and has a named 24 px button", async () => {
-    await setup(async () => report);
+    await setup(async () => report, "levels");
     const card = screen.getByTestId("permissions-intro");
     expect(card.textContent).toContain("Context use");
     expect(card.textContent).toContain("Questions");
@@ -111,7 +119,7 @@ describe("Permissions first-run overview", () => {
   });
 
   it("dismissing hides it and saves it in the user's own settings", async () => {
-    const { post, store } = await setup(async () => report);
+    const { post, store } = await setup(async () => report, "levels");
     fireEvent.click(screen.getByTestId("permissions-intro-dismiss"));
     expect(screen.queryByTestId("permissions-intro")).toBeNull();
     expect(post).toHaveBeenCalledWith("config/updateSharedConfig", {

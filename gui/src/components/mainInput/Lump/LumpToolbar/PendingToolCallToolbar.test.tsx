@@ -379,6 +379,48 @@ describe("PendingToolCallToolbar: why it is asking", () => {
     expect(screen.queryByTestId("hidden-characters-a")).toBeNull();
   });
 
+  // jsdom does not lay out: this pins which buttons stay in sight when a
+  // short panel makes the list shorter than its first call. The heights are
+  // measured by bench/screenshots.
+  it("keeps the first call's buttons at the bottom of the list, in the order given", async () => {
+    await setup([terminal("a"), call("b"), call("c")]);
+    const row = (id: string) =>
+      screen.getByTestId(`accept-tool-call-button-${id}`).parentElement!;
+    expect(row("a").className).toContain("sticky bottom-0");
+    expect(row("b").className).not.toContain("sticky");
+    expect(row("c").className).not.toContain("sticky");
+    const list = row("a").parentElement!.parentElement!;
+    expect(list.className).toContain("overflow-y-auto");
+    expect(
+      [...list.querySelectorAll("[data-testid^=accept-tool-call-button-]")].map(
+        (b) => b.getAttribute("data-testid"),
+      ),
+    ).toEqual([
+      "accept-tool-call-button-a",
+      "accept-tool-call-button-b",
+      "accept-tool-call-button-c",
+    ]);
+  });
+
+  it("marks what each call asks for, and keeps the first call's reason above its buttons", async () => {
+    await setup([
+      { ...terminal("a"), policyNote: "Asks first." },
+      call("b", { policyNote: "Asks first." }),
+    ]);
+    // A short list is scrolled to this: the command, or the fields of a call
+    // that has none
+    expect(screen.getByTestId("pending-action-what-a")).toContainElement(
+      screen.getByTestId("pending-action-block-a"),
+    );
+    expect(screen.getByTestId("pending-action-what-b").tagName).toBe("DL");
+    expect(screen.getByTestId("policy-note-a").className).toContain(
+      "sticky bottom-7",
+    );
+    expect(screen.getByTestId("policy-note-b").className).not.toContain(
+      "sticky",
+    );
+  });
+
   it("Accept all says how many calls it runs and asks to check each one", async () => {
     await setup([terminal("a"), call("b"), call("c")]);
     expect(screen.getByTestId("accept-all-tool-calls").title).toBe(

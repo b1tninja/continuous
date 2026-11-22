@@ -2,10 +2,9 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { OnboardingModes } from "core/protocol/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MockIdeMessenger } from "../../context/MockIdeMessenger";
-import { setOnboardingCard } from "../../redux/slices/uiSlice";
 import { setupStore } from "../../redux/store";
 import { renderWithProviders } from "../../util/test/render";
-import { OnboardingCard } from "./OnboardingCard";
+import { OnboardingLocalTab } from "./components/OnboardingLocalTab";
 
 function messengerWith(installed: string[] | undefined = ["llama3.1:8b"]) {
   const m = new MockIdeMessenger();
@@ -17,12 +16,11 @@ function messengerWith(installed: string[] | undefined = ["llama3.1:8b"]) {
   return { m, requested };
 }
 
+// The card no longer has a Local tab (its start screen asks what the person
+// has), so the tab is rendered by itself here.
 async function renderLocal(m: MockIdeMessenger) {
   const store = setupStore({ ideMessenger: m });
-  store.dispatch(
-    setOnboardingCard({ show: true, activeTab: OnboardingModes.LOCAL }),
-  );
-  const view = await renderWithProviders(<OnboardingCard />, {
+  const view = await renderWithProviders(<OnboardingLocalTab />, {
     mockIdeMessenger: m,
     store,
   });
@@ -238,31 +236,6 @@ describe("Onboarding Local tab: Configure model", () => {
       expect(document.activeElement).toBe(
         screen.getByRole("button", { name: "Configure model" }),
       ),
-    );
-  });
-
-  it("switches to the provider setup tab from the other-provider link", async () => {
-    const { m } = messengerWith();
-    const { user } = await renderLocal(m);
-    await user.click(screen.getByRole("button", { name: "Configure model" }));
-    await user.click(
-      screen.getByRole("button", {
-        name: "Choose another provider (cloud or API key)",
-      }),
-    );
-    expect(await screen.findByTestId("provider-setup-flow")).toBeTruthy();
-  });
-
-  it("remembers the choice when coming back to the tab", async () => {
-    const { m } = messengerWith();
-    const { user } = await renderLocal(m);
-    await user.click(screen.getByRole("button", { name: "Configure model" }));
-    await user.type(screen.getByTestId("local-chooser-chatModel"), "qwen3:8b");
-    await user.click(screen.getByRole("button", { name: "Save" }));
-    await user.click(screen.getByTestId("onboarding-tab-API Key"));
-    await user.click(screen.getByTestId("onboarding-tab-Local"));
-    expect(screen.getByTestId("local-choice-summary").textContent).toContain(
-      "qwen3:8b",
     );
   });
 });

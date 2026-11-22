@@ -12,6 +12,8 @@ import { userTextForReview } from "core/tools/permissions/auto/history";
 import type { ReviewHistory } from "core/tools/permissions/auto/prompt";
 import { isFlaggedOutput } from "core/tools/permissions/injection";
 import type { DecisionSource } from "core/tools/permissions/decide";
+import type { IdgafOverride } from "core/tools/permissions/evaluate";
+import { levelRunsHeld } from "core/tools/permissions/levelText";
 import { planModeVerdict } from "core/tools/permissions/planMode";
 import { refusalText } from "core/tools/refusalText";
 import { IIdeMessenger } from "../../context/IdeMessenger";
@@ -53,6 +55,8 @@ export interface EvaluatedPolicy {
   rule?: string;
   /** The protection that decided, when source is protected-path. */
   protection?: string;
+  /** The level ran the call past an ask or a refusal: what it ran past (core) */
+  idgafOverride?: IdgafOverride;
   toolCallState: ToolCallState;
 }
 
@@ -96,9 +100,10 @@ export function holdInPlanMode(
     // The flag on the tool, or a command the parser vouched as only reading
     readOnly: !!tool?.readonly || !!result.readOnly,
     // The call's arguments matter: a vouched read-only command is Context use
-    idgaf:
+    levelRunsHeld: levelRunsHeld(
       levelOfCall(approval, name, tool, callContextFor(result.toolCallState))
-        ?.level === "idgaf",
+        ?.level,
+    ),
   });
 }
 
@@ -182,6 +187,18 @@ async function evaluateBasePolicy(
         }
         if (source === "protected-path" || source === "plan-mode") {
           return { ...result.content, toolCallState };
+        }
+        // The level ran the edit past an ask or a refusal: the record is
+        // kept, so a heads-up window set for that level can show it first
+        if (
+          policy === "allowedWithoutPermission" &&
+          result.content.idgafOverride
+        ) {
+          return {
+            policy,
+            idgafOverride: result.content.idgafOverride,
+            toolCallState,
+          };
         }
       } else {
         // Core could not decide. Waiting is the closed failure: a deny rule,
