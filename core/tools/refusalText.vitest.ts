@@ -34,6 +34,11 @@ const sentences: Record<keyof typeof refusalText, string | boolean> = {
   ),
   toolOff: refusalText.toolOff("run_terminal_command", undefined),
   disabledByPolicy: refusalText.disabledByPolicy("rm -rf /"),
+  remoteWindowShell: refusalText.remoteWindowShell({
+    remoteName: "ssh-remote",
+    preference: "container",
+    from: "setting",
+  }),
 };
 
 describe("refusalText", () => {
@@ -62,7 +67,21 @@ describe("refusalText", () => {
         "This tool is turned off in the user's tool settings.\n\nrun_terminal_command\n\nDo not work around this. Do what else the request needs, then say what you could not do and why.",
       disabledByPolicy:
         "This command has been disabled by security policy:\n\nrm -rf /\n\nDo not retry this call or reach the same result another way. Do what else the request needs, then say what you could not do and why.",
+      remoteWindowShell:
+        "The command was not run. continuous.terminal.shell is set to container, and that setting does not apply in a remote window (ssh-remote): in a remote window commands go to the editor's terminal on the remote machine, outside the container. They run there once continuous.terminal.shell is set to default. Do not retry this call or reach the same result another way. Do what else the request needs, then say what you could not do and why.",
     });
+  });
+
+  it("names the environment variable when the choice was made there, and WSL", () => {
+    expect(
+      refusalText.remoteWindowShell({
+        remoteName: "dev-container",
+        preference: "wsl",
+        from: "environment",
+      }),
+    ).toBe(
+      "The command was not run. CONTINUOUS_TERMINAL_SHELL is set to wsl, and that setting does not apply in a remote window (dev-container): in a remote window commands go to the editor's terminal on the remote machine, outside WSL. They run there once CONTINUOUS_TERMINAL_SHELL is unset. Do not retry this call or reach the same result another way. Do what else the request needs, then say what you could not do and why.",
+    );
   });
 
   it("covers every export of the module", () => {

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { executionShell, resolveShell, shellLabel } from "./shell";
+import {
+  executionShell,
+  remoteShellConflict,
+  resolveShell,
+  setTerminalShellPreference,
+  shellLabel,
+} from "./shell";
 
 const windows = { platform: "win32" as const, env: {} };
 const linux = (shell: string) => ({
@@ -63,5 +69,43 @@ describe("shellLabel", () => {
         }),
       ),
     ).toBe("bash in a container");
+  });
+});
+
+describe("remoteShellConflict: a choice of where commands run that a remote window cannot keep", () => {
+  const none = {};
+  const container = { CONTINUOUS_TERMINAL_SHELL: "container" };
+
+  it("is nothing in a local window, the CLI or a test, whatever was asked for", () => {
+    for (const remoteName of [undefined, "", "local"]) {
+      expect(remoteShellConflict(remoteName, container)).toBeUndefined();
+    }
+  });
+
+  it("is nothing in a remote window with the default", () => {
+    expect(remoteShellConflict("ssh-remote", none)).toBeUndefined();
+    expect(
+      remoteShellConflict("ssh-remote", {
+        CONTINUOUS_TERMINAL_SHELL: "default",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("names what was asked for and where, in a remote window", () => {
+    expect(remoteShellConflict("ssh-remote", container)).toEqual({
+      remoteName: "ssh-remote",
+      preference: "container",
+      from: "environment",
+    });
+    setTerminalShellPreference({ kind: "wsl" });
+    try {
+      expect(remoteShellConflict("dev-container", none)).toEqual({
+        remoteName: "dev-container",
+        preference: "wsl",
+        from: "setting",
+      });
+    } finally {
+      setTerminalShellPreference(undefined);
+    }
   });
 });

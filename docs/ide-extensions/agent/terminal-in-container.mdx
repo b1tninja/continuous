@@ -44,4 +44,5 @@ Continuous never installs a runtime, starts a daemon or pulls an image on its ow
 - The rest of the workspace is writable from the container, so this does not protect your source files.
 - A protected path that does not exist yet is not created, so a command can create it. The same names deeper in the tree (`packages/app/.vscode`) and symbolic links are not mounted read-only.
 - The setting applies to the agent's terminal tool only. VS Code's own terminal keeps its profile.
+- In a remote window (SSH, WSL, a dev container) the setting does not apply: commands there are typed into the editor's terminal on the remote machine, with no container. While the setting is `container`, the terminal tool does not run commands in a remote window and says so. Set `continuous.terminal.shell` to `default` to run them there.
 - Files the agent edits with the edit tools are edited on the host, in the same folder the container sees.
