@@ -1,0 +1,68 @@
+{
+  "comment": "Failures of core's page test project (scripts/ci/page-tests.mjs) that are accepted, each with the reason. `where` covers any test that throws in that function of a bundled file; `suite` with `test` covers one test; `suite` alone covers a whole suite. `kind` is `not-reached` (the page bundles the function and never calls it: `why` says how that is known), `no-environment` (the test sets an environment variable, and the page has none, so the function answers as if it were unset) or `bug` (the page does reach it; not fixed yet).",
+  "entries": [
+    {
+      "where": "core/tools/permissions/readOnlyCommand.ts#gitIsSafe",
+      "kind": "not-reached",
+      "why": "Uses os.homedir, path and fs to read git config, after returning early when the call has no `cwd`. The page never passes one: gui/src/redux/thunks/evaluateToolPolicies.ts (callContextFor) adds `cwd` only when `process` exists, and headsUp.ts and startToolTimers.ts pass `parsedArgs` alone. Those are the only callers of levelOfCall in gui/src."
+    },
+    {
+      "where": "core/util/shell.ts#resolveShell",
+      "kind": "not-reached",
+      "why": "Reads process.platform. The one caller in gui/src, callContextFor in redux/thunks/evaluateToolPolicies.ts, calls it only after `typeof process !== \"undefined\"`. The other bundled importers of shell.ts (candidates.ts, readOnlyCommand.ts, shellScan.ts) take isPosixShell only."
+    },
+    {
+      "where": "core/util/sourceEncoded.ts#sourceEncodedArgs",
+      "kind": "not-reached",
+      "why": "Uses Buffer. Bundled through shell.ts and containerArgs.ts, where it builds the arguments of a shell that resolveShell returns, and the page does not call resolveShell (see that entry)."
+    },
+    {
+      "suite": "core/util/terminalEnvironment.vitest.ts",
+      "test": "terminalEnvironment CONTINUE_TERMINAL_ENV overrides config.yaml",
+      "kind": "no-environment",
+      "why": "Sets CONTINUE_TERMINAL_ENV. In the page `process.env` is `{}`, so the setting from config.yaml stands, which is what the settings page should show."
+    },
+    {
+      "suite": "core/llm/llms/anthropicCache.vitest.ts",
+      "test": "CONTINUOUS_FORCE_CACHE_5M wins over request undefined and config undefined",
+      "kind": "no-environment",
+      "why": "Sets CONTINUOUS_FORCE_CACHE_5M, a debug override read where the request is sent (core's Node side). anthropicCache.ts guards `typeof process`."
+    },
+    {
+      "suite": "core/llm/llms/anthropicCache.vitest.ts",
+      "test": "CONTINUOUS_FORCE_CACHE_5M wins over request 1h and config undefined",
+      "kind": "no-environment",
+      "why": "As above."
+    },
+    {
+      "suite": "core/llm/llms/anthropicCache.vitest.ts",
+      "test": "CONTINUOUS_FORCE_CACHE_5M wins over request undefined and config 1h",
+      "kind": "no-environment",
+      "why": "As above."
+    },
+    {
+      "suite": "core/llm/llms/anthropicCache.vitest.ts",
+      "test": "CONTINUOUS_FORCE_CACHE_5M wins over request 1h and config 1h",
+      "kind": "no-environment",
+      "why": "As above."
+    },
+    {
+      "suite": "core/llm/llms/anthropicCache.vitest.ts",
+      "test": "CONTINUOUS_FORCE_CACHE_5M wins over request undefined and config auto",
+      "kind": "no-environment",
+      "why": "As above."
+    },
+    {
+      "suite": "core/llm/prompts/turns.vitest.ts",
+      "test": "prompt profile environment override picks the profile for every model when set to full or short",
+      "kind": "no-environment",
+      "why": "Sets the prompt profile variable. turns.ts guards `typeof process`, and without the variable the profile follows the model, as it does for anyone who has not set it."
+    },
+    {
+      "suite": "core/llm/prompts/turns.vitest.ts",
+      "test": "prompt profile environment override accepts tailored for any model",
+      "kind": "no-environment",
+      "why": "As above."
+    }
+  ]
+}

@@ -490,3 +490,42 @@ The 10 legs stay separate jobs. Two jobs (one per command, research note phase 2
 `CONTINUE_GLOBAL_DIR` (`e2e/test-continue` or `e2e/test-continue-yaml`), `e2e/storage` and the installed
 test extensions, so one file could leave state for the next. The research note asks for one trial run on
 a branch first; that needs a runner and is not part of this change.
+
+## 10. Node code in the chat page (LG1)
+
+The chat page is a browser build of `gui`, and it bundles about 200 source files of `core/`. Measured on
+the build (Vite 8, `gui/vite.config.ts` has no `define` and no polyfill):
+
+- every Node built-in (`path`, `fs`, `os`, `node:url`, ...) is one empty module, `module.exports = {}`, so
+  a named import is `undefined` and calling it throws;
+- `process.env.NODE_ENV` is the string `"production"` and `process.env` is `{}`: Vite replaces both in the
+  text, so `process.env.X` is `undefined` and does not throw;
+- nothing defines `process`, `Buffer`, `global`, `require` or `__dirname`, so any other use of them throws.
+
+The unit tests run in Node, where all of these are real. Two checks cover the difference:
+
+| Check                                                       | Job           | What fails it                                                                                                                                   |
+| ----------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scripts/ci/check-webview-node-imports.mjs`                 | `gui-checks`  | A bundled file of ours newly imports a Node built-in. It reads Vite's warnings; it does not see `process` or `Buffer`, or whether the code runs |
+| `scripts/ci/page-tests.mjs` (`npm run test:page` in `core`) | `core-checks` | A test of bundled code fails when the code is given what the page has                                                                           |
+
+The page tests build the webview in memory to list the bundled core files
+(`scripts/ci/webview-page-graph.mjs`, about 2 s), take the vitest suites beside them (`a.vitest.ts` and
+`a.<name>.vitest.ts` for a bundled `a.ts`; 129 suites of 662 on 2026-11-21) and run them with
+`core/vitest.page.config.ts`. Its plugin (`core/test/page/pagePlugin.ts`) rewrites only the bundled files:
+built-in imports point at an empty module, `process.env` is replaced as Vite replaces it, and
+`process`, `Buffer` and the other missing names become local `undefined`s, so `typeof process` is
+`"undefined"` as in the page and any use throws. A test file is never bundled, so it keeps Node for its
+fixtures. `core/test/page/canary.page.ts` fails if the plugin stops doing this. The run takes about a
+minute.
+
+A bundled file can hold a function that only core's Node side calls, and its tests then fail here without
+a bug. `scripts/ci/page-tests.baseline.json` lists each such place with a `kind` (`not-reached`,
+`no-environment` or `bug`) and the reason. A failure outside the baseline fails the step and names the
+suite, the test and the bundled function that threw. Fix the code, or add the place to the baseline with
+how you know the page does not reach it.
+
+Limits: a bundled file with no suite beside it is not exercised; a gui-only change does not run
+`core-checks`, so a file that enters the bundle that way is first tested on the next core change or the
+nightly run; and `process?.x` on the bare name would pass here and throw in the page, so the plugin
+refuses it.
