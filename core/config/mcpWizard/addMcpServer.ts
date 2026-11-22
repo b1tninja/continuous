@@ -15,6 +15,7 @@ import { existingMcpServerNames } from "../importClineMcp";
 import { type SecretStorageKind, storeSecret } from "../secretStorage";
 
 import { suggestedSecretName } from "./analyzeLaunch";
+import { freeBlockFileName, projectBlockFileName } from "./fileNames";
 import { listMcpServers, projectMcpServerDir } from "./manageMcpServers";
 import type { McpDraftValue, McpServerDraft } from "./types";
 import { referenceIn } from "./valueHints";
@@ -144,7 +145,10 @@ export function planMcpServerEntry(
       },
     );
     entry.url = url;
-    entry.type = draft.transport === "sse" ? "sse" : "streamable-http";
+    // Left out when not chosen, so the connection's own order applies
+    if (!draft.autoTransport) {
+      entry.type = draft.transport === "sse" ? "sse" : "streamable-http";
+    }
     if (draft.headers?.length) {
       entry.requestOptions = {
         headers: Object.fromEntries(
@@ -212,7 +216,7 @@ export type AddMcpServerResult =
     };
 
 /** The document's first parse error, with its line. */
-function parseProblem(text: string): string | undefined {
+export function parseProblem(text: string): string | undefined {
   // prettyErrors (the default) fills in linePos
   const doc = YAML.parseDocument(text.replace(/^\uFEFF/, ""));
   const e = doc.errors[0];
@@ -233,16 +237,16 @@ function parseProblem(text: string): string | undefined {
     : e.message.split("\n")[0];
 }
 
-function freeName(name: string, taken: Set<string>): string {
+export function freeName(name: string, taken: Set<string>): string {
   for (let i = 2; ; i++) {
     const candidate = `${name}-${i}`;
     if (!taken.has(candidate.toLowerCase())) return candidate;
   }
 }
 
-type AddFailure = Extract<AddMcpServerResult, { ok: false }>;
+export type AddFailure = Extract<AddMcpServerResult, { ok: false }>;
 
-interface PreparedEntry {
+export interface PreparedEntry {
   ok: true;
   plan: McpEntryPlan;
   stored: { name: string; location: SecretStorageKind }[];
@@ -253,13 +257,16 @@ interface PreparedEntry {
  * Plan the entry and store its secrets, before any config file is touched,
  * so a file never points at a value that failed to store.
  */
-async function prepareEntry(
+export async function prepareEntry(
   draft: McpServerDraft,
   secretsOpt: AddMcpServerOptions["secrets"],
+  /** Secret names this server already uses: a new value replaces them. */
+  reusable: ReadonlySet<string> = new Set(),
 ): Promise<PreparedEntry | AddFailure> {
   const continueDir = secretsOpt?.continueDir;
   const existing = new Map<string, boolean>();
   const plan = planMcpServerEntry(draft, (n) => {
+    if (reusable.has(n)) return false;
     // Presence in ~/.continuous/.env is checked here; secure storage below
     if (!existing.has(n))
       existing.set(n, !!continueDir && envFileHasValue(continueDir, n));
@@ -288,11 +295,12 @@ async function prepareEntry(
     } catch {
       inSecure = {};
     }
-    if (plan.secrets.some((s) => inSecure[s.name])) {
+    if (plan.secrets.some((s) => inSecure[s.name] && !reusable.has(s.name))) {
       const again = planMcpServerEntry(
         draft,
         (n) =>
-          !!inSecure[n] || (!!continueDir && envFileHasValue(continueDir, n)),
+          !reusable.has(n) &&
+          (!!inSecure[n] || (!!continueDir && envFileHasValue(continueDir, n))),
       );
       plan.entry = again.entry;
       plan.secrets = again.secrets;
@@ -439,16 +447,6 @@ export interface AddProjectMcpServerOptions {
   secrets?: AddMcpServerOptions["secrets"];
 }
 
-/** `GitHub Tools` -> `github-tools.yaml`. */
-export function projectBlockFileName(name: string): string {
-  const slug = name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^[-.]+|-+$/g, "");
-  return `${slug || "mcp-server"}.yaml`;
-}
-
 /**
  * The "This project" choice: write one block file,
  * `.continuous/mcpServers/<name>.yaml`, holding only this server. The file
@@ -475,15 +473,12 @@ export async function addMcpServerToProjectFile(
     };
   }
   const dir = projectMcpServerDir(opts.projectDir);
-  const file = path.join(dir, projectBlockFileName(name));
-  if (fs.existsSync(file)) {
-    return {
-      ok: false,
-      reason: "duplicate",
-      error: `${file} already exists.`,
-      suggestion: freeName(name, names),
-    };
-  }
+  // The name is free, so a file of that name holds something else: it is
+  // left alone and this server gets the next free file name
+  const file = path.join(
+    dir,
+    freeBlockFileName(dir, name, (f) => fs.existsSync(f)),
+  );
   const prepared = await prepareEntry(draft, opts.secrets);
   if (!prepared.ok) return prepared;
   const { plan, stored, warnings } = prepared;
@@ -514,3 +509,5 @@ export async function addMcpServerToProjectFile(
     warnings,
   };
 }
+
+export { projectBlockFileName };

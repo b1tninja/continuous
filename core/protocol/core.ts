@@ -18,7 +18,10 @@ import type {
 } from "../config/importClineMcp";
 import type {
   McpWizardAnalyzeResponse,
+  McpWizardGetDraftResponse,
   McpWizardListResponse,
+  McpWizardMoveRequest,
+  McpWizardMoveResponse,
   McpWizardParseRequest,
   McpWizardParseResponse,
   McpWizardProbeRequest,
@@ -27,6 +30,9 @@ import type {
   McpWizardRemoveResponse,
   McpWizardSaveRequest,
   McpWizardSaveResponse,
+  McpWizardScopesResponse,
+  McpWizardTarget,
+  McpWizardUpdateRequest,
 } from "../config/mcpWizard/protocolHandlers";
 import type { McpTemplateSummary } from "../config/mcpWizard/templates";
 import type { McpServerDraft } from "../config/mcpWizard/types";
@@ -612,6 +618,17 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
   "mcp/list": [undefined, McpWizardListResponse];
   /** Remove one saved server; its secrets are kept. */
   "mcp/remove": [McpWizardRemoveRequest, McpWizardRemoveResponse];
+  /** Where a server can be saved (real paths), folder trust, and what the code does when a setting is left out. */
+  "mcp/scopes": [undefined, McpWizardScopesResponse];
+  /** One saved server as a draft to edit. A credential written in the file comes as a held marker. */
+  "mcp/getDraft": [McpWizardTarget, McpWizardGetDraftResponse];
+  /** Change one saved server in its own file; comments and other entries are kept. */
+  "mcp/update": [McpWizardUpdateRequest, McpWizardSaveResponse];
+  /**
+   * Move or copy one saved server between "all my projects" and an open
+   * folder. From a folder to all projects only when `consent` is exactly true.
+   */
+  "mcp/move": [McpWizardMoveRequest, McpWizardMoveResponse];
   "context/getSymbolsForFiles": [{ uris: string[] }, FileSymbolMap];
   "context/loadSubmenuItems": [{ title: string }, ContextSubmenuItem[]];
   "autocomplete/complete": [AutocompleteInput, string[]];

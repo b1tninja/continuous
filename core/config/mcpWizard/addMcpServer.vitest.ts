@@ -345,4 +345,29 @@ describe("planMcpServerEntry and renderEntryYaml", () => {
     expect(text).toContain("connectionTimeout: 60000");
     expect(plan.secrets.map((s) => s.name)).toEqual(["GH_GITHUB_TOKEN"]);
   });
+
+  it("writes no type, timeout or folder that was not set", () => {
+    const remote = planMcpServerEntry({
+      name: "docs",
+      transport: "http",
+      autoTransport: true,
+      url: "https://docs.example.com/mcp",
+    });
+    expect(remote.entry).toEqual({
+      name: "docs",
+      url: "https://docs.example.com/mcp",
+    });
+    // Chosen by the person: written
+    expect(
+      planMcpServerEntry({
+        name: "docs",
+        transport: "sse",
+        url: "https://docs.example.com/sse",
+      }).entry.type,
+    ).toBe("sse");
+    expect(
+      planMcpServerEntry({ name: "a", transport: "stdio", command: "npx" })
+        .entry,
+    ).toEqual({ name: "a", command: "npx" });
+  });
 });

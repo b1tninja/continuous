@@ -112,6 +112,11 @@ export interface McpServerDraft {
   /** Connection timeout in milliseconds, written as `connectionTimeout`. */
   connectionTimeoutMs?: number;
   /**
+   * A remote server whose `type` is left out of the file: the connection
+   * tries Streamable HTTP and then SSE. `transport` is then only a guess.
+   */
+  autoTransport?: boolean;
+  /**
    * Indexes of `args` that are credentials: each is stored as a secret and
    * the file gets a reference in its place, as for env and headers.
    */

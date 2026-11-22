@@ -1,9 +1,16 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
 
 import type { IDE } from "../..";
 import { maskCommandForDisplay } from "../../tools/permissions/displayMask";
 import { readSecretFromEnvFile } from "../../util/secretsFile";
+import {
+  COMMONS_ENV_VARS,
+  DEFAULT_MCP_TIMEOUT,
+} from "../../context/mcp/MCPConnection";
+import { inspectProjectConfig } from "../projectTrust";
 import type { SecretStorageKind } from "../secretStorage";
 
 import {
@@ -14,13 +21,21 @@ import {
 } from "./addMcpServer";
 import { analyzeLaunch, type LaunchAnalysis } from "./analyzeLaunch";
 import {
+  entryToEditDraft,
+  moveMcpServer,
+  type MoveMcpServerResult,
+  updateMcpServer,
+} from "./editMcpServers";
+import {
   listMcpServers,
   type McpServerListing,
   type McpServerScope,
-  removeMcpServer,
+  projectMcpServerDir,
+  removeListedMcpServer,
 } from "./manageMcpServers";
 import { parseMcpPaste } from "./parseMcpPaste";
 import {
+  DEFAULT_PROBE_TIMEOUT_MS,
   type McpProbeResult,
   probeMcpServer,
   type ProbeOptions,
@@ -97,10 +112,22 @@ export interface McpWizardProbeRequest {
   /** Must be exactly `true`: the person pressed "Run this command and test". */
   consent: boolean;
   timeoutMs?: number;
+  /**
+   * Where the server is, or will be, saved. A server of a folder whose MCP
+   * files are not trusted is not started, as the loader would not start it.
+   */
+  scope?: McpServerScope;
+  /** For "project": which open folder. The first one when left out. */
+  folder?: string;
 }
 
 export type McpWizardRefusal =
-  "no-consent" | "blocked" | "invalid" | "missing-values" | "expired";
+  | "no-consent"
+  | "blocked"
+  | "invalid"
+  | "missing-values"
+  | "expired"
+  | "untrusted";
 
 export type McpWizardProbeResponse =
   | { ran: true; result: McpProbeResult }
@@ -110,7 +137,94 @@ export interface McpWizardSaveRequest {
   draft: McpServerDraft;
   /** "user" (the default) is the person's own config.yaml. */
   scope?: McpServerScope;
+  /**
+   * For "project": which open folder. Must be one of the folders core
+   * lists; the first one when left out. Never a path to write to.
+   */
+  folder?: string;
 }
+
+/** One saved server, named by where it is. */
+export interface McpWizardTarget {
+  name: string;
+  scope: McpServerScope;
+  /** For "project": the open folder it belongs to. */
+  folder?: string;
+}
+
+/**
+ * "none": the folder has no MCP files yet, so there is nothing to trust.
+ * "untrusted": it has some, and the person has not trusted them as they are.
+ */
+export type McpFolderTrust = "trusted" | "untrusted" | "none";
+
+export interface McpWizardScopesResponse {
+  /** "For all my projects": the person's own config.yaml. */
+  user: { file: string; exists: boolean };
+  /** "For this workspace only": one per open folder. */
+  folders: {
+    dir: string;
+    name: string;
+    /** `<dir>/.continuous/mcpServers`, where the one-server files go. */
+    mcpDir: string;
+    trust: McpFolderTrust;
+  }[];
+  secretStore: { kind: SecretStorageKind; envFile: string };
+  /** What the code does when a setting is left out, for the form to say. */
+  defaults: {
+    /** MCPConnection's own limit when `connectionTimeout` is not set. */
+    connectionTimeoutMs: number;
+    /** The limit of the dialog's Test. */
+    probeTimeoutMs: number;
+    /** A local server's environment besides its own `env`. */
+    inheritedEnv: string[];
+    /** Where a local server starts when `cwd` is not set; none when no folder is open. */
+    cwd?: string;
+  };
+}
+
+export type McpWizardGetDraftResponse =
+  | {
+      ok: true;
+      listing: McpWizardListing;
+      /** Credentials written in the file come as held markers. */
+      draft: McpServerDraft;
+      /** Settings the form does not show and a save keeps. */
+      keptKeys: string[];
+      notEditable?: string;
+    }
+  | { ok: false; error: string };
+
+export interface McpWizardUpdateRequest {
+  target: McpWizardTarget;
+  draft: McpServerDraft;
+}
+
+export interface McpWizardMoveRequest {
+  target: McpWizardTarget;
+  to: { scope: McpServerScope; folder?: string };
+  /** Leave the source where it is. */
+  copy?: boolean;
+  newName?: string;
+  /**
+   * Must be exactly `true` when a folder's server goes to "all my
+   * projects": from then on its command starts without the folder's trust.
+   */
+  consent?: boolean;
+}
+
+export type McpWizardMoveResponse =
+  | (Extract<MoveMcpServerResult, { ok: true }> & { scope: McpServerScope })
+  | {
+      ok: false;
+      reason:
+        | Extract<MoveMcpServerResult, { ok: false }>["reason"]
+        | "not-found"
+        | "no-consent"
+        | "blocked"
+        | "no-project";
+      error: string;
+    };
 
 type AddFailure = Extract<AddMcpServerResult, { ok: false }>;
 
@@ -138,6 +252,8 @@ export interface McpWizardListing {
   scope: McpServerScope;
   file: string;
   transport: McpServerListing["transport"];
+  /** For "project": the open folder the file is in. */
+  folder?: string;
   /** The command line or URL, credentials masked. */
   target: string;
   /** Secret names the entry refers to. */
@@ -154,6 +270,8 @@ export interface McpWizardListResponse {
 export interface McpWizardRemoveRequest {
   name: string;
   scope?: McpServerScope;
+  /** For "project": which open folder, when several are open. */
+  folder?: string;
 }
 
 export type McpWizardRemoveResponse =
@@ -179,6 +297,12 @@ export interface McpWizardHost {
   continueDir: () => string;
   /** The open folder, as a path; undefined when none is open. */
   projectDir: () => Promise<string | undefined>;
+  /** Every open folder. Only `projectDir` is used when left out. */
+  projectDirs?: () => Promise<string[]>;
+  /** `~/.continuous/mcpServers`; its block files are listed when given. */
+  globalMcpDir?: () => string;
+  /** For tests: whether a folder's MCP files are trusted. */
+  folderTrust?: (dir: string) => McpFolderTrust;
   ide: Pick<IDE, "readSecrets" | "writeSecrets">;
   /** For the probe's working folder and a stored sign-in, as in a real run. */
   probeIde?: IDE;
@@ -419,6 +543,7 @@ export function resolveHeld(draft: McpServerDraft, held: HeldValues): Resolved {
     ...(typeof draft.connectionTimeoutMs === "number"
       ? { connectionTimeoutMs: draft.connectionTimeoutMs }
       : {}),
+    ...(draft.autoTransport === true ? { autoTransport: true } : {}),
     ...(secretArgs.size
       ? { secretArgs: [...secretArgs].sort((a, b) => a - b) }
       : {}),
@@ -565,7 +690,77 @@ type On = (
   handler: (msg: { data: any }) => Promise<unknown>,
 ) => void;
 
-function webviewListing(s: McpServerListing): McpWizardListing {
+// ---- folders and trust ----
+
+const samePath = (a: string, b: string) => {
+  const norm = (p: string) => {
+    const r = path.resolve(p);
+    return process.platform === "win32" ? r.toLowerCase() : r;
+  };
+  return norm(a) === norm(b);
+};
+
+async function openFolders(host: McpWizardHost): Promise<string[]> {
+  if (host.projectDirs) return await host.projectDirs();
+  const one = await host.projectDir();
+  return one ? [one] : [];
+}
+
+/**
+ * The open folder a request names. The webview's `folder` only chooses
+ * among the folders core lists; it is never used as a path.
+ */
+function pickFolder(dirs: string[], folder: unknown): string | undefined {
+  if (folder === undefined || folder === null || folder === "") return dirs[0];
+  return dirs.find((d) => samePath(d, String(folder)));
+}
+
+function folderTrust(host: McpWizardHost, dir: string): McpFolderTrust {
+  if (host.folderTrust) return host.folderTrust(dir);
+  try {
+    // The same record the loader reads: the folder's MCP files as they are
+    // now, against the fingerprint the person trusted
+    const mcp = inspectProjectConfig(dir).find((s) => s.scope === "mcp");
+    if (mcp === undefined) return "none";
+    return mcp.trusted ? "trusted" : "untrusted";
+  } catch {
+    return "untrusted";
+  }
+}
+
+type Listed = McpServerListing & { folder?: string };
+
+/** Every saved server: the person's own, then each open folder's. */
+async function listAll(
+  host: McpWizardHost,
+): Promise<{ servers: Listed[]; problems: string[] }> {
+  const user = listMcpServers({
+    configPath: host.configPath(),
+    ...(host.globalMcpDir ? { globalMcpDir: host.globalMcpDir() } : {}),
+  });
+  const servers: Listed[] = [...user.servers];
+  const problems = [...user.problems];
+  for (const dir of await openFolders(host)) {
+    const project = listMcpServers({ configPath: "", projectDir: dir });
+    servers.push(...project.servers.map((s) => ({ ...s, folder: dir })));
+    problems.push(...project.problems);
+  }
+  return { servers, problems };
+}
+
+const sameServerName = (a: string, b: string) =>
+  a.trim().toLowerCase() === b.trim().toLowerCase();
+
+function matching(servers: Listed[], t: McpWizardTarget): Listed[] {
+  return servers.filter(
+    (s) =>
+      sameServerName(s.name, String(t?.name ?? "")) &&
+      (!t.scope || s.scope === t.scope) &&
+      (!t.folder || (s.folder !== undefined && samePath(s.folder, t.folder))),
+  );
+}
+
+function webviewListing(s: Listed): McpWizardListing {
   const entry = s.entry;
   const names = (m: unknown) =>
     m && typeof m === "object" ? Object.keys(m) : [];
@@ -574,6 +769,7 @@ function webviewListing(s: McpServerListing): McpWizardListing {
     scope: s.scope,
     file: s.file,
     transport: s.transport,
+    ...(s.folder ? { folder: s.folder } : {}),
     target: maskCommandForDisplay(s.target),
     secrets: [...s.secrets],
     envNames: names(entry.env),
@@ -617,6 +813,17 @@ async function probe(
       "Not tested: a safety check blocks this server. Change the command or URL first.",
     );
   }
+  // The loader's rule: nothing a folder defines starts before the folder's
+  // MCP files are trusted. The test is no way around it.
+  if (req.scope === "project") {
+    const dir = pickFolder(await openFolders(host), req.folder);
+    if (dir && folderTrust(host, dir) === "untrusted") {
+      return refuse(
+        "untrusted",
+        "Not tested: this folder's MCP servers are not trusted yet, so nothing in it is started. Trust the folder first, then test again.",
+      );
+    }
+  }
   const filled = await withStoredSecrets(resolved.draft, host);
   if (filled.missing.length) {
     return refuse(
@@ -650,7 +857,7 @@ async function save(
     return answer({ ok: false, reason: "expired", error: EXPIRED });
   const problem = draftProblem(resolved.draft);
   if (problem) return answer({ ok: false, reason: "invalid", error: problem });
-  const projectDir = await host.projectDir();
+  const projectDir = pickFolder(await openFolders(host), req?.folder);
   if (analyze(resolved.draft, host, projectDir).analysis.blocked) {
     return answer({
       ok: false,
@@ -735,10 +942,7 @@ export function registerMcpWizardHandlers(
   on("mcp/save", async ({ data }) => save(data, host, held));
 
   on("mcp/list", async (): Promise<McpWizardListResponse> => {
-    const list = listMcpServers({
-      configPath: host.configPath(),
-      projectDir: await host.projectDir(),
-    });
+    const list = await listAll(host);
     return {
       servers: list.servers.map(webviewListing),
       problems: list.problems,
@@ -746,22 +950,258 @@ export function registerMcpWizardHandlers(
   });
 
   on("mcp/remove", async ({ data }): Promise<McpWizardRemoveResponse> => {
-    const r = removeMcpServer(
-      String(data?.name ?? ""),
-      { configPath: host.configPath(), projectDir: await host.projectDir() },
-      data?.scope === "user" || data?.scope === "project"
-        ? data.scope
-        : undefined,
-    );
-    if (!r.ok) {
+    const name = String(data?.name ?? "");
+    const matches = matching((await listAll(host)).servers, {
+      name,
+      scope:
+        data?.scope === "user" || data?.scope === "project"
+          ? data.scope
+          : undefined,
+      folder: typeof data?.folder === "string" ? data.folder : undefined,
+    } as McpWizardTarget);
+    if (matches.length === 0) {
       return {
         ok: false,
-        reason: r.reason,
-        error: r.error,
-        ...(r.matches ? { matches: r.matches.map(webviewListing) } : {}),
+        reason: "not-found",
+        error: `There is no saved server called ${name}.`,
       };
     }
+    if (matches.length > 1) {
+      return {
+        ok: false,
+        reason: "ambiguous",
+        error: `${matches.length} saved servers are called ${name}. Say which one.`,
+        matches: matches.map(webviewListing),
+      };
+    }
+    const r = removeListedMcpServer(matches[0], host.configPath());
+    if (!r.ok) return { ok: false, reason: r.reason, error: r.error };
     await host.reload("MCP server removed (mcp/remove message)");
     return r;
   });
+
+  on("mcp/scopes", async (): Promise<McpWizardScopesResponse> => {
+    const dirs = await openFolders(host);
+    const configPath = host.configPath();
+    return {
+      user: { file: configPath, exists: fileExists(configPath) },
+      folders: dirs.map((dir) => ({
+        dir,
+        name: path.basename(dir) || dir,
+        mcpDir: projectMcpServerDir(dir),
+        trust: folderTrust(host, dir),
+      })),
+      secretStore: {
+        kind: await host.secretStorage(),
+        envFile: path.join(host.continueDir(), ".env"),
+      },
+      defaults: {
+        connectionTimeoutMs: DEFAULT_MCP_TIMEOUT,
+        probeTimeoutMs: DEFAULT_PROBE_TIMEOUT_MS,
+        inheritedEnv: ["PATH", ...COMMONS_ENV_VARS],
+        ...(dirs[0] ? { cwd: dirs[0] } : {}),
+      },
+    };
+  });
+
+  on("mcp/getDraft", async ({ data }): Promise<McpWizardGetDraftResponse> => {
+    const found = await findOne(host, data);
+    if (!found.ok) return found;
+    const edit = entryToEditDraft(found.server.entry);
+    return {
+      ok: true,
+      listing: webviewListing(found.server),
+      draft: heldDraft(edit.draft, held),
+      keptKeys: edit.keptKeys,
+      ...(edit.notEditable ? { notEditable: edit.notEditable } : {}),
+    };
+  });
+
+  on("mcp/update", async ({ data }) => update(data, host, held));
+
+  on("mcp/move", async ({ data }) => move(data, host));
+}
+
+function fileExists(file: string): boolean {
+  try {
+    return fs.existsSync(file);
+  } catch {
+    return false;
+  }
+}
+
+async function findOne(
+  host: McpWizardHost,
+  target: McpWizardTarget | undefined,
+): Promise<
+  | { ok: true; server: Listed; all: Listed[] }
+  | { ok: false; reason: "not-found"; error: string }
+> {
+  const all = (await listAll(host)).servers;
+  const matches = target?.name ? matching(all, target) : [];
+  if (matches.length !== 1) {
+    return {
+      ok: false,
+      reason: "not-found",
+      error:
+        matches.length === 0
+          ? `There is no saved server called ${String(target?.name ?? "")}. It may have been removed or renamed in its file.`
+          : `${matches.length} saved servers are called ${target!.name}. Edit the file instead.`,
+    };
+  }
+  return { ok: true, server: matches[0], all };
+}
+
+/**
+ * A draft read from a file, for the webview: a credential written in the
+ * file is swapped for a held marker, as for a paste, so the value never
+ * reaches the page. References and ordinary values go as they are.
+ */
+function heldDraft(draft: McpServerDraft, held: HeldValues): McpServerDraft {
+  const values = (list: McpDraftValue[] | undefined) =>
+    list?.map((v) =>
+      v.secret && !referenceIn(v.value)
+        ? { ...v, value: held.hold(v.value) }
+        : v,
+    );
+  const secretArgs = new Set(draft.secretArgs ?? []);
+  const { secretArgs: _dropped, ...rest } = draft;
+  return {
+    ...rest,
+    ...(draft.args
+      ? {
+          args: draft.args.map((a, i) =>
+            secretArgs.has(i) ? held.hold(a) : a,
+          ),
+        }
+      : {}),
+    ...(draft.url === undefined ? {} : { url: webviewUrl(draft.url, held) }),
+    ...(draft.env ? { env: values(draft.env) } : {}),
+    ...(draft.headers ? { headers: values(draft.headers) } : {}),
+  };
+}
+
+async function update(
+  req: McpWizardUpdateRequest,
+  host: McpWizardHost,
+  held: HeldValues,
+): Promise<McpWizardSaveResponse> {
+  const resolved = resolveHeld(req.draft, held);
+  const answer = (r: McpWizardSaveResponse) =>
+    scrubSecrets(r, resolved.secrets);
+  if (resolved.expired)
+    return answer({ ok: false, reason: "expired", error: EXPIRED });
+  const problem = draftProblem(resolved.draft);
+  if (problem) return answer({ ok: false, reason: "invalid", error: problem });
+  const found = await findOne(host, req.target);
+  if (!found.ok) {
+    return answer({ ok: false, reason: "no-file", error: found.error });
+  }
+  const { server, all } = found;
+  if (
+    analyze(resolved.draft, host, server.folder ?? (await host.projectDir()))
+      .analysis.blocked
+  ) {
+    return answer({
+      ok: false,
+      reason: "blocked",
+      error:
+        "Not saved: a safety check blocks this server. Change the command or URL first.",
+    });
+  }
+  // A folder's server must not take a name the person's own server has (the
+  // loader would drop it); the person's own must be unique among their own
+  const others = all.filter(
+    (s) => s !== server && (server.scope === "project" || s.scope === "user"),
+  );
+  const r = await updateMcpServer(server, resolved.draft, {
+    otherNames: others.map((s) => s.name),
+    secrets: {
+      ide: host.ide,
+      storage: await host.secretStorage(),
+      continueDir: host.continueDir(),
+    },
+  });
+  if (!r.ok) return answer(r);
+  await host.reload("MCP server changed (mcp/update message)");
+  return answer({
+    ok: true,
+    scope: server.scope,
+    file: r.file,
+    name: r.name,
+    secretsStored: r.secretsStored,
+    secretsPending: r.secretsPending,
+    warnings: r.warnings,
+  });
+}
+
+async function move(
+  req: McpWizardMoveRequest,
+  host: McpWizardHost,
+): Promise<McpWizardMoveResponse> {
+  const found = await findOne(host, req?.target);
+  if (!found.ok) return found;
+  const { server, all } = found;
+  const scope: McpServerScope =
+    req.to?.scope === "project" ? "project" : "user";
+  const projectDir =
+    scope === "project"
+      ? pickFolder(await openFolders(host), req.to?.folder)
+      : undefined;
+  if (scope === "project" && !projectDir) {
+    return {
+      ok: false,
+      reason: "no-project",
+      error: "Open a folder to save a server for this workspace.",
+    };
+  }
+  // From a folder to "all my projects": its command would start from now on
+  // without the folder's trust, so the person must have said yes to exactly that
+  if (server.scope === "project" && scope === "user" && req.consent !== true) {
+    return {
+      ok: false,
+      reason: "no-consent",
+      error:
+        "Not copied: a server from this folder would start for every project, and that needs your go-ahead.",
+    };
+  }
+  const { draft } = entryToEditDraft(server.entry);
+  if (analyze(draft, host, projectDir ?? server.folder).analysis.blocked) {
+    return {
+      ok: false,
+      reason: "blocked",
+      error:
+        "Not copied: a safety check blocks this server. Change the command or URL in its file first.",
+    };
+  }
+  const copy = req.copy === true;
+  // The names the destination must not repeat. A folder's server must not
+  // repeat one of the person's own either: the loader keeps theirs.
+  const taken = all
+    .filter((s) => (copy ? true : s !== server))
+    .filter((s) => scope === "project" || s.scope === "user")
+    .map((s) => ({ name: s.name, file: s.file }));
+  const r = await moveMcpServer(
+    server,
+    { scope, configPath: host.configPath(), projectDir },
+    {
+      copy,
+      ...(typeof req.newName === "string" && req.newName.trim()
+        ? { newName: req.newName }
+        : {}),
+      taken,
+      secrets: {
+        ide: host.ide,
+        storage: await host.secretStorage(),
+        continueDir: host.continueDir(),
+      },
+    },
+  );
+  if (!r.ok) return r;
+  await host.reload(
+    copy
+      ? "MCP server copied (mcp/move message)"
+      : "MCP server moved (mcp/move message)",
+  );
+  return { ...r, scope };
 }

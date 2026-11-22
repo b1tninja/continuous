@@ -172,6 +172,7 @@ import {
 import {
   editConfigFile,
   getConfigYamlPath,
+  getGlobalFolderWithName,
   getContinueGlobalPath,
   migrateV1DevDataFiles,
 } from "./util/paths";
@@ -1199,6 +1200,9 @@ export class Core {
         const dirs = await this.ide.getWorkspaceDirs();
         return dirs[0] ? localPathOrUriToPath(dirs[0]) : undefined;
       },
+      projectDirs: async () =>
+        (await this.ide.getWorkspaceDirs()).map(localPathOrUriToPath),
+      globalMcpDir: () => getGlobalFolderWithName("mcpServers"),
       ide: this.ide,
       probeIde: this.ide,
       secretStorage: async () =>
