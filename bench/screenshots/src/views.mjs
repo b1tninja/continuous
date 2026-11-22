@@ -224,7 +224,39 @@ export const VIEWS = {
   },
   "settings-tools-mcp": {
     fixture: "settings-tools-mcp",
-    note: "Settings, Tools tab, at an MCP server with its tools listed and the control that sets them all",
+    note: "Settings, MCP servers tab, at a server with its tools listed and the control that sets them all",
+  },
+  "settings-mcp": {
+    fixture: "settings-mcp",
+    note: "Settings, MCP servers tab: servers saved for all projects and for the workspace, one that failed to start, one read-only",
+  },
+  "settings-mcp-untrusted": {
+    fixture: "settings-mcp-untrusted",
+    note: "the same with the notice for a folder whose MCP servers are not trusted",
+  },
+  "settings-mcp-empty": {
+    fixture: "settings-mcp-empty",
+    note: "Settings, MCP servers tab with no server: what one is, and Add a server",
+  },
+  "mcp-dialog": {
+    fixture: "mcp-dialog",
+    note: "Add MCP server: the basic part, a command with arguments and a secret",
+  },
+  "mcp-dialog-advanced": {
+    fixture: "mcp-dialog-advanced",
+    note: "Add MCP server with Advanced open: each setting says what happens while it is not set",
+  },
+  "mcp-dialog-url": {
+    fixture: "mcp-dialog-url",
+    note: "Add MCP server for a remote server, Advanced open at the transport",
+  },
+  "mcp-dialog-confirm-run": {
+    fixture: "mcp-dialog-confirm-run",
+    note: "Add MCP server asking before Test runs the command: exactly what will run",
+  },
+  "mcp-dialog-failed-test": {
+    fixture: "mcp-dialog-failed-test",
+    note: "Add MCP server after a Test that failed: command not found, with the PATH searched",
   },
   "drop-target": {
     fixture: "drop-target",
