@@ -1,4 +1,4 @@
-import { fieldFor } from "core/config/modelEdit/modelEditFields";
+import { fieldFor, notSetText } from "core/config/modelEdit/modelEditFields";
 import type {
   KeyStorage,
   ProviderConnectionKey,
@@ -520,14 +520,12 @@ export const EMPTY_MORE_OPTIONS: MoreOptionsForm = {
   caBundlePath: "",
 };
 
-const defaultTextOf = (key: string) =>
-  fieldFor(["requestOptions", key])?.defaultText;
-
-/** "7,200 s" from the field table's "7200". */
-function seconds(text: string | undefined): string {
-  const n = Number(text);
-  return Number.isFinite(n) ? `${n.toLocaleString("en-US")} s` : `${text} s`;
-}
+// The words after "Not set: " for a request option, from the field table.
+// These fields' words do not depend on the model, so no model is named.
+const notSetOf = (key: string): string | undefined => {
+  const field = fieldFor(["requestOptions", key]);
+  return field ? notSetText(field, { provider: "", model: "" }) : undefined;
+};
 
 /**
  * What applies when a "More" field is not set, from the same table the
@@ -537,11 +535,11 @@ function seconds(text: string | undefined): string {
  * `DEFAULT_CONNECT_TIMEOUT_SECONDS` in packages/fetch/src/connectTimeout.ts.
  */
 export const MORE_NOT_SET = {
-  timeout: seconds(defaultTextOf("timeout")),
-  connectTimeout: seconds(defaultTextOf("connectTimeout")),
-  proxy: defaultTextOf("proxy") ?? "no proxy",
-  verifySsl: defaultTextOf("verifySsl") ?? "on",
-  useSystemCa: defaultTextOf("useSystemCa") ?? "on",
+  timeout: notSetOf("timeout") ?? "7,200 s",
+  connectTimeout: notSetOf("connectTimeout") ?? "10 s",
+  proxy: notSetOf("proxy") ?? "no proxy",
+  verifySsl: notSetOf("verifySsl") ?? "on",
+  useSystemCa: notSetOf("useSystemCa") ?? "on",
   // No file is read unless one is named (CertsCache.getCa in packages/fetch)
   caBundlePath: "none",
 } as const;

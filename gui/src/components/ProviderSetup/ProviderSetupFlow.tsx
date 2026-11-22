@@ -1,5 +1,5 @@
 import { ArrowPathIcon } from "@heroicons/react/24/outline";
-import { fieldFor } from "core/config/modelEdit/modelEditFields";
+import { fieldFor, notSetText } from "core/config/modelEdit/modelEditFields";
 import type {
   KeyStorage,
   ProviderConnectionKey,
@@ -97,6 +97,12 @@ import {
 } from "./useAutoTest";
 import { UseForStep } from "./UseForStep";
 import { hostPort, useLocalServerDetection } from "./useLocalServerDetection";
+
+// The words after "Not set: " for the AWS profile, from the field table
+const profileField = fieldFor(["env", "profile"]);
+const PROFILE_NOT_SET = profileField
+  ? notSetText(profileField, { provider: "bedrock", model: "" })
+  : "the default credential chain";
 
 export interface ProviderSetupFlowProps {
   /** Provider id to start with (for example "anthropic"). */
@@ -1183,9 +1189,7 @@ export function ProviderSetupFlow({
                   ? {
                       region: connection.region,
                       profile: connection.profile,
-                      profileNotSet:
-                        fieldFor(["env", "profile"])?.defaultText ??
-                        "the default credential chain",
+                      profileNotSet: PROFILE_NOT_SET,
                     }
                   : undefined
               }
