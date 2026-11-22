@@ -1,6 +1,7 @@
 // The height budget of the stack above the prompt: in a short panel the
 // notices, task list and queue must leave some of the chat, and must not push
-// the prompt or a waiting approval's buttons out of sight. The page reports
+// the prompt, a waiting approval's buttons or a question's answer controls
+// out of sight. The page reports
 // what shows (measureStack); the rule runs in Node (checkStack) and has tests.
 // All amounts are CSS pixels.
 
@@ -8,9 +9,10 @@
 export const MIN_TRANSCRIPT = 96;
 
 /**
- * Runs in the page. For the chat, the prompt and each approval button: how
- * tall the element is and how much of that shows, after the viewport and every
- * scrolling or clipping ancestor have cut it.
+ * Runs in the page. For the chat, the prompt, each approval button and the
+ * first question's answer controls: how tall the element is and how much of
+ * that shows, after the viewport and every scrolling or clipping ancestor have
+ * cut it.
  */
 export function measureStack() {
   const shown = (el) => {
@@ -43,6 +45,8 @@ export function measureStack() {
         '[data-testid^="accept-tool-call-button-"], [data-testid^="reject-tool-call-button-"]',
       ),
     ].map((el) => ({ name: el.getAttribute("data-testid"), ...shown(el) })),
+    // The first question's: the others are further down a list that scrolls
+    answers: one('[data-testid="question-controls"]'),
   };
 }
 
@@ -75,6 +79,11 @@ export function checkStack(facts, { minTranscript = MIN_TRANSCRIPT } = {}) {
     if (cut(b)) {
       findings.push(`${b.name} shows ${b.shown} of ${b.height} px`);
     }
+  }
+  if (facts.answers && cut(facts.answers)) {
+    findings.push(
+      `the question's answer controls show ${facts.answers.shown} of ${facts.answers.height} px`,
+    );
   }
   return findings;
 }

@@ -141,6 +141,10 @@ const MARKDOWN_REPLY = [
   "- convert the unit last",
 ].join("\n");
 
+/** The rest of a question long enough to fill a short panel. */
+const LONG_QUESTION =
+  "Its checks ran against the old runner, the branch is forty commits behind main, and two of its files were moved by the migration since. Merging it as it is keeps the history simple but may break the gate; leaving it open keeps the gate green and the work unfinished. Which do you want?";
+
 function runCommandCall(status: ToolCallState["status"]): ToolCallState {
   return {
     toolCallId: "call-1",
@@ -812,6 +816,69 @@ export const FIXTURES: Record<string, Fixture> = {
         question("q3", "Do you want the gate record written into the repo?"),
       ],
     }));
+  },
+  /** A plan leaves three long decisions to the person, after a conversation: the Questions panel in a short panel */
+  "tall-question": ({ store }) => {
+    const decision = (question: string) => ({
+      question: `${question} ${LONG_QUESTION}`,
+      options: ["Merge it as it is", "Leave it open"],
+      pick: "Merge it as it is",
+    });
+    const call = planCall();
+    store.dispatch(
+      newSession(
+        session([
+          user("Why does the parseConfig test fail?"),
+          assistant(MARKDOWN_REPLY),
+          user("Plan the migration"),
+          assistant("Here is the plan. Three things are yours to decide.", [
+            {
+              ...call,
+              parsedArgs: {
+                ...call.parsedArgs,
+                decisions: [
+                  decision("PR #7 is open and green by its own report."),
+                  decision("The migration can land on main or on a branch."),
+                  decision("The gate record is not in the repo yet."),
+                ],
+              },
+            },
+          ]),
+        ]),
+      ),
+    );
+  },
+  /** A loop asks one long question, after a conversation: the Needs you tray in a short panel */
+  "loop-tall-question": ({ store }) => {
+    store.dispatch(
+      newSession(
+        session(
+          [
+            user("Why does the parseConfig test fail?"),
+            assistant(MARKDOWN_REPLY),
+          ],
+          "Fix parseConfig",
+        ),
+      ),
+    );
+    store.dispatch(setMode("loop" as never));
+    store.dispatch(setTaskPlan(PLAN));
+    store.dispatch(
+      setLoop({
+        ...loopState(),
+        status: "waiting",
+        questions: [
+          {
+            id: "q1",
+            itemId: "2",
+            question: `PR #7 is open and green by its own report. ${LONG_QUESTION} ${LONG_QUESTION}`,
+            kind: "blocking" as const,
+            options: ["Merge it as it is (recommended)", "Leave it open"],
+            askedAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    );
   },
   /** A re-plan waits to be accepted: the tray holds Review diff, Keep planning, Accept plan */
   "loop-replan": ({ store }) => {

@@ -67,12 +67,27 @@ describe("checkStack", () => {
       ["accept-tool-call-button-call-1 shows 0 of 22 px"],
     );
   });
+
+  it("reports a question's answer controls that are cut, and allows a pixel", () => {
+    assert.deepEqual(checkStack(facts({ answers: part(52) })), []);
+    assert.deepEqual(checkStack(facts({ answers: part(52, 51) })), []);
+    assert.deepEqual(checkStack(facts({ answers: part(52, 30) })), [
+      "the question's answer controls show 30 of 52 px",
+    ]);
+    // no question on the page, or a measurement taken before they were measured
+    assert.deepEqual(checkStack(facts({ answers: null })), []);
+  });
 });
 
 describe("views that are measured", () => {
   it("a view marked stack carries it into its jobs, others do not", () => {
     const marked = Object.keys(VIEWS).filter((v) => VIEWS[v].stack);
-    assert.deepEqual(marked, ["crowded-stack"]);
+    assert.deepEqual(marked, [
+      "approval",
+      "crowded-stack",
+      "tall-question",
+      "loop-tall-question",
+    ]);
     const jobs = planJobs({
       views: ["crowded-stack", "chat"],
       widths: [300],

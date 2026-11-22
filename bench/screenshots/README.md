@@ -62,9 +62,17 @@ other view hides) and `zoom-150`.
 `crowded-stack` is a short panel's worst case: an approval waiting, the task
 list open with three tasks and two queued messages, above the prompt. Shoot it
 with `--height 400`. It is also measured (`src/stack.mjs`): its manifest entry
-gets `stack`, the height of the chat, the prompt and each approval button and
-how much of each shows, and a `stack:` error when under 96 px of the chat
-shows or the prompt or the first approval's buttons are cut.
+gets `stack`, the height of the chat, the prompt, each approval button and the
+first question's answer controls and how much of each shows, and a `stack:`
+error when under 96 px of the chat shows or the prompt, the first approval's
+buttons or those answer controls are cut.
+
+Three more views are measured the same way. `approval` (three calls) and
+`tall-question` (a plan's three long decisions in the Questions panel, after a
+conversation) pass at 300 by 400. `loop-tall-question` (Loop mode after a
+conversation, one long question in the Needs you tray) passes from 300 by 440:
+below that the tray keeps a line of the question and its choices, and the chat
+has what is left (61 px at 400).
 
 `zoom-150` is `status-row` at a zoom of 1.5. VS Code's window zoom is the
 browser's page zoom: the panel keeps its size on screen and the webview gets
@@ -232,4 +240,4 @@ cd bench/screenshots && npm test
 
 Offline: the command line, the view list, the pixel counting, the file server's
 path check, the browser choice, the overflow rules and baseline comparison, and
-the height rule of `crowded-stack`.
+the height rule of the measured views.
