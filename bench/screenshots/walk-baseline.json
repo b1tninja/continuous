@@ -1,27 +1,27 @@
 {
   "tool": "bench/screenshots walk.mjs",
   "note": "Per journey and panel width (700 px high): steps (deliberate actions), scrollPx (scrolled to bring each control into view, added up), goalY (the goal control's top edge on its unscrolled page), controlsPassed (Tab stops before it; controlsInPanel: those in its tab panel), filesOpened, endsIn (page, or file when the person is left in an editor file of fileBytes characters), deadEnds. --check fails on more steps, more than 24 px more scroll, more controls passed, more files opened or a worse end. Taken with Windows fonts. Rewrite with --update; never edit by hand.",
-  "layout": "2026-11: MCP servers at the end of the Tools tab; Models and Providers are two tabs",
+  "layout": "2026-11: MCP servers is a tab with an Add dialog; Add a model asks what you have, then Use for",
   "journeys": {
     "reach-mcp-list": {
       "300": {
         "steps": 2,
-        "scrollPx": 3383,
-        "goalY": 4063,
-        "controlsPassed": 32,
-        "controlsInPanel": 30,
-        "pointerOnlyPassed": 13,
+        "scrollPx": 0,
+        "goalY": 58,
+        "controlsPassed": 2,
+        "controlsInPanel": 0,
+        "pointerOnlyPassed": 0,
         "filesOpened": 0,
         "endsIn": "page",
         "deadEnds": 0
       },
       "800": {
         "steps": 2,
-        "scrollPx": 1913,
-        "goalY": 2593,
-        "controlsPassed": 32,
-        "controlsInPanel": 30,
-        "pointerOnlyPassed": 13,
+        "scrollPx": 0,
+        "goalY": 16,
+        "controlsPassed": 2,
+        "controlsInPanel": 0,
+        "pointerOnlyPassed": 0,
         "filesOpened": 0,
         "endsIn": "page",
         "deadEnds": 0
@@ -29,34 +29,32 @@
     },
     "add-mcp-server": {
       "300": {
-        "steps": 3,
-        "scrollPx": 3381,
-        "goalY": 4065,
-        "controlsPassed": 32,
-        "controlsInPanel": 30,
-        "pointerOnlyPassed": 13,
-        "filesOpened": 1,
-        "endsIn": "file",
-        "fileBytes": 160,
-        "deadEnds": 2
+        "steps": 7,
+        "scrollPx": 341,
+        "goalY": 91,
+        "controlsPassed": 2,
+        "controlsInPanel": 0,
+        "pointerOnlyPassed": 0,
+        "filesOpened": 0,
+        "endsIn": "page",
+        "deadEnds": 0
       },
       "800": {
-        "steps": 3,
-        "scrollPx": 1911,
-        "goalY": 2595,
-        "controlsPassed": 32,
-        "controlsInPanel": 30,
-        "pointerOnlyPassed": 13,
-        "filesOpened": 1,
-        "endsIn": "file",
-        "fileBytes": 160,
-        "deadEnds": 2
+        "steps": 7,
+        "scrollPx": 156,
+        "goalY": 39,
+        "controlsPassed": 2,
+        "controlsInPanel": 0,
+        "pointerOnlyPassed": 0,
+        "filesOpened": 0,
+        "endsIn": "page",
+        "deadEnds": 0
       }
     },
     "add-chat-model": {
       "300": {
         "steps": 10,
-        "scrollPx": 180,
+        "scrollPx": 212,
         "goalY": 62,
         "controlsPassed": 2,
         "controlsInPanel": 0,
@@ -67,7 +65,7 @@
       },
       "800": {
         "steps": 10,
-        "scrollPx": 123,
+        "scrollPx": 91,
         "goalY": 20,
         "controlsPassed": 2,
         "controlsInPanel": 0,

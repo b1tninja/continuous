@@ -3,16 +3,19 @@
 // list, add an MCP server, add a chat model), walked in the real page at 300
 // and 800 px and counted: steps, scroll, controls passed, files opened, dead
 // ends. `--check` compares with walk-baseline.json and exits 1 when a journey
-// got worse; `--update` rewrites the baseline. Dev-only; see README.md, Walks.
+// got worse (`--check-only` on the named numbers only); `--update` rewrites
+// the baseline. Dev-only; see README.md, Walks.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildHarness, playwrightDir } from "./src/build.mjs";
 import {
+  CHECK_METRICS,
   compareAll,
   formatTable,
   JOURNEYS,
+  parseCheckOnly,
   readWalkBaseline,
   SCROLL_TOLERANCE,
   WALK_HEIGHT,
@@ -27,9 +30,11 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const BASELINE = path.join(here, "walk-baseline.json");
 const USAGE = `Usage: npm run walk -- [--journey <ids>] [--width ${WALK_WIDTHS.join(",")}]
                   [--browser auto|chromium|edge|chrome] [--check] [--update]
-                  [--out <dir>] [--dist <dir>]
+                  [--check-only <metrics>] [--out <dir>] [--dist <dir>]
 Journeys: ${JOURNEYS.map((j) => j.id).join(", ")}. The panel is ${WALK_HEIGHT} px high.
   --check    compare with walk-baseline.json; exit 1 when a journey got worse
+  --check-only <list>  --check on these only, of ${CHECK_METRICS.join(",")}.
+             Scroll depends on the machine's fonts; the others do not.
   --update   rewrite the baseline from this run (every journey and both widths)
   --out      where walk.json (the numbers and each journey's trace) goes;
              a new folder in the temp directory when left out
@@ -52,6 +57,10 @@ async function main() {
       })
     : JOURNEYS;
   const widths = parseWidths(arg(argv, "width", WALK_WIDTHS.join(",")));
+  // Read before the walk: a misspelt metric should not cost a whole run
+  const only = argv.includes("--check-only")
+    ? parseCheckOnly(arg(argv, "check-only"))
+    : CHECK_METRICS;
   const keep = arg(argv, "out");
   const out = keep
     ? path.resolve(keep)
@@ -112,10 +121,11 @@ async function main() {
     });
     return console.error(`baseline written: ${BASELINE}`);
   }
-  if (argv.includes("--check")) {
+  if (argv.includes("--check") || argv.includes("--check-only")) {
     const { rows, failed: worse } = compareAll(
       results,
       readWalkBaseline(BASELINE),
+      { only },
     );
     for (const r of rows) {
       for (const b of r.better) {
@@ -134,7 +144,11 @@ async function main() {
     console.error(
       `${count("worse")} worse, ${count("better")} improved, ${count("same")} the same`,
     );
-    process.exitCode = worse ? 1 : 0;
+    if (only.length < CHECK_METRICS.length) {
+      console.error(`compared: ${only.join(", ")}`);
+    }
+    // A journey that could not be walked is not "the same" as anything
+    process.exitCode = worse ? 1 : failed.length ? 2 : 0;
     return;
   }
   process.exitCode = failed.length ? 2 : 0;
