@@ -80,6 +80,8 @@ jobs:
         id: node
         with:
           node-version-file: ".nvmrc"
+          # packageManager in package.json would turn the npm cache on here
+          package-manager-cache: false
 
       # main.yaml refuses to publish an odd minor version, which is found only at release time.
       # Run the same script at review time when a PR changes the extension's package.json.

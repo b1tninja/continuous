@@ -66,10 +66,18 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+          # packageManager in package.json would turn the npm cache on here
+          package-manager-cache: false
       - name: Pin policy
         run: |
           node scripts/ci/check-pins.mjs
           node --test scripts/ci/check-pins.test.mjs
+      # The npm on this runner against packageManager, and lockfileVersion in every lockfile.
+      # It cannot tell npm 10 from npm 11 by the lockfile: both write lockfileVersion 3.
+      - name: npm pin
+        run: |
+          node --test scripts/ci/check-npm-pin.test.mjs
+          node scripts/ci/check-npm-pin.mjs
       - name: Fixture provenance and licences (strict)
         run: |
           node scripts/ci/check-notice.mjs --strict

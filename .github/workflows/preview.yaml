@@ -80,6 +80,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version-file: ".nvmrc"
+          # packageManager in package.json would turn the npm cache on here
+          package-manager-cache: false
 
       - uses: ./.github/actions/build-vscode-extension
         with:
@@ -205,6 +207,8 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version-file: ".nvmrc"
+          # packageManager in package.json would turn the npm cache on here
+          package-manager-cache: false
 
       - name: Create PR branch
         run: |

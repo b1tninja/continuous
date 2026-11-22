@@ -20,6 +20,8 @@ runs:
       id: node
       with:
         node-version-file: ".nvmrc"
+        # packageManager in package.json would turn the npm cache on here
+        package-manager-cache: false
 
     - name: Restore built packages
       id: built
