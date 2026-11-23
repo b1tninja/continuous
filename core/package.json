@@ -34,7 +34,7 @@
     "@types/shell-quote": "^1.7.5",
     "@types/uuid": "^9.0.7",
     "@types/win-ca": "^3.5.4",
-    "cross-env": "^7.0.3",
+    "cross-env": "^10.1.0",
     "esbuild": "^0.28.2",
     "eslint": "^10.13.0",
     "jest": "^30.5.2",
