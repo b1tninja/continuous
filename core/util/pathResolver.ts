@@ -5,6 +5,7 @@ import untildify from "untildify";
 import { IDE } from "..";
 import { resolveRelativePathInDir, staysInDir } from "./ideUtils";
 import { joinPathsToUri } from "./uri";
+import { workspaceFoldersForFiles } from "./workspaceFolders";
 
 export interface ResolvedPath {
   uri: string;
@@ -59,13 +60,7 @@ async function isUriWithinWorkspace(ide: IDE, uri: string): Promise<boolean> {
   if (typeof ide.getWorkspaceDirs !== "function") return true;
   // The folders the person added count as the workspace for this question.
   // The chat page bundles this file and has no filesystem, so only Node reads them.
-  const opened = await ide.getWorkspaceDirs();
-  const workspaceDirs =
-    typeof process === "undefined"
-      ? opened
-      : await import("../tools/permissions/additionalFolders").then((m) =>
-          m.withAdditionalFolders(opened, m.readUserAdditionalFolders()),
-        );
+  const workspaceDirs = await workspaceFoldersForFiles(ide);
   const realUri = uri.startsWith("file:") ? followLocalSymlink(uri) : uri;
   const realDirs = workspaceDirs.map((dir) =>
     dir.startsWith("file:") ? followLocalSymlink(dir) : dir,

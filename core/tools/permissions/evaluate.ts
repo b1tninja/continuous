@@ -320,6 +320,7 @@ function applyShellHints(
   result: ToolPolicyResult,
 ): ToolPolicyResult {
   if (input.toolName !== "run_terminal_command") return result;
+  if (!builtinRuleOn(input.approval, "check-shell-commands")) return result;
   const command = input.parsedArgs.command;
   if (typeof command !== "string") return result;
   const found = shellHintDecision(command, input.shell);

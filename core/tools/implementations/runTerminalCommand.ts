@@ -91,6 +91,7 @@ import { terminalEnvironment } from "../../util/terminalEnvironment";
 import { refusalText } from "../refusalText";
 import { getBooleanArg, getStringArg } from "../parseArgs";
 import { commandLintGate } from "../permissions/commandLint";
+import { builtinSwitchOff } from "../permissions/secretSwitch";
 import { missingBinaryGate } from "../permissions/missingBinaryGate";
 
 /**
@@ -194,6 +195,7 @@ function commandBlocked(
   command: string,
   remoteName?: string,
 ): string | undefined {
+  const shellCheckOn = !builtinSwitchOff("check-shell-commands");
   if (executionShell(remoteName).source === "terminal") {
     // Asked to run in a container or in WSL, which a remote window cannot
     // honour: typing the command into the remote terminal would run it
@@ -203,13 +205,13 @@ function commandBlocked(
     // The command goes to a remote window's terminal: this machine's shell
     // does not read it, so its dialect rules (no && in Windows PowerShell)
     // do not apply and nothing is started here that could be missing
-    return commandLintGate(command, "unknown");
+    return commandLintGate(command, "unknown", process.env, shellCheckOn);
   }
   const executor = getCommandExecutor();
   return (
     executor.unavailable ??
-    commandLintGate(command, executor.shell.kind) ??
-    missingBinaryGate(command, executor)
+    commandLintGate(command, executor.shell.kind, process.env, shellCheckOn) ??
+    missingBinaryGate(command, executor, { checkOn: shellCheckOn })
   );
 }
 

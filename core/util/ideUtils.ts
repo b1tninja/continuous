@@ -1,4 +1,5 @@
 import { IDE } from "..";
+import { workspaceFoldersForFiles } from "./workspaceFolders";
 import {
   isAbsoluteAnyStyle,
   posixPathInside,
@@ -116,7 +117,7 @@ export async function resolveRelativePathInDir(
   dirUriCandidates?: string[],
   options?: ResolveOptions,
 ): Promise<string | undefined> {
-  const dirs = dirUriCandidates ?? (await ide.getWorkspaceDirs());
+  const dirs = dirUriCandidates ?? (await workspaceFoldersForFiles(ide));
   for (const dirUri of dirs) {
     const fullUri = joinPathsToUri(dirUri, path);
     // A path that climbs out of this directory is not inside it, even when

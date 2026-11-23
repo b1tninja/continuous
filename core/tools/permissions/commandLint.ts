@@ -459,13 +459,17 @@ const WARNED_LIMIT = 200;
  * What stands between the agent and running `command`: undefined to run it,
  * or the message to return in place of a result. A mistake that is certain
  * always stops the call. A likely mistake stops it once; sending the exact
- * same command again is the confirmation. Off with CONTINUE_COMMAND_LINT=off.
+ * same command again is the confirmation. Off with the "Check shell commands"
+ * switch, or CONTINUE_COMMAND_LINT=off.
  */
 export function commandLintGate(
   command: string,
   shell: ShellKind,
   env: Record<string, string | undefined> = process.env,
+  /** False when the person switched the shell check off: the command runs as written */
+  checkOn: boolean = true,
 ): string | undefined {
+  if (!checkOn) return undefined;
   if (env.CONTINUE_COMMAND_LINT === "off") return undefined;
   const findings = lintCommand(command, shell);
   if (findings.length === 0) return undefined;

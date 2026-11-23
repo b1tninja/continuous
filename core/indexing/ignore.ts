@@ -4,6 +4,7 @@ import ignore from "ignore";
 import path from "path";
 import { fileURLToPath } from "url";
 import { ContinueError, ContinueErrorReason } from "../util/errors";
+import { secretSwitchOff } from "../tools/permissions/secretSwitch";
 import {
   DEFAULT_SECURITY_IGNORE_DIRS,
   DEFAULT_SECURITY_IGNORE_FILETYPES,
@@ -194,7 +195,8 @@ function patternHit(p: string): boolean {
 /**
  * A secret file, or a relative path that leaves `workspaceRoot` (the working
  * directory when omitted). The path is resolved, and a symlink is followed,
- * before either check.
+ * before either check. A secret file is not a concern while the person has
+ * switched "Commands and secrets" off (secretSwitch.ts).
  */
 export function isSecurityConcern(
   filePathOrUri: string,
@@ -225,6 +227,10 @@ export function isSecurityConcern(
   }
 
   if (relativeInput && !isInsideDir(root, resolved)) return true;
+
+  // The person switched "Commands and secrets" off: a secret-looking file is
+  // not a concern. Leaving the workspace above is a different check, and stays.
+  if (secretSwitchOff()) return false;
 
   if (relativeInput && patternHit(filepath)) return true;
   const dir = path.dirname(resolved).split(/[/\\]/).at(-1) ?? "";

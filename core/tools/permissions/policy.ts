@@ -100,6 +100,7 @@ export type BuiltinRuleId =
   | "ask-dependency-change"
   | "ask-unknown-host"
   | "ask-outside-paths"
+  | "check-shell-commands"
   | "plan-keeps-checks";
 
 export const BUILTIN_RULES: readonly {
@@ -163,6 +164,12 @@ export const BUILTIN_RULES: readonly {
     label: "Ask before a file tool leaves the workspace",
     description:
       "A read, listing or write of a real path outside the workspace folders: an absolute path elsewhere, a `..` climb, a symlink or junction that leaves, another account's home. Device paths, alternate data streams and your global configuration folder ask whatever this says.",
+  },
+  {
+    id: "check-shell-commands",
+    label: "Check shell commands before running them",
+    description:
+      "Stops a command the shell would reject before it runs: bash in PowerShell (`export`, heredocs, `&&` in Windows PowerShell 5.1), PowerShell in bash, an inline script that quoting breaks, and a program that is not installed. Off: the command runs as written and the shell reports the error.",
   },
   {
     id: "plan-keeps-checks",

@@ -9,16 +9,16 @@ import {
 
 describe("the one-line state of each folded permission group", () => {
   it("built-in rules: all on and not set, then set, then which are off", () => {
-    expect(builtinRulesSummary({})).toEqual({ text: "Not set: 11 of 11 on" });
+    expect(builtinRulesSummary({})).toEqual({ text: "Not set: 12 of 12 on" });
     expect(
       builtinRulesSummary({ builtin: { "protect-secrets": true } }),
-    ).toEqual({ text: "Set by you: 11 of 11 on" });
+    ).toEqual({ text: "Set by you: 12 of 12 on" });
     expect(
       builtinRulesSummary({
         builtin: { "protect-secrets": false, "ask-large-change": false },
       }),
     ).toEqual({
-      text: "Set by you: 9 of 11 on. Off: Ask before touching credentials; Ask before a large change",
+      text: "Set by you: 10 of 12 on. Off: Ask before touching credentials; Ask before a large change",
       warning: true,
     });
   });
