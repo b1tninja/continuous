@@ -100,7 +100,7 @@
     "ignore-walk": "^9.0.0",
     "ink": "^8.0.0",
     "ink-testing-library": "^4.0.0",
-    "jsdom": "^26.1.0",
+    "jsdom": "^31.0.1",
     "lowlight": "^3.3.0",
     "nock": "^15.0.6",
     "node-machine-id": "^1.1.12",
