@@ -4,6 +4,7 @@ import * as nodePath from "node:path";
 import { pathToFileURL } from "node:url";
 import * as YAML from "yaml";
 import { getContinueGlobalPath } from "../../util/paths";
+import { registerWorkspaceFolderExtender } from "../../util/workspaceFolders";
 
 /**
  * Folders the person added to the workspace for the "outside the workspace"
@@ -225,15 +226,6 @@ interface Cached {
 }
 const cache = new Map<string, Cached>();
 
-/** The added folders, or none where Node's modules are missing (the chat page). */
-export function addedFoldersOrNone(): string[] {
-  try {
-    return readUserAdditionalFolders();
-  } catch {
-    return [];
-  }
-}
-
 export function readUserAdditionalFolders(
   file = nodePath.join(getContinueGlobalPath(), "config.yaml"),
 ): string[] {
@@ -261,3 +253,9 @@ export function readUserAdditionalFolders(
 export function clearAdditionalFoldersCacheForTests(): void {
   cache.clear();
 }
+
+// The file tools ask for the workspace folders through util/workspaceFolders.ts,
+// which the chat page bundles and which therefore cannot import this file.
+registerWorkspaceFolderExtender((opened) =>
+  withAdditionalFolders(opened, readUserAdditionalFolders()),
+);

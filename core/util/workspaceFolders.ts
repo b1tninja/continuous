@@ -5,18 +5,30 @@ import type { IDE } from "..";
  * then the folders the person added with `additionalFolders` in config.yaml.
  * Both count as the workspace for every file tool, edits included.
  *
- * The added folders are read with Node only; the chat page bundles this file and
- * has no filesystem, so there the IDE's folders are all there is.
+ * The chat page bundles this file and has no filesystem, so this file imports
+ * nothing from Node. The Node side registers how to read the added folders
+ * (`registerWorkspaceFolderExtender`, called by
+ * tools/permissions/additionalFolders.ts when it loads). Where nothing is
+ * registered, the IDE's folders are all there is.
  */
-export async function workspaceFoldersForFiles(ide: IDE): Promise<string[]> {
-  const opened = await ide.getWorkspaceDirs();
-  if (typeof process === "undefined") return opened;
-  // Where Node's path is missing (the webview bundle) the import or its calls
-  // throw: the IDE's folders are all there is then
+type Extender = (opened: string[]) => string[];
+
+let extender: Extender | undefined;
+
+export function registerWorkspaceFolderExtender(fn: Extender): void {
+  extender = fn;
+}
+
+/** The workspace folders with the added ones, or just these when none can be read. */
+export function withAddedFolders(opened: string[]): string[] {
+  if (!extender) return opened;
   try {
-    const m = await import("../tools/permissions/additionalFolders");
-    return m.withAdditionalFolders(opened, m.readUserAdditionalFolders());
+    return extender(opened);
   } catch {
     return opened;
   }
+}
+
+export async function workspaceFoldersForFiles(ide: IDE): Promise<string[]> {
+  return withAddedFolders(await ide.getWorkspaceDirs());
 }

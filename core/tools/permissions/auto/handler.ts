@@ -36,10 +36,7 @@ import {
 import { AutoReviewSessions, reviewContextKey } from "./state";
 import { reasonOf, TAINTED_SESSION_SOURCE } from "../taint/taintRule";
 import { taintInput } from "../taint/taintWiring";
-import {
-  addedFoldersOrNone,
-  withAdditionalFolders,
-} from "../additionalFolders";
+import { withAddedFolders } from "../../../util/workspaceFolders";
 
 export interface AutoReviewRequest {
   sessionId: string;
@@ -168,12 +165,7 @@ export async function autoReviewToolCall(
     permissions: deps.permissions,
     approval: req.approval,
     cwd: folderPath(deps.environment.workspaceDirs?.[0]),
-    ...deputyWorkspace(
-      withAdditionalFolders(
-        deps.environment.workspaceDirs ?? [],
-        addedFoldersOrNone(),
-      ),
-    ),
+    ...deputyWorkspace(withAddedFolders(deps.environment.workspaceDirs ?? [])),
     shell: deps.shell,
     trustedDomains: deps.trustedDomains,
     envNames: deps.envNames,

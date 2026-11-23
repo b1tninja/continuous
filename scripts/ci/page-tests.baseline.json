@@ -68,16 +68,6 @@
       "where": "core/tools/permissions/auto/state.ts#reviewContextKey",
       "kind": "not-reached",
       "why": "Uses createHash from node:crypto. Its only caller is core/tools/permissions/auto/handler.ts, which runs in core when the page sends tools/autoReview; the page imports handler.ts for a type only, and from state.ts only stableStringify (gui/src/redux/slices/blockedCallsSlice.ts). The planMode suite reaches it by calling the handler directly."
-    },
-    {
-      "suite": "core/tools/permissions/additionalFolders.vitest.ts",
-      "kind": "not-reached",
-      "why": "Reads the folders the person added from config.yaml with Node's fs, path, os and url, which the page does not have. The page reaches this module only through workspaceFoldersForFiles and addedFoldersOrNone, which return before it when there is no process or catch its error, so the page never calls it; this suite calls it directly."
-    },
-    {
-      "suite": "core/tools/permissions/additionalFolders.integration.vitest.ts",
-      "kind": "not-reached",
-      "why": "Reads the folders the person added from config.yaml with Node's fs, path, os and url, which the page does not have. The page reaches this module only through workspaceFoldersForFiles and addedFoldersOrNone, which return before it when there is no process or catch its error, so the page never calls it; this suite calls it directly."
     }
   ]
 }
