@@ -55,14 +55,32 @@ describe("detectShellHints on the terminal command path", () => {
     expect(r.reason).toContain("Windows PowerShell 5.1");
   });
 
-  it("refuses && at IDGAF, because Windows PowerShell 5.1 cannot parse it", () => {
-    const r = run("echo A && echo B", "powershell", ALLOW, IDGAF);
+  it("refuses && at IDGAF only when the person keeps the shell check on", () => {
+    // The IDGAF preset switches the check off, so the command runs as written
+    const off = run("echo A && echo B", "powershell", ALLOW, IDGAF);
+    expect(off.source).not.toBe("shell-hint");
+    // A switch the file names as on stays on at IDGAF
+    const kept: ApprovalSettings = {
+      ...IDGAF,
+      builtin: { ...IDGAF.builtin, "check-shell-commands": true },
+    };
+    const r = run("echo A && echo B", "powershell", ALLOW, kept);
     expect(r.policy).toBe(OFF);
     expect(r.source).toBe("shell-hint");
     expect(r.reason).toContain("The command was not run");
     expect(r.reason).toContain("Windows PowerShell 5.1");
     expect(r.reason).toContain("Instead:");
     expect(r.reason).toContain("Fix it and call again");
+  });
+
+  it("runs && as written once the Check shell commands switch is off", () => {
+    const off: ApprovalSettings = {
+      levels: { ...IDGAF.levels, tools: "automatic" },
+      builtin: { "check-shell-commands": false },
+    };
+    const r = run("echo A && echo B", "powershell", ALLOW, off);
+    expect(r.source).not.toBe("shell-hint");
+    expect(r.policy).not.toBe(OFF);
   });
 
   it("asks for rm -rf and rm -r below IDGAF, and does not call them a shell hint", () => {
@@ -79,15 +97,15 @@ describe("detectShellHints on the terminal command path", () => {
     expect(r.source).not.toBe("shell-hint");
   });
 
-  it("refuses an unclosed quote before anyone is asked, including at IDGAF", () => {
-    for (const approval of [undefined, IDGAF]) {
-      const r = run('echo "hello', "powershell", ALLOW, approval);
-      expect(r.policy).toBe(OFF);
-      expect(r.source).toBe("shell-hint");
-      expect(r.reason).toContain("never closed");
-      expect(r.reason).toContain("Instead:");
-      expect(r.reason).toContain("Windows PowerShell");
-    }
+  it("refuses an unclosed quote before anyone is asked, unless the switch is off", () => {
+    const r = run('echo "hello', "powershell", ALLOW, undefined);
+    expect(r.policy).toBe(OFF);
+    expect(r.source).toBe("shell-hint");
+    expect(r.reason).toContain("never closed");
+    expect(r.reason).toContain("Instead:");
+    expect(r.reason).toContain("Windows PowerShell");
+    const atIdgaf = run('echo "hello', "powershell", ALLOW, IDGAF);
+    expect(atIdgaf.source).not.toBe("shell-hint");
   });
 
   it("leaves && alone under bash, and raises nothing when the shell is unknown", () => {

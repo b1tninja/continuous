@@ -98,6 +98,8 @@ export interface MissingBinaryGateOptions {
   cwd?: string;
   now?: () => number;
   probe?: Probe;
+  /** False when the person switched the shell check off */
+  checkOn?: boolean;
   /** For tests: stands in for the PATH search */
   onPath?: (name: string) => boolean;
 }
@@ -113,6 +115,8 @@ export function missingBinaryGate(
 ): string | undefined {
   const env = opts.env ?? process.env;
   if (env.CONTINUE_MISSING_BINARY_CHECK === "off") return undefined;
+  // The same "Check shell commands" switch as the syntax lint
+  if (opts.checkOn === false) return undefined;
   if (executor.kind === "container") return undefined;
   const platform = opts.platform ?? process.platform;
   const now = opts.now ?? Date.now;

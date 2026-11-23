@@ -225,6 +225,7 @@ const BUILTIN_AREAS: Record<BuiltinRuleId, PolicyArea[]> = {
   "protect-network-paths": ["context", "tools"],
   "refuse-dangerous-commands": ["tools"],
   "no-fetch-and-run": ["tools"],
+  "check-shell-commands": ["tools"],
   "ask-destructive-commands": ["tools"],
   "ask-large-change": ["edits"],
   "ask-dependency-change": ["tools", "edits"],

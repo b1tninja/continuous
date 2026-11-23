@@ -2,6 +2,22 @@
   "comment": "Node modules the chat webview build replaces with an empty stub, from our own sources. Existing pairs are not reviewed one by one: each is a place where the page gets an empty module, and calling into it throws there. Regenerate with --update after removing one.",
   "pairs": [
     {
+      "module": "node:fs",
+      "importer": "core/tools/permissions/additionalFolders.ts"
+    },
+    {
+      "module": "node:os",
+      "importer": "core/tools/permissions/additionalFolders.ts"
+    },
+    {
+      "module": "node:path",
+      "importer": "core/tools/permissions/additionalFolders.ts"
+    },
+    {
+      "module": "node:url",
+      "importer": "core/tools/permissions/additionalFolders.ts"
+    },
+    {
       "module": "node:crypto",
       "importer": "core/tools/permissions/auto/state.ts"
     },
@@ -22,12 +38,36 @@
       "importer": "core/tools/permissions/readOnlyCommand.ts"
     },
     {
+      "module": "node:fs",
+      "importer": "core/util/atomicWrite.ts"
+    },
+    {
+      "module": "node:path",
+      "importer": "core/util/atomicWrite.ts"
+    },
+    {
       "module": "node:url",
       "importer": "core/util/checkpoints.ts"
     },
     {
       "module": "node:child_process",
       "importer": "core/util/containerStatus.ts"
+    },
+    {
+      "module": "fs",
+      "importer": "core/util/paths.ts"
+    },
+    {
+      "module": "os",
+      "importer": "core/util/paths.ts"
+    },
+    {
+      "module": "path",
+      "importer": "core/util/paths.ts"
+    },
+    {
+      "module": "url",
+      "importer": "core/util/paths.ts"
     },
     {
       "module": "node:path",

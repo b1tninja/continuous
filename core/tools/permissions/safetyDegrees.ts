@@ -15,13 +15,14 @@ import {
 
 export type SafetyDegree = "all" | "some" | "few" | "none";
 
-/** Credentials, config that runs later, network paths, dangerous commands, run-a-download. */
+/** Credentials, config that runs later, network paths, dangerous commands, run-a-download, shell syntax. */
 export const HARD_PROTECTIONS: readonly BuiltinRuleId[] = [
   "protect-secrets",
   "protect-config",
   "protect-network-paths",
   "refuse-dangerous-commands",
   "no-fetch-and-run",
+  "check-shell-commands",
 ];
 
 /** Asked about before work is lost, a dependency changes or a new host is contacted. */
