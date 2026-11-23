@@ -37,7 +37,7 @@ import { AutoReviewSessions, reviewContextKey } from "./state";
 import { reasonOf, TAINTED_SESSION_SOURCE } from "../taint/taintRule";
 import { taintInput } from "../taint/taintWiring";
 import {
-  readUserAdditionalFolders,
+  addedFoldersOrNone,
   withAdditionalFolders,
 } from "../additionalFolders";
 
@@ -171,7 +171,7 @@ export async function autoReviewToolCall(
     ...deputyWorkspace(
       withAdditionalFolders(
         deps.environment.workspaceDirs ?? [],
-        readUserAdditionalFolders(),
+        addedFoldersOrNone(),
       ),
     ),
     shell: deps.shell,

@@ -33,11 +33,15 @@ function switchesIn(file: string): Partial<Record<string, boolean>> {
   }
 }
 
-export function builtinSwitchOff(
-  id: BuiltinRuleId,
-  file: string = path.join(getContinueGlobalPath(), "permissions.yaml"),
-): boolean {
-  return switchesIn(file)[id] === false;
+export function builtinSwitchOff(id: BuiltinRuleId, file?: string): boolean {
+  // The chat page has no Node modules: there every switch is on, as before
+  try {
+    const where =
+      file ?? path.join(getContinueGlobalPath(), "permissions.yaml");
+    return switchesIn(where)[id] === false;
+  } catch {
+    return false;
+  }
 }
 
 /** The "Commands and secrets" switch, for the secret-file filter. */

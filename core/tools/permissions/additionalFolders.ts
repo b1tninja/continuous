@@ -225,6 +225,15 @@ interface Cached {
 }
 const cache = new Map<string, Cached>();
 
+/** The added folders, or none where Node's modules are missing (the chat page). */
+export function addedFoldersOrNone(): string[] {
+  try {
+    return readUserAdditionalFolders();
+  } catch {
+    return [];
+  }
+}
+
 export function readUserAdditionalFolders(
   file = nodePath.join(getContinueGlobalPath(), "config.yaml"),
 ): string[] {
