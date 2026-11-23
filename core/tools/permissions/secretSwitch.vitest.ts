@@ -2,6 +2,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { isSecurityConcern } from "../../indexing/ignore";
+import { secretSwitchOff } from "./secretSwitch";
 
 let dir: string;
 
@@ -9,9 +11,6 @@ vi.mock("../../util/paths", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../util/paths")>();
   return { ...real, getContinueGlobalPath: () => dir };
 });
-
-const { isSecurityConcern } = await import("../../indexing/ignore");
-const { secretSwitchOff } = await import("./secretSwitch");
 
 const file = () => path.join(dir, "permissions.yaml");
 

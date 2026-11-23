@@ -2,6 +2,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { commandLintGate, resetCommandLintGate } from "./commandLint";
+import { builtinSwitchOff } from "./secretSwitch";
 
 let dir: string;
 
@@ -9,9 +11,6 @@ vi.mock("../../util/paths", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../util/paths")>();
   return { ...real, getContinueGlobalPath: () => dir };
 });
-
-const { commandLintGate, resetCommandLintGate } = await import("./commandLint");
-const { builtinSwitchOff } = await import("./secretSwitch");
 
 // What the terminal tool passes: the switch as the file says it now
 const gate = (command: string, shell: "powershell") =>
