@@ -1133,6 +1133,21 @@ export function shellHintTarget(
 }
 
 /**
+ * The command as the shell reads it as code: strings, here-strings, comments
+ * and heredoc bodies are blanked and offsets kept. What is inside them is data
+ * for the program that reads it (a python script in `python -c "..."`, a
+ * message, a heredoc body), not shell syntax. A shell the hints do not know
+ * gives the text as it is.
+ */
+export function codeOnly(
+  command: string,
+  shell: ShellKind | undefined,
+): string {
+  const target = shellHintTarget(shell);
+  return target ? mask(command, target.family).all : command;
+}
+
+/**
  * What the terminal permission path should do with a command written for
  * another shell. `certain` is the pre-flight reject (the shell cannot parse
  * it, or it certainly does the wrong thing). Otherwise the person is asked

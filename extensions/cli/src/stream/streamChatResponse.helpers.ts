@@ -21,6 +21,11 @@ import {
   flagToolText,
   stripsHiddenCharacters,
 } from "core/tools/permissions/injection.js";
+import {
+  recordRefusal,
+  refusalSteer,
+} from "core/tools/permissions/repeatGuard.js";
+import { builtinSwitchOff } from "core/tools/permissions/secretSwitch.js";
 import { hostAllowRules } from "core/tools/permissions/webHostRules.js";
 import { effectiveWebLevel } from "core/tools/permissions/webPolicy.js";
 import { refusalText } from "core/tools/refusalText.js";
@@ -34,6 +39,7 @@ import type { ModelServiceState } from "src/services/types.js";
 
 import { takeBashEnd } from "../audit/bashExit.js";
 import {
+  cliAuditSession,
   idgafWouldHave,
   recordCliDecision,
   recordCliOutcome,
@@ -157,6 +163,26 @@ export function policyDenialContent(
   // No reason given: the tool is excluded for the run
   if (!denialMessage) return refusalText.excluded(toolName);
   return refusalText.blockedByPolicy(denialMessage);
+}
+
+/**
+ * A call the policy refused that comes back, or comes back rewritten a little:
+ * the refusal says so and names another way (core's repeat guard, which the
+ * editor uses too). Only a policy refusal counts; a person's "no" and a Loop
+ * hold are not the model repeating itself. Off with the "Tell the agent when it
+ * repeats a call" switch.
+ */
+function withRepeatedRefusalNote(
+  message: string,
+  denialReason: string,
+  call: { id: string; name: string; arguments?: unknown },
+): string {
+  if (denialReason !== "policy") return message;
+  if (builtinSwitchOff("steer-repeated-calls")) return message;
+  const note = refusalSteer(
+    recordRefusal(cliAuditSession(), call.name, call.arguments, call.id),
+  );
+  return note ? `${message}\n\n${note}` : message;
 }
 
 function deniedToolMessage(
@@ -1628,11 +1654,15 @@ export async function executeStreamedToolCalls(
       if (!permissionResult.approved) {
         // Permission denied: create entry with canceled status
         const denialReason = permissionResult.denialReason || "user";
-        const deniedMessage = deniedToolMessage(
-          call.name,
+        const deniedMessage = withRepeatedRefusalNote(
+          deniedToolMessage(
+            call.name,
+            denialReason,
+            permissionResult.denialMessage,
+            permissionResult.denialSource,
+          ),
           denialReason,
-          permissionResult.denialMessage,
-          permissionResult.denialSource,
+          call,
         );
 
         const deniedEntry: ToolResultWithStatus = {

@@ -50,6 +50,8 @@ export interface EvaluatedPolicy {
   /** The reviewer's named reason (Auto mode). */
   category?: string;
   reason?: string;
+  /** A refused call sent again: said to the model after the refusal (core) */
+  repeatNote?: string;
   /** A command the parser vouched as only reading (core) */
   readOnly?: string;
   rule?: string;
@@ -565,6 +567,7 @@ export async function evaluateToolPolicies(
     rule,
     category,
     protection,
+    repeatNote,
     toolCallState,
   } of disabledResults) {
     dispatch(errorToolCall({ toolCallId: toolCallState.toolCallId }));
@@ -616,7 +619,8 @@ export async function evaluateToolPolicies(
                 ? description
                 : "Security Policy Violation",
             description,
-            content,
+            // The repeat note is in the text the model reads, not only on the card
+            content: repeatNote ? `${content}\n\n${repeatNote}` : content,
             hidden: false,
           },
         ],

@@ -3,6 +3,7 @@ import { diffLines } from "diff";
 import { convertMyersChangeToDiffLines } from "../../diff/myers.js";
 import {
   BUILTIN_RULES,
+  PRESET_FREE_RULES,
   POLICY_AREA_LABELS,
   POLICY_AREAS,
   POLICY_LEVELS,
@@ -63,6 +64,8 @@ export function policySaveLoosenings(
     }
   }
   for (const rule of BUILTIN_RULES) {
+    // A rule no preset sets is not a safety check to loosen
+    if (PRESET_FREE_RULES.has(rule.id)) continue;
     const after = update.builtin?.[rule.id];
     if (after !== false) continue;
     if (before.builtin?.[rule.id] === false) continue;

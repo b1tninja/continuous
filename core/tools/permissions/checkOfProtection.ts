@@ -4,7 +4,7 @@
  * runs by itself, and the shield in the UI (which switch turns a blocked call
  * off). Every protection belongs to exactly one check.
  */
-import { type BuiltinRuleId } from "./policy";
+import { builtinIsOn, type BuiltinRuleId } from "./policy";
 import type { ProtectedKind } from "./protected";
 
 export const CHECK_OF_PROTECTION: Record<ProtectedKind, BuiltinRuleId> = {
@@ -37,7 +37,7 @@ function checkOn(
   builtin: Partial<Record<BuiltinRuleId, boolean>> | undefined,
   id: BuiltinRuleId,
 ): boolean {
-  return builtin?.[id] !== false;
+  return builtinIsOn(builtin, id);
 }
 
 /** The protection kinds whose check is off, so the call skips them. */

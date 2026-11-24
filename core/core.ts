@@ -112,7 +112,14 @@ import { AutoReviewSessions } from "./tools/permissions/auto/state";
 import { listEffectiveRules } from "./tools/permissions/effectiveRules";
 import { evaluateToolPolicyWithRules } from "./tools/permissions/evaluate";
 import { uriToPath } from "./tools/permissions/names";
-import type { PolicyLevels } from "./tools/permissions/policy";
+import { builtinRuleOn, type PolicyLevels } from "./tools/permissions/policy";
+import {
+  recordRefusal,
+  recordResult,
+  refusalSteer,
+  resultSteer,
+} from "./tools/permissions/repeatGuard";
+import { builtinSwitchOff } from "./tools/permissions/secretSwitch";
 import {
   previewPolicySave,
   savePolicyWithConfirmation,
@@ -172,6 +179,7 @@ import {
 import {
   editConfigFile,
   getConfigYamlPath,
+  getEditableConfigYamlPath,
   getGlobalFolderWithName,
   getContinueGlobalPath,
   migrateV1DevDataFiles,
@@ -1196,7 +1204,9 @@ export class Core {
     const on = this.messenger.on.bind(this.messenger);
 
     registerMcpWizardHandlers(on as never, {
-      configPath: () => getConfigYamlPath(),
+      // The MCP servers saved for "all my projects" go in the active config, so
+      // each config keeps its own (not always the main config.yaml)
+      configPath: () => getEditableConfigYamlPath() ?? getConfigYamlPath(),
       continueDir: () => getContinueGlobalPath(),
       projectDir: async () => {
         const dirs = await this.ide.getWorkspaceDirs();
@@ -2880,6 +2890,18 @@ export class Core {
             ),
           }),
         );
+        // A refused call sent again, or rewritten a little and sent again: the
+        // refusal the model reads says so and names another way
+        if (
+          result.policy === "disabled" &&
+          sessionId &&
+          builtinRuleOn(approval, "steer-repeated-calls")
+        ) {
+          const repeatNote = refusalSteer(
+            recordRefusal(sessionId, toolName, parsedArgs, callId),
+          );
+          if (repeatNote) return { ...result, repeatNote };
+        }
         return result;
       },
     );
@@ -3082,6 +3104,43 @@ export class Core {
           : {}),
       output: result.contextItems?.map((c) => c.content).join("\n") ?? "",
     });
+    // The same call, with the same result, again and again: the result says so
+    // and names another way. It is in the tool result, which is what the model
+    // reads (a note on the card alone would reach only the person).
+    if (sessionId && !builtinSwitchOff("steer-repeated-calls")) {
+      const text = [
+        ...(result.contextItems ?? []).map((c) => c.content),
+        result.errorMessage ?? "",
+      ].join("\n");
+      let args: unknown = undefined;
+      try {
+        args = JSON.parse(toolCall.function.arguments || "{}");
+      } catch {
+        args = toolCall.function.arguments;
+      }
+      const count = recordResult(
+        sessionId,
+        toolCall.function.name,
+        args,
+        text,
+        toolCall.id,
+      );
+      const note = resultSteer(count);
+      if (note) {
+        result = {
+          ...result,
+          contextItems: [
+            ...(result.contextItems ?? []),
+            {
+              name: "Repeated call",
+              description: `The same call, ${count} times in a row`,
+              content: note,
+              hidden: false,
+            },
+          ],
+        };
+      }
+    }
     return result;
   }
 

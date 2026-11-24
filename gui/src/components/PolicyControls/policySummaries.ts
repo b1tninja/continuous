@@ -7,6 +7,8 @@ import {
   policyLevelLabel,
   QUESTION_TYPES,
   type PolicyLevel,
+  builtinIsOn,
+  PRESET_FREE_RULES,
 } from "core/tools/permissions/policy";
 import type { PolicyExtras } from "../../redux/slices/uiSlice";
 
@@ -26,17 +28,32 @@ const plural = (n: number, one: string, many: string) =>
 
 /** Built-in rules: how many are on, and which are off. */
 export function builtinRulesSummary(extras: PolicyExtras): FoldSummary {
-  const off = BUILTIN_RULES.filter((r) => extras.builtin?.[r.id] === false);
-  const total = BUILTIN_RULES.length;
+  // The rules a preset sets; the two the person owns are named beside them
+  const rules = BUILTIN_RULES.filter((r) => !PRESET_FREE_RULES.has(r.id));
+  const off = rules.filter((r) => extras.builtin?.[r.id] === false);
+  const total = rules.length;
   const count = `${total - off.length} of ${total} on`;
+  const shell = [
+    builtinIsOn(extras.builtin, "check-shell-commands")
+      ? "Check shell commands: on"
+      : "",
+    builtinIsOn(extras.builtin, "steer-repeated-calls")
+      ? ""
+      : "Tell the agent when it repeats a call: off",
+  ]
+    .filter(Boolean)
+    .map((t) => "; " + t)
+    .join("");
   if (off.length > 0) {
     return {
-      text: `Set by you: ${count}. Off: ${off.map((r) => r.label).join("; ")}`,
+      text: `Set by you: ${count}. Off: ${off.map((r) => r.label).join("; ")}${shell}`,
       warning: true,
     };
   }
   const written = Object.keys(extras.builtin ?? {}).length > 0;
-  return { text: `${written ? "Set by you" : "Not set"}: ${count}` };
+  return {
+    text: `${written ? "Set by you" : "Not set"}: ${count}${shell}`,
+  };
 }
 
 /** Plans and questions: the re-plan allowance and how many question kinds stay with the person. */

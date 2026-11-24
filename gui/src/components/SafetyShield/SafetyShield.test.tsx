@@ -104,7 +104,7 @@ describe("SafetyShield", () => {
       true,
     );
     expect(screen.getByTestId("safety-shield-label").textContent).toBe(
-      "1 of 12 on",
+      "1 of 11 on",
     );
   });
 

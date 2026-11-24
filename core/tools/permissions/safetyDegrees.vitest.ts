@@ -3,6 +3,7 @@ import {
   BUILTIN_RULES,
   POLICY_PRESET_ORDER,
   POLICY_PRESETS,
+  PRESET_FREE_RULES,
   type BuiltinRuleId,
 } from "./policy";
 import {
@@ -18,7 +19,10 @@ import {
   type SafetyDegree,
 } from "./safetyDegrees";
 
-const ids = BUILTIN_RULES.map((r) => r.id);
+// The checks a preset sets; the rules the person owns are left to them
+const ids = BUILTIN_RULES.filter((r) => !PRESET_FREE_RULES.has(r.id)).map(
+  (r) => r.id,
+);
 const DEGREES: SafetyDegree[] = ["all", "some", "few", "none"];
 
 describe("the degrees", () => {

@@ -21,11 +21,17 @@ import {
 } from "./applyTarget";
 import { assembleAppliedContent } from "./assembleAppliedContent";
 import { EditNotAppliedError, EditNotAppliedReason } from "./editNotApplied";
+import { isModelAccessError } from "./modelAccess";
 import {
   pendingEditorForFilepath,
   pendingFilepathForEditor,
   trackPendingNewFile,
 } from "./pendingNewFile";
+
+/** Apply models the account was refused on, by title: skipped for the rest of the session. */
+const refusedApplyModels = new Set<string>();
+const modelKey = (m: { title?: string; model?: string }) =>
+  m.title ?? m.model ?? "";
 
 /**
  * Handles applying text/code to files including diff generation and streaming
@@ -213,6 +219,56 @@ export class ApplyManager {
       throw new EditNotAppliedError(EditNotAppliedReason.NoApplyModel);
     }
 
+    // An apply model the account cannot use (a provider refusal, a missing
+    // grant, a bad key) fails every edit the same way. The edit is retried once
+    // on the chat model, and the refused model is not tried again this session.
+    const chat = config.selectedModelByRole.chat;
+    const refused = refusedApplyModels.has(modelKey(llm));
+    const first = refused && chat ? chat : llm;
+    try {
+      await this.applyWithModel(
+        editor,
+        text,
+        streamId,
+        toolCallId,
+        stamp,
+        first,
+      );
+    } catch (e) {
+      if (
+        first === llm &&
+        chat &&
+        modelKey(chat) !== modelKey(llm) &&
+        isModelAccessError(e)
+      ) {
+        refusedApplyModels.add(modelKey(llm));
+        void vscode.window.showWarningMessage(
+          `The apply model "${llm.title ?? llm.model}" was refused (${e instanceof Error ? e.message.split("\n")[0] : "no access"}). This edit used your chat model "${chat.title ?? chat.model}". Give the apply role to a model you can use.`,
+        );
+        this.throwIfStale(editor, stamp);
+        await this.applyWithModel(
+          editor,
+          text,
+          streamId,
+          toolCallId,
+          stamp,
+          chat,
+        );
+        return;
+      }
+      throw e;
+    }
+  }
+
+  /** The apply step with one model: the lazy apply, then a streamed or an instant diff. */
+  private async applyWithModel(
+    editor: vscode.TextEditor,
+    text: string,
+    streamId: string,
+    toolCallId: string | undefined,
+    stamp: DocumentStamp,
+    llm: any,
+  ) {
     const fileUri = editor.document.uri.toString();
     const abortManager = ApplyAbortManager.getInstance();
     const abortController = abortManager.get(fileUri);

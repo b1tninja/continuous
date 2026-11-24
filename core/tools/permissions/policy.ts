@@ -101,6 +101,7 @@ export type BuiltinRuleId =
   | "ask-unknown-host"
   | "ask-outside-paths"
   | "check-shell-commands"
+  | "steer-repeated-calls"
   | "plan-keeps-checks";
 
 export const BUILTIN_RULES: readonly {
@@ -169,7 +170,13 @@ export const BUILTIN_RULES: readonly {
     id: "check-shell-commands",
     label: "Check shell commands before running them",
     description:
-      "Stops a command the shell would reject before it runs: bash in PowerShell (`export`, heredocs, `&&` in Windows PowerShell 5.1), PowerShell in bash, an inline script that quoting breaks, and a program that is not installed. Off: the command runs as written and the shell reports the error.",
+      "Off unless you turn it on. On, it stops a command the shell would reject before it runs: bash in PowerShell (`export`, heredocs, `&&` in Windows PowerShell 5.1), PowerShell in bash, an inline script that quoting breaks, and a program that is not installed. Off, the command runs as written and the shell reports any error.",
+  },
+  {
+    id: "steer-repeated-calls",
+    label: "Tell the agent when it repeats a call",
+    description:
+      "When the agent sends the same command again and again (or a small rewrite of one that was refused), the result says so and suggests another approach. Nothing is stopped. On unless you turn it off.",
   },
   {
     id: "plan-keeps-checks",
@@ -445,11 +452,39 @@ export function normalizePolicy(raw: unknown): NormalizedPolicy {
   };
 }
 
+/**
+ * Rules that run only when the person turned them on: a key that is absent is
+ * off. Every other rule is on unless its key says false. The shell check is
+ * here because it stops commands that would otherwise run.
+ */
+export const OPT_IN_RULES: ReadonlySet<BuiltinRuleId> = new Set([
+  "check-shell-commands",
+]);
+
+/**
+ * Rules no preset sets: they are the person's own choice, so Careful, IDGAF and
+ * the others leave them as they are. The opt-in rules, and the rule that only
+ * adds a note to a result.
+ */
+export const PRESET_FREE_RULES: ReadonlySet<BuiltinRuleId> = new Set([
+  ...OPT_IN_RULES,
+  "steer-repeated-calls",
+]);
+
+/** Whether a rule is on, given the `builtin` map as the person has it. */
+export function builtinIsOn(
+  builtin: Partial<Record<BuiltinRuleId, boolean>> | undefined,
+  id: BuiltinRuleId,
+): boolean {
+  const set = builtin?.[id];
+  return OPT_IN_RULES.has(id) ? set === true : set !== false;
+}
+
 export function builtinRuleOn(
   policy: PolicySettings | undefined,
   id: BuiltinRuleId,
 ): boolean {
-  return policy?.builtin?.[id] !== false;
+  return builtinIsOn(policy?.builtin, id);
 }
 
 /** Automatic needs a reviewer: without one, Cautious, so nothing loosens. */

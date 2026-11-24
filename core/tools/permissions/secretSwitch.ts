@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { getContinueGlobalPath } from "../../util/paths";
-import type { BuiltinRuleId } from "./policy";
+import { builtinIsOn, OPT_IN_RULES, type BuiltinRuleId } from "./policy";
 import { readPolicyFile } from "./settingsFile";
 
 /**
@@ -38,9 +38,11 @@ export function builtinSwitchOff(id: BuiltinRuleId, file?: string): boolean {
   try {
     const where =
       file ?? path.join(getContinueGlobalPath(), "permissions.yaml");
-    return switchesIn(where)[id] === false;
+    return !builtinIsOn(switchesIn(where), id);
   } catch {
-    return false;
+    // No file to read: a rule that is on unless named off stays on, an
+    // opt-in rule stays off
+    return OPT_IN_RULES.has(id);
   }
 }
 

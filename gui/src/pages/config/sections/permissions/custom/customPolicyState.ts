@@ -19,6 +19,8 @@ import {
   type PolicyLevels,
   type PolicyPresetName,
   type QuestionType,
+  builtinIsOn,
+  PRESET_FREE_RULES,
 } from "core/tools/permissions/policy";
 import type { RuleDecision } from "core/tools/permissions/rules";
 import type { StoredCustomSet } from "core/tools/permissions/settingsFile";
@@ -138,14 +140,14 @@ export function settingChanges(
     });
   }
   for (const rule of BUILTIN_RULES) {
-    const a = from.builtin[rule.id] !== false;
-    const b = to.builtin[rule.id] !== false;
+    const a = builtinIsOn(from.builtin, rule.id);
+    const b = builtinIsOn(to.builtin, rule.id);
     if (a === b) continue;
     out.push({
       key: `builtin.${rule.id}`,
       before: a ? "on" : "off",
       after: b ? "on" : "off",
-      loosens: a && !b,
+      loosens: a && !b && !PRESET_FREE_RULES.has(rule.id),
     });
   }
   if (from.maxNewPlanItems !== to.maxNewPlanItems) {

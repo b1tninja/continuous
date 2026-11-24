@@ -12,7 +12,8 @@ vi.mock("../../util/paths", async (importOriginal) => {
   return { ...real, getContinueGlobalPath: () => dir };
 });
 
-// What the terminal tool passes: the switch as the file says it now
+// What the terminal tool passes: the switch as the file says it now. The check
+// is opt-in, so it runs only when the file turns it on.
 const gate = (command: string, shell: "powershell") =>
   commandLintGate(
     command,
@@ -22,6 +23,7 @@ const gate = (command: string, shell: "powershell") =>
   );
 
 const file = () => path.join(dir, "permissions.yaml");
+const write = (text: string) => fs.writeFileSync(file(), text);
 
 // Bash in PowerShell: an error the lint stops
 const BASH_IN_POWERSHELL = "export FOO=1 && echo $FOO";
@@ -36,19 +38,24 @@ afterEach(() => {
 });
 
 describe("the Check shell commands switch", () => {
-  it("stops a command the shell would reject while the switch is on", () => {
-    expect(gate(BASH_IN_POWERSHELL, "powershell")).toBeDefined();
-  });
-
-  it("lets the same command run as written once the switch is off", () => {
-    fs.writeFileSync(file(), "builtin:\n  check-shell-commands: false\n");
+  it("runs a command as written while the switch is not set", () => {
     expect(gate(BASH_IN_POWERSHELL, "powershell")).toBeUndefined();
   });
 
-  it("is on again when the file sets it back on", () => {
-    fs.writeFileSync(file(), "builtin:\n  check-shell-commands: false\n");
-    expect(gate(BASH_IN_POWERSHELL, "powershell")).toBeUndefined();
-    fs.writeFileSync(file(), "builtin:\n  check-shell-commands: true\n");
+  it("stops a command the shell would reject once the switch is turned on", () => {
+    write("builtin:\n  check-shell-commands: true\n");
     expect(gate(BASH_IN_POWERSHELL, "powershell")).toBeDefined();
+  });
+
+  it("runs it as written again when the switch is turned back off", () => {
+    write("builtin:\n  check-shell-commands: true\n");
+    expect(gate(BASH_IN_POWERSHELL, "powershell")).toBeDefined();
+    write("builtin:\n  check-shell-commands: false\n");
+    expect(gate(BASH_IN_POWERSHELL, "powershell")).toBeUndefined();
+  });
+
+  it("is not turned on by other switches being named", () => {
+    write("builtin:\n  protect-secrets: false\n");
+    expect(gate(BASH_IN_POWERSHELL, "powershell")).toBeUndefined();
   });
 });

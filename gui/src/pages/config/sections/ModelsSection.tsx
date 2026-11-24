@@ -1,14 +1,16 @@
 import { ModelRole } from "@continuedev/config-yaml";
 import { ModelDescription } from "core";
-import { useState } from "react";
+import { useContext, useState } from "react";
 import Shortcut from "../../../components/gui/Shortcut";
 import { useProviderSetupDialog } from "../../../components/ProviderSetup/useProviderSetupDialog";
 import { useModelConfigDialog } from "../../../components/ModelConfig/useModelConfigDialog";
 import { Card, Divider, Fold, useSectionLink } from "../../../components/ui";
 import { useAuth } from "../../../context/Auth";
+import { IdeMessengerContext } from "../../../context/IdeMessenger";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks";
 import { updateSelectedModelByRole } from "../../../redux/thunks/updateSelectedModelByRole";
 import { isJetBrains } from "../../../util";
+import { reviewerCandidates } from "../../../util/reviewerModels";
 import { ConfigHeader } from "../components/ConfigHeader";
 import { ModelRoleRow } from "../components/ModelRoleRow";
 import { AssignModelsCard } from "../components/AssignModelsCard";
@@ -55,6 +57,7 @@ const MODEL_DOCS_URLS = {
 export function ModelsSection() {
   const { selectedProfile } = useAuth();
   const dispatch = useAppDispatch();
+  const ideMessenger = useContext(IdeMessengerContext);
 
   const config = useAppSelector((state) => state.config.config);
   const jetbrains = isJetBrains();
@@ -75,6 +78,14 @@ export function ModelsSection() {
         modelTitle: model.title,
       }),
     );
+  }
+
+  /** The reviewer is written to the active config (`modeModels.reviewer`), from any of its models. */
+  function handleReviewerUpdate(model: ModelDescription | null) {
+    if (!model) return;
+    void ideMessenger.request("config/setModeModels", {
+      reviewer: { model: model.title },
+    });
   }
 
   const handleConfigureModel = useModelConfigDialog();
@@ -264,12 +275,12 @@ export function ModelsSection() {
                   <ModelRoleRow
                     role="reviewer"
                     displayName="Reviewer (experimental)"
-                    description="Reviews tool calls in Auto approval mode. Your messages and the tool calls are sent to this model's provider. Add roles: [reviewer] to a model in config.yaml to list it here."
-                    models={config.modelsByRole.reviewer}
+                    description="Reviews tool calls in Auto approval mode. Any model in the active config, from any provider. Your messages and the tool calls are sent to this model's provider."
+                    models={reviewerCandidates(config.modelsByRole)}
                     selectedModel={
                       config.selectedModelByRole.reviewer ?? undefined
                     }
-                    onSelect={(model) => handleRoleUpdate("reviewer", model)}
+                    onSelect={handleReviewerUpdate}
                     onConfigure={handleConfigureModel}
                     setupURL="https://b1tninja.github.io/continuous/customize/model-roles/reviewer"
                   />

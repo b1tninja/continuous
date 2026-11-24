@@ -7,6 +7,7 @@
  */
 import {
   BUILTIN_RULES,
+  PRESET_FREE_RULES,
   POLICY_PRESETS,
   type BuiltinRuleId,
   type PolicyLevels,
@@ -15,14 +16,13 @@ import {
 
 export type SafetyDegree = "all" | "some" | "few" | "none";
 
-/** Credentials, config that runs later, network paths, dangerous commands, run-a-download, shell syntax. */
+/** Credentials, config that runs later, network paths, dangerous commands, run-a-download. */
 export const HARD_PROTECTIONS: readonly BuiltinRuleId[] = [
   "protect-secrets",
   "protect-config",
   "protect-network-paths",
   "refuse-dangerous-commands",
   "no-fetch-and-run",
-  "check-shell-commands",
 ];
 
 /** Asked about before work is lost, a dependency changes or a new host is contacted. */
@@ -32,7 +32,11 @@ const COMMON_ASKS: readonly BuiltinRuleId[] = [
   "ask-unknown-host",
 ];
 
-const ALL_CHECKS: readonly BuiltinRuleId[] = BUILTIN_RULES.map((r) => r.id);
+// The checks a preset sets. A rule no preset sets (policy.ts) is the person's
+// own choice and no preset turns it on or off.
+const ALL_CHECKS: readonly BuiltinRuleId[] = BUILTIN_RULES.filter(
+  (r) => !PRESET_FREE_RULES.has(r.id),
+).map((r) => r.id);
 
 /** The checks each degree leaves on. */
 export const CHECKS_ON: Record<SafetyDegree, readonly BuiltinRuleId[]> = {
