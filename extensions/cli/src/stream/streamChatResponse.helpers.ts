@@ -21,13 +21,13 @@ import {
   flagToolText,
   stripsHiddenCharacters,
 } from "core/tools/permissions/injection.js";
-import { hostAllowRules } from "core/tools/permissions/webHostRules.js";
-import { effectiveWebLevel } from "core/tools/permissions/webPolicy.js";
 import {
   recordRefusal,
   refusalSteer,
 } from "core/tools/permissions/repeatGuard.js";
 import { builtinSwitchOff } from "core/tools/permissions/secretSwitch.js";
+import { hostAllowRules } from "core/tools/permissions/webHostRules.js";
+import { effectiveWebLevel } from "core/tools/permissions/webPolicy.js";
 import { refusalText } from "core/tools/refusalText.js";
 import { resolveToolAlias, unknownToolResult } from "core/tools/unknownTool.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
