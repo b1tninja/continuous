@@ -48,7 +48,9 @@ describe("the active config, named on every Settings tab", () => {
       "Bedrock",
     );
     expect(bar).toHaveTextContent("bedrock.yaml");
-    expect(within(bar).getByRole("button", { name: "Switch" })).toBeTruthy();
+    // Not interactive: it adds no Tab stop in front of the tab's content
+    expect(within(bar).queryAllByRole("button")).toHaveLength(0);
+    expect(within(bar).queryAllByRole("link")).toHaveLength(0);
   });
 
   it("follows the config that is switched to", async () => {

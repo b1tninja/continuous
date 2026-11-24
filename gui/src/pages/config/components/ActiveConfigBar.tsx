@@ -1,4 +1,3 @@
-import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../context/Auth";
 
 /** The file name of a config, from its URI or path. */
@@ -13,12 +12,13 @@ export function configFileName(uri: string | undefined): string | undefined {
 /**
  * Which config this page is editing, on every Settings tab. A config can mix
  * providers and models, so the models, MCP servers and rules on the page are
- * the active config's, and a change is written to its file. The bar names it,
- * says which file, and goes to the Configs tab to switch.
+ * the active config's. The bar names it and says which file. It is not
+ * interactive on purpose: a link to the Configs tab would add a Tab stop before
+ * the content of every Settings tab (the walk check counts them), and the
+ * Configs tab is one click away in the sidebar.
  */
 export function ActiveConfigBar() {
   const { selectedProfile } = useAuth();
-  const navigate = useNavigate();
   if (!selectedProfile) return null;
   const file = configFileName(selectedProfile.uri);
   return (
@@ -42,13 +42,6 @@ export function ActiveConfigBar() {
           {file}
         </span>
       )}
-      <button
-        type="button"
-        className="ml-auto cursor-pointer border-none bg-transparent p-0 text-xs whitespace-nowrap text-link underline"
-        onClick={() => navigate("/config?tab=configs")}
-      >
-        Switch
-      </button>
     </div>
   );
 }
