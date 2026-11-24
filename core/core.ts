@@ -179,6 +179,7 @@ import {
 import {
   editConfigFile,
   getConfigYamlPath,
+  getEditableConfigYamlPath,
   getGlobalFolderWithName,
   getContinueGlobalPath,
   migrateV1DevDataFiles,
@@ -1203,7 +1204,9 @@ export class Core {
     const on = this.messenger.on.bind(this.messenger);
 
     registerMcpWizardHandlers(on as never, {
-      configPath: () => getConfigYamlPath(),
+      // The MCP servers saved for "all my projects" go in the active config, so
+      // each config keeps its own (not always the main config.yaml)
+      configPath: () => getEditableConfigYamlPath() ?? getConfigYamlPath(),
       continueDir: () => getContinueGlobalPath(),
       projectDir: async () => {
         const dirs = await this.ide.getWorkspaceDirs();
