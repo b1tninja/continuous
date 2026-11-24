@@ -52,7 +52,7 @@ describe("the active config, named on every Settings tab", () => {
   });
 
   it("follows the config that is switched to", async () => {
-    await openAt("/config?tab=mcp", "local");
+    await openAt("/config?tab=general", "local");
     expect(screen.getByTestId("active-config-name")).toHaveTextContent(
       "Main Config",
     );
