@@ -1,7 +1,7 @@
 import type { ShellKind } from "../../util/shell";
 import { isPosixShell } from "../../util/shell";
 import { detectCommandShell, familyOf, mismatchedShell } from "./detectShell";
-import { detectShellHints, shellHintTarget } from "./shellHints";
+import { codeOnly, detectShellHints, shellHintTarget } from "./shellHints";
 import { bashSyntaxProblem } from "./treeSitterBash";
 
 /**
@@ -236,8 +236,11 @@ function lintForeignSyntax(
   shell: ShellKind,
   findings: LintFinding[],
 ): void {
+  // Text inside a string or a heredoc body is data for the program that reads
+  // it: a python script with `total=len(x) + 1` on a line is not `NAME=value cmd`
+  const code = codeOnly(command, shell);
   if (shell === "powershell") {
-    if (/<<-?\s*['"\\]?[A-Za-z_]/.test(command.replace(/<<</g, ""))) {
+    if (/<<-?\s*['"\\]?[A-Za-z_]/.test(code.replace(/<<</g, ""))) {
       findings.push({
         code: "CL001",
         severity: "error",
@@ -247,7 +250,7 @@ function lintForeignSyntax(
           "Use the edit or create-file tool, or a PowerShell here-string: @' on its own line, the text, then '@ alone at the start of a line.",
       });
     }
-    if (/^\s*export\s+\w+=/m.test(command)) {
+    if (/^\s*export\s+\w+=/m.test(code)) {
       findings.push({
         code: "CL002",
         severity: "error",
@@ -257,8 +260,8 @@ function lintForeignSyntax(
       });
     }
     if (
-      /^\s*[A-Za-z_]\w*=\S+\s+\S/m.test(command) &&
-      !/\$/.test(command.split("=")[0])
+      /^\s*[A-Za-z_]\w*=\S+\s+\S/m.test(code) &&
+      !/\$/.test(code.split("=")[0])
     ) {
       findings.push({
         code: "CL003",
@@ -269,7 +272,7 @@ function lintForeignSyntax(
       });
     }
   } else if (isPosixShell(shell)) {
-    if (/\$env:\w+/.test(command) || /^\s*Get-[A-Z]\w+/m.test(command)) {
+    if (/\$env:\w+/.test(code) || /^\s*Get-[A-Z]\w+/m.test(code)) {
       findings.push({
         code: "CL004",
         severity: "warn",
@@ -315,7 +318,9 @@ function lintDialect(
   if (findings.some((f) => /^CL00[1-4]$/.test(f.code))) return;
   const family = familyOf(shell);
   if (!family) return;
-  const detection = detectCommandShell(command);
+  // The dialect is what the shell reads as code, not what a string says
+  const code = codeOnly(command, shell);
+  const detection = detectCommandShell(code);
   if (shell === "powershell") {
     // The shell-hint detector already names these, and a certain one is
     // refused before the approval card. Repeating them here would be a
@@ -324,11 +329,7 @@ function lintDialect(
     const hinted = new Set(
       target ? detectShellHints(command, target).map((h) => h.rule) : [],
     );
-    if (
-      !hinted.has("ps.chain-operator") &&
-      /&&|\|\|/.test(command) &&
-      !/['"][^'"]*(?:&&|\|\|)[^'"]*['"]/.test(command)
-    ) {
+    if (!hinted.has("ps.chain-operator") && /&&|\|\|/.test(code)) {
       findings.push({
         code: "CL040",
         severity: "warn",
@@ -338,7 +339,7 @@ function lintDialect(
           "Run the steps with ; , or use `a; if ($?) { b }` when b depends on a succeeding.",
       });
     }
-    if (!hinted.has("ps.dev-null") && /\d?>\s*\/dev\/null/.test(command)) {
+    if (!hinted.has("ps.dev-null") && /\d?>\s*\/dev\/null/.test(code)) {
       findings.push({
         code: "CL041",
         severity: "warn",
@@ -352,7 +353,7 @@ function lintDialect(
   const wrote = detection.likely[0];
   const hint = detection.evidence.slice(0, 2).join(", ");
   if (shell === "powershell" && familyOf(wrote) === "posix") {
-    const fix = POWERSHELL_FOR.filter(([re]) => re.test(command)).map(
+    const fix = POWERSHELL_FOR.filter(([re]) => re.test(code)).map(
       ([, to]) => to,
     );
     findings.push({
@@ -364,7 +365,7 @@ function lintDialect(
         : "Write it in PowerShell, or run it with bash -c if bash is installed.",
     });
   } else if (shell === "powershell" && wrote === "cmd") {
-    const fix = POWERSHELL_FOR_CMD.filter(([re]) => re.test(command)).map(
+    const fix = POWERSHELL_FOR_CMD.filter(([re]) => re.test(code)).map(
       ([, to]) => to,
     );
     findings.push({
@@ -443,45 +444,36 @@ export function formatLint(findings: LintFinding[]): string {
   return [
     hard
       ? "The command was not run: it has a mistake the shell would only report after running."
-      : "The command was not run yet: it has a pattern that often goes wrong.",
+      : "This command has a pattern that often goes wrong.",
     ...lines,
-    hard
-      ? "Fix it and call again."
-      : "Fix it, or call again with exactly the same command to run it as written.",
+    // Never invite a resend: the same text is refused the same way, and a
+    // model that rewrites a command a little never sends the identical text
+    "Sending the same command again is refused the same way. Change it, or write the script to a file with create_new_file and run the file.",
   ].join("\n");
 }
 
-/** Warned commands, by text: the same command sent again runs as written. */
-const warned = new Set<string>();
-const WARNED_LIMIT = 200;
-
 /**
  * What stands between the agent and running `command`: undefined to run it,
- * or the message to return in place of a result. A mistake that is certain
- * always stops the call. A likely mistake stops it once; sending the exact
- * same command again is the confirmation. Off with the "Check shell commands"
- * switch, or CONTINUE_COMMAND_LINT=off.
+ * or the message to return in place of a result. Only a mistake that is certain
+ * stops the call. A likely mistake runs: it used to stop the call once and let
+ * the identical command through the second time, which taught the model that
+ * sending it again works, and a model that rewrites a command a little never
+ * sends the identical text, so it looped. Off with the "Check shell commands"
+ * switch being off (it is off unless turned on), or CONTINUE_COMMAND_LINT=off.
  */
 export function commandLintGate(
   command: string,
   shell: ShellKind,
   env: Record<string, string | undefined> = process.env,
-  /** False when the person switched the shell check off: the command runs as written */
+  /** False when the person has not turned the shell check on: the command runs as written */
   checkOn: boolean = true,
 ): string | undefined {
   if (!checkOn) return undefined;
   if (env.CONTINUE_COMMAND_LINT === "off") return undefined;
   const findings = lintCommand(command, shell);
-  if (findings.length === 0) return undefined;
-  if (!findings.some((f) => f.severity === "error")) {
-    if (warned.has(command)) return undefined;
-    if (warned.size >= WARNED_LIMIT) warned.clear();
-    warned.add(command);
-  }
+  if (!findings.some((f) => f.severity === "error")) return undefined;
   return formatLint(findings);
 }
 
-/** For tests: forget what was warned. */
-export function resetCommandLintGate(): void {
-  warned.clear();
-}
+/** Kept for callers that reset between tests; there is no state to forget. */
+export function resetCommandLintGate(): void {}

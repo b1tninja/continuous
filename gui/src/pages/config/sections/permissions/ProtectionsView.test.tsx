@@ -75,7 +75,7 @@ describe("Permissions, Protections", () => {
       expect(isOpen(id), id).toBe(false);
       expect(summary(id), id).toBeTruthy();
     }
-    expect(summary("builtin-rules")).toBe("Not set: 12 of 12 on");
+    expect(summary("builtin-rules")).toBe("Not set: 11 of 11 on");
     expect(summary("commands-secrets")).toBe(
       "Not set: commands run with secret-named variables hidden. 2 hidden now, 2 passed",
     );
@@ -105,7 +105,7 @@ describe("Permissions, Protections", () => {
       );
     });
     expect(summary("builtin-rules")).toBe(
-      "Set by you: 11 of 12 on. Off: Ask before touching credentials",
+      "Set by you: 10 of 11 on. Off: Ask before touching credentials",
     );
     // Loosened: drawn in the warning colour
     expect(

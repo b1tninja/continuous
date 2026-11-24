@@ -1,6 +1,7 @@
 import {
   BUILTIN_RULES,
   LOCKED_FLOOR_RULES,
+  builtinIsOn,
 } from "core/tools/permissions/policy";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import { changePolicyExtras } from "../../redux/thunks/policySettings";
@@ -19,20 +20,21 @@ export function BuiltinRulesCard() {
     <div data-testid="builtin-rules">
       <p className="mt-0 mb-1 text-2xs text-description">
         Protections you can see and switch off. IDGAF ignores them. Not set, a
-        rule is on.
+        rule is on, except Check shell commands, which runs only when you turn
+        it on.
       </p>
       <Card>
         <div className="flex flex-col gap-2 py-1">
           {BUILTIN_RULES.map((rule) => (
             <div key={rule.id} data-testid={`builtin-${rule.id}`}>
               <ToggleSwitch
-                isToggled={extras.builtin?.[rule.id] !== false}
+                isToggled={builtinIsOn(extras.builtin, rule.id)}
                 onToggle={() =>
                   void dispatch(
                     changePolicyExtras({
                       builtin: {
                         ...extras.builtin,
-                        [rule.id]: extras.builtin?.[rule.id] === false,
+                        [rule.id]: !builtinIsOn(extras.builtin, rule.id),
                       },
                     }),
                   )

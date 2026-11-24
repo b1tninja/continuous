@@ -982,6 +982,8 @@ export type ToCoreFromIdeOrWebviewProtocol = AuditListProtocol & {
       source?: ToolDecisionSource;
       /** A sentence saying why, for the prompt or the refusal. */
       reason?: string;
+      /** A refused call sent again: said to the model after the refusal. */
+      repeatNote?: string;
       /** A command the parser vouched as only reading */
       readOnly?: string;
       /** The rule that decided, as written in config.yaml. */

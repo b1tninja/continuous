@@ -513,6 +513,7 @@ describe("doctor config", () => {
       "protection.ask-unknown-host",
       "protection.ask-outside-paths",
       "protection.check-shell-commands",
+      "protection.steer-repeated-calls",
       "protection.plan-keeps-checks",
       "taintedSessionRule",
       "hooks.user",

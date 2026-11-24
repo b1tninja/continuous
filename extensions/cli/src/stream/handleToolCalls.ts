@@ -1,4 +1,9 @@
 import type { ChatHistoryItem, ToolStatus } from "core/index.js";
+import {
+  recordResult,
+  resultSteer,
+} from "core/tools/permissions/repeatGuard.js";
+import { builtinSwitchOff } from "core/tools/permissions/secretSwitch.js";
 import { stripImages } from "core/util/messageContent.js";
 import { createHistoryItem } from "core/util/messageConversion.js";
 
@@ -169,6 +174,50 @@ function recordRunOutcomes(
   for (const entry of chatHistoryEntries) {
     const call = toRun.find((tc) => tc.id === entry.tool_call_id);
     if (call) recordRepeatOutcome(call, entry.status !== "done");
+  }
+}
+
+/**
+ * The same call, with the same result, again and again: say so at the end of
+ * the result, with another way to go on (core's repeat guard, which the editor
+ * uses too). The note is in the result the model reads. Off with the "Tell the
+ * agent when it repeats a call" switch.
+ */
+function noteRepeatedResults(
+  chatHistoryEntries: {
+    tool_call_id: string;
+    status: string;
+    content?: unknown;
+  }[],
+  toRun: ToolCall[],
+  ctx: {
+    useService: boolean;
+    chatHistorySvc: typeof services.chatHistory;
+    chatHistory: ChatHistoryItem[];
+  },
+): void {
+  if (builtinSwitchOff("steer-repeated-calls")) return;
+  for (const entry of chatHistoryEntries) {
+    if (entry.status !== "done" && entry.status !== "errored") continue;
+    const call = toRun.find((tc) => tc.id === entry.tool_call_id);
+    if (!call || typeof entry.content !== "string") continue;
+    const note = resultSteer(
+      recordResult(
+        cliAuditSession(),
+        call.name,
+        call.arguments,
+        entry.content,
+        call.id,
+      ),
+    );
+    if (!note) continue;
+    const text = `${entry.content}\n\n${note}`;
+    const status = entry.status as ToolStatus;
+    if (ctx.useService) {
+      ctx.chatHistorySvc.addToolResult(entry.tool_call_id, text, status);
+    } else {
+      setLocalToolResult(ctx.chatHistory, entry.tool_call_id, text, status);
+    }
   }
 }
 
@@ -390,6 +439,11 @@ export async function handleToolCalls(
   }
 
   recordRunOutcomes(chatHistoryEntries, toRun);
+  noteRepeatedResults(chatHistoryEntries, toRun, {
+    useService,
+    chatHistorySvc,
+    chatHistory,
+  });
   noteStuckRound(chatHistoryEntries, {
     useService,
     chatHistorySvc,

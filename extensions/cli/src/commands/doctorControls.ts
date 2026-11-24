@@ -22,6 +22,7 @@ import {
   presetOf,
   type PolicyArea,
   type PolicyLevels,
+  builtinIsOn,
 } from "core/tools/permissions/policy.js";
 import { readTaintedSessionRule } from "core/tools/permissions/taint/taintSetting.js";
 import {
@@ -278,7 +279,7 @@ function protectionControls(ctx: ControlContext): ControlReport[] {
       id: `protection.${rule.id}`,
       group: "Protections",
       label: rule.label,
-      value: set === false ? "off" : "on",
+      value: builtinIsOn(builtin, rule.id) ? "on" : "off",
       ...(set === undefined
         ? from("default")
         : from("user-file", ctx.permissionsFile)),

@@ -150,6 +150,11 @@ export interface ToolPolicyResult {
    * count. Never shown to the model.
    */
   idgafOverride?: IdgafOverride;
+  /**
+   * A refused call that comes back (or comes back rewritten a little): what the
+   * model is told in the refusal text, from tools/permissions/repeatGuard.ts.
+   */
+  repeatNote?: string;
 }
 
 /** What the permission layer would have decided for a call IDGAF ran anyway. */

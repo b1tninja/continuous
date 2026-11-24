@@ -16,6 +16,7 @@ import {
   type PolicyArea,
   type PolicyLevel,
   type QuestionType,
+  builtinIsOn,
 } from "core/tools/permissions/policy";
 import type { ToolRuleEditResponse } from "core/tools/permissions/ruleEditor";
 import { CONFIRM_PHRASE } from "core/tools/permissions/ruleWords";
@@ -417,7 +418,7 @@ function LevelsStep({
         <label key={r.id} className="flex items-start gap-1 text-xs">
           <input
             type="checkbox"
-            checked={draft.builtin[r.id] !== false}
+            checked={builtinIsOn(draft.builtin, r.id)}
             data-testid={`custom-builtin-${r.id}`}
             onChange={(e) =>
               set({ builtin: { ...draft.builtin, [r.id]: e.target.checked } })
