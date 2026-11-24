@@ -1,3 +1,4 @@
+import { unfinishedToolCallOutput } from "core/tools/unfinishedCall";
 import {
   AssistantChatMessage,
   ChatHistoryItem,
@@ -440,7 +441,7 @@ describe("constructMessages", () => {
     expect(toolMessage.content).toBe(CANCELLED_TOOL_CALL_MESSAGE);
   });
 
-  test('should show "No tool output" for tool calls without output', () => {
+  test('should say what an unfinished tool call means, not "No tool output"', () => {
     const assistantWithToolCall: AssistantChatMessage = {
       role: "assistant",
       content: "I will search for that",
@@ -489,7 +490,7 @@ describe("constructMessages", () => {
     // Should have system + assistant + tool message with "No tool output"
     expect(messages.length).toBe(3);
     expect(messages[2].role).toBe("tool");
-    expect(messages[2].content).toBe(NO_TOOL_CALL_OUTPUT_MESSAGE);
+    expect(messages[2].content).toBe(unfinishedToolCallOutput("generating"));
   });
 
   test("should start with system message using base message if provided", () => {
@@ -1044,7 +1045,7 @@ describe("constructMessages", () => {
       const toolMessage = messages[2] as ToolResultChatMessage;
       expect(toolMessage.role).toBe("tool");
       expect(toolMessage.toolCallId).toBe("search-call-1");
-      expect(toolMessage.content).toBe(NO_TOOL_CALL_OUTPUT_MESSAGE);
+      expect(toolMessage.content).toBe(unfinishedToolCallOutput("generating"));
     });
 
     test("should use NO_TOOL_CALL_OUTPUT_MESSAGE when toolCallState output is undefined", () => {
@@ -1090,7 +1091,7 @@ describe("constructMessages", () => {
       const toolMessage = messages[2] as ToolResultChatMessage;
       expect(toolMessage.role).toBe("tool");
       expect(toolMessage.toolCallId).toBe("search-call-1");
-      expect(toolMessage.content).toBe(NO_TOOL_CALL_OUTPUT_MESSAGE);
+      expect(toolMessage.content).toBe(unfinishedToolCallOutput("generated"));
     });
 
     test("should prioritize cancelled status over output content", () => {
