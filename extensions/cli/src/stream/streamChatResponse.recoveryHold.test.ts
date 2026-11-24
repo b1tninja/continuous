@@ -1,7 +1,7 @@
 import { ModelConfig } from "@continuedev/config-yaml";
 import { BaseLlmApi } from "@continuedev/openai-adapters";
 import type { ChatHistoryItem } from "core/index.js";
-import type { ChatCompletionTool } from "openai/resources.mjs";
+import type { ChatCompletionFunctionTool } from "openai/resources.mjs";
 import { describe, expect, it, vi } from "vitest";
 
 import { streamChatResponse } from "./streamChatResponse.js";
@@ -12,7 +12,7 @@ import { streamChatResponse } from "./streamChatResponse.js";
  * each, and a stream without them never calls it.
  */
 
-const writeTool: ChatCompletionTool = {
+const writeTool: ChatCompletionFunctionTool = {
   type: "function",
   function: { name: "Write", parameters: { type: "object" } },
 };

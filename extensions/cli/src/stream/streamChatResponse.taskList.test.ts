@@ -1,7 +1,7 @@
 import { ModelConfig } from "@continuedev/config-yaml";
 import { BaseLlmApi } from "@continuedev/openai-adapters";
 import type { ChatHistoryItem, TaskPlan } from "core/index.js";
-import type { ChatCompletionTool } from "openai/resources.mjs";
+import type { ChatCompletionFunctionTool } from "openai/resources.mjs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { processStreamingResponse } from "./streamChatResponse.js";
@@ -36,11 +36,11 @@ const model = {
   defaultCompletionOptions: { contextLength: 100_000, maxTokens: 100 },
 } as ModelConfig;
 
-const taskListTool: ChatCompletionTool = {
+const taskListTool: ChatCompletionFunctionTool = {
   type: "function",
   function: { name: "TaskList", parameters: { type: "object" } },
 };
-const readTool: ChatCompletionTool = {
+const readTool: ChatCompletionFunctionTool = {
   type: "function",
   function: { name: "Read", parameters: { type: "object" } },
 };
@@ -49,7 +49,7 @@ const history: ChatHistoryItem[] = [
   { message: { role: "user", content: "fix it" }, contextItems: [] },
 ];
 
-async function sentMessages(tools: ChatCompletionTool[]) {
+async function sentMessages(tools: ChatCompletionFunctionTool[]) {
   const llmApi = {
     chatCompletionStream: vi.fn().mockResolvedValue({
       [Symbol.asyncIterator]: async function* () {
