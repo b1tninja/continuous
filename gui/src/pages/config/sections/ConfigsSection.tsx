@@ -207,7 +207,15 @@ export function ConfigsSection() {
             const isMain = profile.id === MAIN_PROFILE_ID;
             const isYaml = /\.ya?ml$/i.test(profile.uri);
             return (
-              <div key={profile.id} data-testid="config-row">
+              <div
+                key={profile.id}
+                data-testid="config-row"
+                className={
+                  isSelected
+                    ? "border-0 border-l-2 border-solid border-l-success pl-2"
+                    : undefined
+                }
+              >
                 <div className="flex items-center justify-between gap-3">
                   <button
                     type="button"
@@ -237,8 +245,11 @@ export function ConfigsSection() {
                       >
                         {profile.title}
                         {isSelected && (
-                          <span className="ml-2 text-xs font-normal text-description-muted">
-                            selected
+                          <span
+                            data-testid="config-active-badge"
+                            className="ml-2 rounded-default bg-success/20 px-1.5 py-0.5 text-xs font-semibold text-foreground"
+                          >
+                            Active
                           </span>
                         )}
                         {isMain && (
