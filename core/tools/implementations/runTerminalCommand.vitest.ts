@@ -389,7 +389,9 @@ describe("runTerminalCommandImpl", () => {
   it("does not run a command whose program does not exist, once the shell check is on", async () => {
     // The shell check is opt-in: it runs only when its switch is on
     vi.spyOn(secretSwitch, "builtinSwitchOff").mockReturnValue(false);
-    onTestFinished(() => vi.restoreAllMocks());
+    onTestFinished(() => {
+      vi.restoreAllMocks();
+    });
     const result = await runTerminalCommandImpl(
       { command: "nonexistentcommandxyz", waitForCompletion: true },
       createMockExtras(),
