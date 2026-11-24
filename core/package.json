@@ -71,7 +71,7 @@
     "comment-json": "^5.0.0",
     "dbinfoz": "^0.14.0",
     "diff": "^9.0.0",
-    "dotenv": "^16.4.5",
+    "dotenv": "^18.0.10",
     "fastest-levenshtein": "^1.0.16",
     "google-auth-library": "^10.4.1",
     "handlebars": "^4.7.8",
