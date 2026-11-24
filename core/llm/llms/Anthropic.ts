@@ -8,7 +8,7 @@ import {
   RawMessageDeltaEvent,
   RawMessageStartEvent,
   RawMessageStreamEvent,
-  ToolUseBlock,
+  ToolUseBlockParam,
 } from "@anthropic-ai/sdk/resources/messages.mjs";
 import { streamSse } from "@continuedev/fetch";
 import {
@@ -54,13 +54,17 @@ import {
   thinkingDisplayDefaultsToOmitted,
 } from "./anthropicThinking.js";
 
-// The pinned @anthropic-ai/sdk types do not yet include adaptive thinking or
-// output_config, so the request is typed with these extra fields.
+// The SDK's request types (1.x) no longer declare the sampling fields, and its
+// `thinking` lacks some variants, so the request is typed with these extra fields.
 export type AnthropicRequestParams = Omit<
   MessageCreateParams,
   "messages" | "thinking"
 > &
-  AnthropicThinkingParams;
+  AnthropicThinkingParams & {
+    temperature?: number;
+    top_p?: number;
+    top_k?: number;
+  };
 
 /**
  * The sampling fields Claude accepts: `temperature` and `top_p` together are
@@ -193,7 +197,7 @@ class Anthropic extends BaseLLM {
 
   private convertToolCallsToBlocks(
     toolCall: ToolCallDelta,
-  ): ToolUseBlock | undefined {
+  ): ToolUseBlockParam | undefined {
     const toolCallId = toolCall.id;
     const toolName = toolCall.function?.name;
     if (toolCallId && toolName) {
