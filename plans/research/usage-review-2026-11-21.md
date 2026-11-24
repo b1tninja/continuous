@@ -30,15 +30,18 @@ Evidence marks:
 | #   | Finding                                                                             | Evidence | Tracked?      |
 | --- | ----------------------------------------------------------------------------------- | -------- | ------------- |
 | 1   | "Steer now" removed the message the model was answering                             | V        | Fixed, #991   |
-| 2   | A model stream can go silent for up to two hours with no sign                       | V        | No            |
+| 2   | A model stream can go silent for up to two hours with no sign                       | V        | Fixed, #993   |
 | 3   | The tools that run in the webview (`multi_edit`, `subagent`) leave no audit outcome | V        | No            |
 | 4   | The usage log records every edit as successful                                      | V        | No            |
 | 5   | Command lint still refuses commands whose bash or cmd text is a launcher's argument | V        | No            |
 | 6   | Most "protected path" asks were for read-only commands                              | R        | No            |
 | 7   | Three signing attempts failed before the card's PIN counter was read                | R        | No            |
 | 8   | Reviews like this one take eight scripts and a de-duplication step                  | R        | Partly (NI12) |
+| 9   | `multi_edit` failed on Windows: Node's `path` is empty in the chat page             | V        | Fixed, #995   |
+| 10  | Nothing watched for new Node modules in the chat page                               | V        | Built, #996   |
+| 11  | Checkpoints saved no content for any edited file (`unreadable`, error swallowed)    | V        | PR #997       |
 
-Already fixed and confirmed by the data: the edit-race fix cut `multi_edit` errors from 32% to 6% (2.1 below), and the subagent call limit that stopped 6 of 16 runs was raised in #986.
+Rows 9 to 11 were found after the first version of this note, and are in section 2.9. Already fixed and confirmed by the data: the edit-race fix cut `multi_edit` errors from 32% to 6% (2.1 below), and the subagent call limit that stopped 6 of 16 runs was raised in #986.
 
 ## 2. Findings
 
@@ -91,6 +94,16 @@ A small guard would be a result hint when the output says `gpg failed to sign` o
 ### 2.8 The review itself (R)
 
 This note took eight throwaway scripts, a de-duplication by id (ten files are repeats), and a join to the client version from the usage log. NI12 plans usage over time and cost. A "problems" view, with tool error rate by client version, outcome coverage, request gaps and refusals by rule, would make this a command and not a project.
+
+### 2.9 Node modules that are empty in the chat page (V)
+
+The chat page is a browser build, where Node's `path`, `path/posix`, `os`, `url` and others are replaced by empty modules. Code that calls into one throws in the page and nowhere else. The unit tests run in Node, where the module is real, so they cannot see it. Two bugs came out of this, found in the order below, and a third class was looked for and not found.
+
+- **`multi_edit` and `single_find_and_replace` failed on Windows (UR8).** `ideUtils.ts` called `path.win32.relative`; the installed bundle defines that module as `t.exports={}`. It shipped in 2.38.4 (`afda18f42`, 11-19) and is in 2.38.5. Before 2.38.4 the data has none of these errors; the only two `multi_edit` calls I could date after it was installed both failed with it. Reproduced with an empty `path`: against the old code 9 of 12 tests fail with the exact message. Fixed in #995.
+- **The guard (UR9).** Vite names every Node module it stubs and the file that imported it: 63 pairs in 26 files, 25 pairs in our own sources (23 after #997). A script compares them with a baseline and fails on a new one. With the import put back, the real build made it exit 1. #996.
+- **Checkpoints saved nothing for an edited file (UR10).** The stub list showed `protected.ts` using `os` and `path/posix`, in the built page. I first called it likely unreachable; that was wrong. `snapshotFile`, which the page runs before an agent edit, reaches `protectedPathHit` through `checkpointHoldsSecret`, and its `catch` turned the throw into `unreadable`. In the saved sessions: 163 distinct file snapshots, 124 `unreadable`, none with content, and the 19 taken since 2.38.4 are all new files, which return before the failing code. So it is older than the `multi_edit` bug, and it was not noticed because the error was swallowed (UR11). The check that made it throw was added on 11-10; the earliest snapshot in the data is from 11-18, so how long it was broken before that is not known. Fixed in #997.
+- **The secret check still works in the page.** It exists so that keys are not copied into the session file, so a fix that only stopped the throw could have made it stop matching. With `path`, `path/posix`, `os` and `url` all emptied, 13 file URIs of secret shapes are held as secrets and an ordinary file is not, the same answers core gives. I first emptied three of the four modules and not `url`; adding it changed nothing, but my first test did not match the page.
+- **Not found.** `readOnlyCommand.ts` is in the page's bundle and calls `path.join`. The page imports only constants and labels from `policy.ts`, and the function that reaches it (`readOnlyClaim`) is called from `approval.ts` and `policy.ts`, which are policy decisions that run in core. That is a reading of the imports and not a run, so UR12 asks for a test.
 
 ## 3. Corrections to my first pass
 
