@@ -3,7 +3,7 @@ import * as os from "os";
 import * as path from "path";
 
 import type { ChatHistoryItem } from "core/index.js";
-import type { ChatCompletionTool } from "openai/resources.mjs";
+import type { ChatCompletionFunctionTool } from "openai/resources.mjs";
 import { vi } from "vitest";
 
 import {
@@ -84,7 +84,7 @@ export const SCENARIOS: Record<string, CliScenarioSpec> = {
   "cli-resume": { mode: "normal", history: HISTORY, date: "2026-11-09" },
 };
 
-function fakeMcp(name: string): ChatCompletionTool {
+function fakeMcp(name: string): ChatCompletionFunctionTool {
   return {
     type: "function",
     function: {
@@ -101,7 +101,7 @@ interface CliTool {
   parameters: { required?: string[]; properties: unknown };
 }
 
-function toChatTool(t: CliTool): ChatCompletionTool {
+function toChatTool(t: CliTool): ChatCompletionFunctionTool {
   return {
     type: "function",
     function: {
@@ -116,7 +116,9 @@ function toChatTool(t: CliTool): ChatCompletionTool {
   };
 }
 
-export function scenarioTools(spec: CliScenarioSpec): ChatCompletionTool[] {
+export function scenarioTools(
+  spec: CliScenarioSpec,
+): ChatCompletionFunctionTool[] {
   const builtins = [
     readFileTool,
     writeFileTool,
@@ -166,7 +168,7 @@ export function normalize(text: string): string {
 
 export interface CliScenarioRequest {
   systemMessage: string;
-  tools: ChatCompletionTool[];
+  tools: ChatCompletionFunctionTool[];
   /** The request body's messages, as sent. */
   messages: unknown[];
   environmentBlock: string;

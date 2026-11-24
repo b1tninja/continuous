@@ -5,7 +5,7 @@ import {
   LEAKED_CALL_NUDGE,
   LEAKED_CALL_NUDGE_SESSION_LIMIT,
 } from "core/util/turnEnd.js";
-import type { ChatCompletionTool } from "openai/resources.mjs";
+import type { ChatCompletionFunctionTool } from "openai/resources.mjs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { services } from "../services/index.js";
@@ -22,7 +22,7 @@ import { streamChatResponse } from "./streamChatResponse.js";
  * in the text is parsed or run.
  */
 
-const writeTool: ChatCompletionTool = {
+const writeTool: ChatCompletionFunctionTool = {
   type: "function",
   function: { name: "Write", parameters: { type: "object" } },
 };

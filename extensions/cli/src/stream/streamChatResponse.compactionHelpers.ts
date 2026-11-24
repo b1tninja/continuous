@@ -1,7 +1,7 @@
 import { ModelConfig } from "@continuedev/config-yaml";
 import { BaseLlmApi } from "@continuedev/openai-adapters";
 import type { ChatHistoryItem } from "core/index.js";
-import type { ChatCompletionTool } from "openai/resources/chat/completions.mjs";
+import type { ChatCompletionFunctionTool } from "openai/resources/chat/completions.mjs";
 
 import { services } from "../services/index.js";
 import { ToolCall } from "../tools/index.js";
@@ -18,7 +18,7 @@ export interface CompactionHelperOptions {
   isHeadless: boolean;
   callbacks?: StreamCallbacks;
   systemMessage: string;
-  tools?: ChatCompletionTool[];
+  tools?: ChatCompletionFunctionTool[];
   /** Save compacted history to the current session (default true) */
   persistSession?: boolean;
 }
