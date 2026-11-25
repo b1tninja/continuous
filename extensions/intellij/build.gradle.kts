@@ -83,7 +83,7 @@ dependencies {
     // lz4-java 1.8.0, OpenTelemetry 1.41.0, Ktor 2.3.12 and jsoup 1.18.1, all
     // with known advisories. Raise them to fixed releases;
     // newer Starter releases still carry some of them and need Java 21.
-    testIntegrationImplementation(platform("io.netty:netty-bom:4.2.20.Final"))
+    testIntegrationImplementation(platform("io.netty:netty-bom:4.2.21.Final"))
     testIntegrationImplementation(platform("com.fasterxml.jackson:jackson-bom:2.21.7"))
     testIntegrationImplementation(platform("io.opentelemetry:opentelemetry-bom:1.68.0"))
     testIntegrationImplementation(platform("io.opentelemetry:opentelemetry-bom-alpha:1.68.0-alpha"))
