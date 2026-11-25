@@ -2,7 +2,6 @@ import { EventEmitter } from "node:events";
 
 import { levelOfCall } from "core/tools/permissions/approval.js";
 import {
-  factOfDecision,
   propose,
   type LowerDecision,
   type Proposal,
@@ -130,29 +129,6 @@ export function forgetRequest(requestId: string): void {
   keepWaitingListeners.delete(requestId);
   headsUps.delete(requestId);
   clearCountdown(requestId);
-}
-
-/** The level in force for a call's area, or undefined when it cannot be told. */
-function levelOfCliCall(
-  call: {
-    name: string;
-    arguments: Record<string, unknown>;
-    readonly?: boolean;
-  },
-  mode: "normal" | "plan" | "auto" | undefined,
-) {
-  const levels = effectiveLevels(mode ?? "normal");
-  const core = toCoreCall(call.name, call.arguments);
-  return levelOfCall(
-    { levels },
-    core?.toolName ?? call.name,
-    { readonly: !!call.readonly },
-    {
-      parsedArgs: core?.parsedArgs ?? call.arguments,
-      cwd: process.cwd(),
-      shell: resolveShell().kind,
-    },
-  )?.level;
 }
 
 /**

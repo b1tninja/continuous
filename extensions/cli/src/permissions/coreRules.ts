@@ -2,10 +2,7 @@ import type { AssistantUnrolled, ModelConfig } from "@continuedev/config-yaml";
 import type { ToolPolicy } from "@continuedev/terminal-security";
 import type { ChatHistoryItem } from "core/index.js";
 import { dirsWithAddedFolders } from "core/tools/permissions/additionalFolders.js";
-import {
-  levelOfCall,
-  type ApprovalSettings,
-} from "core/tools/permissions/approval.js";
+import { type ApprovalSettings } from "core/tools/permissions/approval.js";
 import {
   autoReviewToolCall,
   type AutoReviewDeps,
@@ -19,10 +16,7 @@ import {
   type ToolPolicyResult,
 } from "core/tools/permissions/evaluate.js";
 import { mcpRuleName } from "core/tools/permissions/names.js";
-import type {
-  BuiltinRuleId,
-  PolicyLevels,
-} from "core/tools/permissions/policy.js";
+import type { BuiltinRuleId } from "core/tools/permissions/policy.js";
 import { readUserTrustedDomains } from "core/tools/permissions/readRuleSources.js";
 import { processedPathArgs } from "core/tools/permissions/realPath.js";
 import type { ToolPermissions as CoreToolPermissions } from "core/tools/permissions/rules.js";

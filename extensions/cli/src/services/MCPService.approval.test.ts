@@ -19,7 +19,6 @@ import {
   loadPolicyFile,
   applyPolicyPreset,
   resetPolicyLevels,
-  setPolicyLevels,
 } from "../permissions/policyLevels.js";
 import { handleSlashCommands } from "../slashCommands.js";
 import {

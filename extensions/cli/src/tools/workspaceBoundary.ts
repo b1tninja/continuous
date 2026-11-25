@@ -8,10 +8,7 @@ import {
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
 
 import { env } from "../env.js";
-import {
-  approvalExtras,
-  effectiveLevels,
-} from "../permissions/policyLevels.js";
+import { approvalExtras } from "../permissions/policyLevels.js";
 import { services } from "../services/index.js";
 
 import type { ToolCallPreview } from "./types.js";

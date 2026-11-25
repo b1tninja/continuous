@@ -1,8 +1,8 @@
-import { BUILTIN_RULES } from "core/tools/permissions/policy.js";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import { BUILTIN_RULES } from "core/tools/permissions/policy.js";
 import { DEFAULT_POLICY_LEVELS } from "core/tools/permissions/policy.js";
 import { writePolicyFile } from "core/tools/permissions/settingsFile.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";

@@ -12,7 +12,6 @@ import {
 import { coerceStringArgsToSchema } from "core/tools/parseArgs.js";
 import {
   modelNote,
-  type LowerDecision,
   type Proposal,
   type Resolved,
 } from "core/tools/permissions/decisionTimer.js";
@@ -96,11 +95,7 @@ import {
   serviceContainer,
   services,
 } from "../services/index.js";
-import {
-  getCurrentSession,
-  getSessionLoop,
-  trackSessionUsage,
-} from "../session.js";
+import { getCurrentSession, trackSessionUsage } from "../session.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
 import {
   executeToolCall,

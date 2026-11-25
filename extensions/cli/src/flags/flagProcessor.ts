@@ -2,6 +2,7 @@
  * Shared flag processing utilities to eliminate duplication between TUI and headless modes
  */
 
+import { noChecksOn } from "core/tools/permissions/safetyDegrees.js";
 import { getWebConfig } from "core/util/webConfig.js";
 
 import { setAutoReviewEnabled } from "../permissions/coreRules.js";
@@ -34,7 +35,6 @@ import {
   setPolicyLevels,
   approvalExtras,
 } from "../permissions/policyLevels.js";
-import { noChecksOn } from "core/tools/permissions/safetyDegrees.js";
 import { PermissionMode } from "../permissions/types.js";
 import { logger } from "../util/logger.js";
 

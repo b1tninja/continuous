@@ -1,4 +1,5 @@
 import { DEFAULT_POLICY_LEVELS } from "core/tools/permissions/policy";
+import { builtinForPreset } from "core/tools/permissions/safetyDegrees";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -38,20 +39,22 @@ describe("Agents window tool policy", () => {
     expect(floor.policy).toBe("disabled");
     expect(floor.source).toBe("floor");
 
-    // IDGAF runs it, and the decision records the floor rule
+    // With "Apply my deny, ask and floor rules" off (the IDGAF preset) the
+    // floor is not read, so the call runs and nothing is recorded as run past
     const idgaf = decideAgentSessionTool(
       "runInTerminal",
       { command: "git push" },
       {
         approval: {
-          levels: { ...DEFAULT_POLICY_LEVELS, tools: "idgaf" },
+          levels: { ...DEFAULT_POLICY_LEVELS, tools: "permissive" },
+          builtin: builtinForPreset("idgaf"),
           floor: ["runTerminalCommand(git push*)"],
         },
       },
     );
     expect(idgaf.policy).toBe("allowedWithoutPermission");
-    expect(idgaf.source).toBe("idgaf");
-    expect(idgaf.reason).toContain("would have been refused");
+    expect(idgaf.source).toBe("permissive");
+    expect(idgaf).not.toHaveProperty("idgafOverride");
 
     const secret = decideAgentSessionTool(
       "readFile",

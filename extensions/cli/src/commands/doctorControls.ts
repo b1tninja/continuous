@@ -24,6 +24,7 @@ import {
   type PolicyLevels,
   builtinIsOn,
 } from "core/tools/permissions/policy.js";
+import { builtinForPreset } from "core/tools/permissions/safetyDegrees.js";
 import { readTaintedSessionRule } from "core/tools/permissions/taint/taintSetting.js";
 import {
   getTerminalEnvironmentStatus,
@@ -37,7 +38,6 @@ import {
   loadConfiguredLimits,
   type RunLimitOptions,
 } from "../budget/runLimits.js";
-import { builtinForPreset } from "core/tools/permissions/safetyDegrees.js";
 import {
   loadHooksConfig,
   type LoadedHooksConfig,

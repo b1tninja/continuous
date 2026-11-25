@@ -416,6 +416,31 @@ function dropEmptyMap(doc: YAML.Document, key: string): void {
   if (YAML.isMap(node) && node.items.length === 0) doc.delete(key);
 }
 
+/** The levels of an update, always in their current spelling. */
+function writeLevels(
+  doc: YAML.Document,
+  levels: NonNullable<PolicyFileUpdate["levels"]>,
+): void {
+  for (const area of POLICY_AREAS as readonly PolicyArea[]) {
+    // Always the current spelling: a retired `idgaf` or `yolo` is never written
+    const raw = levels[area];
+    const level =
+      area === "questions" && isRetiredTopLevel(raw)
+        ? "delegate"
+        : (parsePolicyLevel(raw) ?? raw);
+    doc.setIn(["levels", area], level);
+  }
+  // Web: written when given; given as undefined it follows Tool use again;
+  // left out, the file keeps what it has.
+  if (!Object.hasOwn(levels, "web")) return;
+  const web = levels.web;
+  if (web === undefined) {
+    if (doc.hasIn(["levels", "web"])) doc.deleteIn(["levels", "web"]);
+  } else {
+    doc.setIn(["levels", "web"], parseWebLevel(web) ?? web);
+  }
+}
+
 /**
  * The file's text with the update applied, keeping every other key and
  * comment. A retired `idgaf` or `yolo` is written as its current level.
@@ -427,28 +452,7 @@ export function applyPolicyUpdate(
   const doc = YAML.parseDocument(text?.trim() ? text : "{}");
   if (!YAML.isMap(doc.contents)) doc.contents = doc.createNode({}) as any;
 
-  if (update.levels) {
-    for (const area of POLICY_AREAS as readonly PolicyArea[]) {
-      // Always the current spelling: a retired `idgaf` or `yolo` is never written
-      const raw = update.levels[area];
-      const level =
-        area === "questions" && isRetiredTopLevel(raw)
-          ? "delegate"
-          : (parsePolicyLevel(raw) ?? raw);
-      doc.setIn(["levels", area], level);
-    }
-    // Web: written when given; given as undefined it follows Tool use again;
-    // left out, the file keeps what it has.
-    if (Object.hasOwn(update.levels, "web")) {
-      const web = update.levels.web;
-      if (web === undefined) {
-        if (doc.hasIn(["levels", "web"])) doc.deleteIn(["levels", "web"]);
-      } else {
-        // the current spelling: a retired `idgaf` or `yolo` is never written
-        doc.setIn(["levels", "web"], parseWebLevel(web) ?? web);
-      }
-    }
-  }
+  if (update.levels) writeLevels(doc, update.levels);
   if (update.maxNewPlanItems !== undefined) {
     doc.setIn(["plan", "maxNewItems"], update.maxNewPlanItems);
   }
