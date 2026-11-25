@@ -15,7 +15,7 @@ val isEap get() = environment("RELEASE_CHANNEL").orNull == "eap"
 // advisories. Raise them to fixed releases; drop these once the plugin does.
 buildscript {
     dependencies {
-        classpath(platform("com.fasterxml.jackson:jackson-bom:2.21.7"))
+        classpath(platform("com.fasterxml.jackson:jackson-bom:2.22.4"))
         constraints {
             classpath("org.jsoup:jsoup:1.24.1")
         }
@@ -84,7 +84,7 @@ dependencies {
     // with known advisories. Raise them to fixed releases;
     // newer Starter releases still carry some of them and need Java 21.
     testIntegrationImplementation(platform("io.netty:netty-bom:4.2.21.Final"))
-    testIntegrationImplementation(platform("com.fasterxml.jackson:jackson-bom:2.21.7"))
+    testIntegrationImplementation(platform("com.fasterxml.jackson:jackson-bom:2.22.4"))
     testIntegrationImplementation(platform("io.opentelemetry:opentelemetry-bom:1.68.0"))
     testIntegrationImplementation(platform("io.opentelemetry:opentelemetry-bom-alpha:1.68.0-alpha"))
     testIntegrationImplementation(platform("io.ktor:ktor-bom:3.6.1"))
