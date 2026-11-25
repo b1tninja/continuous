@@ -527,13 +527,6 @@ function compile(input: SandboxCompileInput): SandboxCompileResult {
   addReadPolicy(acc, ctx);
   addNetwork(acc, ctx, dest);
   checkOverlap(acc, ctx);
-  if (
-    Object.values(ctx.input.levels).some((l) => parsePolicyLevel(l) === "idgaf")
-  ) {
-    acc.warnings.push(
-      "a level is IDGAF: the policy ignores rules at that level, but the OS config is unchanged and still applies to commands that run in the sandbox",
-    );
-  }
   if (acc.conflicts.length > 0) {
     return failure(
       acc.conflicts.map((c) => `${c.rule}: ${c.why}`),

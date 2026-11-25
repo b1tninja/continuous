@@ -1,13 +1,14 @@
 import {
+  levelsOfArea,
   POLICY_AREAS,
-  POLICY_LEVELS,
+  type PolicyArea,
   type PolicyLevel,
 } from "core/tools/permissions/policy";
 import { typedCommandRefusal } from "core/util/typedCommand";
 
 import type { AuditTrail } from "core/tools/permissions/audit/trail";
 
-/** The panel's policy/save body: known areas and known levels only. */
+/** The panel's policy/save body: known areas and the levels each one has (Delegate is Questions' only). */
 export function policySavePayloadOk(data: unknown): boolean {
   if (!data || typeof data !== "object" || Array.isArray(data)) return false;
   const levels = (data as { levels?: unknown }).levels;
@@ -17,7 +18,7 @@ export function policySavePayloadOk(data: unknown): boolean {
   }
   for (const [area, level] of Object.entries(levels)) {
     if (!(POLICY_AREAS as readonly string[]).includes(area)) return false;
-    if (!(POLICY_LEVELS as readonly string[]).includes(level as PolicyLevel)) {
+    if (!levelsOfArea(area as PolicyArea).includes(level as PolicyLevel)) {
       return false;
     }
   }

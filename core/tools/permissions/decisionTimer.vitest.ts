@@ -23,10 +23,10 @@ const ASK: PolicyFact = {
   source: "tool-setting",
 };
 const REFUSE: PolicyFact = { policy: "disabled", source: "deny-rule" };
-/** IDGAF ran a call that Plan mode would have asked about */
+/** A call that ran although Plan mode would have asked about it */
 const RAN_PAST_PLAN: PolicyFact = {
   policy: "allowedWithoutPermission",
-  source: "idgaf",
+  source: "permissive",
   override: {
     policy: "allowedWithPermission",
     source: "plan-mode",
@@ -73,22 +73,17 @@ describe("parseTimerSettings", () => {
     expect(parseTimerSettings({ cautious: 0 })).toEqual({});
   });
 
-  it("never sets an ask window for IDGAF: that level has no asks", () => {
+  it("ignores a window for idgaf, which is a preset and not a level", () => {
     expect(parseTimerSettings({ idgaf: 10, cautious: 5 })).toEqual({
       cautious: 5,
     });
     expect(parseTimerSettings({ idgaf: 10, cautious: 5 }, "asks")).toEqual({
       cautious: 5,
     });
-  });
-
-  it("reads a heads-up window for IDGAF, from the heads-up values only", () => {
     expect(parseTimerSettings({ idgaf: 10, cautious: 5 }, "headsUp")).toEqual({
-      idgaf: 10,
       cautious: 5,
     });
     expect(parseTimerSettings({ idgaf: 15 }, "headsUp")).toEqual({});
-    expect(parseTimerSettings({ idgaf: 0 }, "headsUp")).toEqual({});
   });
 
   it("ignores an unknown level and a value that is not an object", () => {
@@ -109,7 +104,7 @@ describe("proposalLine", () => {
 
   it("adds what a lower level would have done, asked or refused", () => {
     expect(proposalLine("allow", 5, RAN_PAST_PLAN.override)).toBe(
-      "Runs in 5 s unless you answer. Below IDGAF this call would have been asked: Plan mode asks before anything that changes files or state.",
+      "Runs in 5 s unless you answer. This call would have been asked: Plan mode asks before anything that changes files or state.",
     );
     expect(
       proposalLine("allow", 3, {
@@ -117,7 +112,7 @@ describe("proposalLine", () => {
         reason: "Blocked by your rule.",
       }),
     ).toBe(
-      "Runs in 3 s unless you answer. Below IDGAF this call would have been refused: Blocked by your rule.",
+      "Runs in 3 s unless you answer. This call would have been refused: Blocked by your rule.",
     );
   });
 });
@@ -147,33 +142,8 @@ describe("propose", () => {
     expect(propose(ALLOW, ctx({ headsUp: undefined }))).toBeUndefined();
   });
 
-  it("at IDGAF, a call that would have run lower down is never delayed", () => {
-    const at = ctx({ level: "idgaf", headsUp: { idgaf: 10 } });
-    expect(propose(ALLOW, at)).toBeUndefined();
-    expect(
-      propose({ policy: "allowedWithoutPermission", source: "idgaf" }, at),
-    ).toBeUndefined();
-  });
-
-  it("at IDGAF with no window set, nothing is delayed: 0 is the default", () => {
-    for (const headsUp of [undefined, {}, { permissive: 5 as const }]) {
-      expect(
-        propose(RAN_PAST_PLAN, ctx({ level: "idgaf", headsUp })),
-      ).toBeUndefined();
-    }
-  });
-
-  it("at IDGAF with a window, a call it ran past an ask is proposed to run", () => {
-    const p = propose(
-      RAN_PAST_PLAN,
-      ctx({ level: "idgaf", headsUp: { idgaf: 5 } }),
-    );
-    expect(p).toMatchObject({ proposed: "allow", seconds: 5 });
-    expect(p?.decision.override?.source).toBe("plan-mode");
-  });
-
   it("every source that would have asked or refused gets the window", () => {
-    const at = ctx({ level: "idgaf", headsUp: { idgaf: 10 } });
+    const at = ctx({ level: "permissive", headsUp: { permissive: 10 } });
     for (const [policy, source] of [
       ["allowedWithPermission", "plan-mode"],
       ["allowedWithPermission", "protected-path"],
@@ -187,7 +157,7 @@ describe("propose", () => {
         propose(
           {
             policy: "allowedWithoutPermission",
-            source: "idgaf",
+            source: "permissive",
             override: { policy, source },
           },
           at,
@@ -197,21 +167,15 @@ describe("propose", () => {
     }
   });
 
-  it("the ask windows never apply at IDGAF: it has no asks", () => {
-    const at = ctx({
-      level: "idgaf",
-      settings: { idgaf: 30 } as never,
-      headsUp: undefined,
-    });
-    expect(propose(ASK, at)).toBeUndefined();
-    expect(propose(RAN_PAST_PLAN, at)).toBeUndefined();
-  });
-
-  it("nobody there: no window at IDGAF either", () => {
+  it("nobody there: no window, whatever the level", () => {
     expect(
       propose(
         RAN_PAST_PLAN,
-        ctx({ level: "idgaf", headsUp: { idgaf: 5 }, attended: false }),
+        ctx({
+          level: "permissive",
+          headsUp: { permissive: 5 },
+          attended: false,
+        }),
       ),
     ).toBeUndefined();
   });

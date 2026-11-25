@@ -1,15 +1,20 @@
 import type { ChatHistoryItem, ToolStatus } from "core/index.js";
+import {
+  recordResult,
+  resultSteer,
+} from "core/tools/permissions/repeatGuard.js";
+import { builtinSwitchOff } from "core/tools/permissions/secretSwitch.js";
 import { stripImages } from "core/util/messageContent.js";
 import { createHistoryItem } from "core/util/messageConversion.js";
 
 import {
   isAutoReviewEnabled,
   liftAtIdgaf,
-  runsAtIdgaf,
+  ownRulesAreOff,
 } from "src/permissions/coreRules.js";
 import { headlessLegacyAllow } from "src/permissions/headlessPolicy.js";
 import { checkToolPermission } from "src/permissions/permissionChecker.js";
-import { effectiveLevels } from "src/permissions/policyLevels.js";
+import { approvalExtras } from "src/permissions/policyLevels.js";
 import { withReadOnlyMcp } from "src/permissions/readOnlyMcp.js";
 
 import { cliAuditSession, cliAuditTrail } from "../audit/cliAudit.js";
@@ -169,6 +174,50 @@ function recordRunOutcomes(
   for (const entry of chatHistoryEntries) {
     const call = toRun.find((tc) => tc.id === entry.tool_call_id);
     if (call) recordRepeatOutcome(call, entry.status !== "done");
+  }
+}
+
+/**
+ * The same call, with the same result, again and again: say so at the end of
+ * the result, with another way to go on (core's repeat guard, which the editor
+ * uses too). The note is in the result the model reads. Off with the "Tell the
+ * agent when it repeats a call" switch.
+ */
+function noteRepeatedResults(
+  chatHistoryEntries: {
+    tool_call_id: string;
+    status: string;
+    content?: unknown;
+  }[],
+  toRun: ToolCall[],
+  ctx: {
+    useService: boolean;
+    chatHistorySvc: typeof services.chatHistory;
+    chatHistory: ChatHistoryItem[];
+  },
+): void {
+  if (builtinSwitchOff("steer-repeated-calls")) return;
+  for (const entry of chatHistoryEntries) {
+    if (entry.status !== "done" && entry.status !== "errored") continue;
+    const call = toRun.find((tc) => tc.id === entry.tool_call_id);
+    if (!call || typeof entry.content !== "string") continue;
+    const note = resultSteer(
+      recordResult(
+        cliAuditSession(),
+        call.name,
+        call.arguments,
+        entry.content,
+        call.id,
+      ),
+    );
+    if (!note) continue;
+    const text = `${entry.content}\n\n${note}`;
+    const status = entry.status as ToolStatus;
+    if (ctx.useService) {
+      ctx.chatHistorySvc.addToolResult(entry.tool_call_id, text, status);
+    } else {
+      setLocalToolResult(ctx.chatHistory, entry.tool_call_id, text, status);
+    }
   }
 }
 
@@ -390,6 +439,11 @@ export async function handleToolCalls(
   }
 
   recordRunOutcomes(chatHistoryEntries, toRun);
+  noteRepeatedResults(chatHistoryEntries, toRun, {
+    useService,
+    chatHistorySvc,
+    chatHistory,
+  });
   noteStuckRound(chatHistoryEntries, {
     useService,
     chatHistorySvc,
@@ -430,16 +484,10 @@ export async function handleToolCalls(
   return false;
 }
 
-function safeRunsAtIdgaf(
-  levels: ReturnType<typeof effectiveLevels>,
-  mode: Parameters<typeof runsAtIdgaf>[1],
-  tool: Tool,
-): boolean {
+/** The CLI's own ask and exclude lists are not read in this mode; never throws. */
+function safeOwnRulesOff(mode: Parameters<typeof ownRulesAreOff>[0]): boolean {
   try {
-    return runsAtIdgaf(levels, mode, {
-      name: tool.name,
-      readonly: tool.readonly,
-    });
+    return ownRulesAreOff(mode, approvalExtras(mode).builtin);
   } catch {
     return false;
   }
@@ -459,11 +507,11 @@ export async function getRequestTools(isHeadless: boolean) {
     );
 
   const mode = permissionsState.currentMode;
-  const levels = effectiveLevels(mode);
   const allowedTools: Tool[] = [];
   for (const tool of availableTools) {
-    // IDGAF: a tool the CLI's own policy asks about or excludes is offered,
-    // headless too, and runs (runsAtIdgaf); a structural limit stays
+    // With the CLI's own rules not read (apply-rules off), a tool its policy
+    // asks about or excludes is offered, headless too, and runs; a structural
+    // limit stays
     const result = liftAtIdgaf(
       withReadOnlyMcp(
         checkToolPermission(
@@ -472,7 +520,7 @@ export async function getRequestTools(isHeadless: boolean) {
         ),
         tool,
       ),
-      safeRunsAtIdgaf(levels, mode, tool),
+      safeOwnRulesOff(mode),
     );
 
     // An "ask" tool is offered headless too (CO2): the levels and the rules

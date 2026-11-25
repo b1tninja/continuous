@@ -13,9 +13,9 @@ const OFF = "disabled" as const;
 const IDGAF: ApprovalSettings = {
   levels: {
     ...DEFAULT_POLICY_LEVELS,
-    context: "idgaf",
-    tools: "idgaf",
-    edits: "idgaf",
+    context: "permissive",
+    tools: "permissive",
+    edits: "permissive",
   },
   // The IDGAF preset leaves no safety check on
   builtin: builtinForPreset("idgaf"),
@@ -37,9 +37,15 @@ const run = (
     ...(approval ? { approval } : {}),
   });
 
+// The shell check runs only when its switch is on
+const SWITCH_ON: ApprovalSettings = {
+  levels: { ...IDGAF.levels, tools: "permissive" },
+  builtin: { "check-shell-commands": true },
+};
+
 describe("detectShellHints on the terminal command path", () => {
-  it("refuses && under Windows PowerShell 5.1 before anyone is asked", () => {
-    const r = run("echo A && echo B", "powershell");
+  it("refuses && under Windows PowerShell 5.1 once the switch is on, before anyone is asked", () => {
+    const r = run("echo A && echo B", "powershell", ALLOW, SWITCH_ON);
     expect(r.policy).toBe(OFF);
     expect(r.source).toBe("shell-hint");
     expect(r.reason).toContain("The command was not run");
@@ -48,7 +54,7 @@ describe("detectShellHints on the terminal command path", () => {
   });
 
   it("asks and names the warning when the command only looks like another shell", () => {
-    const r = run("source .venv/bin/activate", "powershell");
+    const r = run("source .venv/bin/activate", "powershell", ALLOW, SWITCH_ON);
     expect(r.policy).toBe(ASK);
     expect(r.source).toBe("shell-hint");
     expect(r.reason).toContain("This looks like bash");
@@ -98,7 +104,7 @@ describe("detectShellHints on the terminal command path", () => {
   });
 
   it("refuses an unclosed quote before anyone is asked, unless the switch is off", () => {
-    const r = run('echo "hello', "powershell", ALLOW, undefined);
+    const r = run('echo "hello', "powershell", ALLOW, SWITCH_ON);
     expect(r.policy).toBe(OFF);
     expect(r.source).toBe("shell-hint");
     expect(r.reason).toContain("never closed");

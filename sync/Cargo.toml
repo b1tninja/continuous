@@ -17,7 +17,7 @@ dirs = "7.0.0"
 ignore = "0.4.20"
 ndarray = "0.17.2"
 rand = "0.10.3"
-rusqlite = { version = "0.42.0", features = ["bundled", "fallible_uint"] }
+rusqlite = { version = "0.43.0", features = ["bundled", "fallible_uint"] }
 serde = { version = "1.0.192", features = ["derive"] }
 serde_json = "1.0.108"
 sha1 = "0.11.0"

@@ -1,10 +1,10 @@
-import type { ChatCompletionTool } from "openai/resources.mjs";
+import type { ChatCompletionFunctionTool } from "openai/resources.mjs";
 import { describe, expect, it } from "vitest";
 
 import { applyChatCompletionToolOverrides } from "./applyToolOverrides.js";
 
 describe("applyChatCompletionToolOverrides", () => {
-  const mockTools: ChatCompletionTool[] = [
+  const mockTools: ChatCompletionFunctionTool[] = [
     {
       type: "function",
       function: { name: "read_file", description: "Read a file" },

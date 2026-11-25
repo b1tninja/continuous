@@ -75,7 +75,6 @@ const VIEWS: [string, ReplayDecide<Row>][] = [
   ["labels", labels],
   ["cautious", engine("cautious")],
   ["permissive", engine("permissive")],
-  ["idgaf", engine("idgaf")],
 ];
 
 /** Per class, over the 287 rows once each: sinks, already asking, new asks. */

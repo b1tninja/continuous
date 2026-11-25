@@ -3,13 +3,9 @@ import { describe, expect, it } from "vitest";
 import { hasUnsafeShellConstruct } from "./command";
 import { envAssignmentHit, envAssignments } from "./envAssignments";
 import { evaluateToolPolicyWithRules as evaluateAndRun } from "./evaluate";
-import { wouldDecide } from "./idgafView.testutil";
 
-// At IDGAF every call runs; these tests read what the guard would have
-// decided (wouldDecide), which IDGAF records instead of acting on.
-const evaluateToolPolicyWithRules = (
-  input: Parameters<typeof evaluateAndRun>[0],
-) => wouldDecide(evaluateAndRun(input));
+// "idgaf" here is Permissive with every check left on, the loosest level
+const evaluateToolPolicyWithRules = evaluateAndRun;
 
 /**
  * ROADMAP P13: PowerShell's braced variable `${env:NAME}` / `${name}` is a
@@ -34,7 +30,15 @@ function run(command: string, level?: "idgaf") {
     permissions: undefined,
     shell: "powershell",
     ...(level
-      ? { approval: { levels: { context: level, tools: level, edits: level } } }
+      ? {
+          approval: {
+            levels: {
+              context: "permissive",
+              tools: "permissive",
+              edits: "permissive",
+            },
+          },
+        }
       : {}),
   } as any);
 }

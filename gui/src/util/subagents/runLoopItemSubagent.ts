@@ -1,3 +1,4 @@
+import { builtinIsOn } from "core/tools/permissions/policy";
 import type {
   ContextItem,
   ModelDescription,
@@ -140,13 +141,16 @@ export function loopWorkerTools(
     state.ui.policyExtras.planMcpTools,
     state.ui.policyExtras.trustedMcpServers,
     state.ui.policyExtras.backgroundMcpTools,
-    state.ui.policyLevels.tools === "idgaf",
+    !builtinIsOn(state.ui.policyExtras.builtin, "approve-mcp-tools"),
   );
   // Nobody watches a worker: it gets only the MCP tools the person listed
   // for unattended runs (`background.mcpTools`, TR1 and TR25)
   parentTools = filterToolsForRole("background", parentTools, ideToolRef, {
     unattendedMcpTools: state.ui.policyExtras.backgroundMcpTools,
-    approvalWaived: state.ui.policyLevels.tools === "idgaf",
+    approvalWaived: !builtinIsOn(
+      state.ui.policyExtras.builtin,
+      "approve-mcp-tools",
+    ),
   });
   if (model.toolOverrides?.length) {
     parentTools = applyToolOverrides(parentTools, model.toolOverrides).tools;

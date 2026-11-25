@@ -15,6 +15,10 @@ import { parsePolicyFile } from "core/tools/permissions/settingsFile";
 import { createLoop, enterWait, stopLoop } from "core/util/loopMode";
 import { addBlockedCall } from "@gui/redux/slices/blockedCallsSlice";
 import { setPolicyLevel } from "@gui/redux/slices/uiSlice";
+import {
+  setProfiles,
+  setSelectedProfile,
+} from "@gui/redux/slices/profilesSlice";
 import { POLICY_AREAS } from "core/tools/permissions/policy";
 import { McpServerDialog } from "@gui/components/McpServerDialog/McpServerDialog";
 import {
@@ -1229,8 +1233,26 @@ function seedModelConnections(ctx: FixtureContext): void {
 }
 
 /** A Settings tab; `tab` may carry more of the query ("permissions&view=rules"). */
+/** The configs the settings views name as active: one of several the person has. */
+const ACTIVE_CONFIG = {
+  title: "Bedrock",
+  id: "bedrock",
+  errors: [],
+  uri: "file:///C:/Users/me/.continuous/configs/bedrock.yaml",
+  iconUrl: "",
+  fullSlug: { ownerSlug: "", packageSlug: "", versionSlug: "" },
+} as never;
+const OTHER_CONFIG = {
+  ...(ACTIVE_CONFIG as object),
+  title: "Main Config",
+  id: "local",
+  uri: "file:///C:/Users/me/.continuous/config.yaml",
+} as never;
+
 function settingsTab(tab: string): Fixture {
-  return async ({ navigate }) => {
+  return async ({ navigate, store }) => {
+    store.dispatch(setProfiles([OTHER_CONFIG, ACTIVE_CONFIG]));
+    store.dispatch(setSelectedProfile("bedrock"));
     navigate(`/config?tab=${tab}`);
     await sleep(600);
   };

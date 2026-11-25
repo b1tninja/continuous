@@ -5,6 +5,7 @@ import path from "path";
 import { setAuditTrailForTests } from "core/tools/permissions/audit/global.js";
 import { listChanges } from "core/tools/permissions/audit/reader.js";
 import { AuditTrail } from "core/tools/permissions/audit/trail.js";
+import { noChecksOn } from "core/tools/permissions/safetyDegrees.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { processCommandFlags } from "../flags/flagProcessor.js";
@@ -12,7 +13,11 @@ import { handleSlashCommands } from "../slashCommands.js";
 
 import { setAutoReviewEnabled } from "./coreRules.js";
 import { auditTrust } from "./policyAudit.js";
-import { getPolicyLevels, resetPolicyLevels } from "./policyLevels.js";
+import {
+  approvalExtras,
+  getPolicyLevels,
+  resetPolicyLevels,
+} from "./policyLevels.js";
 
 let dir: string;
 
@@ -63,10 +68,17 @@ describe("/policy raises ask once, and every change is audited", () => {
     expect(rows[1].summary).toContain("careful -> custom");
   });
 
-  it("IDGAF asks too, and says it lasts one session", async () => {
+  it("the IDGAF preset asks like any raise, and changes nothing until confirmed", async () => {
     const r = await handleSlashCommands("/policy idgaf", {} as never);
-    expect(r?.output).toContain("idgaf lasts this session only");
+    expect(r?.output).toContain("Nothing was changed");
+    expect(r?.output).not.toContain("this session only");
     expect(getPolicyLevels().tools).toBe("cautious");
+  });
+
+  it("confirmed, the IDGAF preset sets its levels, and its switches are saved with them", async () => {
+    await handleSlashCommands("/policy idgaf --yes", {} as never);
+    expect(getPolicyLevels().tools).toBe("permissive");
+    expect(noChecksOn(approvalExtras("normal").builtin)).toBe(true);
   });
 
   it("lowering never asks, and is audited", async () => {
@@ -105,12 +117,18 @@ describe("flags are explicit: no prompt, but audited", () => {
     ).toBe(true);
   });
 
-  it("--auto records the tool areas going to IDGAF", () => {
+  it("--auto records the tool areas going to Permissive", () => {
     processCommandFlags({ auto: true });
     const rows = changes();
     expect(rows.map((r) => r.summary)).toContain(
-      "set tools: cautious -> idgaf (confirmed: flag)",
+      "set tools: cautious -> permissive (confirmed: flag)",
     );
+  });
+
+  it("--policy idgaf sets the preset's switches for the run, and the file is not touched", () => {
+    processCommandFlags({ policy: "idgaf" });
+    expect(getPolicyLevels().tools).toBe("permissive");
+    expect(noChecksOn(approvalExtras("normal").builtin)).toBe(true);
   });
 });
 

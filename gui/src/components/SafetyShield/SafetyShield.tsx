@@ -1,5 +1,5 @@
 import { ShieldCheckIcon } from "@heroicons/react/24/outline";
-import { BUILTIN_RULES } from "core/tools/permissions/policy";
+import { BUILTIN_RULES, builtinIsOn } from "core/tools/permissions/policy";
 import {
   builtinForDegree,
   safetyLabel,
@@ -106,7 +106,7 @@ export function SafetyShield() {
           {BUILTIN_RULES.map((rule) => (
             <div key={rule.id} data-testid={`shield-${rule.id}`}>
               <ToggleSwitch
-                isToggled={extras.builtin?.[rule.id] !== false}
+                isToggled={builtinIsOn(extras.builtin, rule.id)}
                 text={rule.label}
                 tooltip={rule.description}
                 onToggle={() =>
@@ -114,7 +114,7 @@ export function SafetyShield() {
                     changePolicyExtras({
                       builtin: {
                         ...extras.builtin,
-                        [rule.id]: extras.builtin?.[rule.id] === false,
+                        [rule.id]: !builtinIsOn(extras.builtin, rule.id),
                       },
                     }),
                   )

@@ -84,7 +84,7 @@ export const handleApplyStateUpdate = createAsyncThunk<
           toolCallState?.toolCall.function.name &&
           // Nobody is expected to be watching a loop's edits: Supervised
           // asks before the edit (applyLoopHolds), and each item can be reverted
-          (["permissive", "idgaf"].includes(getState().ui.policyLevels.edits) ||
+          (getState().ui.policyLevels.edits === "permissive" ||
             getState().session.loop?.current?.kind === "item" ||
             getState().ui.toolSettings[toolCallState.toolCall.function.name] ===
               "allowedWithoutPermission")

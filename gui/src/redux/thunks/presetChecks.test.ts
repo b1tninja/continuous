@@ -1,182 +1,83 @@
 import {
   DEFAULT_POLICY_LEVELS,
+  POLICY_PRESET_ORDER,
   POLICY_PRESETS,
+  presetOf,
 } from "core/tools/permissions/policy";
-import { builtinForPreset } from "core/tools/permissions/safetyDegrees";
-import { describe, expect, it } from "vitest";
-import { noChecksOn } from "core/tools/permissions/safetyDegrees";
 import {
-  afterApplying,
-  afterLoading,
-  builtinAfterApplying,
-  builtinForLevels,
-  builtinToSave,
-  isIdgafPreset,
-  presetLabelOf,
-} from "./presetChecks";
+  builtinForPreset,
+  noChecksOn,
+} from "core/tools/permissions/safetyDegrees";
+import { describe, expect, it } from "vitest";
+import { presetLabelOf, settingsOfPreset } from "./presetChecks";
 
-describe("builtinForLevels", () => {
-  it("gives each preset its own checks", () => {
-    for (const name of Object.keys(
-      POLICY_PRESETS,
-    ) as (keyof typeof POLICY_PRESETS)[]) {
-      expect(builtinForLevels(POLICY_PRESETS[name].levels)).toEqual(
-        builtinForPreset(name),
-      );
+describe("settingsOfPreset", () => {
+  it("gives each preset its own levels and its own switches", () => {
+    for (const name of POLICY_PRESET_ORDER) {
+      const s = settingsOfPreset(name);
+      expect(s.levels, name).toEqual(POLICY_PRESETS[name].levels);
+      expect(s.builtin, name).toEqual(builtinForPreset(name));
     }
   });
 
-  it("gives nothing for levels that are not a preset", () => {
-    expect(
-      builtinForLevels({ ...DEFAULT_POLICY_LEVELS, tools: "permissive" }),
-    ).toBeUndefined();
+  it("hands back copies, so a caller cannot change the preset", () => {
+    const a = settingsOfPreset("careful");
+    a.levels.tools = "permissive";
+    a.builtin["protect-secrets"] = false;
+    expect(POLICY_PRESETS.careful.levels.tools).not.toBe("permissive");
+    expect(settingsOfPreset("careful").builtin["protect-secrets"]).not.toBe(
+      false,
+    );
+  });
+
+  it("IDGAF is Permissive with no check on: nothing else about it is special", () => {
+    const s = settingsOfPreset("idgaf");
+    expect(noChecksOn(s.builtin)).toBe(true);
+    for (const area of ["context", "tools", "edits", "plan"] as const) {
+      expect(s.levels[area], area).toBe("permissive");
+    }
+    // Questions is a delegated decision, not a safety check: the preset leaves it
+    expect(s.levels.questions).toBe(DEFAULT_POLICY_LEVELS.questions);
+  });
+
+  it("every other preset leaves a check on", () => {
+    for (const name of POLICY_PRESET_ORDER.filter((n) => n !== "idgaf")) {
+      expect(noChecksOn(settingsOfPreset(name).builtin), name).toBe(false);
+    }
+  });
+
+  it("round-trips: the preset it came from is the preset it reads as", () => {
+    for (const name of POLICY_PRESET_ORDER) {
+      const s = settingsOfPreset(name);
+      expect(presetOf(s.levels, s.builtin), name).toBe(name);
+    }
   });
 });
 
-describe("builtinAfterApplying", () => {
-  const mine = { "ask-large-change": false } as const;
-
-  it("takes the preset's checks, replacing the person's", () => {
-    expect(
-      builtinAfterApplying(POLICY_PRESETS.idgaf.levels, { ...mine }),
-    ).toEqual(builtinForPreset("idgaf"));
-    expect(
-      builtinAfterApplying(POLICY_PRESETS.careful.levels, { ...mine }),
-    ).toEqual({});
-  });
-
-  it("keeps the person's checks for levels that are not a preset", () => {
-    // Not any preset: Tool use and Plan edits differ from every one of them
-    const custom = {
-      ...DEFAULT_POLICY_LEVELS,
-      tools: "permissive" as const,
-      plan: "manual" as const,
-    };
-    expect(builtinAfterApplying(custom, { ...mine })).toEqual(mine);
-    expect(builtinAfterApplying(custom, undefined)).toBeUndefined();
-  });
-});
-
-describe("isIdgafPreset and presetLabelOf", () => {
-  it("knows the IDGAF preset", () => {
-    expect(isIdgafPreset(POLICY_PRESETS.idgaf.levels)).toBe(true);
-    expect(isIdgafPreset(POLICY_PRESETS.careful.levels)).toBe(false);
+describe("presetLabelOf", () => {
+  it("names the preset the levels are", () => {
     expect(presetLabelOf(POLICY_PRESETS.handsOff.levels)).toBe("Hands off");
-    expect(presetLabelOf({ ...DEFAULT_POLICY_LEVELS, tools: "idgaf" })).toBe(
-      "",
-    );
-  });
-});
-
-describe("builtinToSave: IDGAF's checks are never written", () => {
-  const before = { "ask-large-change": false } as const;
-
-  it("writes the current switches when nothing is stashed", () => {
-    expect(builtinToSave({ "protect-secrets": false }, undefined)).toEqual({
-      "protect-secrets": false,
-    });
-    expect(builtinToSave(undefined, undefined)).toBeUndefined();
-    expect(builtinToSave({}, undefined)).toEqual({});
+    expect(presetLabelOf(POLICY_PRESETS.careful.levels)).toBe("Careful");
   });
 
-  it("writes the stash while the IDGAF preset is in force, whatever the switches are", () => {
-    expect(builtinToSave(builtinForPreset("idgaf"), { ...before })).toEqual(
-      before,
-    );
-    // even after the person turned one check back on in the session
+  it("is empty for levels that are no preset", () => {
     expect(
-      builtinToSave(
-        { ...builtinForPreset("idgaf"), "protect-secrets": true },
-        {
-          ...before,
-        },
-      ),
-    ).toEqual(before);
-    // an empty stash is a real value: the file had every check on
-    expect(builtinToSave(builtinForPreset("idgaf"), {})).toEqual({});
-  });
-});
-
-describe("afterApplying", () => {
-  const file = { "ask-large-change": false } as const;
-
-  it("a preset sets its checks and drops any stash", () => {
-    const s = afterApplying(POLICY_PRESETS.handsOff.levels, {
-      builtin: { ...file },
-      savedBuiltin: { ...file },
-    });
-    expect(s.builtin).toEqual(builtinForPreset("handsOff"));
-    expect(s.savedBuiltin).toBeUndefined();
+      presetLabelOf({
+        ...DEFAULT_POLICY_LEVELS,
+        tools: "permissive",
+        plan: "manual",
+      }),
+    ).toBe("");
   });
 
-  it("entering IDGAF stashes what the file has and turns every check off", () => {
-    const s = afterApplying(POLICY_PRESETS.idgaf.levels, {
-      builtin: { ...file },
-      savedBuiltin: undefined,
-    });
-    expect(noChecksOn(s.builtin)).toBe(true);
-    expect(s.savedBuiltin).toEqual(file);
-  });
-
-  it("applying IDGAF again keeps the first stash, not the all-off set", () => {
-    const first = afterApplying(POLICY_PRESETS.idgaf.levels, {
-      builtin: { ...file },
-      savedBuiltin: undefined,
-    });
-    const again = afterApplying(POLICY_PRESETS.idgaf.levels, first);
-    expect(again.savedBuiltin).toEqual(file);
-  });
-
-  it("no checks stashed means an empty stash, which still marks the session", () => {
-    const s = afterApplying(POLICY_PRESETS.idgaf.levels, {
-      builtin: undefined,
-      savedBuiltin: undefined,
-    });
-    expect(s.savedBuiltin).toEqual({});
-  });
-
-  it("levels that are no preset change nothing", () => {
-    const now = { builtin: { ...file }, savedBuiltin: undefined };
-    const custom = {
-      ...DEFAULT_POLICY_LEVELS,
-      tools: "permissive" as const,
-      plan: "manual" as const,
-    };
-    expect(afterApplying(custom, now)).toBe(now);
-  });
-
-  it("leaving IDGAF for Careful restores all on and drops the stash", () => {
-    const inIdgaf = afterApplying(POLICY_PRESETS.idgaf.levels, {
-      builtin: { ...file },
-      savedBuiltin: undefined,
-    });
-    const out = afterApplying(POLICY_PRESETS.careful.levels, inIdgaf);
-    expect(out.builtin).toEqual({});
-    expect(out.savedBuiltin).toBeUndefined();
-  });
-});
-
-describe("afterLoading", () => {
-  const file = { "ask-large-change": false } as const;
-
-  it("ordinary levels read the file's switches", () => {
-    expect(afterLoading(POLICY_PRESETS.careful.levels, { ...file })).toEqual({
-      builtin: file,
-      savedBuiltin: undefined,
-    });
+  it("says IDGAF only while no check is on", () => {
+    const levels = POLICY_PRESETS.idgaf.levels;
+    expect(presetLabelOf(levels, builtinForPreset("idgaf"))).toBe("IDGAF");
     expect(
-      afterLoading(POLICY_PRESETS.careful.levels, undefined).builtin,
-    ).toEqual({});
-  });
-
-  it("levels restored as the IDGAF preset bring its checks back off", () => {
-    const s = afterLoading(POLICY_PRESETS.idgaf.levels, { ...file });
-    expect(noChecksOn(s.builtin)).toBe(true);
-    expect(s.savedBuiltin).toEqual(file);
-  });
-
-  it("a restored area or two at IDGAF is not the preset", () => {
-    const some = { ...POLICY_PRESETS.careful.levels, tools: "idgaf" as const };
-    expect(afterLoading(some, { ...file }).builtin).toEqual(file);
+      presetLabelOf(levels, {
+        ...builtinForPreset("idgaf"),
+        "protect-secrets": true,
+      }),
+    ).toBe("");
   });
 });

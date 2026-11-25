@@ -15,7 +15,7 @@ import { providerRecoversText } from "core/util/toolDialectLeak.js";
 import type {
   ChatCompletionCreateParamsStreaming,
   ChatCompletionMessageParam,
-  ChatCompletionTool,
+  ChatCompletionFunctionTool,
 } from "openai/resources.mjs";
 
 import { getRequestBodyHints } from "../contextManagement.js";
@@ -218,7 +218,7 @@ export function buildChatRequestBody(args: {
   model: ModelConfig;
   chatHistory: ChatHistoryItem[];
   systemMessage: string;
-  tools?: ChatCompletionTool[];
+  tools?: ChatCompletionFunctionTool[];
   /** The session's task list block, or empty when none is sent. */
   taskListBlock?: string;
   /** A compaction summary is never continued, so it is a one-shot request. */

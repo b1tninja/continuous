@@ -3,7 +3,7 @@ import { BaseLlmApi } from "@continuedev/openai-adapters";
 import type { ChatHistoryItem } from "core/index.js";
 import { ACT_TURN_TAIL } from "core/llm/prompts/turns.js";
 import { createLoop, startItemRun } from "core/util/loopMode.js";
-import type { ChatCompletionTool } from "openai/resources.mjs";
+import type { ChatCompletionFunctionTool } from "openai/resources.mjs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { services } from "../services/index.js";
@@ -73,7 +73,7 @@ const model = {
   defaultCompletionOptions: { contextLength: 100_000, maxTokens: 100 },
 } as ModelConfig;
 
-const taskListTool: ChatCompletionTool = {
+const taskListTool: ChatCompletionFunctionTool = {
   type: "function",
   function: { name: "TaskList", parameters: { type: "object" } },
 };
@@ -101,7 +101,7 @@ function llmApiRecording() {
 
 async function requestWith(
   turnTail: string | undefined,
-  tools: ChatCompletionTool[] = [],
+  tools: ChatCompletionFunctionTool[] = [],
 ): Promise<Sent> {
   const { llmApi, sent } = llmApiRecording();
   await processStreamingResponse({

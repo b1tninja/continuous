@@ -846,10 +846,12 @@ describe("Loop mode", () => {
     expect(h.prompt(3)).toContain("only this item: Install vitest");
   });
 
-  test("with Questions IDGAF an irreversible question is answered by the system and the loop goes on", async () => {
+  test("with Questions Delegate an irreversible question is answered by the system and the loop goes on", async () => {
     const h = await setup(["Drop the old table", "Add tests"]);
     await act(async () => {
-      h.store.dispatch(setPolicyLevel({ area: "questions", level: "idgaf" }));
+      h.store.dispatch(
+        setPolicyLevel({ area: "questions", level: "delegate" }),
+      );
     });
     h.turns.push(
       ask(
@@ -870,14 +872,14 @@ describe("Loop mode", () => {
     expect(h.loop().questions[0].autoAnswer).toEqual({
       text: "Drop it",
       by: "system",
-      source: "Questions: IDGAF",
+      source: "Questions: Delegate",
     });
     expect(h.loop().autoDecisions?.[0].text).toBe(
       "Auto-answered: Drop the old table? -> Drop it",
     );
     // The agent was told the answer in the tool result
     expect(JSON.stringify(h.requests[1].messages)).toContain(
-      "Answered automatically (Questions: IDGAF): Drop it",
+      "Answered automatically (Questions: Delegate): Drop it",
     );
   });
 
@@ -1195,11 +1197,11 @@ describe("Loop mode", () => {
         args: { filepath: `new${n}.ts`, contents: "x" },
       });
     await act(async () => {
-      h.store.dispatch(setPolicyLevel({ area: "tools", level: "idgaf" }));
+      h.store.dispatch(setPolicyLevel({ area: "tools", level: "permissive" }));
     });
     h.ideMessenger.responseHandlers["tools/evaluatePolicy"] = async () => ({
       policy: "allowedWithoutPermission",
-      source: "idgaf",
+      source: "permissive",
     });
     h.turns.push(
       test(),

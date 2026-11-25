@@ -8,7 +8,7 @@ import type {
 import type { AuditTrail } from "./audit/trail";
 import {
   POLICY_AREAS,
-  POLICY_LEVELS,
+  levelRank,
   presetOf,
   type PolicyLevel,
   type PolicyLevels,
@@ -32,13 +32,10 @@ export interface SettingChange {
   loosens: boolean;
 }
 
-const RANK = new Map<string, number>(POLICY_LEVELS.map((l, i) => [l, i]));
+/** The rank from which a raise asks for confirmation: Permissive and Automatic. */
+const CONFIRM_FROM_RANK = levelRank("permissive");
 
-/** The levels from which a raise asks for confirmation: Automatic and above. */
-const CONFIRM_FROM_RANK = RANK.get("automatic") ?? 2;
-
-const rank = (level: string | undefined): number =>
-  (level === undefined ? undefined : RANK.get(level)) ?? -1;
+const rank = levelRank;
 
 export interface RaisedLevel {
   area: string;
@@ -47,8 +44,9 @@ export interface RaisedLevel {
 }
 
 /**
- * The areas a change moves to Automatic, Permissive or IDGAF from a lower
- * level. Lowering, and moving between Manual and Cautious, is not listed.
+ * The areas a change moves to Permissive or Automatic from Manual or
+ * Cautious. Lowering, moving between Manual and Cautious, and moving between
+ * Permissive and Automatic are not listed.
  */
 export function raisedLevels(
   before: PolicyLevels,
@@ -76,10 +74,7 @@ export function raiseConfirmation(
   const raised = raisedLevels(before, after);
   if (raised.length === 0) return undefined;
   const parts = raised.map((r) => `${r.area} ${r.from} to ${r.to}`);
-  const idgaf = raised.some((r) => r.to === "idgaf");
-  return `Permission levels: ${parts.join(", ")}. Fewer calls will ask first${
-    idgaf ? " (idgaf lasts this session only)" : ""
-  }.`;
+  return `Permission levels: ${parts.join(", ")}. Fewer calls will ask first.`;
 }
 
 function presetName(levels: PolicyLevels): string {

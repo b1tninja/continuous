@@ -4,7 +4,7 @@ import {
   idgafAreasOf,
   idgafStartLine,
 } from "core/tools/permissions/idgafNotice.js";
-import type { PolicyLevels } from "core/tools/permissions/policy.js";
+import { DEFAULT_POLICY_LEVELS } from "core/tools/permissions/policy.js";
 
 import { logger } from "../util/logger.js";
 import { userNotice } from "../util/userNotice.js";
@@ -32,7 +32,7 @@ export function rememberIdgafFlag(source: string | undefined): void {
 
 /** The line `--resume` prints for a session that ran at IDGAF (ID 5). */
 export const RESUMED_WITHOUT_IDGAF_NOTICE =
-  "Resumed at your configured levels: this session ran at IDGAF, and IDGAF is not restored. Pass --policy idgaf to turn it on again.";
+  "Resumed at your configured levels and checks: this session ran with no safety check on, and that is not restored. Pass --policy idgaf to turn it on again.";
 
 /**
  * Called by session.ts on `--resume`: the IDGAF areas the session was saved
@@ -52,10 +52,11 @@ export function noteResumedSession(session: Session): void {
  * marked so a later `--resume` can say IDGAF was not restored.
  */
 export function announceIdgaf(
-  levels: PolicyLevels,
+  builtin: Parameters<typeof idgafAreasOf>[1],
   session: Session | undefined,
 ): void {
-  const areas = idgafAreasOf(levels);
+  // IDGAF is the preset with no check on: the switches say so, the levels do not
+  const areas = idgafAreasOf(DEFAULT_POLICY_LEVELS, builtin);
   if (areas.length === 0) return;
   if (session) {
     const marked = new Set([...(session.idgafAreas ?? []), ...areas]);
@@ -71,7 +72,7 @@ export function announceIdgaf(
       op: "set",
       source: flagSource ? "flag" : "cli-command",
       name: areas.join(", "),
-      to: "idgaf",
+      to: "no checks on",
       loosens: true,
       ...(flagSource ? { confirmed: "flag" as const } : {}),
     });

@@ -23,6 +23,7 @@ import {
   getPolicyLevels,
   parsePolicySpec,
   savePolicyFile,
+  setPolicyBuiltin,
   setPolicyLevels,
 } from "./permissions/policyLevels.js";
 import { services } from "./services/index.js";
@@ -169,6 +170,8 @@ function handlePolicy(args: string[]): SlashCommandResult {
       };
     }
     setPolicyLevels(parsed.levels);
+    // A preset sets the safety checks with the levels, and they are saved with them
+    if (parsed.builtin) setPolicyBuiltin(parsed.builtin);
     auditLevelChange(
       before,
       parsed.levels,
@@ -178,7 +181,7 @@ function handlePolicy(args: string[]): SlashCommandResult {
     if (parsed.deprecated) process.stderr.write(`${parsed.deprecated}\n`);
     syncRunningLoopPolicy();
     try {
-      // Saved for the next session, and for the IDE; IDGAF is never written
+      // Saved for the next session, and for the IDE: IDGAF is a preset like the others
       savePolicyFile();
       rememberSavedPolicyFile();
     } catch (e: any) {

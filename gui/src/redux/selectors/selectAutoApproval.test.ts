@@ -1,4 +1,5 @@
 import { DEFAULT_POLICY_LEVELS } from "core/tools/permissions/policy";
+import { builtinForPreset } from "core/tools/permissions/safetyDegrees";
 import { describe, expect, it } from "vitest";
 import {
   REVIEWER_NEEDED_MESSAGE,
@@ -13,6 +14,7 @@ const state = (over: {
   flag?: boolean;
   reviewer?: boolean;
   levels?: Partial<typeof DEFAULT_POLICY_LEVELS>;
+  builtin?: Record<string, boolean>;
 }) =>
   ({
     config: {
@@ -24,7 +26,10 @@ const state = (over: {
         },
       },
     },
-    ui: { policyLevels: { ...DEFAULT_POLICY_LEVELS, ...over.levels } },
+    ui: {
+      policyLevels: { ...DEFAULT_POLICY_LEVELS, ...over.levels },
+      policyExtras: over.builtin ? { builtin: over.builtin } : {},
+    },
   }) as any;
 
 describe("selectAutoApproval", () => {
@@ -73,9 +78,9 @@ describe("selectApprovalSettings", () => {
       levels: DEFAULT_POLICY_LEVELS,
     });
     expect(
-      selectApprovalSettings(state({ levels: { tools: "idgaf" } })).levels
+      selectApprovalSettings(state({ levels: { tools: "permissive" } })).levels
         .tools,
-    ).toBe("idgaf");
+    ).toBe("permissive");
   });
 
   it("a saved Automatic that cannot run becomes Cautious, never looser", () => {
@@ -105,19 +110,38 @@ describe("the loop's policy and the IDGAF banner", () => {
   it("the loop follows Plan edits and Questions", () => {
     expect(
       selectLoopPolicy(
-        state({ levels: { plan: "permissive", questions: "idgaf" } }),
+        state({ levels: { plan: "permissive", questions: "delegate" } }),
       ),
-    ).toMatchObject({ plan: "permissive", questions: "idgaf" });
+    ).toMatchObject({ plan: "permissive", questions: "delegate" });
   });
 
-  it("names every area at IDGAF", () => {
+  it("the loop carries the re-plan switch only when it is off", () => {
+    expect(selectLoopPolicy(state({}))).not.toHaveProperty("holdReplans");
+    expect(
+      selectLoopPolicy(state({ builtin: { "plan-keeps-checks": false } })),
+    ).toMatchObject({ holdReplans: false });
+  });
+
+  it("the banner names every area while no check is on, and none otherwise", () => {
+    expect(selectIdgafAreas(state({}))).toEqual([]);
+    expect(
+      selectIdgafAreas(state({ builtin: builtinForPreset("idgaf") })),
+    ).toEqual(["context", "tools", "edits", "plan", "questions"]);
+    // one check back on: it is no longer IDGAF
     expect(
       selectIdgafAreas(
         state({
-          levels: { tools: "idgaf", questions: "idgaf", edits: "permissive" },
+          builtin: { ...builtinForPreset("idgaf"), "protect-secrets": true },
         }),
       ),
-    ).toEqual(["tools", "questions"]);
-    expect(selectIdgafAreas(state({}))).toEqual([]);
+    ).toEqual([]);
+  });
+
+  it("the levels alone do not make the banner", () => {
+    expect(
+      selectIdgafAreas(
+        state({ levels: { tools: "permissive", edits: "permissive" } }),
+      ),
+    ).toEqual([]);
   });
 });

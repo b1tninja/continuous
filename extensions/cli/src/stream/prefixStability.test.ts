@@ -1,7 +1,7 @@
 import type { ModelConfig } from "@continuedev/config-yaml";
 import type { ChatHistoryItem } from "core/index.js";
 import { formatTaskPlanBlock } from "core/util/taskPlan.js";
-import type { ChatCompletionTool } from "openai/resources.mjs";
+import type { ChatCompletionFunctionTool } from "openai/resources.mjs";
 import { describe, expect, it } from "vitest";
 
 import { AnthropicApi } from "../../../../packages/openai-adapters/src/apis/Anthropic.js";
@@ -27,7 +27,7 @@ const SYSTEM = [
   "Rules: be brief; name files; run the tests after a change.",
 ].join("\n");
 
-const tools: ChatCompletionTool[] = [
+const tools: ChatCompletionFunctionTool[] = [
   {
     type: "function",
     function: {

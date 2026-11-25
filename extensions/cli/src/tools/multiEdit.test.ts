@@ -1,12 +1,12 @@
 import * as fs from "fs";
 import * as path from "path";
 
-import { POLICY_PRESETS } from "core/tools/permissions/policy.js";
 import { writeFileAtomicSync } from "core/util/atomicWrite.js";
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  applyPolicyPreset,
   getPolicyLevels,
   resetPolicyLevels,
   setPolicyLevels,
@@ -386,7 +386,7 @@ describe("multiEditTool outside the working directory by File edits level", () =
   });
 
   it("File edits IDGAF: a headless edit outside is prepared, not refused", async () => {
-    setPolicyLevels({ ...getPolicyLevels(), ...POLICY_PRESETS.idgaf.levels });
+    applyPolicyPreset("idgaf");
     markFileAsRead(outsidePath);
     const result = await multiEditTool.preprocess!({
       file_path: outsidePath,
@@ -409,7 +409,7 @@ describe("multiEditTool outside the working directory by File edits level", () =
   });
 
   it("the run writes the file and says it landed outside", async () => {
-    setPolicyLevels({ ...getPolicyLevels(), ...POLICY_PRESETS.idgaf.levels });
+    applyPolicyPreset("idgaf");
     markFileAsRead(outsidePath);
     const prepared = await multiEditTool.preprocess!({
       file_path: outsidePath,

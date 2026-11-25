@@ -1,5 +1,5 @@
 import { formatTaskPlanBlock } from "core/util/taskPlan.js";
-import type { ChatCompletionTool } from "openai/resources.mjs";
+import type { ChatCompletionFunctionTool } from "openai/resources.mjs";
 
 import { loopPlanBlockForRequest } from "../loop/loopSession.js";
 import { getSessionTaskPlan } from "../session.js";
@@ -12,7 +12,7 @@ import { TASK_LIST_TOOL_NAME } from "../tools/taskList.js";
  * instead (loopRequestHistory), and the TaskList tool is hidden from it.
  */
 export function taskListBlockForRequest(
-  tools?: ChatCompletionTool[],
+  tools?: ChatCompletionFunctionTool[],
   isCompacting = false,
 ): string {
   if (loopPlanBlockForRequest(isCompacting)) return "";

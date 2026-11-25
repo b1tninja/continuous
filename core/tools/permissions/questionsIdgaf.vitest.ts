@@ -22,28 +22,28 @@ const settings = (
 });
 
 describe("Questions: who decides", () => {
-  it("only IDGAF never asks", () => {
-    expect(questionsNeverAsk("idgaf")).toBe(true);
+  it("only Delegate never asks", () => {
+    expect(questionsNeverAsk("delegate")).toBe(true);
     for (const level of [
       "manual",
       "cautious",
-      "automatic",
       "permissive",
+      "automatic",
     ] as const) {
-      expect(questionsNeverAsk(level)).toBe(false);
+      expect(questionsNeverAsk(level), level).toBe(false);
     }
     expect(questionsNeverAsk(undefined)).toBe(false);
-    expect(questionsAutoAnswer("idgaf")).toBe(true);
+    expect(questionsAutoAnswer("delegate")).toBe(true);
   });
 
-  it("IDGAF: the agent decides every type, your own list does not apply", () => {
-    const own = settings("idgaf", [...QUESTION_TYPES]);
+  it("Delegate: the agent decides every type, your own list does not apply", () => {
+    const own = settings("delegate", [...QUESTION_TYPES]);
     for (const type of [...QUESTION_TYPES, undefined, "made up"]) {
       expect(questionDecider(own, type), String(type)).toBe("agent");
     }
   });
 
-  it("Permissive and Automatic still send your own list to you", () => {
+  it("Permissive, and Automatic (review, not built: works as Permissive), send your own list to you", () => {
     for (const level of ["permissive", "automatic"] as const) {
       const own = settings(level, ["irreversible"]);
       expect(questionDecider(own, "irreversible")).toBe("person");
@@ -60,7 +60,7 @@ describe("Questions: who decides", () => {
   });
 });
 
-describe("a call a guard would hold at a IDGAF area runs, whatever Questions is", () => {
+describe("the Questions level does not change what a tool call is allowed", () => {
   const ASK = "allowedWithPermission" as const;
   const ALLOW = "allowedWithoutPermission" as const;
   const terminalTool = {
@@ -68,50 +68,49 @@ describe("a call a guard would hold at a IDGAF area runs, whatever Questions is"
     evaluateToolCallPolicy: (base: any, args: Record<string, unknown>) =>
       evaluateTerminalCommandSecurity(base, args.command as string),
   };
-  const run = (tools: PolicyLevel, questions: PolicyLevel) =>
+  const run = (
+    tools: PolicyLevel,
+    questions: PolicyLevel,
+    builtin?: Record<string, boolean>,
+  ) =>
     evaluateToolPolicyWithRules({
       tool: terminalTool as any,
       toolName: "run_terminal_command",
       basePolicy: ASK,
-      parsedArgs: { command: "rm -rf $DIR" },
+      parsedArgs: { command: "git push origin main" },
       permissions: undefined,
       shell: "bash",
       approval: {
         levels: { ...DEFAULT_POLICY_LEVELS, tools, questions },
-        // The IDGAF preset leaves no safety check on
-        ...(tools === "idgaf" ? { builtin: builtinForPreset("idgaf") } : {}),
+        ...(builtin ? { builtin } : {}),
       },
     });
 
-  it.each(["cautious", "idgaf"] as const)(
-    "IDGAF tools with Questions %s runs it and never asks or refuses",
+  it.each([
+    "manual",
+    "cautious",
+    "permissive",
+    "automatic",
+    "delegate",
+  ] as const)(
+    "with the IDGAF preset's switches and Questions at %s, Permissive tools run the call",
     (questions) => {
-      const r = run("idgaf", questions);
+      const r = run("permissive", questions, builtinForPreset("idgaf"));
       expect(r.policy).toBe(ALLOW);
-      expect(r.source).toBe("idgaf");
     },
   );
 
-  it("IDGAF levels with the check left on still ask, whatever Questions is", () => {
-    const r = evaluateToolPolicyWithRules({
-      tool: terminalTool as any,
-      toolName: "run_terminal_command",
-      basePolicy: ASK,
-      parsedArgs: { command: "rm -rf $DIR" },
-      permissions: undefined,
-      shell: "bash",
-      approval: {
-        levels: {
-          ...DEFAULT_POLICY_LEVELS,
-          tools: "idgaf",
-          questions: "idgaf",
-        },
-      },
-    });
-    expect(r.policy).toBe(ASK);
+  it("Delegate on Questions does not let a tool area skip its own asking", () => {
+    // Tool use below Permissive keeps asking: that is a tool decision, not a question
+    expect(run("cautious", "delegate").policy).toBe(ASK);
   });
 
-  it("a tool area below IDGAF keeps its own asking: that is not a question", () => {
-    expect(run("cautious", "idgaf").policy).toBe(ASK);
+  it("the answer is the same at every Questions level", () => {
+    const verdicts = new Set(
+      (
+        ["manual", "cautious", "permissive", "automatic", "delegate"] as const
+      ).map((q) => run("cautious", q).policy),
+    );
+    expect(verdicts.size).toBe(1);
   });
 });

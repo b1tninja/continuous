@@ -131,15 +131,45 @@ describe("listEffectiveRules", () => {
     expect(byRaw(r, "writeFile(docs/**)").state).toBe("effective");
   });
 
-  it("ignores every rule but the floor at IDGAF", () => {
+  it("ignores deny, ask and floor rules when apply-rules is off, and keeps Always rules", () => {
     const r = listEffectiveRules({
       ...full,
-      levels: { ...DEFAULT_POLICY_LEVELS, tools: "idgaf" },
+      builtin: { "apply-rules": false },
     });
-    expect(byRaw(r, "runTerminalCommand(terraform apply*)").state).toBe(
-      "ignored",
-    );
-    expect(byRaw(r, "runTerminalCommand(rm -rf /*)").state).toBe("effective");
+    for (const raw of [
+      "runTerminalCommand(terraform apply*)", // Never
+      "runTerminalCommand(git push*)", // Ask
+      "runTerminalCommand(rm -rf /*)", // locked floor
+    ]) {
+      const rule = byRaw(r, raw);
+      expect(rule.state, raw).toBe("ignored");
+      expect(rule.ignoredCause, raw).toBe("switch");
+      expect(rule.ignoredReason, raw).toContain(
+        "Apply my deny, ask and floor rules",
+      );
+    }
+    expect(byRaw(r, "runTerminalCommand(npm test*)").state).toBe("effective");
+  });
+
+  it("reads every rule while apply-rules is on, at any level", () => {
+    for (const level of [
+      "manual",
+      "cautious",
+      "permissive",
+      "automatic",
+    ] as const) {
+      const r = listEffectiveRules({
+        ...full,
+        levels: { ...DEFAULT_POLICY_LEVELS, tools: level },
+      });
+      expect(
+        byRaw(r, "runTerminalCommand(terraform apply*)").state,
+        level,
+      ).toBe("effective");
+      expect(byRaw(r, "runTerminalCommand(rm -rf /*)").state, level).toBe(
+        "effective",
+      );
+    }
   });
 
   it("keeps an unreadable rule, ignored, with no area", () => {

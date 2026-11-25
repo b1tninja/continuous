@@ -1,6 +1,6 @@
 import * as posix from "node:path/posix";
 import type { DecisionSource } from "../tools/permissions/decide";
-import { POLICY_LEVELS, type PolicyLevel } from "../tools/permissions/policy";
+import { levelRank, type PolicyLevel } from "../tools/permissions/policy";
 import {
   protectedPathHit,
   type ProtectedKind,
@@ -131,13 +131,13 @@ export function sandboxAutoApproval(
     );
   }
   const min = options.minLevel ?? "automatic";
-  const minIndex = Math.max(
-    POLICY_LEVELS.indexOf(min),
-    POLICY_LEVELS.indexOf("cautious"),
-  );
-  const index = POLICY_LEVELS.indexOf(level);
-  if (index < 0 || index < minIndex) {
-    return no(`the level (${level}) is below ${POLICY_LEVELS[minIndex]}`);
+  // By rank, not by position in the list: Permissive and Automatic rank the same
+  const minRank = Math.max(levelRank(min), levelRank("cautious"));
+  const rank = levelRank(level);
+  if (rank < 0 || rank < minRank) {
+    return no(
+      `the level (${level}) is below ${levelRank(min) >= levelRank("cautious") ? min : "cautious"}`,
+    );
   }
   if (areaDecision.protection) {
     return no(`a protected path rule asked (${areaDecision.protection})`);
