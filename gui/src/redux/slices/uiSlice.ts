@@ -100,12 +100,6 @@ export interface PolicyExtras {
   /** Built-in rules by id; absent means on */
   builtin?: Partial<Record<BuiltinRuleId, boolean>>;
   /**
-   * What `builtin` was before the IDGAF preset turned every check off: the
-   * switches the file keeps while IDGAF is in force, because IDGAF lasts for
-   * the session only. Absent outside the IDGAF preset.
-   */
-  savedBuiltin?: Partial<Record<BuiltinRuleId, boolean>>;
-  /**
    * Skip the editor dialog that asks before a permission change is saved.
    * Absent or false: the dialog appears. Does not change an ask before a
    * command runs.

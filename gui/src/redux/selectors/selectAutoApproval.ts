@@ -5,6 +5,7 @@ import {
   type PolicyLevels,
   type PolicySettings,
 } from "core/tools/permissions/policy";
+import { noChecksOn } from "core/tools/permissions/safetyDegrees";
 import { loopPolicyOf } from "core/util/loopMode";
 import type { LoopPolicy } from "core";
 import type { RootState } from "../store";
@@ -98,8 +99,10 @@ export function selectLoopPolicy(state: RootState): LoopPolicy {
   return loopPolicyOf(selectPolicySettings(state));
 }
 
-/** Areas set to IDGAF, for the banner. */
+/**
+ * The areas the IDGAF preset is in force for, for the banner: every area while
+ * no safety check is on. IDGAF is not a level, so only the switches say.
+ */
 export function selectIdgafAreas(state: RootState): PolicyArea[] {
-  const levels = selectEffectiveLevels(state);
-  return POLICY_AREAS.filter((a) => levels[a] === "idgaf");
+  return noChecksOn(state.ui.policyExtras?.builtin) ? [...POLICY_AREAS] : [];
 }

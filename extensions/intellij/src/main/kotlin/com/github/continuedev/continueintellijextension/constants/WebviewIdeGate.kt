@@ -25,7 +25,6 @@ object WebviewIdeGate {
         "jetbrains/isOSREnabled",
         "jetbrains/getColors",
         "jetbrains/onLoad",
-        "policy/sessionIdgaf",
         "showFile",
         "getIdeSettings",
         "getControlPlaneSessionInfo",

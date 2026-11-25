@@ -1,8 +1,6 @@
 import { refusalText } from "../refusalText";
 
 import {
-  levelAsks,
-  levelRunsHeld,
   POLICY_LEVELS,
   wouldHaveSentence,
   type PolicyLevel,
@@ -40,8 +38,7 @@ export type TimerSettings = Partial<Record<PolicyLevel, TimerSeconds>>;
  * not start delaying every allowed call, so the two are separate settings.
  * None is longer than ALLOW_PROPOSAL_MAX_SECONDS.
  *
- * Every level has one, the top level too. IDGAF's is 0 unless set, and then
- * it holds only the calls IDGAF ran past an ask or a refusal (propose).
+ * Every level has one.
  */
 export const HEADS_UP_SECONDS = [0, 5, 10] as const;
 
@@ -55,9 +52,7 @@ const WINDOWS: Readonly<Record<WindowSetting, readonly number[]>> = {
 
 /**
  * Settings from a file or a flag. A level that is not known, or a value that
- * is not one of the windows, is off, so a typo never starts a delay. An ask
- * window is read only for a level that asks: the top level never does, so it
- * has none. A heads-up window is read for every level.
+ * is not one of the windows, is off, so a typo never starts a delay.
  */
 export function parseTimerSettings(
   value: unknown,
@@ -69,7 +64,6 @@ export function parseTimerSettings(
     return out;
   }
   for (const level of POLICY_LEVELS) {
-    if (which === "asks" && !levelAsks(level)) continue;
     const raw = (value as Record<string, unknown>)[level];
     const n = typeof raw === "string" ? Number(raw.trim()) : raw;
     if (windows.includes(n as number) && n !== 0) {
@@ -195,14 +189,12 @@ export function propose(
       : ctx.headsUp?.[ctx.level];
   if (!seconds) return undefined;
   if (fact.policy === "allowedWithPermission") {
-    if (!levelAsks(ctx.level)) return undefined;
     if (fact.protection !== undefined) return undefined;
     if (fact.source === undefined || !TIMED_ASK_SOURCES.has(fact.source)) {
       return undefined;
     }
     return { proposed: "refuse", decision: fact, seconds, startedAt: ctx.now };
   }
-  if (levelRunsHeld(ctx.level) && !fact.override) return undefined;
   return {
     proposed: "allow",
     decision: fact,

@@ -27,12 +27,35 @@ export function documentChanged(
   }
 }
 
+const WINDOWS_DRIVE_PATH = /^[A-Za-z]:[\\/]/;
+
+/** True for a path like `C:\dir\file` or `C:/dir/file` (not a URI). */
+export function isWindowsDrivePath(filepath: string): boolean {
+  return WINDOWS_DRIVE_PATH.test(filepath);
+}
+
+/**
+ * Compares two Windows paths the way the file system does: slash direction
+ * and drive-letter case do not matter. VS Code reports `c:\dir`; callers may
+ * send `C:\dir` or `C:/dir`.
+ */
+export function windowsPathsEqual(a: string, b: string): boolean {
+  if (!isWindowsDrivePath(a) || !isWindowsDrivePath(b)) {
+    return false;
+  }
+  const norm = (p: string) => p.replace(/\//g, "\\").toLowerCase();
+  return norm(a) === norm(b);
+}
+
 /** Whether an open editor is the file `filepath` names (a URI or a filesystem path). */
 export function editorMatchesFilepath(
   editor: { uri: string; fsPath: string },
   filepath: string,
 ): boolean {
   if (editor.uri === filepath || editor.fsPath === filepath) {
+    return true;
+  }
+  if (windowsPathsEqual(editor.fsPath, filepath)) {
     return true;
   }
   try {

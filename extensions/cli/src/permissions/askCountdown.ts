@@ -156,55 +156,6 @@ function levelOfCliCall(
 }
 
 /**
- * The heads-up for a call that runs only because of its level: the top level,
- * IDGAF, ran it past an ask or a refusal (`ranPast`), and a window is set for
- * that level in `levels.headsUp`. Undefined, so the call runs at once, when no
- * window is set (the default), nothing would have stopped the call, there is
- * no screen to draw a countdown on, or this turn has no time left to hold.
- *
- * This is the only heads-up the CLI shows: a window set for a lower level
- * does not hold the calls that level allows here.
- */
-export function proposalForRanPast(
-  call: {
-    name: string;
-    arguments: Record<string, unknown>;
-    readonly?: boolean;
-  },
-  mode: "normal" | "plan" | "auto" | undefined,
-  ranPast: LowerDecision | undefined,
-  now: number = Date.now(),
-): Proposal | undefined {
-  if (!available || !ranPast) return undefined;
-  try {
-    const level = levelOfCliCall(call, mode);
-    if (!level) return undefined;
-    const proposal = propose(
-      factOfDecision({
-        policy: "allowedWithoutPermission",
-        source: "idgaf",
-        idgafOverride: ranPast,
-      }),
-      {
-        attended: true,
-        // The Web area has its own level names; the windows are set per level
-        level: level as keyof NonNullable<
-          ReturnType<typeof getPolicyExtras>["headsUp"]
-        >,
-        settings: {},
-        headsUp: getPolicyExtras().headsUp,
-        now,
-      },
-    );
-    if (!proposal) return undefined;
-    const seconds = budget.grant(proposal.seconds);
-    return seconds > 0 ? { ...proposal, seconds } : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
  * The proposal for an ask the CLI is about to show, or undefined when no
  * timer applies: no screen to draw it on, no window at the call's level, or an
  * ask that a rule or guard raised (core's `source` says which). The ask is

@@ -49,8 +49,8 @@ const args = {
 };
 
 describe("present_plan decisions outside a loop", () => {
-  it("at Questions IDGAF are answered in the file, audited and reported", async () => {
-    const x = setup("idgaf");
+  it("at Questions Delegate are answered in the file, audited and reported", async () => {
+    const x = setup("delegate");
     const out = await presentPlanImpl(args, "call-1", x.extras);
 
     expect(
@@ -71,7 +71,7 @@ describe("present_plan decisions outside a loop", () => {
       expect.objectContaining({
         question: "Which backoff?",
         answer: "exponential",
-        source: "Questions: IDGAF",
+        source: "Questions: Delegate",
       }),
     );
   });

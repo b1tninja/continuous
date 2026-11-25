@@ -60,7 +60,7 @@ const history: ChatHistoryItem[] = [
 ];
 
 async function setup(
-  questions: "manual" | "cautious" | "permissive" | "idgaf",
+  questions: "manual" | "cautious" | "permissive" | "delegate",
 ) {
   const files = { [PLAN_URI]: FILE } as Record<string, string>;
   const ideMessenger = new MockIdeMessenger();
@@ -110,8 +110,8 @@ describe("plan decisions in the Questions panel", () => {
     },
   );
 
-  it("at Questions IDGAF there is no row: it is answered in the file, with one line", async () => {
-    const { files, requests } = await setup("idgaf");
+  it("at Questions Delegate there is no row: it is answered in the file, with one line", async () => {
+    const { files, requests } = await setup("delegate");
     await waitFor(() =>
       expect(parsePlanFile(files[PLAN_URI]).decisions[0].answer).toBe(
         "exponential",
@@ -129,7 +129,7 @@ describe("plan decisions in the Questions panel", () => {
       "audit/autoAnswer",
       expect.objectContaining({
         answer: "exponential",
-        source: "Questions: IDGAF",
+        source: "Questions: Delegate",
       }),
     ]);
   });

@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   loadPolicyFile,
+  applyPolicyPreset,
   resetPolicyLevels,
   setPolicyLevels,
 } from "../permissions/policyLevels.js";
@@ -138,15 +139,9 @@ describe("a new MCP tool is hidden until approved", () => {
     expect(offered(svc)).toEqual(["Read", "search"]);
   });
 
-  it("IDGAF offers them (the first call pins)", async () => {
+  it("the IDGAF preset offers them (the first call pins): approve-mcp-tools is off", async () => {
     const svc = await serviceWith(connectionFor());
-    setPolicyLevels({
-      context: "idgaf",
-      tools: "idgaf",
-      edits: "idgaf",
-      plan: "idgaf",
-      questions: "idgaf",
-    });
+    applyPolicyPreset("idgaf");
     expect(offered(svc)).toEqual(["Read", "search", "add"]);
     expect(offered(svc, "auto")).toEqual(["Read", "search", "add"]);
   });

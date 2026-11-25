@@ -142,12 +142,18 @@ mcpServers:
     });
   });
 
-  it("a saved idgaf is read as the default, with a notice", () => {
+  it("a saved idgaf is read as Permissive (Delegate on Questions), with no notice", () => {
     const r = parsePolicyFile("levels:\n  tools: idgaf\n  questions: idgaf\n");
+    expect(r.settings.levels.tools).toBe("permissive");
+    expect(r.settings.levels.questions).toBe("delegate");
+    expect(r.notices).toEqual([]);
+  });
+
+  it("Delegate on a tool area is reported and the default applies", () => {
+    const r = parsePolicyFile("levels:\n  tools: delegate\n");
     expect(r.settings.levels.tools).toBe(DEFAULT_POLICY_LEVELS.tools);
-    expect(r.settings.levels.questions).toBe(DEFAULT_POLICY_LEVELS.questions);
     expect(r.notices.join("\n")).toContain(
-      "levels.tools: idgaf is for one session",
+      '"delegate" is a Questions level only',
     );
   });
 
@@ -193,7 +199,11 @@ describe("applyPolicyUpdate", () => {
       levels: { ...DEFAULT_POLICY_LEVELS, tools: "permissive" },
     });
     const second = applyPolicyUpdate(first, {
-      levels: { ...DEFAULT_POLICY_LEVELS, tools: "idgaf", plan: "idgaf" },
+      levels: {
+        ...DEFAULT_POLICY_LEVELS,
+        tools: "idgaf" as never,
+        plan: "idgaf" as never,
+      },
     });
     expect(second).not.toContain("idgaf");
     expect(parsePolicyFile(second).settings.levels.tools).toBe("permissive");

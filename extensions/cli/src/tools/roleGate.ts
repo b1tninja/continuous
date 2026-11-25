@@ -8,6 +8,7 @@ import {
 } from "core/tools/roleTools.js";
 
 import {
+  approvalExtras,
   effectiveLevels,
   getPolicyExtras,
 } from "../permissions/policyLevels.js";
@@ -67,12 +68,17 @@ export function cliIsUnattended(): boolean {
   return unattended;
 }
 
-/** Tool use is IDGAF in this mode: a tool waiting for approval is offered (TR4). */
+/**
+ * "Ask before using an MCP tool you have not approved" is off in this mode (the
+ * IDGAF preset, `--auto`): a tool waiting for approval is offered (TR4).
+ */
 function approvalWaived(mode: string | undefined): boolean {
   try {
     return (
       mode !== "plan" &&
-      effectiveLevels(mode === "auto" ? "auto" : "normal").tools === "idgaf"
+      approvalExtras(mode === "auto" ? "auto" : "normal").builtin?.[
+        "approve-mcp-tools"
+      ] === false
     );
   } catch {
     return false;

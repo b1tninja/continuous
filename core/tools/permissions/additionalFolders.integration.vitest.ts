@@ -12,7 +12,13 @@ vi.mock("../../util/paths", async (original) => ({
 }));
 
 import { resolveInputPath } from "../../util/pathResolver";
-import { createNewFileTool, readFileTool } from "../definitions";
+import {
+  createNewFileTool,
+  editFileTool,
+  multiEditTool,
+  readFileTool,
+  singleFindAndReplaceTool,
+} from "../definitions";
 import {
   clearAdditionalFoldersCacheForTests,
   readUserAdditionalFolders,
@@ -47,14 +53,19 @@ fs.writeFileSync(path.join(shared, ".env"), "KEY=1");
 fs.writeFileSync(path.join(elsewhere, "x.txt"), "x");
 // A junction needs no privilege on Windows; elsewhere it is a plain link.
 const link = tryLink(elsewhere, path.join(shared, "escape"));
+const secondRoot = path.join(base, "second-root");
+fs.mkdirSync(secondRoot);
+fs.writeFileSync(path.join(secondRoot, "r.txt"), "x");
+let openedRoots: string[] = [pathToFileURL(ws).href];
 const ide = {
-  getWorkspaceDirs: async () => [pathToFileURL(ws).href],
+  getWorkspaceDirs: async () => openedRoots,
   fileExists: async (uri: string) => fs.existsSync(new URL(uri)),
 } as unknown as IDE;
 
 afterAll(() => fs.rmSync(base, { recursive: true, force: true }));
 
 beforeEach(() => {
+  openedRoots = [pathToFileURL(ws).href];
   clearAdditionalFoldersCacheForTests();
   fs.rmSync(path.join(holder.dir, "config.yaml"), { force: true });
 });
@@ -231,4 +242,103 @@ describe("what an added folder does not loosen", () => {
     });
     expect(result.policy).toBe(ALLOW);
   });
+});
+
+/**
+ * The search-and-replace edit tools hand the permission layer a `fileUri` from
+ * preprocessArgs and no resolved path of their own, so the "outside the
+ * workspace" answer comes from the folders (opened and added) alone. Every edit
+ * tool must give an added folder the answer the workspace itself gets.
+ */
+describe("every edit tool treats an added folder as the workspace", () => {
+  const EDIT_TOOLS = [
+    ["multi_edit", multiEditTool],
+    ["single_find_and_replace", singleFindAndReplaceTool],
+    ["edit_file", editFileTool],
+  ] as const;
+
+  async function decideEdit(
+    tool: typeof multiEditTool,
+    filepath: string,
+    builtin: Record<string, boolean> = {},
+  ) {
+    const fileUri = pathToFileURL(filepath).href;
+    const dirs = withAdditionalFolders(
+      await ide.getWorkspaceDirs(),
+      readUserAdditionalFolders(),
+    );
+    return evaluateToolPolicyWithRules({
+      tool,
+      toolName: tool.function.name,
+      basePolicy: tool.defaultToolPolicy,
+      parsedArgs: { filepath },
+      // What preprocessArgs returns: a file URI, and no resolved path
+      processedArgs: { fileUri },
+      permissions: undefined,
+      cwd: ws,
+      shell: "bash",
+      home: os.homedir(),
+      ...deputyWorkspace(dirs),
+      approval: {
+        levels: {
+          context: "permissive",
+          tools: "permissive",
+          edits: "permissive",
+          plan: "permissive",
+          questions: "permissive",
+        },
+        builtin,
+      },
+    } as EvaluateInput);
+  }
+
+  it.each(EDIT_TOOLS)(
+    "%s: a file in an added folder gets the workspace's answer",
+    async (_n, tool) => {
+      fs.writeFileSync(path.join(ws, "w.txt"), "x");
+      const inWorkspace = await decideEdit(tool, path.join(ws, "w.txt"));
+      addFolders(shared);
+      const inAdded = await decideEdit(tool, path.join(shared, "ok.txt"));
+      expect(inAdded.policy).toBe(inWorkspace.policy);
+      expect(inAdded.protection).toBe(inWorkspace.protection);
+    },
+  );
+
+  it.each(EDIT_TOOLS)(
+    "%s: a folder nobody added still asks",
+    async (_n, tool) => {
+      addFolders(shared);
+      const r = await decideEdit(tool, path.join(elsewhere, "x.txt"));
+      expect(r.policy).toBe(ASK);
+      expect(r.protection).toBe("file-deputy");
+    },
+  );
+
+  it.each(EDIT_TOOLS)(
+    "%s: without the folder added, the same file asks (control)",
+    async (_n, tool) => {
+      const r = await decideEdit(tool, path.join(shared, "ok.txt"));
+      expect(r.policy).toBe(ASK);
+      expect(r.protection).toBe("file-deputy");
+    },
+  );
+
+  it.each(EDIT_TOOLS)(
+    "%s: a second opened workspace root counts too",
+    async (_n, tool) => {
+      openedRoots = [pathToFileURL(ws).href, pathToFileURL(secondRoot).href];
+      const r = await decideEdit(tool, path.join(secondRoot, "r.txt"));
+      expect(r.protection).not.toBe("file-deputy");
+    },
+  );
+
+  it.each(EDIT_TOOLS)(
+    "%s: a secret in an added folder still asks",
+    async (_n, tool) => {
+      addFolders(shared);
+      const r = await decideEdit(tool, path.join(shared, ".env"));
+      expect(r.policy).toBe(ASK);
+      expect(r.protection).toBe("secret");
+    },
+  );
 });

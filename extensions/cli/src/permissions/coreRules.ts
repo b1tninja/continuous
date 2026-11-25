@@ -16,11 +16,13 @@ import { AutoReviewSessions } from "core/tools/permissions/auto/state.js";
 import type { DecisionSource } from "core/tools/permissions/decide.js";
 import {
   evaluateToolPolicyWithRules,
-  type IdgafOverride,
   type ToolPolicyResult,
 } from "core/tools/permissions/evaluate.js";
 import { mcpRuleName } from "core/tools/permissions/names.js";
-import type { PolicyLevels } from "core/tools/permissions/policy.js";
+import type {
+  BuiltinRuleId,
+  PolicyLevels,
+} from "core/tools/permissions/policy.js";
 import { readUserTrustedDomains } from "core/tools/permissions/readRuleSources.js";
 import { processedPathArgs } from "core/tools/permissions/realPath.js";
 import type { ToolPermissions as CoreToolPermissions } from "core/tools/permissions/rules.js";
@@ -255,8 +257,6 @@ export interface CoreVerdict extends VerdictDetail {
   rule?: string;
   /** The reviewer's model, latency and usage, when it decided */
   reviewer?: AutoReviewReply["reviewer"];
-  /** IDGAF ran the call past this objection (core's idgafOverride) */
-  idgafOverride?: IdgafOverride;
   /**
    * The ask came from the tool's own check (a Fetch URL carrying a long
    * encoded value), for a tool whose own asks bind (`ownAskReason`). It is
@@ -512,7 +512,6 @@ function rulesVerdict(
     source: result.source,
     ...(result.rule ? { rule: result.rule } : {}),
     ...verdictDetail(input.assistantPermissions, result),
-    ...(result.idgafOverride ? { idgafOverride: result.idgafOverride } : {}),
     ...(ownAsk
       ? {
           reason: result.reason ?? input.ownAskReason?.(input.args),
@@ -549,42 +548,25 @@ function ownCheckAsked(
 }
 
 /**
- * IDGAF on the call's area: the CLI's own `ask` and `exclude` (permissions.yaml,
- * `--ask`, `--exclude`, the catch-all `*`, a headless subagent's asks) do not
- * stop it, the same as core's rules and guards do not (core's
- * idgafRunsEverything, the one place IDGAF overrides a decision). Plan mode is
- * a mode with its own role, not a level, and keeps its own policies: what the
- * role does not offer stays refused. A call those policies ask about still
- * runs at IDGAF, because the engine allows it there (core's holdInPlanMode).
+ * True when the CLI's own `ask` and `exclude` lists (permissions.yaml,
+ * `--ask`, `--exclude`, the catch-all `*`, a headless subagent's asks) are
+ * not read: the "Apply my deny, ask and floor rules" check is off, as it is
+ * under the IDGAF preset and `--auto`. It is the same switch that stops core
+ * reading its rules. Plan mode is a mode with its own role and keeps its own
+ * policies: what the role does not offer stays refused.
  */
-export function runsAtIdgaf(
-  levels: PolicyLevels,
+export function ownRulesAreOff(
   mode: PermissionMode | undefined,
-  call: {
-    name: string;
-    arguments?: Record<string, unknown>;
-    readonly?: boolean;
-  },
+  builtin: Partial<Record<BuiltinRuleId, boolean>> | undefined,
 ): boolean {
   if (mode === "plan") return false;
-  const args = call.arguments ?? {};
-  const core = toCoreCall(call.name, args);
-  const found = levelOfCall(
-    { levels },
-    core?.toolName ?? call.name,
-    { readonly: !!call.readonly },
-    {
-      parsedArgs: core?.parsedArgs ?? args,
-      cwd: process.cwd(),
-      shell: resolveShell().kind,
-    },
-  );
-  return found?.level === "idgaf";
+  return builtin?.["apply-rules"] === false;
 }
 
 /**
- * The CLI's own result for a call that runs at IDGAF: allowed, keeping what it
- * would have been (`idgafLifted`) for the audit trail. A structural limit stays.
+ * The CLI's own result for a call whose own rules are not read: allowed,
+ * keeping what it would have been (`idgafLifted`) so the audit reason can say
+ * why. A structural limit stays.
  */
 export function liftAtIdgaf(
   result: PermissionCheckResult,

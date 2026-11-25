@@ -40,9 +40,8 @@ import type { ToolCallPreview } from "./types.js";
 export function editsAreIdgaf(): boolean {
   try {
     const mode = services.toolPermissions.getCurrentMode();
-    const levels = effectiveLevels(mode);
     return editsAllowOutsideWorkspace({
-      builtin: approvalExtras(levels).builtin,
+      builtin: approvalExtras(mode).builtin,
     });
   } catch {
     return false;
@@ -57,10 +56,7 @@ export function editsAreIdgaf(): boolean {
 export function secretFilesAllowed(): boolean {
   try {
     const mode = services.toolPermissions.getCurrentMode();
-    return (
-      approvalExtras(effectiveLevels(mode)).builtin?.["protect-secrets"] ===
-      false
-    );
+    return approvalExtras(mode).builtin?.["protect-secrets"] === false;
   } catch {
     return false;
   }

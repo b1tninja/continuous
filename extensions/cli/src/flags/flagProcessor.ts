@@ -30,8 +30,11 @@ import {
   loadPolicyFile,
   parsePolicySpec,
   setCommandPermissionFlags,
+  setPolicyBuiltin,
   setPolicyLevels,
+  approvalExtras,
 } from "../permissions/policyLevels.js";
+import { noChecksOn } from "core/tools/permissions/safetyDegrees.js";
 import { PermissionMode } from "../permissions/types.js";
 import { logger } from "../util/logger.js";
 
@@ -125,6 +128,8 @@ export function processCommandFlags(options: {
     if (parsed.deprecated) process.stderr.write(`${parsed.deprecated}\n`);
     const before = getPolicyLevels();
     setPolicyLevels(parsed.levels);
+    // A preset also sets the safety checks, for this run (the flag is not saved)
+    if (parsed.builtin) setPolicyBuiltin(parsed.builtin);
     // Typed on the command line, so already explicit: audited, not asked
     auditLevelChange(before, parsed.levels, "flag", "flag");
   }
@@ -165,13 +170,12 @@ export function processCommandFlags(options: {
   };
 }
 
-/** `--auto` or `--policy <spec>` when the levels they set have an area at IDGAF. */
+/** `--auto` or `--policy <spec>` when the run has no safety check on (the IDGAF preset). */
 function idgafFlagSource(
   options: { auto?: boolean; policy?: string },
   mode: PermissionMode | undefined,
 ): string | undefined {
-  const levels = effectiveLevels(mode ?? "normal");
-  if (!Object.values(levels).includes("idgaf")) return undefined;
+  if (!noChecksOn(approvalExtras(mode).builtin)) return undefined;
   if (options.auto) return "--auto";
   if (options.policy === undefined) return undefined;
   return `--policy ${options.policy}`;
@@ -207,6 +211,7 @@ export function announceHeadlessPolicy(
   const legacy = headlessLegacyAllow() && !options.auto;
   const notice = headlessPolicyNotice({
     levels: effectiveLevels(mode ?? "normal"),
+    ...(noChecksOn(approvalExtras(mode).builtin) ? { noChecks: true } : {}),
     ...(source ? { source } : {}),
     legacy,
     webEnabled: getWebConfig().enabled,

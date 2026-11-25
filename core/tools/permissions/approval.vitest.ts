@@ -102,9 +102,12 @@ describe("each area has its own level", () => {
     expect(cmd("git push", a).policy).toBe(ALLOW);
     expect(read("src/a.ts", a, { basePolicy: ALLOW }).policy).toBe(ASK);
   });
-  it("Context use IDGAF does not loosen commands", () => {
-    const a = levels({ context: "idgaf", tools: "manual" });
-    expect(read("/outside/x", a).policy).toBe(ALLOW);
+  it("Context use Permissive, with no check on, does not loosen commands", () => {
+    const a = withNoChecks(levels({ context: "permissive", tools: "manual" }));
+    // A tool's own workspace check is its own switch (ask-outside-paths), not a
+    // level's: Permissive does not lift it. That is tested with the real tools.
+    expect(read("/outside/x", a).policy).toBe(ASK);
+    expect(read("src/a.ts", a).policy).toBe(ALLOW);
     expect(cmd("npm test", a, { basePolicy: ALLOW }).policy).toBe(ASK);
   });
   it("a session tool belongs to no area", () => {
@@ -214,15 +217,8 @@ describe("obfuscated commands the safety floor cannot see", () => {
     plan: "permissive",
     questions: "permissive",
   });
-  const idgaf = withNoChecks(
-    levels({
-      tools: "idgaf",
-      context: "idgaf",
-      edits: "idgaf",
-      plan: "idgaf",
-      questions: "idgaf",
-    }),
-  );
+  // The IDGAF preset: Permissive, and no check on
+  const idgaf = withNoChecks(handsOff);
 
   it.each(["{rm,-rf,~}", "rm${IFS}-rf${IFS}~", "G=rm; $G -rf ~"])(
     "does not run %s under Hands-off; the IDGAF preset runs it",
@@ -230,7 +226,7 @@ describe("obfuscated commands the safety floor cannot see", () => {
       expect(cmd(command, handsOff).policy).toBe(OFF);
       const r = cmd(command, idgaf);
       expect(r.policy).toBe(ALLOW);
-      expect(r.source).toBe("idgaf");
+      expect(r.source).toBe("permissive");
       // No check is on, so none ran and none left a record
     },
   );
@@ -248,20 +244,20 @@ describe("obfuscated commands the safety floor cannot see", () => {
   });
 });
 
-describe("IDGAF", () => {
+describe("the IDGAF preset", () => {
   const idgaf = withNoChecks(
-    levels({ tools: "idgaf", context: "idgaf", edits: "idgaf" }),
+    levels({ tools: "permissive", context: "permissive", edits: "permissive" }),
   );
 
-  it("allows everything and ignores every rule", () => {
-    expect(cmd("git push", idgaf).source).toBe("idgaf");
+  it("allows everything and reads no deny, ask or floor rule", () => {
+    expect(cmd("git push", idgaf).source).toBe("permissive");
     const deny = {
       permissions: { deny: ["runTerminalCommand(terraform apply*)"] },
     };
     expect(cmd("terraform apply", idgaf, deny).policy).toBe(ALLOW);
     expect(cmd("cat .env", idgaf).policy).toBe(ALLOW);
     expect(cmd("rm -rf /", idgaf).policy).toBe(ALLOW);
-    expect(read("/outside/x", idgaf).policy).toBe(ALLOW);
+    // (a tool's own outside-the-workspace ask is ask-outside-paths, tested with the real tools)
   });
   it("does not turn on a tool the user switched off", () => {
     expect(cmd("npm test", idgaf, { basePolicy: OFF }).policy).toBe(OFF);
@@ -319,21 +315,52 @@ describe("the floor", () => {
     floor: ["runTerminalCommand(terraform destroy*)"],
   });
 
-  it("does not bind at IDGAF: the call runs and the floor rule is recorded", () => {
-    const r = cmd("terraform destroy -auto-approve", floor({ tools: "idgaf" }));
+  // Every check off, as the IDGAF preset sets them, so that apply-rules is
+  // the only switch that can stand in front of the floor rule
+  const unread = (over: Partial<PolicyLevels>): ApprovalSettings => ({
+    ...floor(over),
+    builtin: builtinForPreset("idgaf"),
+  });
+  const readFloor = (over: Partial<PolicyLevels>): ApprovalSettings => ({
+    ...floor(over),
+    builtin: { ...builtinForPreset("idgaf"), "apply-rules": true },
+  });
+
+  it("is not read when apply-rules is off: the call runs and nothing is recorded", () => {
+    const r = cmd(
+      "terraform destroy -auto-approve",
+      unread({ tools: "permissive" }),
+    );
     expect(r.policy).toBe(ALLOW);
-    expect(r.source).toBe("idgaf");
-    expect(r.idgafOverride).toMatchObject({ policy: OFF, source: "floor" });
-    expect(r.idgafOverride?.rule).toContain("terraform destroy");
+    expect(r.source).toBe("permissive");
+    expect(r).not.toHaveProperty("idgafOverride");
+  });
+
+  it("apply-rules is the one switch that stands in front of it", () => {
+    const r = cmd(
+      "terraform destroy -auto-approve",
+      readFloor({ tools: "permissive" }),
+    );
+    expect(r.policy).toBe(OFF);
+    expect(r.source).toBe("floor");
   });
 
   it("leaves other commands to the level", () => {
-    expect(cmd("terraform plan", floor({ tools: "idgaf" })).policy).toBe(ALLOW);
+    expect(cmd("terraform plan", unread({ tools: "permissive" })).policy).toBe(
+      ALLOW,
+    );
   });
 
-  it("binds at every level below IDGAF", () => {
-    for (const tools of ["manual", "cautious", "permissive"] as const) {
-      expect(cmd("terraform destroy", floor({ tools })).policy).toBe(OFF);
+  it("binds at every level while apply-rules is on", () => {
+    for (const tools of [
+      "manual",
+      "cautious",
+      "permissive",
+      "automatic",
+    ] as const) {
+      expect(cmd("terraform destroy", floor({ tools })).policy, tools).toBe(
+        OFF,
+      );
     }
   });
 });
@@ -361,7 +388,7 @@ describe("a command that only reads is Context use", () => {
     expect(cmd("ls", manualContext).source).toBe("manual");
     expect(cmd("npm test", manualContext).policy).toBe(ALLOW);
     expect(
-      cmd("ls", levels({ context: "idgaf", tools: "manual" })).policy,
+      cmd("ls", levels({ context: "permissive", tools: "manual" })).policy,
     ).toBe(ALLOW);
   });
 

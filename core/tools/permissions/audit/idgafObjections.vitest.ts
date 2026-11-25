@@ -5,6 +5,7 @@ import { evaluateTerminalCommandSecurity } from "@continuedev/terminal-security"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { evaluateToolPolicyWithRules } from "../evaluate";
 import { POLICY_PRESETS } from "../policy";
+import { builtinForPreset } from "../safetyDegrees";
 import { updateIndex } from "./auditIndex";
 import {
   decisionEvent,
@@ -18,9 +19,10 @@ import { recordPolicyDecision } from "./hook";
 import { decisionDraft } from "./record";
 
 /**
- * IDGAF runs a call a rule or guard objects to, and the audit trail records
- * the objection: on the decision line (`wouldHave`, masked), in the index and
- * as a 30-day count on the Permissions page's audit overview.
+ * Audit lines written by earlier versions carry `wouldHave`: the objection a
+ * call was run past. Nothing writes it now (a check that is off does not run,
+ * so there is nothing to record), but the line is still read, masked, indexed
+ * and counted as a 30-day figure on the Permissions page's audit overview.
  */
 const terminalTool = {
   group: "Built-In",
@@ -29,7 +31,11 @@ const terminalTool = {
 };
 const FAKE = "sk-abcdefghijklmnopqrstuvwxyz0123456789";
 
-const decide = (command: string, floor: string[] = []) =>
+const decide = (
+  command: string,
+  floor: string[] = [],
+  builtin?: Record<string, boolean>,
+) =>
   evaluateToolPolicyWithRules({
     tool: terminalTool as any,
     toolName: "run_terminal_command",
@@ -37,7 +43,11 @@ const decide = (command: string, floor: string[] = []) =>
     parsedArgs: { command },
     permissions: undefined,
     shell: "bash",
-    approval: { levels: POLICY_PRESETS.idgaf.levels, floor },
+    approval: {
+      levels: POLICY_PRESETS.idgaf.levels,
+      floor,
+      ...(builtin ? { builtin } : {}),
+    },
   });
 
 const fakeTrail = () => ({
@@ -47,33 +57,43 @@ const fakeTrail = () => ({
   outcome: vi.fn(),
 });
 
-describe("the decision line of a call IDGAF ran past an objection", () => {
-  it("names what would have stopped it, and the call ran", () => {
-    const result = decide("terraform destroy", [
-      "runTerminalCommand(terraform destroy*)",
-    ]);
-    expect(result.policy).toBe("allowedWithoutPermission");
+describe("the decision line no longer records what a call ran past", () => {
+  const record = (result: ReturnType<typeof decide>, callId: string) => {
     const trail = fakeTrail();
     recordPolicyDecision(
       trail as any,
       {
         session: "s",
-        callId: "c1",
+        callId,
         toolName: "run_terminal_command",
         parsedArgs: {},
       },
       "allowedWithPermission",
       result,
     );
-    const line = trail.decision.mock.calls[0][0];
-    expect(line).toMatchObject({
-      policy: "allow",
-      source: "idgaf",
-      level: "idgaf",
-      wouldHave: { policy: "deny", source: "floor" },
-    });
-    expect(line.wouldHave.rule).toContain("terraform destroy");
-    // a refused call is closed as not run; this one was not refused
+    return { trail, line: trail.decision.mock.calls[0][0] };
+  };
+
+  it("a floor rule that is read stops the call, and that is the decision", () => {
+    const result = decide("terraform destroy", [
+      "runTerminalCommand(terraform destroy*)",
+    ]);
+    expect(result.policy).toBe("disabled");
+    const { line } = record(result, "c1");
+    expect(line).toMatchObject({ policy: "deny", source: "floor" });
+    expect(line.wouldHave).toBeUndefined();
+  });
+
+  it("with the preset's switches the rule is not read: the call runs and nothing is recorded", () => {
+    const result = decide(
+      "terraform destroy",
+      ["runTerminalCommand(terraform destroy*)"],
+      builtinForPreset("idgaf"),
+    );
+    expect(result.policy).toBe("allowedWithoutPermission");
+    const { line, trail } = record(result, "c1b");
+    expect(line).toMatchObject({ policy: "allow" });
+    expect(line.wouldHave).toBeUndefined();
     expect(trail.outcome).not.toHaveBeenCalled();
   });
 

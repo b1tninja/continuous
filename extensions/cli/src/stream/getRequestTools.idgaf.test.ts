@@ -1,10 +1,9 @@
-import { POLICY_PRESETS } from "core/tools/permissions/policy.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { setAutoReviewEnabled } from "../permissions/coreRules.js";
 import {
+  applyPolicyPreset,
   resetPolicyLevels,
-  setPolicyLevels,
 } from "../permissions/policyLevels.js";
 
 const tools = vi.hoisted(() => [
@@ -65,7 +64,7 @@ describe("getRequestTools at IDGAF", () => {
   });
 
   it("headless: offers the tools that ask and the ones a Never rule excludes", async () => {
-    setPolicyLevels(POLICY_PRESETS.idgaf.levels);
+    applyPolicyPreset("idgaf");
     expect(names(await getRequestTools(true))).toEqual([
       "Read",
       "Edit",
@@ -76,7 +75,7 @@ describe("getRequestTools at IDGAF", () => {
   });
 
   it("keeps a structural limit (a subagent cannot start a subagent)", async () => {
-    setPolicyLevels(POLICY_PRESETS.idgaf.levels);
+    applyPolicyPreset("idgaf");
     state.policies = [
       { tool: "Subagent", permission: "exclude", structural: true },
       ...headless,
@@ -85,7 +84,7 @@ describe("getRequestTools at IDGAF", () => {
   });
 
   it("Plan mode is its own mode: its policies stand at IDGAF", async () => {
-    setPolicyLevels(POLICY_PRESETS.idgaf.levels);
+    applyPolicyPreset("idgaf");
     state.mode = "plan";
     expect(names(await getRequestTools(true))).toEqual(["Read", "Subagent"]);
   });

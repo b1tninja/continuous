@@ -56,7 +56,7 @@ describe("a loop that follows policy levels", () => {
     expect(
       autonomyForPolicy({ plan: "permissive", questions: "cautious" }),
     ).toBe("unattended");
-    expect(autonomyForPolicy({ plan: "manual", questions: "idgaf" })).toBe(
+    expect(autonomyForPolicy({ plan: "manual", questions: "delegate" })).toBe(
       "idgaf",
     );
     expect(loopWith({ plan: "permissive" }).autonomy).toBe("unattended");
@@ -66,9 +66,9 @@ describe("a loop that follows policy levels", () => {
     expect(loopAutonomy(loopWith({ plan: "permissive" })).waitTimeoutMs).toBe(
       0,
     );
-    expect(loopAutonomy(loopWith({ questions: "idgaf" })).waitTimeoutMs).toBe(
-      1000,
-    );
+    expect(
+      loopAutonomy(loopWith({ questions: "delegate" })).waitTimeoutMs,
+    ).toBe(1000);
   });
 
   test("changing the policy keeps the limits and the strategy", () => {
@@ -95,12 +95,29 @@ describe("Plan edits decides a re-plan", () => {
     expect(d.accept).toBe(false);
   });
 
-  test("Cautious: a re-plan that adds nothing goes on, one that adds waits", () => {
+  test("Cautious: the first plan waits, and a re-plan is held only by the switch", () => {
     const loop = loopWith({ plan: "cautious" });
+    // adds nothing, adds a little: both are ordinary re-plans and go on
     expect(replanDecision(loop, before, plan("A", "B")).accept).toBe(true);
-    expect(replanDecision(loop, before, plan("A", "B", "C")).accept).toBe(
-      false,
-    );
+    expect(replanDecision(loop, before, plan("A", "B", "C")).accept).toBe(true);
+    // adds more than the limit (5): held
+    expect(
+      replanDecision(loop, before, plan("A", "B", "1", "2", "3", "4", "5", "6"))
+        .accept,
+    ).toBe(false);
+  });
+
+  test("with the re-plan switch off, no re-plan waits for its size", () => {
+    const many = plan("A", "B", "1", "2", "3", "4", "5", "6", "7", "8");
+    for (const level of ["cautious", "permissive", "automatic"] as const) {
+      const loop = loopWith({ plan: level, holdReplans: false });
+      expect(replanDecision(loop, before, many).accept, level).toBe(true);
+    }
+  });
+
+  test("Manual still waits for every re-plan, whatever the switch", () => {
+    const loop = loopWith({ plan: "manual", holdReplans: false });
+    expect(replanDecision(loop, before, plan("A", "B")).accept).toBe(false);
   });
 
   test("Permissive: a re-plan may add up to the limit", () => {
@@ -111,14 +128,6 @@ describe("Plan edits decides a re-plan", () => {
     expect(
       replanDecision(loop, before, plan("A", "B", "C", "D", "E")).accept,
     ).toBe(false);
-  });
-
-  test("IDGAF: every re-plan goes on", () => {
-    const loop = loopWith({ plan: "idgaf" });
-    expect(
-      replanDecision(loop, before, plan("A", "B", "1", "2", "3", "4", "5", "6"))
-        .accept,
-    ).toBe(true);
   });
 
   test("Automatic keeps Permissive's cap: no reviewer for plans exists yet (UJ10)", () => {
@@ -140,7 +149,7 @@ describe("Plan edits decides a re-plan", () => {
 
   test("a repair of just the failed item goes on at every level but Manual", () => {
     const repaired = plan("A", "B, first half", "B, second half");
-    for (const level of ["cautious", "permissive", "idgaf"] as const) {
+    for (const level of ["cautious", "permissive", "automatic"] as const) {
       expect(
         repairDecision(loopWith({ plan: level }), before, "B", repaired).accept,
       ).toBe(true);
@@ -166,8 +175,8 @@ describe("Questions decides who answers", () => {
       T0,
     );
 
-  test("IDGAF: the agent decides every question, whatever its type", () => {
-    const loop = loopWith({ questions: "idgaf" });
+  test("Delegate: the agent decides every question, whatever its type", () => {
+    const loop = loopWith({ questions: "delegate" });
     expect(loopDecidesAlone(loop)).toBe(true);
     const held = hold(loop, "security");
     expect(held.ok && held.question.decidedAlone).toBe(true);
@@ -204,9 +213,9 @@ describe("Questions decides who answers", () => {
     ).toBe("person");
   });
 
-  test("an approval is never decided by the agent: at IDGAF it is refused, not held", () => {
+  test("an approval is never decided by the agent: at Delegate it is refused, not held", () => {
     const held = holdQuestion(
-      loopWith({ questions: "idgaf" }),
+      loopWith({ questions: "delegate" }),
       { itemId: "1", question: "Run it?", kind: "approval" },
       T0,
     );

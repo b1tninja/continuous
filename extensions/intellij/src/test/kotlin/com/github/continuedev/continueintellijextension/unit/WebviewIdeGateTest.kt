@@ -37,7 +37,6 @@ class WebviewIdeGateTest : TestCase() {
         assertEquals(WebviewIdeGate.Route.IDE, WebviewIdeGate.route("runCommand"))
         assertEquals(WebviewIdeGate.Route.IDE, WebviewIdeGate.route("openUrl"))
         assertEquals(WebviewIdeGate.Route.IDE, WebviewIdeGate.route("readFile"))
-        assertEquals(WebviewIdeGate.Route.IDE, WebviewIdeGate.route("policy/sessionIdgaf"))
     }
 
     fun `test runCommand text from the panel is one line of plain text`() {

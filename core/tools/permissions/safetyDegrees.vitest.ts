@@ -3,6 +3,7 @@ import {
   BUILTIN_RULES,
   POLICY_PRESET_ORDER,
   POLICY_PRESETS,
+  presetOf,
   PRESET_FREE_RULES,
   type BuiltinRuleId,
 } from "./policy";
@@ -15,7 +16,6 @@ import {
   safetyLabel,
   safetyOfPreset,
   safetyStateOf,
-  switchesInForce,
   type SafetyDegree,
 } from "./safetyDegrees";
 
@@ -133,63 +133,57 @@ describe("noChecksOn", () => {
   });
 });
 
-describe("switchesInForce", () => {
-  const fileSays = { "ask-large-change": false } as const;
-  const lv = (over: Record<string, string>) =>
-    ({ ...POLICY_PRESETS.careful.levels, ...over }) as never;
-
-  it("is the file's switches for ordinary levels", () => {
-    expect(switchesInForce(POLICY_PRESETS.careful.levels, fileSays)).toEqual(
-      fileSays,
-    );
-    expect(switchesInForce(POLICY_PRESETS.handsOff.levels, undefined)).toBe(
-      undefined,
-    );
+describe("the switches are the state, whatever the levels are", () => {
+  it("Hands off keeps its checks and IDGAF has none on", () => {
+    expect(noChecksOn(builtinForPreset("handsOff"))).toBe(false);
+    expect(noChecksOn(builtinForPreset("idgaf"))).toBe(true);
   });
 
-  it("is no check on for the IDGAF preset", () => {
-    const s = switchesInForce(POLICY_PRESETS.idgaf.levels, fileSays);
-    expect(noChecksOn(s)).toBe(true);
+  it("the levels of IDGAF are the IDGAF preset only while no check is on", () => {
+    const levels = POLICY_PRESETS.idgaf.levels;
+    expect(presetOf(levels, builtinForPreset("idgaf"))).toBe("idgaf");
+    // With nothing to go on but the levels, they are IDGAF's
+    expect(presetOf(levels)).toBe("idgaf");
   });
 
-  it("is no check on when every tool area is at IDGAF, as --auto sets them", () => {
-    const s = switchesInForce(
-      lv({ context: "idgaf", tools: "idgaf", edits: "idgaf" }),
-      undefined,
-    );
-    expect(noChecksOn(s)).toBe(true);
+  it("one switch turned back on makes it Custom, not IDGAF", () => {
+    const one = { ...builtinForPreset("idgaf"), "protect-secrets": true };
+    expect(noChecksOn(one)).toBe(false);
+    expect(presetOf(POLICY_PRESETS.idgaf.levels, one)).toBeUndefined();
+    expect(safetyStateOf(one).on).toBe(1);
   });
 
-  it("keeps the file's switches while any tool area is below IDGAF", () => {
-    for (const area of ["context", "tools", "edits"]) {
-      const levels = lv({
-        context: "idgaf",
-        tools: "idgaf",
-        edits: "idgaf",
-        [area]: "permissive",
-      });
-      expect(switchesInForce(levels, fileSays)).toEqual(fileSays);
+  it("other presets do not care which switches are on: the person may set them", () => {
+    const some = { ...builtinForPreset("careful"), "ask-large-change": false };
+    expect(presetOf(POLICY_PRESETS.careful.levels, some)).toBe("careful");
+    expect(presetOf(POLICY_PRESETS.handsOff.levels, some)).toBe("handsOff");
+  });
+
+  it("every check the engine reads is covered by a preset, so none can be left on by accident", () => {
+    const off = builtinForPreset("idgaf");
+    for (const id of ids) expect(off[id], id).toBe(false);
+  });
+
+  it("the checks added for what used to be level overrides are all in the list", () => {
+    for (const id of [
+      "apply-rules",
+      "protect-policy-files",
+      "hold-plan-mode",
+      "ask-odd-paths",
+      "refuse-unsafe-urls",
+      "approve-mcp-tools",
+    ] as const) {
+      expect(ids, id).toContain(id);
+      expect(builtinForPreset("idgaf")[id], id).toBe(false);
+      expect(CHECKS_ON.all, id).toContain(id);
     }
   });
 
-  it("a check the file names as on stays on under IDGAF", () => {
-    const s = switchesInForce(POLICY_PRESETS.idgaf.levels, {
-      "protect-secrets": true,
-      "ask-large-change": false,
-    });
-    expect(s?.["protect-secrets"]).toBeUndefined();
-    expect(s?.["ask-large-change"]).toBe(false);
-    expect(safetyStateOf(s).on).toBe(1);
-  });
-
-  it("a check merely absent from the file does not come back under IDGAF", () => {
-    const s = switchesInForce(POLICY_PRESETS.idgaf.levels, {});
-    expect(noChecksOn(s)).toBe(true);
-  });
-
-  it("does not let Plan edits or Questions alone turn the checks off", () => {
-    expect(
-      switchesInForce(lv({ plan: "idgaf", questions: "idgaf" }), fileSays),
-    ).toEqual(fileSays);
+  it("ask-runtime-writes is the person's own choice: no preset sets it", () => {
+    expect(ids).not.toContain("ask-runtime-writes");
+    expect(builtinForPreset("idgaf")).not.toHaveProperty("ask-runtime-writes");
+    expect(builtinForPreset("careful")).not.toHaveProperty(
+      "ask-runtime-writes",
+    );
   });
 });

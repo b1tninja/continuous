@@ -1,3 +1,7 @@
+import {
+  BUILTIN_RULES,
+  PRESET_FREE_RULES,
+} from "core/tools/permissions/policy";
 import { act, fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { MockIdeMessenger } from "../../../../context/MockIdeMessenger";
@@ -7,6 +11,9 @@ import { renderWithProviders } from "../../../../util/test/render";
 import { ToolsSection } from "../ToolsSection";
 import { PermissionsSection } from "./PermissionsSection";
 import { ProtectionsView } from "./ProtectionsView";
+
+// How many checks a preset sets: derived, so adding a switch does not break these
+const N = BUILTIN_RULES.filter((r) => !PRESET_FREE_RULES.has(r.id)).length;
 
 const terminal = {
   mode: "scrub",
@@ -75,7 +82,7 @@ describe("Permissions, Protections", () => {
       expect(isOpen(id), id).toBe(false);
       expect(summary(id), id).toBeTruthy();
     }
-    expect(summary("builtin-rules")).toBe("Not set: 11 of 11 on");
+    expect(summary("builtin-rules")).toBe(`Not set: ${N} of ${N} on`);
     expect(summary("commands-secrets")).toBe(
       "Not set: commands run with secret-named variables hidden. 2 hidden now, 2 passed",
     );
@@ -105,7 +112,7 @@ describe("Permissions, Protections", () => {
       );
     });
     expect(summary("builtin-rules")).toBe(
-      "Set by you: 10 of 11 on. Off: Ask before touching credentials",
+      `Set by you: ${N - 1} of ${N} on. Off: Ask before touching credentials`,
     );
     // Loosened: drawn in the warning colour
     expect(

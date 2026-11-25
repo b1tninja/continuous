@@ -533,14 +533,18 @@ describe("the rule", () => {
     expect(decide("git status", "s").decision).toBe("allow");
   });
 
-  it("does not hold at IDGAF: the call runs and the rule's ask is recorded", () => {
+  it("is its own setting: it asks at Permissive, and 'off' is how to turn it off", () => {
     setRule("ask");
     taintRegistry.mark("s", "mcp-result");
-    const r = decide("git push origin main", "s", "idgaf");
-    expect(r.decision).toBe("allow");
-    expect(r.source).toBe("idgaf");
-    expect(r.reason).toContain("would have been asked");
-    expect(decide("git push origin main", "clean", "idgaf").decision).toBe(
+    const r = decide("git push origin main", "s", "permissive");
+    expect(r.decision).toBe("ask");
+    expect(r.source).toBe("tainted-session");
+    // a clean session is not held
+    expect(decide("git push origin main", "clean", "permissive").decision).toBe(
+      "allow",
+    );
+    setRule("off");
+    expect(decide("git push origin main", "s", "permissive").decision).toBe(
       "allow",
     );
   });
@@ -571,15 +575,6 @@ describe("the rule", () => {
       expect(r.decision).toBe("ask");
       expect(r.source).toBe("tainted-session");
       expect(r.reason).toContain("trusted, but a secret was read");
-    });
-
-    it("at IDGAF it runs, and the ask is only recorded", () => {
-      setRule("ask");
-      taintRegistry.mark("secret", "secret");
-      const r = fetchTrusted("secret", "idgaf");
-      expect(r.decision).toBe("allow");
-      expect(r.source).toBe("idgaf");
-      expect(r.reason).toContain("would have been asked");
     });
 
     it("with the rule off nothing changes", () => {
