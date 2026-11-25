@@ -11,6 +11,7 @@ import {
   rewriteConfigLink,
 } from "./configLinks";
 import { bottomTabSections, getAllTabs, topTabSections } from "./configTabs";
+import { ActiveConfigBar } from "./components/ActiveConfigBar";
 import { AccountDropdown } from "./features/account/AccountDropdown";
 
 const isCommandSection = (section: { tabs: { action?: boolean }[] }) =>
@@ -147,6 +148,8 @@ function ConfigPage() {
 
       {/* Main content area */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Which config the page edits; the Configs tab shows it in its own list */}
+        {activeTab !== "configs" && <ActiveConfigBar />}
         <div
           role="tabpanel"
           aria-label={allTabs.find((tab) => tab.id === activeTab)?.label}

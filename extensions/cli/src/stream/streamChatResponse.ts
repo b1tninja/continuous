@@ -12,7 +12,7 @@ import {
   TURN_NUDGE_TOTAL,
 } from "core/util/turnEnd.js";
 import { webContentStore } from "core/util/web/contentStore.js";
-import type { ChatCompletionTool } from "openai/resources.mjs";
+import type { ChatCompletionFunctionTool } from "openai/resources.mjs";
 
 import { runStoppedAfter, runStoppedBefore } from "../budget/runLimits.js";
 import { pruneLastMessage } from "../compaction.js";
@@ -216,7 +216,7 @@ interface ProcessStreamingResponseOptions {
   abortController: AbortController;
   callbacks?: StreamCallbacks;
   isHeadless?: boolean;
-  tools?: ChatCompletionTool[];
+  tools?: ChatCompletionFunctionTool[];
   systemMessage: string;
   isCompacting?: boolean; // also: compaction gets no Loop mode plan block
   /**

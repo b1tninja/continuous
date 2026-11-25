@@ -2,7 +2,7 @@ import { XMarkIcon } from "@heroicons/react/24/outline";
 import {
   POLICY_AREA_LABELS,
   POLICY_AREAS,
-  POLICY_LEVELS,
+  levelsOfArea,
   POLICY_PRESET_ORDER,
   POLICY_PRESETS,
   policyLevelLabel,
@@ -74,10 +74,10 @@ export function FirstRunOverview({ onDismiss }: { onDismiss: () => void }) {
       <div
         className="mt-2 flex flex-wrap gap-1"
         role="list"
-        aria-label="The five levels"
+        aria-label="The four levels"
         data-testid="permissions-intro-levels"
       >
-        {POLICY_LEVELS.map((level) => {
+        {levelsOfArea("tools").map((level) => {
           const Glyph = LEVEL_GLYPHS[level];
           const tone = LEVEL_TONES[level];
           return (

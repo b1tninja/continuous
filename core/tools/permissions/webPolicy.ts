@@ -8,7 +8,9 @@ import { hostTrusted } from "./askProtections";
 import { normalizeHost } from "./destinations";
 import type { EvaluateInput, ToolPolicyResult } from "./evaluate";
 import {
+  builtinRuleOn,
   parseWebLevel,
+  levelRank,
   POLICY_LEVELS,
   type PolicyLevels,
   type WebLevel,
@@ -30,8 +32,9 @@ import { hostRuleMatches } from "./webHostRules";
  * The decision order is section 8.3's, as `decideWebCall` below. The checks
  * that live inside the fetch (scheme, userinfo, a credential in the URL, a
  * cloud metadata address, public-to-private redirects, the byte cap and
- * deadline, cookie isolation) bind at every level, IDGAF included; so do the
- * person's own `floor:` rules and `web.robots: respect`. IDGAF never asks.
+ * deadline, cookie isolation) bind at every level; so do the person's own
+ * `web.robots: respect` and, while "Apply my deny, ask and floor rules" is on,
+ * their `floor:` rules. No level is special: each check has its own switch.
  */
 
 export const WEB_AREA_LABEL = "Web";
@@ -43,13 +46,10 @@ export const WEB_LEVEL_DESCRIPTIONS: Record<WebLevel, string> = {
   cautious: "Asks before a new domain; runs domains you allowed.",
   listed: "Only domains you allowed. Never asks; everything else is refused.",
   automatic: "As Cautious, and a reviewer model decides new domains.",
-  permissive: "Fetches anything no rule stops.",
-  idgaf:
-    "Fetches anything. Every rule is ignored; built-in fetch safety (no credentials, no cloud metadata, no redirect into your network) still applies.",
+  permissive: "Fetches anything no rule or switched-on check stops.",
 };
 
 export function webLevelLabel(level: WebLevel): string {
-  if (level === "idgaf") return "IDGAF";
   return level.charAt(0).toUpperCase() + level.slice(1);
 }
 
@@ -129,12 +129,17 @@ export function effectiveWebLevel(
   if (levels?.web) return { level: levels.web, source: "levels.web" };
   const alias = webPolicyAlias(options.policyAlias);
   if (alias.level) return { level: alias.level, source: "web.policy" };
-  return { level: levels?.tools ?? "cautious", source: "tools" };
+  // Tool use is never `delegate` (a Questions level), so it is a Web level too
+  const tools = levels?.tools;
+  return {
+    level: tools && tools !== "delegate" ? tools : "cautious",
+    source: "tools",
+  };
 }
 
 /**
  * WB27's placeholder `web.policy`, read as `levels.web` when it holds a level
- * (never IDGAF, which is for one session only), with the notice that names
+ * (a retired `idgaf` reads as `permissive`), with the notice that names
  * the new home. Anything else is ignored.
  */
 export function webPolicyAlias(raw: unknown): {
@@ -143,7 +148,7 @@ export function webPolicyAlias(raw: unknown): {
 } {
   if (raw === undefined || raw === null) return {};
   const level = parseWebLevel(raw);
-  if (!level || level === "idgaf") {
+  if (!level) {
     return {
       notice:
         "web.policy in your config.yaml is not a Web level and was ignored. Set levels.web in permissions.yaml instead.",
@@ -163,12 +168,6 @@ export function storedWebLevel(raw: unknown): {
 } {
   if (raw === undefined) return {};
   const level = parseWebLevel(raw);
-  if (level === "idgaf") {
-    return {
-      notice:
-        "levels.web: idgaf is for one session only, so Web follows Tool use.",
-    };
-  }
   if (!level) {
     return {
       notice: `levels.web: "${String(raw)}" is not a level, so Web follows Tool use.`,
@@ -183,9 +182,7 @@ export function capWebAtDefault(
 ): WebLevel | undefined {
   if (level === undefined) return undefined;
   if (level === "off" || level === "listed") return level;
-  return POLICY_LEVELS.indexOf(level) > POLICY_LEVELS.indexOf("cautious")
-    ? "cautious"
-    : level;
+  return levelRank(level) > levelRank("cautious") ? "cautious" : level;
 }
 
 /**
@@ -297,17 +294,6 @@ function askOrRefuse(
     : { outcome: "ask", step, reason };
 }
 
-/** What IDGAF would have stopped at, below it. */
-function idgafRecorded(facts: WebCallFacts): string | undefined {
-  const parts = [
-    facts.denied,
-    facts.sessionBlock ? `${hostText(facts)} is blocked for this session` : "",
-    facts.protection?.reason,
-    facts.askRule,
-  ].filter((p): p is string => !!p);
-  return parts.length ? parts.join("; ") : undefined;
-}
-
 /**
  * Section 8.3, steps 2 to 12, for one web call. Pure: every fact is given.
  * Step 1 (an organisation ceiling) is not built yet; step 3 (hooks) runs
@@ -332,7 +318,7 @@ export function decideWebCall(facts: WebCallFacts): WebDecision {
   if (facts.hardRefusal) {
     return { outcome: "refused", step: 4, reason: facts.hardRefusal };
   }
-  // 5. The person's own hard lines bind at IDGAF too
+  // 5. The person's own hard lines
   if (facts.floorRule) {
     return {
       outcome: "refused",
@@ -345,16 +331,6 @@ export function decideWebCall(facts: WebCallFacts): WebDecision {
       outcome: "refused",
       step: 5,
       reason: `Refused: robots.txt on ${host} disallows this URL, and your web.robots is respect. Do not retry it.`,
-    };
-  }
-  // 6. IDGAF: run, and record what it ran past
-  if (level === "idgaf") {
-    const recorded = idgafRecorded(facts);
-    return {
-      outcome: "run",
-      step: 6,
-      reason: "Allowed: Web is set to IDGAF.",
-      ...(recorded ? { recorded } : {}),
     };
   }
   // 7. A deny rule or a session block
@@ -489,7 +465,6 @@ export function decideWebRedirect(
     case "automatic":
       return "review";
     case "permissive":
-    case "idgaf":
       return "follow-labelled";
   }
 }
@@ -648,24 +623,6 @@ function protectionOf(
   };
 }
 
-/** Facts from the IDGAF record: what the pipeline would have decided below IDGAF. */
-function idgafFacts(result: ToolPolicyResult): Partial<WebCallFacts> {
-  const o = result.idgafOverride;
-  if (!o) return {};
-  if (o.source === "floor" && o.rule) return { floorRule: o.rule };
-  if (o.policy === "disabled") return { denied: o.reason ?? "a rule refuses" };
-  if (o.source === "ask-rule") return { askRule: o.reason ?? "an ask rule" };
-  if (o.source === "protected-path") {
-    return {
-      protection: {
-        kind: o.protection === "private-url" ? "private" : "guard",
-        reason: (o.reason ?? "a protection asks").replace(/\.$/, ""),
-      },
-    };
-  }
-  return {};
-}
-
 /** The facts for one call, read from the pipeline's result and the context. */
 function factsOf(
   input: EvaluateInput,
@@ -681,15 +638,13 @@ function factsOf(
     ...(host ? { host } : {}),
     unattended: !!input.web?.unattended,
   };
-  const hard = urlHardRefusal(url);
+  const hard = unsafeUrlsOn(input) ? urlHardRefusal(url) : undefined;
   if (hard) facts.hardRefusal = hard;
   // The person's own `host:` allow rules
   const hostRule = host
     ? input.web?.hostAllow?.find((r) => hostRuleMatches(r, host))
     : undefined;
-  if (result.source === "idgaf") {
-    Object.assign(facts, idgafFacts(result));
-  } else if (result.policy === "disabled") {
+  if (result.policy === "disabled") {
     if (result.source === "floor" && result.rule) facts.floorRule = result.rule;
     else facts.denied = result.reason ?? "Refused by a rule.";
   } else if (result.policy === "allowedWithPermission") {
@@ -746,6 +701,11 @@ function factsOf(
   return facts;
 }
 
+/** The URL checks are a switch like any other: off, the fetch is judged by the rest. */
+function unsafeUrlsOn(input: EvaluateInput): boolean {
+  return builtinRuleOn(input.approval, "refuse-unsafe-urls");
+}
+
 /** The source a Web decision is shown with, by the step that decided. */
 function sourceOf(
   decision: WebDecision,
@@ -758,8 +718,6 @@ function sourceOf(
       return "safety-floor";
     case 5:
       return "floor";
-    case 6:
-      return "idgaf";
     case 7:
       return result.policy === "disabled" ? result.source : "deny-rule";
     case 11:
@@ -783,11 +741,8 @@ function resultOf(
   if (policy === result.policy && decision.step !== 4 && decision.step !== 5) {
     return result;
   }
-  const { idgafOverride: _o, protection: _p, rule: _r, ...rest } = result;
-  const rule =
-    decision.step === 5
-      ? (result.idgafOverride?.rule ?? result.rule)
-      : undefined;
+  const { protection: _p, rule: _r, ...rest } = result;
+  const rule = decision.step === 5 ? result.rule : undefined;
   return {
     ...rest,
     policy,
@@ -798,8 +753,9 @@ function resultOf(
 }
 
 /**
- * The Web area's step in the permission layer: the last one, after IDGAF has
- * run, so the hard checks, `floor:` rules and Off bind at every level. For a
+ * The Web area's step in the permission layer: the last one, so Off, the URL
+ * checks (`refuse-unsafe-urls`) and `floor:` rules (`apply-rules`) decide
+ * whatever the Web level is. For a
  * call outside the Web area, or a tool the person switched off, the result is
  * returned as it is.
  */
@@ -813,7 +769,9 @@ export function applyWebArea(
   // A caller that sends no levels and no web context: only the hard checks,
   // so a caller from before the Web area sees nothing else change
   if (!input.approval && !input.web) {
-    const hard = urlHardRefusal(input.parsedArgs.url);
+    const hard = unsafeUrlsOn(input)
+      ? urlHardRefusal(input.parsedArgs.url)
+      : undefined;
     return hard
       ? resultOf({ outcome: "refused", step: 4, reason: hard }, result)
       : result;

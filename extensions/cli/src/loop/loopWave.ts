@@ -21,6 +21,7 @@ import {
   createWorktree,
 } from "../commands/review/worktree.js";
 import {
+  approvalExtras,
   effectiveLevels,
   getCommandPermissionFlags,
 } from "../permissions/policyLevels.js";
@@ -312,6 +313,10 @@ export function workerOptions(): LoopWorkerInput["options"] {
     parentHeadless,
     ...getCommandPermissionFlags(),
     levels: effectiveLevels(mode),
+    // The checks in force in the parent: `--auto` has none on
+    ...(approvalExtras(mode).builtin
+      ? { builtin: approvalExtras(mode).builtin }
+      : {}),
   };
   try {
     const config = getServiceSync<ConfigServiceState>(SERVICE_NAMES.CONFIG);

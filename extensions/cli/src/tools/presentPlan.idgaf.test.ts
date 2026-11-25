@@ -105,10 +105,10 @@ const planFile = () =>
 describe.each([
   ["the terminal UI", false],
   ["headless and serve", true],
-])("PresentPlan decisions at Questions IDGAF in %s", (_name, headless) => {
+])("PresentPlan decisions at Questions Delegate in %s", (_name, headless) => {
   beforeEach(() => {
     store.headless = headless;
-    setPolicyLevels({ ...DEFAULT_POLICY_LEVELS, questions: "idgaf" });
+    setPolicyLevels({ ...DEFAULT_POLICY_LEVELS, questions: "delegate" });
   });
 
   it("answers the decisions in the file and does not ask about them", async () => {
@@ -124,13 +124,13 @@ describe.each([
     expect(result).toContain("Auto-answered: Max tries? -> 5");
     expect(result).not.toContain("decisions wait");
     expect(store.decisions.map((d) => [d.by, d.source])).toEqual([
-      ["system", "Questions: IDGAF"],
-      ["system", "Questions: IDGAF"],
+      ["system", "Questions: Delegate"],
+      ["system", "Questions: Delegate"],
     ]);
   });
 });
 
-describe("PresentPlan decisions below IDGAF are unchanged", () => {
+describe("PresentPlan decisions below Delegate are unchanged", () => {
   it("headless leaves them waiting in the file", async () => {
     store.headless = true;
     setPolicyLevels({ ...DEFAULT_POLICY_LEVELS, questions: "permissive" });
@@ -149,9 +149,9 @@ describe("PresentPlan decisions below IDGAF are unchanged", () => {
   });
 });
 
-describe('"Build this plan?" at Questions IDGAF (ID 3)', () => {
+describe('"Build this plan?" at Questions Delegate (ID 3)', () => {
   beforeEach(() => {
-    setPolicyLevels({ ...DEFAULT_POLICY_LEVELS, questions: "idgaf" });
+    setPolicyLevels({ ...DEFAULT_POLICY_LEVELS, questions: "delegate" });
   });
 
   it("the terminal UI ends the turn with the plan saved and asks nothing", async () => {
@@ -174,7 +174,7 @@ describe('"Build this plan?" at Questions IDGAF (ID 3)', () => {
     expect(requestLoopTurnEnd).toHaveBeenCalledTimes(1);
   });
 
-  it("below IDGAF the terminal UI still asks", async () => {
+  it("below Delegate the terminal UI still asks", async () => {
     setPolicyLevels({ ...DEFAULT_POLICY_LEVELS, questions: "permissive" });
     const { decisions: _none, ...plain } = args;
     await presentPlanTool.run(plain);

@@ -12,9 +12,8 @@ import {
 import {
   POLICY_AREA_LABELS,
   POLICY_AREAS,
+  levelsOfArea,
   POLICY_LEVEL_DESCRIPTIONS,
-  POLICY_LEVELS,
-  POLICY_PRESETS,
   policyLevelLabel,
   presetOf,
   type PolicyArea,
@@ -35,7 +34,13 @@ import {
   changePolicyLevel,
 } from "../../redux/thunks/policySettings";
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "../ui";
-import { CHIP, LEVEL_GLYPHS, LEVEL_TONES, IDGAF_SENTENCE } from "./levelStyle";
+import {
+  CHIP,
+  IDGAF_SENTENCE,
+  IDGAF_TONE,
+  LEVEL_GLYPHS,
+  LEVEL_TONES,
+} from "./levelStyle";
 import { PresetSelect } from "./PresetSelect";
 
 const AREA_ICONS: Record<PolicyArea, typeof EyeIcon> = {
@@ -148,7 +153,7 @@ export function AreaLevelSelect({ area, variant }: AreaLevelSelectProps) {
               {AREA_HINTS[area]}. Fewer decisions reach you as you go down.
             </div>
           </div>
-          {POLICY_LEVELS.map((level) => {
+          {levelsOfArea(area).map((level) => {
             const unavailable =
               level === "automatic"
                 ? automaticUnavailable(area, status)
@@ -256,7 +261,7 @@ export function PolicyControls() {
 }
 
 /**
- * One chip in the mode bar for as long as any area is at IDGAF: a bolt and
+ * One chip in the mode bar for as long as no safety check is on: a bolt and
  * the word, tinted red. Only the word: the bar is short of room, and what it
  * means is in the tooltip and the description. The sentence that
  * used to fill a banner is the tooltip and the accessible description, so it
@@ -268,7 +273,9 @@ export function IdgafChip() {
   const dispatch = useAppDispatch();
   const areas = useAppSelector(selectIdgafAreas);
   const descriptionId = useId();
-  const preset = presetOf(useAppSelector((s) => s.ui.policyLevels));
+  const levels = useAppSelector((s) => s.ui.policyLevels);
+  const builtin = useAppSelector((s) => s.ui.policyExtras.builtin);
+  const preset = presetOf(levels, builtin);
   // At the IDGAF preset the preset chip already says so, and carries the sentence
   if (areas.length === 0 || preset === "idgaf") return null;
   const sentence = IDGAF_SENTENCE;
@@ -280,13 +287,11 @@ export function IdgafChip() {
         data-roving=""
         aria-describedby={descriptionId}
         title={`${sentence} Select to go back to Careful.`}
-        onClick={() =>
-          void dispatch(applyPolicyPreset(POLICY_PRESETS.careful.levels))
-        }
-        className={`${CHIP} ${LEVEL_TONES.idgaf.chip} cursor-pointer`}
+        onClick={() => void dispatch(applyPolicyPreset("careful"))}
+        className={`${CHIP} ${IDGAF_TONE.chip} cursor-pointer`}
       >
         <BoltIcon
-          className={`h-3 w-3 shrink-0 ${LEVEL_TONES.idgaf.icon}`}
+          className={`h-3 w-3 shrink-0 ${IDGAF_TONE.icon}`}
           aria-hidden="true"
         />
         <span>IDGAF</span>

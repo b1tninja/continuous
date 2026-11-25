@@ -250,9 +250,7 @@ describe("Loop mode's driver in the CLI", () => {
     expect(services.toolPermissions.getCurrentMode()).toBe("normal");
   });
 
-  async function stuckThenCheckReplaced(
-    plan: "idgaf" | "permissive" | "cautious",
-  ) {
+  async function stuckThenCheckReplaced(plan: "permissive" | "cautious") {
     await savePlan(
       {
         title: "Work",
@@ -284,18 +282,16 @@ describe("Loop mode's driver in the CLI", () => {
     return nextTurn(history().length);
   }
 
-  for (const level of ["idgaf", "permissive"] as const) {
-    it(`a re-plan that replaces a check goes on by itself at Plan edits ${level}, with a notice`, async () => {
-      const next = await stuckThenCheckReplaced(level);
-      expect(next?.kind).toBe("item");
-      expect(loopNow().status).toBe("running");
-      expect(loopNow().autoDecisions?.at(-1)).toMatchObject({
-        kind: "plan",
-        by: "system",
-        text: "Plan updated: 2 kept, 0 added, 0 dropped; check of item 1 replaced",
-      });
+  it("a re-plan that replaces a check goes on by itself at Plan edits Permissive, with a notice", async () => {
+    const next = await stuckThenCheckReplaced("permissive");
+    expect(next?.kind).toBe("item");
+    expect(loopNow().status).toBe("running");
+    expect(loopNow().autoDecisions?.at(-1)).toMatchObject({
+      kind: "plan",
+      by: "system",
+      text: "Plan updated: 2 kept, 0 added, 0 dropped; check of item 1 replaced",
     });
-  }
+  });
 
   it("the same re-plan waits on its card at Plan edits Cautious", async () => {
     expect(await stuckThenCheckReplaced("cautious")).toBeUndefined();
@@ -303,7 +299,7 @@ describe("Loop mode's driver in the CLI", () => {
     expect(loopNow().replanReason).toContain("ended stuck");
   });
 
-  it("a plan's open decisions are answered by the system when Questions is permissive", async () => {
+  it("a plan's open decisions are answered by the system when Questions is Delegate", async () => {
     await savePlan(
       {
         title: "Work",
@@ -322,8 +318,8 @@ describe("Loop mode's driver in the CLI", () => {
     );
     setPolicyLevels({
       ...getPolicyLevels(),
-      plan: "idgaf",
-      questions: "idgaf",
+      plan: "permissive",
+      questions: "delegate",
     });
     startLoopFromPlan("normal");
     expect(loopNow().autoDecisions?.at(-1)).toMatchObject({
@@ -580,13 +576,13 @@ describe("Loop mode's driver in the CLI", () => {
     commitLoop(saved);
     setPolicyLevels({
       ...getPolicyLevels(),
-      plan: "idgaf",
-      questions: "idgaf",
+      plan: "permissive",
+      questions: "delegate",
     });
     expect(resumeStoppedLoop(now)).toBe(true);
     expect(getSessionLoop()?.policy).toMatchObject({
-      plan: "idgaf",
-      questions: "idgaf",
+      plan: "permissive",
+      questions: "delegate",
     });
   });
 

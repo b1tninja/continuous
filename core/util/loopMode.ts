@@ -28,6 +28,7 @@ import { stableStringify } from "../tools/permissions/auto/state.js";
 import { refusalText } from "../tools/refusalText";
 import {
   DEFAULT_POLICY_LEVELS,
+  isRetiredTopLevel,
   parsePolicyLevel,
   planHandoff,
   policyLevelLabel,
@@ -279,6 +280,9 @@ function policySettings(policy: LoopPolicy): PolicySettings {
     ...(policy.maxNewPlanItems !== undefined
       ? { maxNewPlanItems: policy.maxNewPlanItems }
       : {}),
+    ...(policy.holdReplans === false
+      ? { builtin: { "plan-keeps-checks": false } }
+      : {}),
     questions: {
       ...(policy.youDecide ? { youDecide: policy.youDecide } : {}),
       ...(policy.agentDecides ? { agentDecides: policy.agentDecides } : {}),
@@ -294,6 +298,9 @@ export function loopPolicyOf(settings: PolicySettings): LoopPolicy {
     ...(settings.maxNewPlanItems !== undefined
       ? { maxNewPlanItems: settings.maxNewPlanItems }
       : {}),
+    ...(settings.builtin?.["plan-keeps-checks"] === false
+      ? { holdReplans: false }
+      : {}),
     ...(settings.questions?.youDecide
       ? { youDecide: settings.questions.youDecide }
       : {}),
@@ -303,7 +310,7 @@ export function loopPolicyOf(settings: PolicySettings): LoopPolicy {
   };
 }
 
-const EXPANSIVE: readonly PolicyLevel[] = ["permissive", "idgaf"];
+const EXPANSIVE: readonly PolicyLevel[] = ["permissive"];
 
 /**
  * The preset that supplies a policy loop's budgets and default strategy. The
@@ -311,7 +318,7 @@ const EXPANSIVE: readonly PolicyLevel[] = ["permissive", "idgaf"];
  * policy.
  */
 export function autonomyForPolicy(policy: LoopPolicy): LoopAutonomy {
-  if (policy.questions === "idgaf") return "idgaf";
+  if (policy.questions === "delegate") return "idgaf";
   if (EXPANSIVE.includes(policy.plan)) return "unattended";
   return policy.plan === "manual" ? "supervised" : "auto";
 }
@@ -331,17 +338,17 @@ export function loopAutonomy(loop: LoopState): LoopAutonomyPreset {
   return {
     ...preset,
     replan: "policy",
-    waitTimeoutMs: policy.questions === "idgaf" ? 1000 : 0,
+    waitTimeoutMs: policy.questions === "delegate" ? 1000 : 0,
   };
 }
 
 /**
- * True when nobody will answer the loop's questions: Questions is IDGAF. On a
+ * True when nobody will answer the loop's questions: Questions is Delegate. On a
  * loop saved before policy areas, its IDGAF autonomy level.
  */
 export function loopDecidesAlone(loop: LoopState): boolean {
   return loop.policy
-    ? loop.policy.questions === "idgaf"
+    ? loop.policy.questions === "delegate"
     : loop.autonomy === "idgaf";
 }
 
@@ -2594,7 +2601,7 @@ function decideAlone(
 export const LOOP_OPTION_LENGTH = 160;
 
 /**
- * A call that would ask the person, where Questions is IDGAF: nobody is asked
+ * A call that would ask the person, where Questions is Delegate: nobody is asked
  * and nothing waits. What stopped the call (a floor that no level lifts) still
  * holds, so the call is not run; the loop records that, as the system's.
  */
@@ -2607,7 +2614,7 @@ function refuseWithoutAsking(
     now: Date;
   },
 ): HoldResult {
-  const source = `Questions: ${policyLevelLabel("questions", "idgaf")}`;
+  const source = `Questions: ${policyLevelLabel("questions", "delegate")}`;
   const text =
     "Refused: nobody is asked at this level, so the call did not run";
   const decided: LoopQuestion = {
@@ -3904,7 +3911,10 @@ function withCurrentLevelNames(loop: LoopState): LoopState {
   const policy = loop.policy;
   if (!policy) return loop;
   const plan = parsePolicyLevel(policy.plan) ?? policy.plan;
-  const questions = parsePolicyLevel(policy.questions) ?? policy.questions;
+  // Questions' old IDGAF meant "the agent decides everything": Delegate now
+  const questions = isRetiredTopLevel(policy.questions)
+    ? "delegate"
+    : (parsePolicyLevel(policy.questions) ?? policy.questions);
   if (plan === policy.plan && questions === policy.questions) return loop;
   return { ...loop, policy: { ...policy, plan, questions } };
 }

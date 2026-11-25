@@ -38,6 +38,7 @@ function names(
   tools: Tool[],
   opts: {
     policyExtras?: RootState["ui"]["policyExtras"];
+    /** "Ask before using an MCP tool you have not approved" is off */
     idgaf?: boolean;
   } = {},
 ): string[] {
@@ -47,11 +48,18 @@ function names(
     session: { ...state.session, mode },
     ui: {
       ...state.ui,
-      policyExtras: opts.policyExtras ?? {},
-      policyLevels: {
-        ...DEFAULT_POLICY_LEVELS,
-        ...(opts.idgaf ? { tools: "idgaf" as const } : {}),
+      policyExtras: {
+        ...(opts.policyExtras ?? {}),
+        ...(opts.idgaf
+          ? {
+              builtin: {
+                ...(opts.policyExtras?.builtin ?? {}),
+                "approve-mcp-tools": false,
+              },
+            }
+          : {}),
       },
+      policyLevels: { ...DEFAULT_POLICY_LEVELS },
     },
     config: { ...state.config, config: { ...state.config.config, tools } },
   };
@@ -80,7 +88,7 @@ describe("selectActiveTools: MCP tools hidden until approved (TR4)", () => {
     expect(names("agent", approved)).toContain("wiki_add");
   });
 
-  it("IDGAF on Tool use offers them", () => {
+  it("with approve-mcp-tools off, which the IDGAF preset does, they are offered", () => {
     expect(names("agent", tools, { idgaf: true })).toEqual([
       BuiltInToolNames.ReadFile,
       "fresh_run",

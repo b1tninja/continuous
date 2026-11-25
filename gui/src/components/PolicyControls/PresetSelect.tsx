@@ -12,12 +12,14 @@ import {
 import {
   POLICY_AREA_LABELS,
   POLICY_AREAS,
+  levelRank,
   POLICY_LEVELS,
   POLICY_PRESET_ORDER,
   POLICY_PRESETS,
   policyLevelLabel,
   presetOf,
   type PolicyLevel,
+  type BuiltinRuleId,
   type PolicyLevels,
   type PolicyPresetName,
 } from "core/tools/permissions/policy";
@@ -25,10 +27,13 @@ import type { StoredCustomSet } from "core/tools/permissions/settingsFile";
 import { useEffect, useId, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
-import { applyPolicyPreset } from "../../redux/thunks/policySettings";
+import {
+  applyPolicyLevels,
+  applyPolicyPreset,
+} from "../../redux/thunks/policySettings";
 import { customPolicyRoute } from "../../util/navigation";
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "../ui";
-import { CHIP, LEVEL_TONES, IDGAF_SENTENCE } from "./levelStyle";
+import { CHIP, IDGAF_SENTENCE, IDGAF_TONE, LEVEL_TONES } from "./levelStyle";
 
 type Glyph = typeof BoltIcon;
 
@@ -51,29 +56,35 @@ export const PRESET_GLYPHS: Record<PolicyPresetName | "custom", Glyph> = {
  * The loosest level a set of levels contains, counting only the areas that
  * can change something. Context use is left out: reading is the one area
  * where Permissive is the default, and counting it would paint Careful amber,
- * the same as Hands off. The order is the order of POLICY_LEVELS, manual to
- * idgaf, so the tone says how far the trust goes in the loosest place.
+ * the same as Hands off. By rank (levelRank), so the tone says how far the
+ * trust goes in the loosest place. Permissive and Automatic rank the same;
+ * Permissive wins the tie, since it is the one that lets more through.
  */
 export function loosestLevel(levels: PolicyLevels): PolicyLevel {
-  let top = 0;
+  let best: PolicyLevel = POLICY_LEVELS[0];
   for (const area of POLICY_AREAS) {
     if (area === "context") continue;
-    top = Math.max(top, POLICY_LEVELS.indexOf(levels[area]));
+    const level = levels[area];
+    const better =
+      levelRank(level) > levelRank(best) ||
+      (levelRank(level) === levelRank(best) && level === "permissive");
+    if (better) best = level;
   }
-  return POLICY_LEVELS[top];
+  return best;
 }
 
 /**
  * The tone of a preset or of a Custom set of levels, taken from the level
  * tones so there is one palette. A Custom set is neutral (it matches no
- * promise) unless an area is at IDGAF, which stays red.
+ * promise). The IDGAF preset is red: no safety check is on.
  */
 export function presetTone(
   levels: PolicyLevels,
   preset: PolicyPresetName | undefined,
 ): { chip: string; icon: string; level: PolicyLevel | undefined } {
   const loosest = loosestLevel(levels);
-  if (!preset && loosest !== "idgaf") {
+  if (preset === "idgaf") return { ...IDGAF_TONE, level: loosest };
+  if (!preset) {
     return {
       chip: "bg-lightgray/20 text-foreground",
       icon: "",
@@ -113,8 +124,9 @@ export const sameLevels = (a: PolicyLevels, b: PolicyLevels) =>
 export function policyChipLabel(
   levels: PolicyLevels,
   stored: StoredCustomSet | undefined,
+  builtin?: Partial<Record<BuiltinRuleId, boolean>>,
 ): string {
-  const preset = presetOf(levels);
+  const preset = presetOf(levels, builtin);
   if (preset) return POLICY_PRESETS[preset].label;
   if (stored?.from && sameLevels(stored.levels, levels)) {
     return `Custom (from ${POLICY_PRESETS[stored.from].label})`;
@@ -133,14 +145,16 @@ export function PresetSelect({
   const navigate = useNavigate();
   const levels = useAppSelector((s) => s.ui.policyLevels);
   const stored = useAppSelector((s) => s.ui.policyExtras.customSet);
-  const preset = presetOf(levels);
+  const builtin = useAppSelector((s) => s.ui.policyExtras.builtin);
+  // Hands off and IDGAF set the same levels: the switches say which one this is
+  const preset = presetOf(levels, builtin);
   // The saved custom set, offered when something else is in force
   const recall =
     stored && !sameLevels(stored.levels, levels) ? stored : undefined;
   const key = preset ?? "custom";
   const Glyph = PRESET_GLYPHS[key];
   const tone = presetTone(levels, preset);
-  const label = policyChipLabel(levels, stored);
+  const label = policyChipLabel(levels, stored, builtin);
   const summary = summarizeLevels(levels);
   // At the top level the chip is the warning: one line, the sentence on hover and by
   // aria-describedby (there is no separate banner)
@@ -165,11 +179,9 @@ export function PresetSelect({
         } else if (name === "recall" && recall) {
           // The same save as a preset: a raised level waits for the
           // editor's own dialog
-          void dispatch(applyPolicyPreset({ ...recall.levels }));
+          void dispatch(applyPolicyLevels({ ...recall.levels }));
         } else if (name in POLICY_PRESETS) {
-          void dispatch(
-            applyPolicyPreset(POLICY_PRESETS[name as PolicyPresetName].levels),
-          );
+          void dispatch(applyPolicyPreset(name as PolicyPresetName));
         }
       }}
     >

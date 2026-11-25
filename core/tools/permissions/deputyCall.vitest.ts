@@ -123,7 +123,7 @@ describe("the confused-deputy rule in the evaluator", () => {
 
   it("the IDGAF preset reaches past it, because that preset turns the check off", () => {
     const r = run(readFileTool, "/srv/x", {
-      level: "idgaf",
+      level: "permissive",
       within: false,
       resolved: "/srv/x",
       builtin: builtinForPreset("idgaf"),
@@ -132,7 +132,7 @@ describe("the confused-deputy rule in the evaluator", () => {
   });
 
   it("turning off only ask-outside-paths reaches past it at every level that runs a read", () => {
-    for (const level of ["cautious", "permissive", "idgaf"] as const) {
+    for (const level of ["cautious", "permissive", "automatic"] as const) {
       const r = run(readFileTool, "/srv/x", {
         level,
         within: false,
@@ -154,9 +154,9 @@ describe("the confused-deputy rule in the evaluator", () => {
     expect(outside.policy).toBe(inside.policy);
   });
 
-  it("IDGAF levels with the check left on still ask", () => {
+  it("Permissive with the check left on still asks", () => {
     const r = run(readFileTool, "/srv/x", {
-      level: "idgaf",
+      level: "permissive",
       within: false,
       resolved: "/srv/x",
     });
@@ -243,4 +243,55 @@ describe("the jail-makes-a-symlink shape, on the real file system", () => {
       expect(r.protection).toBe("file-deputy");
     },
   );
+});
+
+describe("every kind of hit has its own switch", () => {
+  // The IDGAF preset's switches: every check off. Each test turns one back on.
+  const NONE = builtinForPreset("idgaf") as Record<string, boolean>;
+  const at = (
+    file: string,
+    on: string | undefined,
+    level: PolicyLevel = "permissive",
+  ) =>
+    run(createNewFileTool, file, {
+      platform: "win32",
+      level,
+      resolved: "/c/work/x",
+      within: false,
+      builtin: on ? { ...NONE, [on]: true } : NONE,
+    });
+  const SHORT = "C:/Users/JUSTIN~1/AppData/Local/Temp/helper.py";
+
+  it("an 8.3 short name asks only while ask-odd-paths is on", () => {
+    expect(at(SHORT, "ask-odd-paths").policy).toBe(ASK);
+    expect(at(SHORT, "ask-odd-paths").protection).toBe("file-deputy");
+  });
+
+  it("the same path runs at Permissive with every switch off", () => {
+    expect(at(SHORT, undefined, "permissive").policy).toBe(ALLOW);
+  });
+
+  it("at Automatic it is the reviewer's call, not a check's", () => {
+    // The level, not a switch, sends what the rules leave open to the reviewer
+    expect(at(SHORT, undefined, "automatic").protection).toBeUndefined();
+  });
+
+  it("another switch does not stand in for ask-odd-paths", () => {
+    for (const other of ["ask-outside-paths", "protect-network-paths"]) {
+      expect(at(SHORT, other).policy, other).toBe(ALLOW);
+    }
+  });
+
+  it.each([
+    ["a Windows device name", "C:/work/NUL.txt"],
+    ["an alternate data stream", "C:/work/notes.txt:hidden"],
+    ["a trailing dot", "C:/work/notes."],
+  ])("%s is governed by ask-odd-paths", (_name, file) => {
+    expect(at(file, "ask-odd-paths").policy).toBe(ASK);
+    expect(at(file, undefined).policy).toBe(ALLOW);
+  });
+
+  it("the IDGAF preset turns ask-odd-paths off", () => {
+    expect(NONE["ask-odd-paths"]).toBe(false);
+  });
 });

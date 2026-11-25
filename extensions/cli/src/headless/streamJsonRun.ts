@@ -7,7 +7,6 @@ import {
   maskCommandForDisplay,
 } from "core/tools/permissions/displayMask.js";
 
-import { idgafObjectionCount } from "../audit/idgafObjections.js";
 import type { ModelInUse } from "../services/modelInUse.js";
 
 import {
@@ -398,7 +397,9 @@ export class StreamJsonRun {
       numRequests: this.requests,
       numToolCalls: this.toolCalls,
       numRefusals: this.refusals,
-      numIdgafObjections: idgafObjectionCount(),
+      // Kept for readers of the schema: nothing is run past an objection now,
+      // since a check that is off does not run
+      numIdgafObjections: 0,
       usage: {
         inputTokens: Math.max(0, mark.input - start.input),
         outputTokens: Math.max(0, mark.output - start.output),

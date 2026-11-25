@@ -770,6 +770,11 @@ export interface LoopPolicy {
   questions: import("./tools/permissions/policy").PolicyLevel;
   /** Permissive on Plan edits: new to-dos a re-plan may add by itself */
   maxNewPlanItems?: number;
+  /**
+   * The "Hold a re-plan that weakens a check or adds many to-dos" switch
+   * (plan-keeps-checks). Absent means on; false lets every re-plan go on.
+   */
+  holdReplans?: boolean;
   /** Question types the person always decides */
   youDecide?: import("./tools/permissions/policy").QuestionType[];
   /** Question types the agent may decide */

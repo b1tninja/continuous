@@ -126,15 +126,9 @@ function sendsTo(sink: Sink): string {
 }
 
 /** The reason a person and the model are given for the pair. */
-export function secretEgressReason(
-  sink: Sink,
-  read: SecretRead,
-  atIdgaf: boolean,
-): string {
+export function secretEgressReason(sink: Sink, read: SecretRead): string {
   const pair = `A secret was read in this session (${read.source}), and this call can ${sendsTo(sink)} (${sink.class})`;
-  return atIdgaf
-    ? `Refused at IDGAF: ${pair}. Safety checks are on, so a secret leaving the machine is refused there and is never asked. Turn safety checks off to let IDGAF run it, or run it yourself.`
-    : `${pair}, so it asks at every level while safety checks are on. At IDGAF it runs unless you turn safety checks on.`;
+  return `${pair}, so it asks at every level while the Ask before touching credentials check is on.`;
 }
 
 /**
@@ -145,13 +139,11 @@ export function secretEgressReason(
 export function applySecretEgressRule(
   input: EvaluateInput & TaintedSessionInput,
   result: ToolPolicyResult,
-  atIdgaf: () => boolean,
 ): ToolPolicyResult {
   const read = input.secretRead;
   if (!read) return result;
   // A tool the person switched off stays off, as it would anyway
   if (input.basePolicy === "disabled") return result;
-  const idgaf = atIdgaf();
   // The protect-secrets check is the person's choice (a preset sets it)
   if (input.approval?.builtin?.["protect-secrets"] === false) return result;
   const sink = taintSinkFor(input, SECRET_ONLY);
@@ -165,27 +157,11 @@ export function applySecretEgressRule(
   ) {
     return result;
   }
-  // A refusal stays as it is (below IDGAF; IDGAF has run past every other one)
+  // A refusal stays as it is
   if (result.policy === "disabled") {
     return { ...result, taintSink: result.taintSink ?? sink };
   }
-  const reason = secretEgressReason(sink, read, idgaf);
-  if (idgaf) {
-    // What IDGAF ran past no longer describes the call: it is refused
-    const {
-      rule: _rule,
-      protection: _protection,
-      idgafOverride: _override,
-      ...rest
-    } = result;
-    return {
-      ...rest,
-      policy: "disabled",
-      source: SECRET_EGRESS_SOURCE,
-      taintSink: sink,
-      reason,
-    };
-  }
+  const reason = secretEgressReason(sink, read);
   if (result.policy === "allowedWithoutPermission") {
     // The allow rule that matched would read as a contradiction beside the new reason
     const { rule: _rule, ...rest } = result;

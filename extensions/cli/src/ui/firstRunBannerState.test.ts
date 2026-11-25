@@ -51,7 +51,7 @@ describe("CLI first-run banner", () => {
     expect(text).toContain("Careful preset");
     expect(text).toContain("/policy");
     expect(
-      firstRunBannerText({ ...DEFAULT_POLICY_LEVELS, tools: "idgaf" }),
+      firstRunBannerText({ ...DEFAULT_POLICY_LEVELS, tools: "permissive" }),
     ).toContain("custom mix");
   });
 });
