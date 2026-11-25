@@ -7,7 +7,11 @@ package com.github.continuedev.continueintellijextension.constants
  */
 object PolicyGuard {
     val POLICY_AREAS = listOf("context", "tools", "edits", "plan", "questions")
-    val POLICY_LEVELS = listOf("manual", "cautious", "automatic", "permissive", "idgaf")
+    val POLICY_LEVELS = listOf("manual", "cautious", "permissive", "automatic", "delegate")
+
+    /** The levels of each area: Delegate is Questions' only (core's levelsOfArea). */
+    fun levelsOfArea(area: String): List<String> =
+        if (area == "questions") POLICY_LEVELS else POLICY_LEVELS.filter { it != "delegate" }
 
     /** The areas whose level goes up from [current] to [next], in area order. */
     fun raisedAreas(current: Map<*, *>?, next: Map<*, *>?): List<String> {
@@ -18,15 +22,27 @@ object PolicyGuard {
         }
     }
 
-    /** The level's place from manual (0) to idgaf; -1 for anything else. */
-    private fun rank(level: Any?): Int = if (level is String) POLICY_LEVELS.indexOf(level) else -1
+    /**
+     * The level's rank as core ranks it: Manual, Cautious, then Permissive and
+     * Automatic together (different deciders, neither looser), then Delegate;
+     * -1 for anything else.
+     */
+    private fun rank(level: Any?): Int = when (level) {
+        "manual" -> 0
+        "cautious" -> 1
+        "permissive", "automatic" -> 2
+        "delegate" -> 3
+        else -> -1
+    }
 
     /** The panel's policy/save body: known areas and known levels only. */
     fun savePayloadOk(data: Any?): Boolean {
         if (data !is Map<*, *>) return false
         if (!data.containsKey("levels")) return true
         val levels = data["levels"] as? Map<*, *> ?: return false
-        return levels.all { (area, level) -> area is String && area in POLICY_AREAS && rank(level) >= 0 }
+        return levels.all { (area, level) ->
+            area is String && area in POLICY_AREAS && level is String && level in levelsOfArea(area)
+        }
     }
 
     /** The levels of a policy/save body, or none when it sets no levels. */

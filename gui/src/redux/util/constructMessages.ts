@@ -22,6 +22,7 @@ import {
   ERRORED_TOOL_CALL_OUTPUT_MESSAGE,
   NO_TOOL_CALL_OUTPUT_MESSAGE,
 } from "core/tools/constants";
+import { unfinishedToolCallOutput } from "core/tools/unfinishedCall";
 import { convertToolCallStatesToSystemCallsAndOutput } from "core/tools/systemMessageTools/convertSystemTools";
 import { SystemMessageToolsFramework } from "core/tools/systemMessageTools/types";
 import { sendAttachmentsOnce } from "core/util/contextReferences";
@@ -362,6 +363,9 @@ function historyToMessages(
             }
           } else if (toolCallState.status === "errored") {
             content = ERRORED_TOOL_CALL_OUTPUT_MESSAGE;
+          } else {
+            // No output and not finished: say what that means, not "No tool output"
+            content = unfinishedToolCallOutput(toolCallState.status);
           }
 
           msgs.push({

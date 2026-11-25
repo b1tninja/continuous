@@ -194,10 +194,6 @@ describe("handleApplyStateUpdate", () => {
       ).length;
     }
 
-    it("IDGAF accepts it without waiting for a click", async () => {
-      expect(await finish("idgaf", "allowedWithPermission")).toBe(1);
-    });
-
     it("a loop's item never waits on a diff", async () => {
       expect(
         await finish("manual", "allowedWithPermission", {
@@ -206,7 +202,7 @@ describe("handleApplyStateUpdate", () => {
       ).toBe(1);
     });
 
-    it("Permissive accepts it too", async () => {
+    it("Permissive accepts it without waiting for a click", async () => {
       expect(await finish("permissive", "allowedWithPermission")).toBe(1);
     });
 

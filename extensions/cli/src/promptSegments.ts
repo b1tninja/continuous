@@ -4,7 +4,7 @@ import {
   canonicalTools,
   makeSegment,
 } from "core/llm/promptSegments.js";
-import type { ChatCompletionTool } from "openai/resources.mjs";
+import type { ChatCompletionFunctionTool } from "openai/resources.mjs";
 
 import { SYSTEM_MARKERS } from "./systemMessageMarkers.js";
 import { ALL_BUILT_IN_TOOLS } from "./tools/allBuiltIns.js";
@@ -19,7 +19,7 @@ import { ALL_BUILT_IN_TOOLS } from "./tools/allBuiltIns.js";
 
 export interface CliRequestFacts {
   systemMessage: string;
-  tools: readonly ChatCompletionTool[];
+  tools: readonly ChatCompletionFunctionTool[];
   /** The environment block the request puts in the first user message. */
   environmentBlock?: string;
   taskListBlock?: string;
@@ -36,7 +36,7 @@ const BUILT_IN_NAMES = new Set(ALL_BUILT_IN_TOOLS.map((t) => t.name));
 const REGISTRY_TOOLS = new Set(["Subagent", "Skills"]);
 
 function toolSegments(
-  tools: readonly ChatCompletionTool[],
+  tools: readonly ChatCompletionFunctionTool[],
   mode: "plan" | "agent",
 ): PromptSegment[] {
   if (tools.length === 0) return [];

@@ -17,6 +17,7 @@ import { IDE, ToolExtras } from "../..";
 import * as processTerminalStates from "../../util/processTerminalStates";
 import { setTerminalEnvironmentSettings } from "../../util/terminalEnvironment";
 import { runTerminalCommandTool } from "../definitions/runTerminalCommand";
+import * as secretSwitch from "../permissions/secretSwitch";
 import { runTerminalCommandImpl } from "./runTerminalCommand";
 
 // We're using real child processes, so ensure these aren't mocked
@@ -385,7 +386,12 @@ describe("runTerminalCommandImpl", () => {
     expect(second[0].description).not.toBe("Command not run");
   });
 
-  it("does not run a command whose program does not exist", async () => {
+  it("does not run a command whose program does not exist, once the shell check is on", async () => {
+    // The shell check is opt-in: it runs only when its switch is on
+    vi.spyOn(secretSwitch, "builtinSwitchOff").mockReturnValue(false);
+    onTestFinished(() => {
+      vi.restoreAllMocks();
+    });
     const result = await runTerminalCommandImpl(
       { command: "nonexistentcommandxyz", waitForCompletion: true },
       createMockExtras(),

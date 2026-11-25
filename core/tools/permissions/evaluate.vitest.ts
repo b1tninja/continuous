@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { evaluateTerminalCommandSecurity } from "@continuedev/terminal-security";
 import { evaluateToolPolicyWithRules } from "./evaluate";
 import { POLICY_PRESETS } from "./policy";
+import { builtinForPreset } from "./safetyDegrees";
 
 const ASK = "allowedWithPermission" as const;
 const ALLOW = "allowedWithoutPermission" as const;
@@ -150,21 +151,30 @@ describe("file tools", () => {
 });
 
 describe("candidate cap", () => {
-  it("a floor rule still finds a padded command at IDGAF, which runs it and records the floor", () => {
-    const pad = Array.from({ length: 900 }, (_, i) => `f${i}`).join(" ");
-    const r = evaluateToolPolicyWithRules({
+  const padded = (builtin?: Record<string, boolean>) =>
+    evaluateToolPolicyWithRules({
       tool: terminalTool as any,
       toolName: "run_terminal_command",
       basePolicy: ALLOW,
-      parsedArgs: { command: `ls ${pad}; git push` },
+      parsedArgs: {
+        command: `ls ${Array.from({ length: 900 }, (_, i) => `f${i}`).join(" ")}; git push`,
+      },
       permissions: undefined,
       approval: {
         levels: POLICY_PRESETS.idgaf.levels,
+        ...(builtin ? { builtin } : {}),
         floor: ["runTerminalCommand(git push*)"],
       },
     });
-    expect(r.policy).toBe(ALLOW);
-    expect(r.idgafOverride).toMatchObject({ policy: OFF, source: "floor" });
+
+  it("a floor rule still finds a padded command at the IDGAF levels while apply-rules is on", () => {
+    const r = padded();
+    expect(r.policy).toBe(OFF);
+    expect(r.source).toBe("floor");
+  });
+
+  it("with the IDGAF preset's switches the floor is not read, so the padded command runs", () => {
+    expect(padded(builtinForPreset("idgaf")).policy).toBe(ALLOW);
   });
 });
 

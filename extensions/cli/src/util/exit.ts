@@ -1,4 +1,3 @@
-import { idgafObjectionLine } from "../audit/idgafObjections.js";
 import { backgroundJobService } from "../services/BackgroundJobService.js";
 import { getSessionUsage } from "../session.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
@@ -75,22 +74,9 @@ export function displaySessionUsage(): void {
  * exit code is 0 (success), this will exit with code 1 instead to
  * signal that the process encountered errors.
  */
-/** One line on stderr at the end of a run in which IDGAF ran past objections. */
-export function printIdgafObjections(): void {
-  try {
-    const line = idgafObjectionLine();
-    if (line)
-      process.stderr.write(`${line}
-`);
-  } catch {
-    // the summary never holds the exit
-  }
-}
-
 export async function gracefulExit(code: number = 0): Promise<void> {
   // Display session usage breakdown in verbose mode
   displaySessionUsage();
-  printIdgafObjections();
 
   try {
     const runningJobs = backgroundJobService.getRunningJobCount();

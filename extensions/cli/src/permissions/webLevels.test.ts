@@ -70,7 +70,6 @@ describe("--policy web=<level>", () => {
       "listed",
       "automatic",
       "permissive",
-      "idgaf",
     ] as const) {
       const r = parsePolicySpec(`web=${level}`, careful);
       expect(r.ok && r.levels).toEqual({ ...careful, web: level });
@@ -152,10 +151,10 @@ describe("the levels in force", () => {
       setPolicyLevels(preset.levels);
       savePolicyFile(file);
       expect(readPolicyFile(file).settings.levels.web).toBeUndefined();
-      // IDGAF is never written
-      setPolicyLevels({ ...careful, web: "idgaf" });
+      // a retired idgaf is written as the level it means
+      setPolicyLevels({ ...careful, web: "idgaf" as never });
       savePolicyFile(file);
-      expect(readPolicyFile(file).settings.levels.web).toBeUndefined();
+      expect(readPolicyFile(file).settings.levels.web).toBe("permissive");
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -225,7 +224,7 @@ describe("core's engine decides a CLI Fetch", () => {
     expect(v?.decision).toBe("deny");
   });
 
-  it("web.enabled: false refuses at IDGAF too", async () => {
+  it("web.enabled: false refuses at the IDGAF levels too", async () => {
     const v = await fetch(
       "https://docs.example/",
       POLICY_PRESETS.idgaf.levels,
@@ -248,7 +247,7 @@ describe("core's engine decides a CLI Fetch", () => {
     expect(v?.decision).toBe("allow");
   });
 
-  it("the cloud metadata address is refused at IDGAF", async () => {
+  it("the cloud metadata address is refused at the IDGAF levels while its check is on", async () => {
     const v = await fetch(
       "http://169.254.169.254/latest/meta-data/",
       POLICY_PRESETS.idgaf.levels,
@@ -263,7 +262,7 @@ describe("webFetchDefault: a Fetch only the default list allowed", () => {
     for (const level of ["off", "manual", "cautious", "listed"] as const) {
       expect(webFetchDefault({ level, headless: false })).toBe("follow");
     }
-    for (const level of ["automatic", "permissive", "idgaf"] as const) {
+    for (const level of ["automatic", "permissive"] as const) {
       expect(webFetchDefault({ level, headless: false })).toBe("keep");
     }
   });

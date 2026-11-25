@@ -14,8 +14,17 @@ class PolicyGuardTest : TestCase() {
         )
     }
 
-    fun `test idgaf is higher than permissive`() {
-        assertEquals(listOf("tools"), PolicyGuard.raisedAreas(mapOf("tools" to "permissive"), mapOf("tools" to "idgaf")))
+    fun `test delegate is higher than permissive and automatic, which are not ranked against each other`() {
+        assertEquals(listOf("questions"), PolicyGuard.raisedAreas(mapOf("questions" to "permissive"), mapOf("questions" to "delegate")))
+        assertEquals(listOf("questions"), PolicyGuard.raisedAreas(mapOf("questions" to "automatic"), mapOf("questions" to "delegate")))
+        assertEquals(emptyList<String>(), PolicyGuard.raisedAreas(mapOf("tools" to "permissive"), mapOf("tools" to "automatic")))
+        assertEquals(emptyList<String>(), PolicyGuard.raisedAreas(mapOf("tools" to "automatic"), mapOf("tools" to "permissive")))
+    }
+
+    fun `test idgaf is a preset, not a level, and delegate is a questions level only`() {
+        assertFalse(PolicyGuard.savePayloadOk(mapOf("levels" to mapOf("tools" to "idgaf"))))
+        assertFalse(PolicyGuard.savePayloadOk(mapOf("levels" to mapOf("tools" to "delegate"))))
+        assertTrue(PolicyGuard.savePayloadOk(mapOf("levels" to mapOf("questions" to "delegate"))))
     }
 
     fun `test without the current levels every known level counts as raised`() {

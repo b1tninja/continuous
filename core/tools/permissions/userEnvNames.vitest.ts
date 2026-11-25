@@ -4,18 +4,14 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// At IDGAF every call runs; these tests read what the guard would have
-// decided (wouldDecide), which IDGAF records instead of acting on.
-const evaluateToolPolicyWithRules = (
-  input: Parameters<typeof evaluateAndRun>[0],
-) => wouldDecide(evaluateAndRun(input));
+// "idgaf" here is Permissive with every check left on, the loosest level
+const evaluateToolPolicyWithRules = evaluateAndRun;
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   return { ...actual, readFileSync: vi.fn(actual.readFileSync) };
 });
 import { evaluateToolPolicyWithRules as evaluateAndRun } from "./evaluate";
-import { wouldDecide } from "./idgafView.testutil";
 import { DEFAULT_POLICY_LEVELS } from "./policy";
 import {
   clearUserEnvNamesCache,
@@ -121,9 +117,9 @@ const terminalTool = {
 
 const allLevels = {
   ...DEFAULT_POLICY_LEVELS,
-  context: "idgaf",
-  tools: "idgaf",
-  edits: "idgaf",
+  context: "permissive",
+  tools: "permissive",
+  edits: "permissive",
 } as any;
 
 function decide(command: string, envNames: any) {
@@ -134,7 +130,7 @@ function decide(command: string, envNames: any) {
     parsedArgs: { command },
     permissions: undefined,
     shell: "bash",
-    // IDGAF: only a name that is dangerous asks here
+    // Permissive, checks on: only a name that is dangerous asks here
     approval: { levels: allLevels },
     envNames,
   }).policy;

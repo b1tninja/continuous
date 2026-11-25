@@ -157,12 +157,13 @@ describe("a write target that is written out, or a command that writes nothing, 
   });
 });
 
-describe("at IDGAF such a command asks, and nothing loosens it", () => {
+describe("with ask-runtime-writes on, such a command asks at Permissive, and nothing loosens it", () => {
   const terminalTool = {
     group: "Built-In",
     evaluateToolCallPolicy: (base: any, args: Record<string, unknown>) =>
       evaluateTerminalCommandSecurity(base, args.command as string),
   };
+  const LOCK_ON = { ...builtinForPreset("idgaf"), "ask-runtime-writes": true };
   const run = (
     command: string,
     shell: ShellKind,
@@ -177,9 +178,14 @@ describe("at IDGAF such a command asks, and nothing loosens it", () => {
       permissions: undefined,
       shell,
       approval: {
-        levels: { ...DEFAULT_POLICY_LEVELS, tools },
-        // The IDGAF preset leaves no safety check on
-        ...(tools === "idgaf" ? { builtin: builtinForPreset("idgaf") } : {}),
+        // "idgaf" here is this test's word for Permissive with only the lock on
+        levels: {
+          ...DEFAULT_POLICY_LEVELS,
+          tools: tools === "idgaf" ? "permissive" : tools,
+        },
+        // The IDGAF preset leaves no safety check on; this lock is its own
+        // switch, turned back on here
+        ...(tools === "idgaf" ? { builtin: LOCK_ON } : {}),
       },
       ...extra,
     });
@@ -193,15 +199,18 @@ describe("at IDGAF such a command asks, and nothing loosens it", () => {
     ["bash", "echo x > $HOME/notes.txt"],
   ];
 
-  it.each(cases)("%s: %j asks at IDGAF, with a reason", (shell, command) => {
-    const r = run(command, shell, "idgaf");
-    expect(r.policy).toBe(ASK);
-    expect(r.source).toBe("floor");
-    expect(r.reason).toContain("built when it runs");
-  });
+  it.each(cases)(
+    "%s: %j asks with the lock on, with a reason",
+    (shell, command) => {
+      const r = run(command, shell, "idgaf");
+      expect(r.policy).toBe(ASK);
+      expect(r.source).toBe("floor");
+      expect(r.reason).toContain("built when it runs");
+    },
+  );
 
   it.each(cases)(
-    "%s: %j asks at IDGAF whatever allow rule is written",
+    "%s: %j asks with the lock on whatever allow rule is written",
     (shell, command) => {
       const r = run(command, shell, "idgaf", {
         permissions: { allow: ["runTerminalCommand(*)"] },
@@ -213,7 +222,7 @@ describe("at IDGAF such a command asks, and nothing loosens it", () => {
   it.each(cases)(
     "%s: %j is not asked again at a lower level",
     (shell, command) => {
-      for (const level of ["permissive", "automatic", "cautious"] as const) {
+      for (const level of ["automatic", "cautious"] as const) {
         const r = run(command, shell, level);
         expect(r.reason ?? "", level).not.toContain("built when it runs");
       }
@@ -223,8 +232,8 @@ describe("at IDGAF such a command asks, and nothing loosens it", () => {
   it("a floor rule still refuses it, and a refusal is not turned into an ask", () => {
     const r = run("rm $x; git push origin main", "bash", "idgaf", {
       approval: {
-        levels: { ...DEFAULT_POLICY_LEVELS, tools: "idgaf" },
-        builtin: builtinForPreset("idgaf"),
+        levels: { ...DEFAULT_POLICY_LEVELS, tools: "permissive" },
+        builtin: { ...LOCK_ON, "apply-rules": true },
         floor: ["runTerminalCommand(git push*)"],
       },
     });
@@ -233,14 +242,26 @@ describe("at IDGAF such a command asks, and nothing loosens it", () => {
     expect(r.reason).not.toContain("built when it runs");
   });
 
-  it("a deny rule, which IDGAF reaches past, leaves the command asking rather than running", () => {
+  it("with the lock's switch off (the IDGAF preset's switches) the same commands run", () => {
+    for (const [shell, command] of cases) {
+      const r = run(command, shell, "idgaf", {
+        approval: {
+          levels: { ...DEFAULT_POLICY_LEVELS, tools: "permissive" },
+          builtin: builtinForPreset("idgaf"),
+        },
+      });
+      expect(r.policy, command).toBe(RUN);
+    }
+  });
+
+  it("a deny rule is not read while its switch is off, so only the lock asks", () => {
     const r = run("rm $x; git push origin main", "bash", "idgaf", {
       permissions: { deny: ["runTerminalCommand(git push*)"] },
     });
     expect(r.policy).toBe(ASK);
   });
 
-  it("a command with a written-out target still runs at IDGAF", () => {
+  it("a command with a written-out target still runs with the lock on", () => {
     for (const [shell, command] of [
       ["powershell", "Remove-Item build\\out.txt"],
       ["bash", "rm -rf build"],
@@ -346,6 +367,77 @@ describe("a variable worked out from known pieces is read, not asked about", () 
         ps,
       ),
     ).toContain("policy file");
+  });
+});
+
+describe("folders added to the workspace count as the workspace", () => {
+  const cwd = "C:/work/proj";
+  const roots = ["C:/work/proj", "D:/shared/lib", "C:/work/second-root"];
+  const target = (dir: string) => `$f = '${dir}/out.txt'; Set-Content $f x`;
+
+  it("a write worked out inside an added folder is written out, not outside", () => {
+    expect(
+      runtimeWriteTarget(target("D:/shared/lib/sub"), "powershell", cwd, {
+        roots,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("a write inside a second opened root is the workspace too", () => {
+    expect(
+      runtimeWriteTarget(target("C:/work/second-root"), "powershell", cwd, {
+        roots,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("without the folder in the list, the same write is outside (control)", () => {
+    expect(
+      runtimeWriteTarget(target("D:/shared/lib/sub"), "powershell", cwd),
+    ).toContain("outside the workspace");
+    expect(
+      runtimeWriteTarget(target("D:/shared/lib/sub"), "powershell", cwd, {
+        roots: ["C:/work/second-root"],
+      }),
+    ).toContain("outside the workspace");
+  });
+
+  it("a folder that was not added is still outside", () => {
+    expect(
+      runtimeWriteTarget(target("D:/elsewhere"), "powershell", cwd, { roots }),
+    ).toContain("outside the workspace");
+  });
+
+  it("a sibling that only shares a name prefix is not inside an added folder", () => {
+    expect(
+      runtimeWriteTarget(target("D:/shared/library"), "powershell", cwd, {
+        roots,
+      }),
+    ).toContain("outside the workspace");
+  });
+
+  it("an added folder is not a way past the policy-file name check", () => {
+    expect(
+      runtimeWriteTarget(
+        "$f = 'D:/shared/lib/.continuous/config.yaml'; Remove-Item $f",
+        "powershell",
+        cwd,
+        { roots },
+      ),
+    ).toContain("policy file");
+  });
+
+  it("a path that climbs out of an added folder is outside", () => {
+    expect(
+      runtimeWriteTarget(
+        target("D:/shared/lib/../elsewhere"),
+        "powershell",
+        cwd,
+        {
+          roots,
+        },
+      ),
+    ).toContain("outside the workspace");
   });
 });
 

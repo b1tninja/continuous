@@ -277,8 +277,8 @@ describe("approval modes in evaluateToolPolicies", () => {
     expect(seen[0].approval).toEqual(TOOLS_PERMISSIVE);
   });
 
-  it("accepts the loosening core made for Permissive or IDGAF", async () => {
-    for (const source of ["permissive", "idgaf"]) {
+  it("accepts the loosening core made for Permissive", async () => {
+    for (const source of ["permissive"]) {
       const { result } = await runApproval({ policy: ALLOW, source });
       expect(result.policy).toBe(ALLOW);
     }
@@ -286,7 +286,7 @@ describe("approval modes in evaluateToolPolicies", () => {
 
   it("a tool the user switched off stays off whatever core says", async () => {
     const { result } = await runApproval(
-      { policy: ALLOW, source: "idgaf" },
+      { policy: ALLOW, source: "permissive" },
       "disabled",
     );
     expect(result.policy).toBe(OFF);

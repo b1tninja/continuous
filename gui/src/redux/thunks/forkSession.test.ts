@@ -107,12 +107,12 @@ describe("Fork from here and Fork session (GUI)", () => {
     expect(s.promptCache?.ledger).toHaveLength(3);
   });
 
-  it("keeps this window's permission levels, IDGAF included (it is per window, not per session)", async () => {
+  it("keeps this window's permission levels (they are per window, not per session)", async () => {
     const { store } = await setup();
     const levels = store.getState().ui.policyLevels;
     await store.dispatch(forkSessionThunk({ upTo: 2 })).unwrap();
     expect(store.getState().ui.policyLevels).toEqual(levels);
-    expect(store.getState().ui.policyLevels.tools).toBe("idgaf");
+    expect(store.getState().ui.policyLevels.tools).toBe("permissive");
   });
 
   it("does nothing while a response is streaming", async () => {

@@ -2,10 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import type { Session } from "core/index.js";
-import {
-  DEFAULT_POLICY_LEVELS,
-  POLICY_PRESETS,
-} from "core/tools/permissions/policy.js";
+import { builtinForPreset } from "core/tools/permissions/safetyDegrees.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const audit = vi.hoisted(() => ({ settings: [] as Record<string, unknown>[] }));
@@ -32,7 +29,8 @@ import {
   RESUMED_WITHOUT_IDGAF_NOTICE,
 } from "./idgafNotices.js";
 
-const IDGAF = POLICY_PRESETS.idgaf.levels;
+// The IDGAF preset is in force while no safety check is on: the switches say so
+const IDGAF = builtinForPreset("idgaf");
 
 let notices: string[];
 
@@ -65,42 +63,34 @@ describe("the IDGAF start line (D-001, D-002)", () => {
     announceIdgaf(IDGAF, s);
     expect(notices).toHaveLength(1);
     expect(notices[0]).toBe(
-      "IDGAF is on for this session only: your rules, locked rules and protected files stop nothing; each call runs and the audit trail records what would have stopped it. Tools you switched off stay off.",
+      "IDGAF is on: no safety check is on, so rules, protected files and locks stop nothing. Tools you switched off stay off. Turn a check back on in Settings.",
     );
   });
 
-  it("says nothing below IDGAF", () => {
-    announceIdgaf({ ...DEFAULT_POLICY_LEVELS }, session());
+  it("says nothing while any check is on", () => {
+    announceIdgaf(undefined, session());
+    announceIdgaf({}, session());
+    announceIdgaf({ ...IDGAF, "protect-secrets": true }, session());
     expect(notices).toEqual([]);
     expect(audit.settings).toEqual([]);
   });
 
-  it("names the areas and the flag that turned it on (B21: session only)", () => {
+  it("names the flag that turned it on", () => {
     rememberIdgafFlag("--auto");
-    announceIdgaf(
-      {
-        ...DEFAULT_POLICY_LEVELS,
-        context: "idgaf",
-        tools: "idgaf",
-        edits: "idgaf",
-      },
-      session(),
-    );
-    expect(notices[0]).toMatch(
-      /^IDGAF is on for Context use, Tool use, File edits for this session only \(--auto\): /,
-    );
+    announceIdgaf(IDGAF, session());
+    expect(notices[0]).toMatch(/^IDGAF is on \(--auto\): /);
   });
 
-  it("at Questions IDGAF alone says that nobody is asked, not that rules are ignored", () => {
-    announceIdgaf({ ...DEFAULT_POLICY_LEVELS, questions: "idgaf" }, session());
-    expect(notices[0]).toContain("the agent answers its own questions");
-    expect(notices[0]).not.toContain("locked rules");
-  });
-
-  it("marks the session so a later --resume can say IDGAF was not restored", () => {
+  it("marks the session so a later --resume can say it was not restored", () => {
     const s = session();
-    announceIdgaf({ ...DEFAULT_POLICY_LEVELS, tools: "idgaf" }, s);
-    expect(s.idgafAreas).toEqual(["tools"]);
+    announceIdgaf(IDGAF, s);
+    expect(s.idgafAreas).toEqual([
+      "context",
+      "tools",
+      "edits",
+      "plan",
+      "questions",
+    ]);
   });
 
   it("writes one idgaf-session audit record", () => {
@@ -113,7 +103,7 @@ describe("the IDGAF start line (D-001, D-002)", () => {
         op: "set",
         source: "flag",
         confirmed: "flag",
-        to: "idgaf",
+        to: "no checks on",
         loosens: true,
         session: "s-1",
       }),

@@ -3,6 +3,7 @@ import type { ApprovalSettings } from "core/tools/permissions/approval.js";
 import {
   DEFAULT_POLICY_LEVELS,
   isDeprecatedLevelSpelling,
+  levelsOfArea,
   parsePolicyLevel,
   parseWebLevel,
   POLICY_AREA_LABELS,
@@ -17,8 +18,9 @@ import {
   type PolicyArea,
   type PolicyLevel,
   type PolicyLevels,
+  type PolicyPresetName,
 } from "core/tools/permissions/policy.js";
-import { switchesInForce } from "core/tools/permissions/safetyDegrees.js";
+import { builtinForPreset } from "core/tools/permissions/safetyDegrees.js";
 import {
   readPolicyFile,
   writePolicyFile,
@@ -92,17 +94,33 @@ export function loadPolicyFile(file: string = PERMISSIONS_YAML_PATH): string[] {
   return notices;
 }
 
-/** Writes the levels (never IDGAF) and the other settings back to the file. */
+/** Writes the levels and the other settings back to the file. */
 export function savePolicyFile(
   file: string = PERMISSIONS_YAML_PATH,
   // `web` always given, so a Web level cleared here (a preset) is cleared there
-  update: PolicyFileUpdate = { levels: { ...levels, web: levels.web } },
+  update: PolicyFileUpdate = {
+    levels: { ...levels, web: levels.web },
+    ...(extras.builtin ? { builtin: extras.builtin } : {}),
+  },
 ): void {
   writePolicyFile(file, update);
 }
 
 export function getPolicyLevels(): PolicyLevels {
   return { ...levels };
+}
+
+/** The switches of a preset chosen with `--policy <preset>` or `/policy <preset>`. */
+export function setPolicyBuiltin(
+  builtin: PolicyFileSettings["builtin"] | undefined,
+): void {
+  extras = { ...extras, builtin };
+}
+
+/** Applies a preset the way `/policy <preset>` does: its levels and its safety checks. */
+export function applyPolicyPreset(name: PolicyPresetName): void {
+  setPolicyLevels({ ...POLICY_PRESETS[name].levels });
+  setPolicyBuiltin(builtinForPreset(name));
 }
 
 export function setPolicyLevels(next: PolicyLevels): void {
@@ -117,16 +135,18 @@ export function resetPolicyLevels(): void {
 }
 
 /**
- * What core's engine is given besides the levels. Pass the levels in force: a
- * run whose tool areas are at IDGAF (`--policy idgaf`, `--auto`) has no
- * safety check on, and that lasts for the run only, so it is not in the file.
+ * What core's engine is given besides the levels. `--auto` is the IDGAF
+ * preset for this run: Permissive on the tool areas and no safety check on.
+ * That lasts for the run only, so it is added here and never written to the
+ * file. Every other mode uses the switches the file and the flags set.
  */
 export function approvalExtras(
-  levelsInForce?: PolicyLevels,
+  mode?: PermissionMode,
 ): Pick<ApprovalSettings, "builtin" | "floor"> {
-  const builtin = levelsInForce
-    ? switchesInForce(levelsInForce, extras.builtin)
-    : extras.builtin;
+  const builtin =
+    mode === "auto"
+      ? { ...(extras.builtin ?? {}), ...builtinForPreset("idgaf") }
+      : extras.builtin;
   return {
     ...(builtin ? { builtin } : {}),
     ...(extras.floor?.length ? { floor: extras.floor } : {}),
@@ -137,8 +157,11 @@ export function approvalExtras(
  * True when nothing here changes what the CLI does on its own, so core's
  * engine need not run for a call that has no rules.
  */
-export function policyIsDefault(l: PolicyLevels): boolean {
-  const extra = approvalExtras(l);
+export function policyIsDefault(
+  l: PolicyLevels,
+  mode?: PermissionMode,
+): boolean {
+  const extra = approvalExtras(mode);
   return (
     toolLevelsAreDefault(l) &&
     // A Web level of its own changes what a fetch does (WB45)
@@ -152,7 +175,8 @@ const TOOL_AREAS: readonly PolicyArea[] = ["context", "tools", "edits"];
 
 /**
  * The levels in force. The CLI's `auto` mode (`--auto`) allowed everything,
- * which is IDGAF on the three tool areas and a plan that goes on; and
+ * which is the IDGAF preset: Permissive on the three tool areas (its switches
+ * are added by approvalExtras) and a plan that goes on; and
  * `--auto-review` hands what a rule leaves open to the reviewer, which is
  * Automatic wherever the level is Cautious. A level the person set higher
  * than that is kept.
@@ -160,7 +184,7 @@ const TOOL_AREAS: readonly PolicyArea[] = ["context", "tools", "edits"];
 export function effectiveLevels(mode: PermissionMode): PolicyLevels {
   const result = { ...levels };
   if (mode === "auto") {
-    for (const area of TOOL_AREAS) result[area] = "idgaf";
+    for (const area of TOOL_AREAS) result[area] = "permissive";
     if (result.plan === "manual" || result.plan === "cautious") {
       result.plan = "permissive";
     }
@@ -198,7 +222,7 @@ const AREA_KEYS: Record<string, PolicyArea> = {
 /** `web=<level>` (WB45): the sixth area, with Off and Listed of its own. */
 const WEB_KEYS = new Set(["web"]);
 
-/** `yolo` is the old spelling of the top level and of the preset: still read. */
+/** `yolo` is the old name of the IDGAF preset: still read. */
 const DEPRECATED_PRESET = "yolo";
 
 function toLevel(word: string): PolicyLevel | undefined {
@@ -209,6 +233,8 @@ export type PolicySpecResult =
   | {
       ok: true;
       levels: PolicyLevels;
+      /** A preset also sets the safety checks; absent for levels given one by one */
+      builtin?: ReturnType<typeof builtinForPreset>;
       /** The old spelling was used (`yolo`): the caller says so on stderr */
       deprecated?: string;
     }
@@ -241,6 +267,7 @@ export function parsePolicySpec(
       // preset's own Web level (POLICY_PRESET_WEB), and a Web level set
       // before is cleared (savePolicyFile writes its absence)
       levels: { ...POLICY_PRESETS[preset].levels },
+      builtin: builtinForPreset(preset),
       ...(lowered === DEPRECATED_PRESET
         ? { deprecated: YOLO_DEPRECATION_NOTE }
         : {}),
@@ -258,6 +285,13 @@ export function parsePolicySpec(
         return {
           ok: false,
           error: `"${part}" is not a preset, a level or area=level. Presets: ${POLICY_PRESET_ORDER.join(", ")}.`,
+        };
+      }
+      // A bare level sets every area it is a level of: Delegate is Questions' only
+      if (POLICY_AREAS.some((area) => !levelsOfArea(area).includes(level))) {
+        return {
+          ok: false,
+          error: `"${level}" is a level of Questions only. Use questions=${level}.`,
         };
       }
       for (const area of POLICY_AREAS) next[area] = level;
@@ -284,6 +318,12 @@ export function parsePolicySpec(
       return {
         ok: false,
         error: `"${part}": the areas are ${[...POLICY_AREAS, "web"].join(", ")}.`,
+      };
+    }
+    if (level && !levelsOfArea(area).includes(level)) {
+      return {
+        ok: false,
+        error: `"${value}" is a level of Questions only, not of ${key}.`,
       };
     }
     if (!level) {
@@ -340,6 +380,7 @@ export function levelsForAutonomy(
     case "unattended":
       return { plan: "permissive", questions: "cautious" };
     case "idgaf":
-      return { plan: "permissive", questions: "idgaf" };
+      // Questions: the agent decides everything (Delegate), as IDGAF did there
+      return { plan: "permissive", questions: "delegate" };
   }
 }

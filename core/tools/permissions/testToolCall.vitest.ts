@@ -127,13 +127,21 @@ describe("testToolCall", () => {
     expect(r.matchedRules[0]).toMatchObject({ source: "floor", locked: true });
   });
 
-  it("at IDGAF runs what the floor refuses, and says so", () => {
+  it("the floor refuses at Permissive while apply-rules is on", () => {
     const r = run("terraform destroy -auto-approve", {
-      levels: { tools: "idgaf" },
+      levels: { tools: "permissive" },
     });
-    expect(r).toMatchObject({ decision: "allow", source: "idgaf" });
-    expect(r.reason).toContain("would have been refused");
-    expect(r.reason).toContain("floor rule");
+    expect(r).toMatchObject({ decision: "deny", source: "floor" });
+  });
+
+  it("with apply-rules off the floor is not read, and the call runs", () => {
+    const r = run("terraform destroy -auto-approve", {
+      levels: { tools: "permissive" },
+      sources: { ...sources, builtin: { "apply-rules": false } },
+    });
+    // another check (ask-destructive-commands) may still ask: it is its own switch
+    expect(r.decision).not.toBe("deny");
+    expect(r.source).not.toBe("floor");
   });
 
   it("does not use a workspace allow rule", () => {

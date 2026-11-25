@@ -159,6 +159,8 @@ export function headlessPolicyNotice(args: {
    * is false and the default list allows it): public hosts run at Cautious
    */
   fetchTransition?: boolean;
+  /** No safety check is on (the IDGAF preset, `--auto`): said, since Permissive alone does not say it */
+  noChecks?: boolean;
 }): string {
   if (args.legacy) {
     return `continuous: ${HEADLESS_LEGACY_ENV}=1 is set in the environment: Bash and unlisted tools are allowed in every headless run while it is set, not only this one, as before 2.18.0. This switch is removed in the next release; pass --auto or --policy instead.`;
@@ -174,7 +176,10 @@ export function headlessPolicyNotice(args: {
     effectiveWebLevel(args.levels, { enabled: args.webEnabled }),
     { transition: !!args.fetchTransition },
   );
-  return `continuous: headless run ${where}: ${describeLevels(args.levels)}; ${web}; ${tail}`;
+  const checks = args.noChecks
+    ? "; IDGAF: no safety check is on, so rules, protected files and locks stop nothing"
+    : "";
+  return `continuous: headless run ${where}: ${describeLevels(args.levels)}${checks}; ${web}; ${tail}`;
 }
 
 /**

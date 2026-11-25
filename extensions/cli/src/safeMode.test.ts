@@ -101,11 +101,11 @@ describe("permission levels in safe mode", () => {
   it("caps each area at its default", () => {
     expect(
       capAtDefaults({
-        context: "idgaf",
+        context: "permissive",
         tools: "permissive",
         edits: "manual",
         plan: "manual",
-        questions: "automatic",
+        questions: "delegate",
       }),
     ).toEqual({
       context: DEFAULT_POLICY_LEVELS.context,
@@ -127,11 +127,11 @@ describe("permission levels in safe mode", () => {
 
   it("caps --policy and /policy too", () => {
     setSafeMode(true);
-    setPolicyLevels({ ...DEFAULT_POLICY_LEVELS, edits: "idgaf" });
+    setPolicyLevels({ ...DEFAULT_POLICY_LEVELS, edits: "permissive" });
     expect(getPolicyLevels().edits).toBe(DEFAULT_POLICY_LEVELS.edits);
     setSafeMode(false);
-    setPolicyLevels({ ...DEFAULT_POLICY_LEVELS, edits: "idgaf" });
-    expect(getPolicyLevels().edits).toBe("idgaf");
+    setPolicyLevels({ ...DEFAULT_POLICY_LEVELS, edits: "permissive" });
+    expect(getPolicyLevels().edits).toBe("permissive");
   });
 });
 

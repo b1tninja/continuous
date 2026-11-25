@@ -4,7 +4,7 @@
  * runs by itself, and the shield in the UI (which switch turns a blocked call
  * off). Every protection belongs to exactly one check.
  */
-import { type BuiltinRuleId } from "./policy";
+import { builtinIsOn, type BuiltinRuleId } from "./policy";
 import type { ProtectedKind } from "./protected";
 
 export const CHECK_OF_PROTECTION: Record<ProtectedKind, BuiltinRuleId> = {
@@ -20,7 +20,7 @@ export const CHECK_OF_PROTECTION: Record<ProtectedKind, BuiltinRuleId> = {
   "file-deputy": "ask-outside-paths",
   "hidden-command": "refuse-dangerous-commands",
   "env-assignment": "refuse-dangerous-commands",
-  "mcp-definition-changed": "protect-config",
+  "mcp-definition-changed": "approve-mcp-tools",
 };
 
 /** The check behind a protection kind, when the kind is one this table knows. */
@@ -37,7 +37,7 @@ function checkOn(
   builtin: Partial<Record<BuiltinRuleId, boolean>> | undefined,
   id: BuiltinRuleId,
 ): boolean {
-  return builtin?.[id] !== false;
+  return builtinIsOn(builtin, id);
 }
 
 /** The protection kinds whose check is off, so the call skips them. */

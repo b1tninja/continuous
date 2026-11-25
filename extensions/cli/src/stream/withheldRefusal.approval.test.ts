@@ -1,4 +1,4 @@
-import type { ChatCompletionTool } from "openai/resources.mjs";
+import type { ChatCompletionFunctionTool } from "openai/resources.mjs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const recorded = vi.hoisted(() => [] as unknown[]);
@@ -33,7 +33,7 @@ import {
 
 import { checkToolPermissionApproval } from "./streamChatResponse.helpers.js";
 
-const fn = (name: string): ChatCompletionTool => ({
+const fn = (name: string): ChatCompletionFunctionTool => ({
   type: "function",
   function: { name, description: name, parameters: { type: "object" } },
 });

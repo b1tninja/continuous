@@ -5,8 +5,8 @@ import {
   BUILTIN_RULES,
   POLICY_AREA_LABELS,
   POLICY_AREAS,
+  levelsOfArea,
   POLICY_LEVEL_DESCRIPTIONS,
-  POLICY_LEVELS,
   POLICY_PRESET_ORDER,
   POLICY_PRESETS,
   policyLevelLabel,
@@ -16,6 +16,7 @@ import {
   type PolicyArea,
   type PolicyLevel,
   type QuestionType,
+  builtinIsOn,
 } from "core/tools/permissions/policy";
 import type { ToolRuleEditResponse } from "core/tools/permissions/ruleEditor";
 import { CONFIRM_PHRASE } from "core/tools/permissions/ruleWords";
@@ -335,10 +336,8 @@ function BaseStep({
           className="my-1 text-2xs text-warning"
           data-testid="custom-idgaf-note"
         >
-          IDGAF is for one session: it is never saved, and the file keeps the
-          level it had. At IDGAF every rule is ignored, locked rules included:
-          the call runs and the audit trail records the rule that would have
-          stopped it.
+          IDGAF sets Permissive and turns every safety check off, and it is
+          saved like any other preset. Turn a check back on below, one by one.
         </p>
       )}
     </fieldset>
@@ -404,7 +403,7 @@ function LevelsStep({
               })
             }
           >
-            {POLICY_LEVELS.map((l) => (
+            {levelsOfArea(a).map((l) => (
               <option key={l} value={l}>
                 {policyLevelLabel(a, l)}
               </option>
@@ -417,7 +416,7 @@ function LevelsStep({
         <label key={r.id} className="flex items-start gap-1 text-xs">
           <input
             type="checkbox"
-            checked={draft.builtin[r.id] !== false}
+            checked={builtinIsOn(draft.builtin, r.id)}
             data-testid={`custom-builtin-${r.id}`}
             onChange={(e) =>
               set({ builtin: { ...draft.builtin, [r.id]: e.target.checked } })

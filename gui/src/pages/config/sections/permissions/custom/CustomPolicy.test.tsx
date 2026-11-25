@@ -255,10 +255,14 @@ describe("the Custom policy editor", () => {
       fireEvent.click(screen.getByTestId("custom-base-idgaf"));
     });
     expect(screen.getByTestId("custom-idgaf-note")).toBeDefined();
+    // saved like any other preset: no "session only" in the note
+    expect(screen.getByTestId("custom-idgaf-note").textContent).not.toContain(
+      "session",
+    );
     await step(1);
     expect(
       (screen.getByTestId("custom-level-edits") as HTMLSelectElement).value,
-    ).toBe("idgaf");
+    ).toBe("permissive");
   });
 
   it("opened from an area, it starts at the levels with that area focused", async () => {
@@ -740,18 +744,18 @@ describe("customSetToStore: which set is kept, and its preset", () => {
       undefined,
     ],
     [
-      "IDGAF in the set: session only",
-      [
-        { base: "careful", levels: { ...mine, edits: "idgaf" } },
-        careful,
-        undefined,
-      ],
-      undefined,
+      "started from IDGAF: saved like any other preset, and names it",
+      [{ base: "idgaf", levels: mine }, careful, undefined],
+      { from: "idgaf", levels: mine },
     ],
     [
-      "started from IDGAF: session only",
-      [{ base: "idgaf", levels: mine }, careful, undefined],
-      undefined,
+      "from what is set now, when that was the IDGAF preset: it is named too",
+      [
+        { base: "current", levels: mine },
+        POLICY_PRESETS.idgaf.levels,
+        undefined,
+      ],
+      { from: "idgaf", levels: mine },
     ],
     [
       "from what is set now, when that was a preset",

@@ -80,10 +80,10 @@ describe("the handler a modern MCP client uses", () => {
     params: form({ region: { type: "string", default: "eu" } }),
   };
 
-  it("at IDGAF answers with the defaults and records it", async () => {
+  it("at Delegate answers with the defaults and records it", async () => {
     const notes: string[] = [];
     const handler = elicitationHandler(
-      () => "idgaf",
+      () => "delegate",
       (n) => notes.push(n),
     );
     expect(await handler("k", request)).toEqual({
@@ -113,7 +113,7 @@ describe("the handler a modern MCP client uses", () => {
   );
 
   it("any other server request is an error", async () => {
-    const handler = elicitationHandler(() => "idgaf");
+    const handler = elicitationHandler(() => "delegate");
     await expect(handler("k", { method: "sampling/create" })).rejects.toThrow(
       /Unsupported/,
     );

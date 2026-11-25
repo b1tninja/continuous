@@ -45,12 +45,15 @@ const settings = (
 ): PolicyFileSettings => ({ levels: lv(), ...over });
 
 describe("raise confirmation (pure)", () => {
-  it("lists only moves up to Automatic, Permissive or IDGAF", () => {
+  it("lists only moves up to Permissive, Automatic or (Questions) Delegate", () => {
     expect(
-      raisedLevels(lv(), lv({ tools: "permissive", edits: "idgaf" })),
+      raisedLevels(lv(), lv({ tools: "permissive", edits: "automatic" })),
     ).toEqual([
       { area: "tools", from: "cautious", to: "permissive" },
-      { area: "edits", from: "manual", to: "idgaf" },
+      { area: "edits", from: "manual", to: "automatic" },
+    ]);
+    expect(raisedLevels(lv(), lv({ questions: "delegate" }))).toEqual([
+      { area: "questions", from: "cautious", to: "delegate" },
     ]);
     // Manual to Cautious is a raise, but not toward the levels that ask
     expect(
@@ -58,9 +61,29 @@ describe("raise confirmation (pure)", () => {
     ).toEqual([]);
   });
 
+  it("moving between Permissive and Automatic is not a raise: they are different deciders", () => {
+    expect(
+      raisedLevels(lv({ tools: "permissive" }), lv({ tools: "automatic" })),
+    ).toEqual([]);
+    expect(
+      raisedLevels(lv({ tools: "automatic" }), lv({ tools: "permissive" })),
+    ).toEqual([]);
+  });
+
+  it("Delegate on Questions is a raise from Permissive or Automatic", () => {
+    for (const from of ["permissive", "automatic"] as const) {
+      expect(
+        raisedLevels(lv({ questions: from }), lv({ questions: "delegate" })),
+      ).toEqual([{ area: "questions", from, to: "delegate" }]);
+    }
+  });
+
   it("lowering never asks, and an unchanged level never asks", () => {
     expect(
-      raiseConfirmation(lv({ tools: "idgaf" }), lv({ tools: "cautious" })),
+      raiseConfirmation(
+        lv({ questions: "delegate" }),
+        lv({ tools: "cautious" }),
+      ),
     ).toBeUndefined();
     expect(raiseConfirmation(lv(), lv())).toBeUndefined();
     expect(
@@ -82,10 +105,10 @@ describe("raise confirmation (pure)", () => {
     expect(q).not.toContain("this session only");
   });
 
-  it("says idgaf is for one session", () => {
-    expect(raiseConfirmation(lv(), lv({ plan: "idgaf" }))).toContain(
-      "idgaf lasts this session only",
-    );
+  it("a retired idgaf is read as Permissive and is a raise like any other", () => {
+    const q = raiseConfirmation(lv(), lv({ plan: "idgaf" as never }));
+    expect(q).toContain("plan");
+    expect(raisedLevels(lv(), lv({ plan: "idgaf" as never }))).toHaveLength(1);
   });
 });
 
@@ -173,7 +196,7 @@ describe("setting entries: writer and reader round trip", () => {
       [
         ...diffPolicySettings(
           settings(),
-          settings({ levels: lv({ tools: "idgaf" }) }),
+          settings({ levels: lv({ tools: "permissive" }) }),
         ),
         trustChange("project-trust", "grant", "/work/app (providers)"),
         trustChange("hook-trust", "revoke", "/work/app"),
@@ -190,7 +213,7 @@ describe("setting entries: writer and reader round trip", () => {
     expect(rows[0]).toMatchObject({
       source: "cli-policy",
       loosens: true,
-      summary: "set tools: cautious -> idgaf (confirmed: prompt)",
+      summary: "set tools: cautious -> permissive (confirmed: prompt)",
     });
     const file = readAuditSession(dir, POLICY_SESSION);
     expect(file[0]).toMatchObject({
@@ -199,7 +222,7 @@ describe("setting entries: writer and reader round trip", () => {
       kind: "level",
       name: "tools",
       from: "cautious",
-      to: "idgaf",
+      to: "permissive",
       viaSession: "cli-1",
       seq: 1,
     });

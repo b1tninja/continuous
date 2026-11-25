@@ -5,15 +5,13 @@ import { commandCandidates } from "./candidates";
 import { hiddenCommandName } from "./commandName";
 import { maskAssignmentValues } from "./envMask";
 import { evaluateToolPolicyWithRules as evaluateAndRun } from "./evaluate";
-import { wouldDecide } from "./idgafView.testutil";
 import { DEFAULT_POLICY_LEVELS } from "./policy";
 import { builtinForPreset } from "./safetyDegrees";
 
-// At IDGAF every call runs; these tests read what the guard would have
-// decided (wouldDecide), which IDGAF records instead of acting on.
-const evaluateToolPolicyWithRules = (
-  input: Parameters<typeof evaluateAndRun>[0],
-) => wouldDecide(evaluateAndRun(input));
+// "idgaf" in this file is the column for Permissive with every check left on
+// (the IDGAF preset turns the checks off, and has its own tests below): the
+// loosest level, where a guard that is on is the only thing that can ask.
+const evaluateToolPolicyWithRules = evaluateAndRun;
 
 /**
  * An assignment in front of a command (`NAME=value cmd`, `env NAME=value cmd`,
@@ -34,12 +32,15 @@ const terminalTool = {
 };
 
 /** Every area at one level, so a command read as a read and one read as a tool call meet the same level. */
-const allAreas = (level: Exclude<Level, "default">) => ({
-  ...DEFAULT_POLICY_LEVELS,
-  context: level,
-  tools: level,
-  edits: level,
-});
+const allAreas = (level: Exclude<Level, "default">) => {
+  const real = level === "idgaf" ? "permissive" : level;
+  return {
+    ...DEFAULT_POLICY_LEVELS,
+    context: real,
+    tools: real,
+    edits: real,
+  };
+};
 
 type Level = "default" | "automatic" | "permissive" | "idgaf";
 
@@ -300,7 +301,7 @@ describe("the run-time write target after an assignment (ROADMAP B31)", () => {
       },
     });
     expect(r.policy).toBe(RUN);
-    expect(r.source).toBe("idgaf");
+    expect(r.source).toBe("permissive");
   });
 
   it("TMP=. node x.js > $HOME/x asks at IDGAF levels while the env check is on", () => {

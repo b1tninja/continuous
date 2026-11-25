@@ -11,7 +11,7 @@ import {
   DEFAULT_YOU_DECIDE,
   POLICY_AREA_LABELS,
   POLICY_AREAS,
-  POLICY_LEVELS,
+  levelRank,
   POLICY_PRESETS,
   policyLevelLabel,
   presetOf,
@@ -19,6 +19,8 @@ import {
   type PolicyLevels,
   type PolicyPresetName,
   type QuestionType,
+  builtinIsOn,
+  PRESET_FREE_RULES,
 } from "core/tools/permissions/policy";
 import type { RuleDecision } from "core/tools/permissions/rules";
 import type { StoredCustomSet } from "core/tools/permissions/settingsFile";
@@ -130,22 +132,19 @@ export function settingChanges(
     out.push({
       key: `levels.${area} (${POLICY_AREA_LABELS[area]})`,
       before: policyLevelLabel(area, a),
-      after:
-        b === "idgaf"
-          ? "IDGAF, for this session only (never saved)"
-          : policyLevelLabel(area, b),
-      loosens: POLICY_LEVELS.indexOf(b) > POLICY_LEVELS.indexOf(a),
+      after: policyLevelLabel(area, b),
+      loosens: levelRank(b) > levelRank(a),
     });
   }
   for (const rule of BUILTIN_RULES) {
-    const a = from.builtin[rule.id] !== false;
-    const b = to.builtin[rule.id] !== false;
+    const a = builtinIsOn(from.builtin, rule.id);
+    const b = builtinIsOn(to.builtin, rule.id);
     if (a === b) continue;
     out.push({
       key: `builtin.${rule.id}`,
       before: a ? "on" : "off",
       after: b ? "on" : "off",
-      loosens: a && !b,
+      loosens: a && !b && !PRESET_FREE_RULES.has(rule.id),
     });
   }
   if (from.maxNewPlanItems !== to.maxNewPlanItems) {
@@ -220,8 +219,8 @@ export function settingChanges(
 /**
  * The custom set to keep at `levels.custom` when this draft is saved, or
  * undefined to leave the file's as it is: a draft at a preset's levels is
- * that preset (and the old set stays recallable), and a set with IDGAF in it
- * or one started from IDGAF is for this session only (owner decision O2).
+ * that preset (and the old set stays recallable). A set started from IDGAF is
+ * saved like any other: IDGAF is a preset, not a mode that lasts a session.
  * `from` is the preset it started from; from "what is set now", the preset
  * those levels matched, or the stored set's own `from` when they were it.
  */
@@ -232,14 +231,11 @@ export function customSetToStore(
 ): StoredCustomSet | undefined {
   const { base, levels } = draft;
   if (presetOf(levels)) return undefined;
-  if (base === "idgaf" || POLICY_AREAS.some((a) => levels[a] === "idgaf")) {
-    return undefined;
-  }
   let from: StoredCustomSet["from"];
   if (base !== "current") from = base;
   else {
     const was = presetOf(current);
-    if (was && was !== "idgaf") from = was;
+    if (was) from = was;
     else if (
       stored &&
       POLICY_AREAS.every((a) => stored.levels[a] === current[a])

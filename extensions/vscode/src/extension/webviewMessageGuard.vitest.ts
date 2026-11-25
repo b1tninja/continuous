@@ -23,6 +23,12 @@ describe("policySavePayloadOk", () => {
   it("accepts a known level and rejects an unknown one", () => {
     expect(policySavePayloadOk({ levels: { tools: "manual" } })).toBe(true);
     expect(policySavePayloadOk({ levels: { tools: "allow-all" } })).toBe(false);
+    // idgaf is a preset, not a level; Delegate is Questions' only
+    expect(policySavePayloadOk({ levels: { tools: "idgaf" } })).toBe(false);
+    expect(policySavePayloadOk({ levels: { tools: "delegate" } })).toBe(false);
+    expect(policySavePayloadOk({ levels: { questions: "delegate" } })).toBe(
+      true,
+    );
     expect(policySavePayloadOk({ levels: { notAnArea: "manual" } })).toBe(
       false,
     );

@@ -1,3 +1,4 @@
+import { builtinIsOn } from "core/tools/permissions/policy";
 import { maskCommandForDisplay } from "core/tools/permissions/displayMask";
 import { ShieldExclamationIcon } from "@heroicons/react/24/outline";
 import { useEffect, useId, useRef, useState } from "react";
@@ -141,7 +142,7 @@ export function RecentlyBlocked() {
               )}
               {!canAllowOnce(item) &&
                 (builtinForBlockedCall(item) ? (
-                  builtin?.[builtinForBlockedCall(item)!] === false ? (
+                  !builtinIsOn(builtin, builtinForBlockedCall(item)!) ? (
                     <div className="text-description-muted">
                       This check is off. Ask the agent to try again.
                     </div>

@@ -1,7 +1,7 @@
 import {
-  BoltIcon,
   EyeIcon,
   HandRaisedIcon,
+  PaperAirplaneIcon,
   PlayIcon,
   ShieldCheckIcon,
   SparklesIcon,
@@ -15,7 +15,7 @@ import {
  * A glyph and a colour for each level, so a chip reads without its text: the
  * glyph says what happens (a raised hand asks you, a shield checks against
  * your rules, sparkles is the reviewer model, a play triangle lets rules decide,
- * a bolt ignores them) and the colour says how far the trust goes, from green
+ * and a bolt, on the IDGAF chip only, means no check is on) and the colour says how far the trust goes, from green
  * (you decide) through blue (a reviewer) and amber (rules only) to red
  * (nothing checks).
  */
@@ -24,7 +24,8 @@ export const LEVEL_GLYPHS: Record<PolicyLevel, typeof EyeIcon> = {
   cautious: ShieldCheckIcon,
   automatic: SparklesIcon,
   permissive: PlayIcon,
-  idgaf: BoltIcon,
+  // Questions only: the decision is handed off
+  delegate: PaperAirplaneIcon,
 };
 
 /**
@@ -39,17 +40,25 @@ export const LEVEL_TONES: Record<PolicyLevel, { chip: string; icon: string }> =
     cautious: { chip: "bg-success/20 text-foreground", icon: "text-success" },
     automatic: { chip: "bg-link/20 text-foreground", icon: "text-link" },
     permissive: { chip: "bg-warning/20 text-foreground", icon: "text-warning" },
-    idgaf: { chip: "bg-error/20 text-foreground", icon: "text-error" },
+    delegate: { chip: "bg-warning/20 text-foreground", icon: "text-warning" },
   };
+
+/**
+ * The IDGAF preset is not a level, so it has no entry above; its chip is red
+ * because no safety check is on.
+ */
+export const IDGAF_TONE = {
+  chip: "bg-error/20 text-foreground",
+  icon: "text-error",
+};
 
 /** Every chip and the fold button is a target of at least 24 px (WCAG 2.5.8). */
 export const CHIP =
   "flex-none min-h-6 gap-1 rounded-full border-none px-2 transition-colors duration-200 hover:brightness-110";
 
 /**
- * What the top-level chip's tooltip and description say. The chip and the area
- * selectors already show which areas are at IDGAF and that nothing asks, so
- * this names only the part that is easy to miss: rules stop applying too,
- * the locked ones included.
+ * What the IDGAF chip's tooltip and description say: the part that is easy to
+ * miss, that with no check on rules and locks stop applying too.
  */
-export const IDGAF_SENTENCE = "Every rule is ignored, locked rules included.";
+export const IDGAF_SENTENCE =
+  "No safety check is on, so rules, protected files and locks stop nothing.";

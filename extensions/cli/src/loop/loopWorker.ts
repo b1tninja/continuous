@@ -1,12 +1,16 @@
 import type { LoopReminder, LoopState, TaskPlan, Usage } from "core/index.js";
 import type { AuditAgent } from "core/tools/permissions/audit/record.js";
-import type { PolicyLevels } from "core/tools/permissions/policy.js";
+import type {
+  BuiltinRuleId,
+  PolicyLevels,
+} from "core/tools/permissions/policy.js";
 import type { ParallelRunResult } from "core/util/loopMode.js";
 
 import { setCliAuditAgent } from "../audit/cliAudit.js";
 import { captureWorktreeDiff } from "../commands/review/worktree.js";
 import {
   loadPolicyFile,
+  setPolicyBuiltin,
   setPolicyLevels,
 } from "../permissions/policyLevels.js";
 import type { PermissionMode } from "../permissions/types.js";
@@ -59,6 +63,12 @@ export interface LoopWorkerPolicy {
   exclude?: string[];
   levels?: PolicyLevels;
   /**
+   * The parent's safety checks as they are in force there (`--auto` turns them
+   * all off for the run). The levels alone do not say: Permissive is the same
+   * level with the checks on or off. Absent from an older parent: the file's.
+   */
+  builtin?: Partial<Record<BuiltinRuleId, boolean>>;
+  /**
    * Whether the parent runs headless (`-p`, `serve`). A worker is always
    * started headless, since nobody types into it; this says which default
    * lists it takes. Absent from an older parent: the headless ones, as before.
@@ -96,6 +106,7 @@ export function applyLoopWorkerPolicy(
 ): void {
   loadPolicyFile(file);
   if (policy?.levels) setPolicyLevels(policy.levels);
+  if (policy?.builtin) setPolicyBuiltin(policy.builtin);
 }
 
 export interface LoopWorkerInput {

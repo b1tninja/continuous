@@ -7,7 +7,7 @@ import {
 // @ts-ignore
 import { ContinueError, ContinueErrorReason } from "core/util/errors.js";
 import { getWebConfig } from "core/util/webConfig.js";
-import { ChatCompletionTool } from "openai/resources.mjs";
+import { ChatCompletionFunctionTool } from "openai/resources.mjs";
 
 import { isModelCapable } from "src/utils/modelCapability.js";
 
@@ -270,7 +270,7 @@ export function extractToolCalls(
 
 export function convertToolToChatCompletionTool(
   tool: Tool,
-): ChatCompletionTool {
+): ChatCompletionFunctionTool {
   return {
     type: "function" as const,
     function: {
