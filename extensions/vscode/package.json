@@ -1023,7 +1023,7 @@
     "e2e:ci:run-screenshots": "npm run e2e:compile && npm run e2e:copy-vsix && npm run e2e:install-vsix && npm run e2e:install-extensions && CONTINUE_GLOBAL_DIR=e2e/screenshots-continue npm run e2e:test"
   },
   "devDependencies": {
-    "@biomejs/biome": "1.6.4",
+    "@biomejs/biome": "2.6.8",
     "@openapitools/openapi-generator-cli": "^2.42.2",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.6",
