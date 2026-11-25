@@ -95,28 +95,31 @@ describe("Plan mode holds tools that may make changes", () => {
     }
   });
 
-  async function planCall(level: "permissive" | "idgaf") {
+  async function planCall(holdPlanMode: boolean) {
     const ide = new MockIdeMessenger();
     ide.responseHandlers["tools/evaluatePolicy"] = async () =>
-      ({ policy: ALLOW, source: level }) as any;
+      ({ policy: ALLOW, source: "permissive" }) as any;
     return evaluateToolPolicy(
       ide,
       [mcpTool],
       call("github_create_issue"),
       { github_create_issue: ALLOW },
-      { levels: { ...DEFAULT_POLICY_LEVELS, tools: level } },
+      {
+        levels: { ...DEFAULT_POLICY_LEVELS, tools: "permissive" },
+        builtin: holdPlanMode ? {} : { "hold-plan-mode": false },
+      },
       "plan",
     );
   }
 
-  it("IDGAF runs it: the level says everything runs", async () => {
-    const result = await planCall("idgaf");
+  it("with hold-plan-mode off, which the IDGAF preset does, Plan mode holds nothing", async () => {
+    const result = await planCall(false);
     expect(result.policy).toBe(ALLOW);
-    expect(result.source).toBe("idgaf");
+    expect(result.source).toBe("permissive");
   });
 
-  it("Permissive does not lift it: Plan mode changes nothing below IDGAF", async () => {
-    const result = await planCall("permissive");
+  it("Permissive does not lift it: only its own switch does", async () => {
+    const result = await planCall(true);
     expect(result.policy).toBe(ASK);
     expect(result.source).toBe("plan-mode");
   });

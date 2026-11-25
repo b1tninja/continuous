@@ -77,10 +77,8 @@ export function skippedProtections(
 
 /** What a level decided, for the decision chip. */
 export interface Loosening {
-  source: "permissive" | "idgaf";
+  source: "permissive";
   reason: string;
-  /** Allows the call whatever else applies (IDGAF). */
-  absolute?: boolean;
 }
 
 type ToolLike = Pick<
@@ -96,7 +94,8 @@ export interface LevelOfCall {
   /** `web` only when `levels.web` is set; unset, a web call is Tool use's (it follows it) */
   area: "context" | "tools" | "edits" | "web";
   /** Off and Listed exist on Web only */
-  level: PolicyLevel | Exclude<WebLevel, PolicyLevel>;
+  /** Never `delegate`: that is a Questions level, and no tool call is in that area */
+  level: WebLevel;
   /** A command that only reads, as the parser vouched for it */
   readOnly?: string;
 }
@@ -127,7 +126,8 @@ export function levelOfCall(
   }
   const area = areaOfTool(toolName, tool, call);
   if (!area) return undefined;
-  const level = approval.levels[area as PolicyArea];
+  const level = approval.levels[area as PolicyArea] as
+    Exclude<PolicyLevel, "delegate"> | undefined;
   if (!level) return undefined;
   const claim = area === "context" ? readOnlyClaim(call) : undefined;
   return {
@@ -187,13 +187,6 @@ export function approvalLoosening(
   if (!found) return undefined;
   const what = found.readOnly ? ` (the command ${found.readOnly})` : "";
 
-  if (found.level === "idgaf") {
-    return {
-      source: "idgaf",
-      reason: `Allowed: ${areaLabelOf(found.area)} is set to IDGAF${what}.`,
-      absolute: true,
-    };
-  }
   if (found.level === "permissive") {
     // A read outside the workspace still asks: Permissive is "no rule stops
     // it", and the tool's own workspace check is a protection, not a rule.

@@ -101,9 +101,10 @@ describe("holdForHeadsUp", () => {
     ).toBe(0);
   });
 
-  it("holds nothing at IDGAF", () => {
+  it("holds nothing at a level whose window is not the one set", () => {
+    // a window for Permissive does not apply to a call at Cautious
     const { store } = setup([call("a")], { permissive: 5 });
-    store.dispatch(setPolicyLevels({ ...LEVELS, tools: "idgaf" }));
+    store.dispatch(setPolicyLevels({ ...LEVELS, tools: "cautious" }));
     expect(
       holdForHeadsUp(store.getState(), store.dispatch, allowed(store, ["a"]))
         .size,

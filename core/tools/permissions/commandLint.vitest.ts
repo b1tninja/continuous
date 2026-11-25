@@ -133,12 +133,14 @@ describe("the shell that runs it", () => {
 });
 
 describe("formatLint", () => {
-  it("says not run, with the fix, and how to confirm a warning", () => {
-    const warn = formatLint(lintCommand("cat > a <<'EOF'\nx\nEOF", "bash"));
-    expect(warn).toContain("not run yet");
-    expect(warn).toContain("exactly the same command");
+  it("says not run, with the fix, and never invites sending the same command again", () => {
     const err = formatLint(lintCommand("cat <<EOF\nx\n", "bash"));
-    expect(err).toContain("Fix it and call again.");
+    expect(err).toContain("was not run");
+    expect(err).toContain("refused the same way");
+    expect(err).toContain("create_new_file");
+    expect(err).not.toContain("call again with exactly the same command");
+    const warn = formatLint(lintCommand("cat > a <<'EOF'\nx\nEOF", "bash"));
+    expect(warn).not.toContain("exactly the same command");
   });
 });
 
@@ -150,9 +152,9 @@ describe("commandLintGate", () => {
     expect(commandLintGate("git status", "bash", {})).toBeUndefined();
   });
 
-  it("stops a likely mistake once; the same command again runs", () => {
+  it("lets a likely mistake run, every time, with nothing to resend", () => {
     resetCommandLintGate();
-    expect(commandLintGate(heredocWrite, "bash", {})).toContain("not run yet");
+    expect(commandLintGate(heredocWrite, "bash", {})).toBeUndefined();
     expect(commandLintGate(heredocWrite, "bash", {})).toBeUndefined();
   });
 

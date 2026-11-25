@@ -18,10 +18,13 @@ import { applyPolicyUpdate, parsePolicyFile } from "./settingsFile";
 
 // `yolo` is what 2.14.x called the top level. It is read, never written.
 
-describe("the top level is IDGAF everywhere", () => {
-  it("is one level with one label on every area", () => {
-    expect(POLICY_LEVELS[POLICY_LEVELS.length - 1]).toBe("idgaf");
+describe("IDGAF is a preset, not a level", () => {
+  it("is not in the list of levels, and neither is yolo", () => {
+    expect(POLICY_LEVELS as readonly string[]).not.toContain("idgaf");
     expect(POLICY_LEVELS as readonly string[]).not.toContain("yolo");
+  });
+
+  it("every level has a plain label on every area", () => {
     for (const area of [
       "context",
       "tools",
@@ -29,7 +32,8 @@ describe("the top level is IDGAF everywhere", () => {
       "plan",
       "questions",
     ] as const) {
-      expect(policyLevelLabel(area, "idgaf")).toBe("IDGAF");
+      expect(policyLevelLabel(area, "permissive")).toBe("Permissive");
+      expect(policyLevelLabel(area, "automatic")).toBe("Automatic");
     }
   });
 
@@ -37,30 +41,32 @@ describe("the top level is IDGAF everywhere", () => {
     expect(Object.keys(POLICY_PRESETS)).toContain("idgaf");
     expect(Object.keys(POLICY_PRESETS)).not.toContain("yolo");
     expect(POLICY_PRESETS.idgaf.label).toBe("IDGAF");
-    expect(Object.values(POLICY_PRESETS.idgaf.levels)).toEqual(
-      Array(5).fill("idgaf"),
-    );
+    // Questions is a delegated decision, not a safety check: the preset leaves it
+    const { questions, ...areas } = POLICY_PRESETS.idgaf.levels;
+    expect(Object.values(areas)).toEqual(Array(4).fill("permissive"));
+    expect(questions).toBe(DEFAULT_POLICY_LEVELS.questions);
   });
 });
 
 describe("reading the old spelling", () => {
-  it("maps yolo, in any case, to idgaf", () => {
+  it("maps yolo and idgaf, in any case, to permissive", () => {
     for (const word of ["yolo", "YOLO", " Yolo ", "idgaf", "IDGAF"]) {
-      expect(parsePolicyLevel(word)).toBe("idgaf");
+      expect(parsePolicyLevel(word)).toBe("permissive");
     }
     expect(parsePolicyLevel("nope")).toBeUndefined();
     expect(parsePolicyLevel(3)).toBeUndefined();
     expect(isDeprecatedLevelSpelling("YOLO")).toBe(true);
-    expect(isDeprecatedLevelSpelling("idgaf")).toBe(false);
+    expect(isDeprecatedLevelSpelling("idgaf")).toBe(true);
   });
 
-  it("normalizePolicy reads yolo as idgaf without a problem", () => {
+  it("normalizePolicy reads yolo as permissive without a problem", () => {
     const { policy, problems } = normalizePolicy({
       levels: { tools: "yolo", questions: "YOLO", plan: "Manual" },
     });
     expect(problems).toEqual([]);
-    expect(policy.levels.tools).toBe("idgaf");
-    expect(policy.levels.questions).toBe("idgaf");
+    expect(policy.levels.tools).toBe("permissive");
+    // Questions' old IDGAF meant "the agent decides everything": Delegate
+    expect(policy.levels.questions).toBe("delegate");
     // an unknown word still falls back, with a notice
     expect(
       normalizePolicy({ levels: { tools: "bogus" } }).problems,
@@ -68,30 +74,36 @@ describe("reading the old spelling", () => {
     expect(policy.levels.context).toBe(DEFAULT_POLICY_LEVELS.context);
   });
 
-  it("a saved yolo in permissions.yaml is session-only, as idgaf is", () => {
+  it("a saved yolo in permissions.yaml is Permissive, with no notice", () => {
     const r = parsePolicyFile(
-      "levels:\n  tools: yolo\n  edits: YOLO\n  plan: manual\n",
+      "levels:\n  tools: yolo\n  edits: YOLO\n  plan: manual\n  questions: idgaf\n",
     );
-    expect(r.settings.levels.tools).toBe(DEFAULT_POLICY_LEVELS.tools);
-    expect(r.settings.levels.edits).toBe(DEFAULT_POLICY_LEVELS.edits);
+    expect(r.settings.levels.tools).toBe("permissive");
+    expect(r.settings.levels.edits).toBe("permissive");
     expect(r.settings.levels.plan).toBe("manual");
-    expect(r.notices.join("\n")).toContain(
-      "levels.tools: idgaf is for one session",
-    );
-    expect(r.notices.join("\n")).not.toMatch(/yolo/i);
+    // Questions never had a check to switch off: it was "the agent decides"
+    expect(r.settings.levels.questions).toBe("delegate");
+    expect(r.notices.join("\n")).not.toMatch(/yolo|idgaf|session/i);
   });
 });
 
 describe("writing", () => {
-  it("never writes yolo or idgaf to permissions.yaml", () => {
+  it("never writes yolo or idgaf to permissions.yaml: it writes the current level", () => {
     const text = applyPolicyUpdate("levels:\n  tools: manual\n", {
-      levels: { ...DEFAULT_POLICY_LEVELS, tools: "idgaf", plan: "idgaf" },
+      levels: {
+        ...DEFAULT_POLICY_LEVELS,
+        tools: "idgaf" as never,
+        plan: "yolo" as never,
+        questions: "idgaf" as never,
+      },
     });
-    expect(text).not.toMatch(/yolo/i);
-    expect(text).not.toContain("idgaf");
+    expect(text).not.toMatch(/yolo|idgaf/i);
+    expect(text).toMatch(/tools: permissive/);
+    expect(text).toMatch(/plan: permissive/);
+    expect(text).toMatch(/questions: delegate/);
   });
 
-  it("a loop saved with yolo is restored with idgaf", () => {
+  it("a loop saved with yolo is restored as Delegate, which is what its Questions IDGAF meant", () => {
     const plan: TaskPlan = {
       items: [{ id: "1", text: "A", status: "pending" }],
       updatedAt: "2026-11-08T10:00:00Z",
@@ -99,12 +111,12 @@ describe("writing", () => {
     const loop = createLoop(plan, {
       now: new Date("2026-11-08T10:00:00Z"),
       sessionTokens: 0,
-      policy: { plan: "permissive", questions: "idgaf" },
+      policy: { plan: "permissive", questions: "delegate" },
     });
     const old = JSON.parse(JSON.stringify(loop));
     old.policy.questions = "yolo";
     const restored = restoreLoop(old)!;
-    expect(restored.policy?.questions).toBe("idgaf");
+    expect(restored.policy?.questions).toBe("delegate");
     expect(JSON.stringify(restored)).not.toMatch(/yolo/i);
   });
 });

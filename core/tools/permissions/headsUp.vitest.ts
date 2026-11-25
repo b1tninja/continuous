@@ -104,25 +104,22 @@ describe("levels.headsUp in permissions.yaml", () => {
     expect(r.settings.headsUp).toEqual({ cautious: 5 });
   });
 
-  it("reads a window for IDGAF, the top level, like any other", () => {
+  it("ignores a window for idgaf, which is a preset and not a level", () => {
     expect(
       read("levels:\n  headsUp:\n    idgaf: 5\n    manual: 5\n").settings
         .headsUp,
-    ).toEqual({
-      manual: 5,
-      idgaf: 5,
-    });
+    ).toEqual({ manual: 5 });
   });
 
-  it("IDGAF has no window of 30: the heads-up values are the same for every level", () => {
+  it("no level has a window of 30: the heads-up values are the same for every level", () => {
     expect(
-      read("levels:\n  headsUp:\n    idgaf: 30\n").settings.headsUp,
+      read("levels:\n  headsUp:\n    permissive: 30\n").settings.headsUp,
     ).toBeUndefined();
   });
 
-  it("writes IDGAF's window", () => {
-    const out = written(undefined, { headsUp: { idgaf: 5 } });
-    expect(out.levels.headsUp).toEqual({ idgaf: 5 });
+  it("writes the window of a level", () => {
+    const out = written(undefined, { headsUp: { permissive: 5 } });
+    expect(out.levels.headsUp).toEqual({ permissive: 5 });
   });
 
   it("writes inside levels and keeps the timer and the levels", () => {
@@ -155,12 +152,12 @@ describe("levels.headsUp in permissions.yaml", () => {
     expect(written(start, { headsUp: {} }).levels).toBeUndefined();
   });
 
-  it("refuses a window that is not offered and an unknown level, and takes IDGAF", () => {
+  it("refuses a window that is not offered and an unknown level, idgaf included", () => {
     expect(
       policyUpdateProblem({ headsUp: { cautious: 30 } as never }),
     ).toContain("5 or 10");
-    expect(policyUpdateProblem({ headsUp: { idgaf: 5 } })).toBeUndefined();
-    expect(policyUpdateProblem({ headsUp: { idgaf: 15 } as never })).toContain(
+    // idgaf is a preset, not a level: there is no window to set for it
+    expect(policyUpdateProblem({ headsUp: { idgaf: 5 } as never })).toContain(
       "idgaf",
     );
     expect(policyUpdateProblem({ headsUp: { bogus: 5 } as never })).toContain(

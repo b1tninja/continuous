@@ -5,13 +5,7 @@ import { parsePermissions } from "./names";
 import { DEFAULT_POLICY_LEVELS, type PolicyLevel } from "./policy";
 import { builtinForPreset } from "./safetyDegrees";
 
-const LEVELS: PolicyLevel[] = [
-  "manual",
-  "cautious",
-  "automatic",
-  "permissive",
-  "idgaf",
-];
+const LEVELS: PolicyLevel[] = ["manual", "cautious", "permissive", "automatic"];
 
 const tool = (changed: boolean) =>
   ({
@@ -34,6 +28,7 @@ function run(
   permissions?: Parameters<
     typeof evaluateToolPolicyWithRules
   >[0]["permissions"],
+  builtin?: Record<string, boolean>,
 ) {
   return evaluateToolPolicyWithRules({
     tool: tool(changed),
@@ -43,14 +38,13 @@ function run(
     permissions,
     approval: {
       levels: { ...DEFAULT_POLICY_LEVELS, tools: level },
-      // The IDGAF preset leaves no check on
-      ...(level === "idgaf" ? { builtin: builtinForPreset("idgaf") } : {}),
+      ...(builtin ? { builtin } : {}),
     },
   } as never);
 }
 
 describe("an MCP tool whose definition changed since approval", () => {
-  it.each(LEVELS.filter((l) => l !== "idgaf"))(
+  it.each(LEVELS)(
     "asks at %s, even when the tool would run without asking",
     (level) => {
       for (const base of [
@@ -67,10 +61,29 @@ describe("an MCP tool whose definition changed since approval", () => {
     },
   );
 
-  it("is still passed by IDGAF, the owner's explicit choice", () => {
-    expect(run("idgaf", true, "allowedWithPermission").policy).toBe(
-      "allowedWithoutPermission",
-    );
+  it("is passed once its own switch is off, which is what the IDGAF preset does", () => {
+    expect(
+      run("permissive", true, "allowedWithPermission", undefined, {
+        "approve-mcp-tools": false,
+      }).policy,
+    ).toBe("allowedWithoutPermission");
+    expect(
+      run(
+        "permissive",
+        true,
+        "allowedWithPermission",
+        undefined,
+        builtinForPreset("idgaf"),
+      ).policy,
+    ).toBe("allowedWithoutPermission");
+  });
+
+  it("is not passed by another switch being off", () => {
+    const r = run("permissive", true, "allowedWithPermission", undefined, {
+      "protect-config": false,
+      "protect-secrets": false,
+    });
+    expect(r.policy).toBe("allowedWithPermission");
   });
 
   it("is not loosened by an allow rule", () => {
@@ -103,7 +116,7 @@ describe("an MCP tool whose definition changed since approval", () => {
     expect(r.policy).toBe("disabled");
   });
 
-  it("a changed launch definition asks at every level but IDGAF and says so", () => {
+  it("a changed launch definition asks at every level while approve-mcp-tools is on, and says so", () => {
     const launchTool = {
       group: "docs",
       uri: "mcp://docs-id/search",
@@ -123,16 +136,24 @@ describe("an MCP tool whose definition changed since approval", () => {
         permissions: undefined,
         approval: {
           levels: { ...DEFAULT_POLICY_LEVELS, tools: level },
-          ...(level === "idgaf" ? { builtin: builtinForPreset("idgaf") } : {}),
         },
       } as never);
-      if (level === "idgaf") {
-        expect(r.policy).toBe("allowedWithoutPermission");
-      } else {
-        expect(r.policy).toBe("allowedWithPermission");
-        expect(r.reason).toContain("started differently");
-      }
+      expect(r.policy, level).toBe("allowedWithPermission");
+      expect(r.reason, level).toContain("started differently");
     }
+    // and not once the switch is off, which the IDGAF preset does
+    const off = evaluateToolPolicyWithRules({
+      tool: launchTool,
+      toolName: "docs_search",
+      basePolicy: "allowedWithoutPermission",
+      parsedArgs: {},
+      permissions: undefined,
+      approval: {
+        levels: { ...DEFAULT_POLICY_LEVELS, tools: "permissive" },
+        builtin: builtinForPreset("idgaf"),
+      },
+    } as never);
+    expect(off.policy).toBe("allowedWithoutPermission");
   });
 });
 

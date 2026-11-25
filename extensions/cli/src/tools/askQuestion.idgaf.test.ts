@@ -41,13 +41,13 @@ const args = {
 describe.each([
   ["the terminal UI", false],
   ["headless and serve", true],
-])("AskQuestion at Questions IDGAF in %s", (_name, headless) => {
+])("AskQuestion at Questions Delegate in %s", (_name, headless) => {
   beforeEach(() => {
     store.headless = headless;
     store.decisions = [];
     resetPendingQuestions();
     vi.mocked(quizService.askQuestion).mockClear();
-    setPolicyLevels({ ...DEFAULT_POLICY_LEVELS, questions: "idgaf" });
+    setPolicyLevels({ ...DEFAULT_POLICY_LEVELS, questions: "delegate" });
   });
   afterEach(() => resetPolicyLevels());
 
@@ -56,7 +56,7 @@ describe.each([
     expect(quizService.askQuestion).not.toHaveBeenCalled();
     expect(openPendingQuestions()).toHaveLength(0);
     expect(result).toContain(
-      "Auto-answered: ISO or readable? -> Readable (Questions: IDGAF)",
+      "Auto-answered: ISO or readable? -> Readable (Questions: Delegate)",
     );
     expect(result).toContain("Nobody was asked");
   });
@@ -82,7 +82,7 @@ describe.each([
     expect(store.decisions).toHaveLength(1);
     expect(store.decisions[0]).toMatchObject({
       by: "system",
-      source: "Questions: IDGAF",
+      source: "Questions: Delegate",
       policy: "allow",
       session: "test-session",
       tool: "question",
@@ -91,7 +91,7 @@ describe.each([
   });
 });
 
-describe("AskQuestion below IDGAF is unchanged", () => {
+describe("AskQuestion below Delegate is unchanged", () => {
   beforeEach(() => {
     store.decisions = [];
     resetPendingQuestions();

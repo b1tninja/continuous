@@ -24,7 +24,7 @@ buildscript {
 
 plugins {
     kotlin("jvm") version "2.4.21"
-    id("org.jetbrains.intellij.platform") version "2.20.0"
+    id("org.jetbrains.intellij.platform") version "2.20.1"
     id("org.jetbrains.changelog") version "2.5.0"
     id("org.jetbrains.qodana") version "0.1.13"
 }
@@ -83,14 +83,14 @@ dependencies {
     // lz4-java 1.8.0, OpenTelemetry 1.41.0, Ktor 2.3.12 and jsoup 1.18.1, all
     // with known advisories. Raise them to fixed releases;
     // newer Starter releases still carry some of them and need Java 21.
-    testIntegrationImplementation(platform("io.netty:netty-bom:4.2.20.Final"))
+    testIntegrationImplementation(platform("io.netty:netty-bom:4.2.21.Final"))
     testIntegrationImplementation(platform("com.fasterxml.jackson:jackson-bom:2.21.7"))
     testIntegrationImplementation(platform("io.opentelemetry:opentelemetry-bom:1.68.0"))
     testIntegrationImplementation(platform("io.opentelemetry:opentelemetry-bom-alpha:1.68.0-alpha"))
     testIntegrationImplementation(platform("io.ktor:ktor-bom:3.6.1"))
     constraints {
         testIntegrationImplementation("org.bouncycastle:bcprov-jdk18on:1.87")
-        testIntegrationImplementation("org.bouncycastle:bcpkix-jdk18on:1.86")
+        testIntegrationImplementation("org.bouncycastle:bcpkix-jdk18on:1.87")
         testIntegrationImplementation("org.bouncycastle:bcutil-jdk18on:1.87")
         testIntegrationImplementation("com.google.guava:guava:33.8.0-jre")
         testIntegrationImplementation("com.google.protobuf:protobuf-java:4.36.2")

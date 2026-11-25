@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   model: { assistant: undefined as any, authConfig: {} as any },
+  /** The permission service's mode: --auto leaves it "auto" */
+  mode: "normal" as "normal" | "plan" | "auto",
 }));
 
 vi.mock("../services/index.js", () => ({
@@ -15,7 +17,10 @@ vi.mock("../services/index.js", () => ({
     get: vi.fn(async () => state.model),
     getSync: vi.fn(() => ({ value: state.model })),
   },
-  services: { chatHistory: { getHistory: () => [] } },
+  services: {
+    chatHistory: { getHistory: () => [] },
+    toolPermissions: { getCurrentMode: () => state.mode },
+  },
 }));
 
 vi.mock("core/tools/permissions/audit/global.js", () => ({
@@ -50,6 +55,7 @@ import {
   getPolicyLevels,
   parsePolicySpec,
   resetPolicyLevels,
+  setPolicyBuiltin,
   setPolicyLevels,
 } from "./policyLevels.js";
 
@@ -104,6 +110,8 @@ function atLevels(spec: string) {
   const parsed = parsePolicySpec(spec);
   if (!parsed.ok) throw new Error(parsed.error);
   setPolicyLevels(parsed.levels);
+  // a preset brings its safety checks with its levels
+  if (parsed.builtin) setPolicyBuiltin(parsed.builtin);
 }
 
 describe("headless default lists (CO2)", () => {
@@ -204,8 +212,10 @@ describe("each level, headless", () => {
     ).toEqual({ approved: true });
   });
 
-  it("Permissive (handsOff): a call that always asks below IDGAF is still refused", async () => {
+  it("Permissive: a call its check always asks about is still refused while that check is on", async () => {
+    // The levels of Hands off, with the dependency check left on: an install asks
     atLevels("handsOff");
+    setPolicyBuiltin({});
     const r = await checkToolPermissionApproval(
       headlessLists(),
       bash("npm install left-pad"),
@@ -217,7 +227,18 @@ describe("each level, headless", () => {
     expect(r.denialMessage).toMatch(/headless/);
   });
 
-  it("IDGAF: everything runs, nothing is refused or asked", async () => {
+  it("Hands off turns that check off itself, so the same install runs under the preset", async () => {
+    atLevels("handsOff");
+    const r = await checkToolPermissionApproval(
+      headlessLists(),
+      bash("npm install left-pad"),
+      {},
+      true,
+    );
+    expect(r.approved).toBe(true);
+  });
+
+  it("the IDGAF preset: everything runs, nothing is refused or asked", async () => {
     atLevels("idgaf");
     for (const call of [bash("npm install left-pad"), write(), mcpTool()]) {
       expect(
@@ -228,18 +249,35 @@ describe("each level, headless", () => {
     expect(stderr).not.toHaveBeenCalled();
   });
 
-  it("--auto: IDGAF on the tool areas, so the command runs headless", async () => {
+  it("--auto: the IDGAF preset for the run, so the command runs headless", async () => {
     const levels = effectiveLevels("auto");
-    expect(levels.tools).toBe("idgaf");
+    expect(levels.tools).toBe("permissive");
     setPolicyLevels(levels);
-    expect(
-      await checkToolPermissionApproval(
-        headlessLists(),
-        bash("npm install left-pad"),
-        {},
-        true,
-      ),
-    ).toEqual({ approved: true });
+    // the permission service is in auto mode, as --auto leaves it
+    state.mode = "auto";
+    try {
+      expect(
+        await checkToolPermissionApproval(
+          headlessLists(),
+          bash("npm install left-pad"),
+          {},
+          true,
+        ),
+      ).toEqual({ approved: true });
+    } finally {
+      state.mode = "normal";
+    }
+  });
+
+  it("the same levels with the checks on still refuse it: the levels alone do not run it", async () => {
+    setPolicyLevels(effectiveLevels("auto"));
+    const r = await checkToolPermissionApproval(
+      headlessLists(),
+      bash("npm install left-pad"),
+      {},
+      true,
+    );
+    expect(r.approved).toBe(false);
   });
 
   it("the terminal UI still asks the person for the same call", async () => {
@@ -350,13 +388,13 @@ describe("--policy <level|file>", () => {
     ).toThrow(/--policy: no policy file at/);
   });
 
-  it("a file cannot set IDGAF (one session only, as in permissions.yaml)", () => {
+  it("a file's idgaf is read as Permissive, as in permissions.yaml", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cn-policy-"));
     try {
       const file = path.join(dir, "p.yaml");
       fs.writeFileSync(file, "levels:\n  tools: idgaf\n");
       processCommandFlags({ policy: file });
-      expect(getPolicyLevels().tools).not.toBe("idgaf");
+      expect(getPolicyLevels().tools).toBe("permissive");
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -379,7 +417,7 @@ describe("the start-up line", () => {
     announceHeadlessPolicy({ auto: true }, (l) => out.push(l));
     announceHeadlessPolicy({ policy: "handsOff" }, (l) => out.push(l));
     expect(out[0]).toContain("at --auto");
-    expect(out[0]).toContain("IDGAF");
+    expect(out[0]).toContain("IDGAF: no safety check is on");
     expect(out[1]).toContain("at --policy handsOff");
   });
 

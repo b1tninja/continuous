@@ -21,8 +21,10 @@ function write(
   tool: typeof createNewFileTool | typeof editFileTool,
   filepath: string,
   opts: {
-    edits: PolicyLevel;
-    tools?: PolicyLevel;
+    // "idgaf" is this file's word for Permissive (the preset's switches, when
+    // the test passes them): the retired level is not a PolicyLevel any more
+    edits: PolicyLevel | "idgaf";
+    tools?: PolicyLevel | "idgaf";
     within?: boolean;
     permissions?: EvaluateInput["permissions"];
     floor?: string[];
@@ -52,8 +54,9 @@ function write(
     approval: {
       levels: {
         context: "cautious",
-        tools: opts.tools ?? "cautious",
-        edits: opts.edits,
+        tools:
+          opts.tools === "idgaf" ? "permissive" : (opts.tools ?? "cautious"),
+        edits: opts.edits === "idgaf" ? "permissive" : opts.edits,
         plan: "cautious",
         questions: "cautious",
       },
@@ -70,8 +73,8 @@ describe("File edits outside the workspace, by level", () => {
     for (const tool of TOOLS) {
       const r = write(tool, OUTSIDE, { edits: "idgaf", builtin: NO_CHECKS });
       expect(r.policy, tool.function.name).toBe(ALLOW);
-      expect(r.source).toBe("idgaf");
-      expect(r.reason).toContain("File edits is set to IDGAF");
+      expect(r.source).toBe("permissive");
+      expect(r.reason).toContain("File edits is Permissive");
       expect(r.reason).toContain("The target is outside the workspace: ");
       // a POSIX path on a Windows host gains a drive letter
       expect(r.reason).toContain(OUTSIDE);
@@ -87,7 +90,7 @@ describe("File edits outside the workspace, by level", () => {
   });
 
   it("turning only that check off lets it through, at any level", () => {
-    for (const edits of ["cautious", "permissive", "idgaf"] as const) {
+    for (const edits of ["cautious", "permissive", "automatic"] as const) {
       expect(
         write(createNewFileTool, OUTSIDE, {
           edits,
@@ -142,23 +145,36 @@ describe("File edits outside the workspace, by level", () => {
     ).toBe(ALLOW);
   });
 
-  it("IDGAF runs what the floor or the policy-file lock would refuse, and records it", () => {
+  it("the floor and the policy-file lock are each their own switch", () => {
+    const floor = ["writeFile(/srv/other/**)"];
+    // every check off: nothing stands in front of either
     const floored = write(createNewFileTool, OUTSIDE, {
       edits: "idgaf",
       builtin: NO_CHECKS,
-      floor: ["writeFile(/srv/other/**)"],
+      floor,
     });
     expect(floored.policy).toBe(ALLOW);
-    expect(floored.idgafOverride).toMatchObject({
-      policy: OFF,
-      source: "floor",
-    });
+    expect(floored).not.toHaveProperty("idgafOverride");
     const own = write(createNewFileTool, "/home/me/.continue/config.yaml", {
       edits: "idgaf",
       builtin: NO_CHECKS,
     });
     expect(own.policy).toBe(ALLOW);
-    expect(own.idgafOverride).toMatchObject({ policy: OFF, source: "floor" });
+    expect(own).not.toHaveProperty("idgafOverride");
+    // turn back on only the switch of each, and each stops it
+    expect(
+      write(createNewFileTool, OUTSIDE, {
+        edits: "idgaf",
+        builtin: { ...NO_CHECKS, "apply-rules": true },
+        floor,
+      }),
+    ).toMatchObject({ policy: OFF, source: "floor" });
+    expect(
+      write(createNewFileTool, "/home/me/.continue/config.yaml", {
+        edits: "idgaf",
+        builtin: { ...NO_CHECKS, "protect-policy-files": true },
+      }),
+    ).toMatchObject({ policy: ASK });
   });
 
   it("Manual, Cautious and Automatic still ask, with the note", () => {
@@ -177,10 +193,10 @@ describe("File edits outside the workspace, by level", () => {
     expect(r.source).toBe("protected-path");
   });
 
-  it("another area at IDGAF does not free a file edit", () => {
+  it("another area at Permissive does not free a file edit", () => {
     const r = write(createNewFileTool, OUTSIDE, {
       edits: "cautious",
-      tools: "idgaf",
+      tools: "permissive",
     });
     expect(r.policy).toBe(ASK);
   });

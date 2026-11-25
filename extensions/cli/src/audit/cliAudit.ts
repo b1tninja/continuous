@@ -1,20 +1,13 @@
 import { getAuditTrail } from "core/tools/permissions/audit/global.js";
-import { auditWouldHave } from "core/tools/permissions/audit/hook.js";
 import { mainAuditAgent } from "core/tools/permissions/audit/identity.js";
-import type {
-  AuditAgent,
-  AuditWouldHave,
-} from "core/tools/permissions/audit/record.js";
+import type { AuditAgent } from "core/tools/permissions/audit/record.js";
 import type { AuditTrail } from "core/tools/permissions/audit/trail.js";
-import type { IdgafOverride } from "core/tools/permissions/evaluate.js";
 import { taintedField } from "core/tools/permissions/taint/taintWiring.js";
 
 import { activeStreamJson } from "../headless/streamJsonRun.js";
 import { CLI_SESSION_ID } from "../permissions/coreRules.js";
 import { getCurrentSession } from "../session.js";
 import { logger } from "../util/logger.js";
-
-import { noteIdgafObjection } from "./idgafObjections.js";
 
 /**
  * The CLI's side of the audit trail (plans/reviewer-audit.md, P12c): the call's
@@ -59,7 +52,6 @@ export interface ApprovalTrace {
     rule?: string;
     reason?: string;
     reviewer?: Record<string, unknown>;
-    idgafOverride?: IdgafOverride;
   };
   /** A person was asked (a prompt was shown) */
   askedPerson?: boolean;
@@ -71,47 +63,22 @@ export interface ApprovalTrace {
     };
     held: { proposed: "allow" | "refuse"; seconds: number };
   };
-  /**
-   * The call was allowed and shown first as a heads-up: the level ran it past
-   * an ask or a refusal and has a window set (askCountdown.ts proposalForRanPast)
-   */
+  /** The call was allowed and shown first as a heads-up (a window set for its level) */
   headsUp?: boolean;
   /** Loop mode held the call as a question */
   held?: boolean;
   /** The role the tool table applied (core/tools/roleTools.ts) */
   role?: string;
-  /** IDGAF ran a call the CLI's own policy would have asked about or excluded */
+  /** The CLI's own ask or exclude was not read (apply-rules is off), so the call ran */
   idgafLifted?: "ask" | "exclude";
 }
 
 let answeredWithoutAuth = false;
 
-/**
- * What a rule or guard would have done to a call IDGAF ran: core's recorded
- * objection, else a Never (exclude) entry of the CLI's own lists. An `ask`
- * lifted from the CLI's lists is the tool's own setting (the catch-all), which
- * core does not count either.
- */
-export function idgafWouldHave(
-  trace: ApprovalTrace,
-): AuditWouldHave | undefined {
-  const o = trace.verdict?.idgafOverride;
-  if (o) return auditWouldHave(o);
-  if (trace.idgafLifted === "exclude") {
-    return {
-      policy: "deny",
-      source: "cli-policy",
-      reason:
-        "Excluded by the CLI's own tool policy (permissions.yaml, --exclude or a mode).",
-    };
-  }
-  return undefined;
-}
-
-/** The audit reason for a call IDGAF ran past the CLI's own ask or exclude. */
+/** The audit reason for a call whose CLI-side ask or exclude was not read. */
 function idgafLiftedReason(trace: ApprovalTrace): string | undefined {
   if (!trace.idgafLifted) return undefined;
-  return `Allowed: the level is IDGAF. The CLI's own policy would have ${trace.idgafLifted === "ask" ? "asked about" : "excluded"} this call.`;
+  return `Allowed: the "Apply my deny, ask and floor rules" check is off, so the CLI's own policy was not read. It would have ${trace.idgafLifted === "ask" ? "asked about" : "excluded"} this call.`;
 }
 
 /**
@@ -120,26 +87,6 @@ function idgafLiftedReason(trace: ApprovalTrace): string | undefined {
  */
 export function setApprovalsAnsweredWithoutAuth(value: boolean): void {
   answeredWithoutAuth = value;
-}
-
-/**
- * What a rule or guard would have done, for the record, and one more on the
- * count of calls IDGAF ran past an objection. A heads-up the person declined
- * keeps the record (the level did decide to run it) and is not counted.
- */
-function countedWouldHave(
-  trace: ApprovalTrace,
-  approved: boolean,
-): AuditWouldHave | undefined {
-  try {
-    if (!approved && !trace.headsUp) return undefined;
-    const wouldHave = idgafWouldHave(trace);
-    if (wouldHave && approved) noteIdgafObjection();
-    return wouldHave;
-  } catch {
-    // counting never blocks a call
-    return undefined;
-  }
 }
 
 /**
@@ -165,7 +112,6 @@ export function recordCliDecision(
   trace: ApprovalTrace,
   result: { approved: boolean; denialMessage?: string },
 ): void {
-  const wouldHave = countedWouldHave(trace, result.approved);
   try {
     // --format stream-json reports the decision whether or not the trail is on
     activeStreamJson()?.toolDecision(call, trace, result);
@@ -215,7 +161,6 @@ export function recordCliDecision(
       // A heads-up the person declined was still allowed by the policy
       policy: result.approved || trace.headsUp ? "allow" : "deny",
       reason: v?.reason ?? idgafLiftedReason(trace) ?? result.denialMessage,
-      ...(wouldHave ? { level: "idgaf", wouldHave } : {}),
     });
     if (trace.headsUp) recordHeadsUpEnd(trail, call.id, trace, result.approved);
   } catch {

@@ -49,8 +49,8 @@ describe("policySaveLoosenings: what a save loosens", () => {
       ["levels.tools"],
     ],
     [
-      "IDGAF counts as raised, though it is never written",
-      { levels: { ...before.levels, edits: "idgaf" } },
+      "a retired idgaf is read as Permissive, which is a raise",
+      { levels: { ...before.levels, edits: "idgaf" as never } },
       ["levels.edits"],
     ],
     [
@@ -414,12 +414,11 @@ describe("levels.custom: the stored custom set", () => {
 
   it.each([
     [
-      "IDGAF in the set",
-      { levels: { ...DEFAULT_POLICY_LEVELS, tools: "idgaf" } },
+      "Delegate on a tool area",
+      { levels: { ...DEFAULT_POLICY_LEVELS, tools: "delegate" } },
     ],
     ["a missing area", { levels: { tools: "manual" } }],
     ["an unknown preset", { from: "lax", levels: DEFAULT_POLICY_LEVELS }],
-    ["IDGAF as the base", { from: "idgaf", levels: DEFAULT_POLICY_LEVELS }],
   ])("refuses to write, and does not offer on read, %s", async (_name, bad) => {
     await expect(
       savePolicyWithConfirmation(

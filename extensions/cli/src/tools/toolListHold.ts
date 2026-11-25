@@ -20,7 +20,7 @@ import {
   withheldToolRefusal,
 } from "core/tools/toolListHold.js";
 import { resolveToolSearchMode } from "core/tools/toolSearch.js";
-import type { ChatCompletionTool } from "openai/resources.mjs";
+import type { ChatCompletionFunctionTool } from "openai/resources.mjs";
 
 /**
  * The CLI's side of core/tools/toolListHold.ts (C80, C88). The tool list is
@@ -53,7 +53,7 @@ export function heldToolsLifetimeMs(ttl: unknown): number | undefined {
 
 interface HoldState {
   warm?: { at: number; tokens: number; model: string; lifetimeMs: number };
-  sent?: HeldToolList<ChatCompletionTool>;
+  sent?: HeldToolList<ChatCompletionFunctionTool>;
   applyNext: boolean;
   /** What is waiting as of the last request */
   pending: PendingToolChanges;
@@ -160,13 +160,17 @@ function noticeFor(
  * time a given set of changes starts to wait. Call once per request.
  */
 export function cliToolListForRequest(args: {
-  live: ChatCompletionTool[];
+  live: ChatCompletionFunctionTool[];
   /** Mode, model, Loop item, task list: a change here rebuilds on purpose */
   key: string;
   model: string;
   historyLength: number;
   now?: number;
-}): { tools: ChatCompletionTool[]; notice?: string; thinkingCut?: number } {
+}): {
+  tools: ChatCompletionFunctionTool[];
+  notice?: string;
+  thinkingCut?: number;
+} {
   const now = args.now ?? Date.now();
   const w = hold.warm;
   const warm =

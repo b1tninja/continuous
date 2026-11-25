@@ -471,7 +471,18 @@ function ModelSelect() {
         </ListboxButton>
         <ListboxOptions className="min-w-[160px]">
           <div className="flex items-center justify-between px-1.5 py-1">
-            <span className="text-xs font-medium text-description">Models</span>
+            <span className="flex min-w-0 items-baseline gap-1 text-xs">
+              <span className="font-medium text-description">Models</span>
+              {selectedProfile && (
+                <span
+                  data-testid="model-select-config"
+                  className="min-w-0 truncate text-description-muted"
+                  title={`Models from the config ${selectedProfile.title}`}
+                >
+                  {selectedProfile.title}
+                </span>
+              )}
+            </span>
             <div className="flex items-center gap-0.5">
               <Button
                 onClick={(e) => {

@@ -4,8 +4,6 @@ import {
   type TimerSettings,
 } from "core/tools/permissions/decisionTimer";
 import {
-  levelAsks,
-  levelRunsHeld,
   POLICY_LEVELS,
   type PolicyLevel,
 } from "core/tools/permissions/levelText";
@@ -14,10 +12,11 @@ import { policyLevelLabel } from "core/tools/permissions/policy";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks";
 import { changePolicyExtras } from "../../redux/thunks/policySettings";
 
-/** The levels that ask: each has a window for its asks and a heads-up. */
-const LEVELS = POLICY_LEVELS.filter(levelAsks);
-/** The levels that run what a lower level would hold (IDGAF): a heads-up only. */
-const TOP_LEVELS = POLICY_LEVELS.filter(levelRunsHeld);
+/**
+ * Every level that can ask has a window for its asks and a heads-up.
+ * Delegate (Questions only) never reaches a person, so it has none.
+ */
+const LEVELS = POLICY_LEVELS.filter((l) => l !== "delegate");
 
 type Which = "timer" | "headsUp";
 
@@ -76,50 +75,10 @@ function WindowSelect({
 }
 
 /**
- * The row of a level that never asks (IDGAF): no window for asks, and a delay
- * for the calls it runs past an ask or a refusal. The line under it says the
- * value in use in words, 0 included, so the state is never a bare "Off".
- */
-function TopLevelRow({ level }: { level: PolicyLevel }) {
-  const name = policyLevelLabel("tools", level);
-  const seconds = useAppSelector(
-    (s) => s.ui.policyExtras?.headsUp?.[level] ?? 0,
-  );
-  return (
-    <div className="contents">
-      <span>{name}</span>
-      <span
-        className="text-2xs text-description"
-        data-testid={`timer-${level}-none`}
-      >
-        Never asks
-      </span>
-      <WindowSelect
-        which="headsUp"
-        level={level}
-        options={HEADS_UP_SECONDS}
-        zero="0 s"
-        label={`Delay at ${name} before a call a lower level would have asked about or refused`}
-      />
-      <span
-        className="col-span-3 text-2xs text-description"
-        data-testid={`headsUp-${level}-state`}
-      >
-        {seconds === 0
-          ? `${name} delay: 0 seconds. Every call runs at once.`
-          : `${name} delay: ${seconds} seconds, for a call a lower level would have asked about or refused. Other calls run at once.`}
-      </span>
-    </div>
-  );
-}
-
-/**
  * The decision timer (core decisionTimer.ts): how long a decision is held for
  * a countdown before it takes effect, per level. Asks have windows up to 30 s;
  * a heads-up on an allowed call is 5 or 10 s. Not set, both are off.
  *
- * The top level, IDGAF, has no asks, so its row has a heads-up only: a delay
- * before a call it runs past an ask or a refusal. 0 is what it does unset.
  * `folded`: a fold header above already names it, so the heading is for
  * screen readers only.
  */
@@ -142,9 +101,7 @@ export function DecisionTimerCard({ folded = false }: { folded?: boolean }) {
         when its window ends; an allowed call with a heads-up runs. Asks that a
         rule or a guard raised keep waiting. The model is told when nobody
         answered. A turn adds at most the longest window to the wait. A window
-        that is not set is off. IDGAF has a delay of 0. Set one, and a call it
-        runs that a lower level would have asked about or refused is shown first
-        and runs when the delay ends.
+        that is not set is off.
       </p>
       <div
         className="grid grid-cols-[1fr_auto_auto] items-center gap-x-3 gap-y-1 text-xs"
@@ -174,9 +131,6 @@ export function DecisionTimerCard({ folded = false }: { folded?: boolean }) {
             </div>
           );
         })}
-        {TOP_LEVELS.map((level) => (
-          <TopLevelRow key={level} level={level} />
-        ))}
       </div>
     </section>
   );

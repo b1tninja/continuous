@@ -1,6 +1,6 @@
 import type { ModelConfig } from "@continuedev/config-yaml";
 import type { ChatHistoryItem } from "core/index.js";
-import type { ChatCompletionTool } from "openai/resources.mjs";
+import type { ChatCompletionFunctionTool } from "openai/resources.mjs";
 
 import { loopItemRunning } from "../loop/loopSession.js";
 import { services } from "../services/index.js";
@@ -31,12 +31,12 @@ function keyPart<T>(read: () => T, fallback: T): T {
  * of their own and always take the current list.
  */
 export function holdRequestTools(args: {
-  rawTools: ChatCompletionTool[];
+  rawTools: ChatCompletionFunctionTool[];
   model: ModelConfig;
   historyLength: number;
   main: boolean;
   callbacks?: StreamCallbacks;
-}): { tools: ChatCompletionTool[]; thinkingCut?: number } {
+}): { tools: ChatCompletionFunctionTool[]; thinkingCut?: number } {
   if (!args.main) return { tools: args.rawTools };
   const key = JSON.stringify([
     keyPart(() => services.toolPermissions?.getCurrentMode?.(), undefined),

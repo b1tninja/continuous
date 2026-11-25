@@ -2,7 +2,7 @@ import { ModelConfig } from "@continuedev/config-yaml";
 import { BaseLlmApi } from "@continuedev/openai-adapters";
 import type { ChatHistoryItem } from "core/index.js";
 import { encode } from "gpt-tokenizer";
-import { ChatCompletionTool } from "openai/resources.mjs";
+import { ChatCompletionFunctionTool } from "openai/resources.mjs";
 
 import { runPreCompactHooks } from "./hooks/lifecycleHooks.js";
 import { streamChatResponse } from "./stream/streamChatResponse.js";
@@ -256,7 +256,7 @@ export interface AutoCompactParams {
   chatHistory: ChatHistoryItem[];
   model: ModelConfig;
   systemMessage?: string;
-  tools?: ChatCompletionTool[];
+  tools?: ChatCompletionFunctionTool[];
 }
 
 /**

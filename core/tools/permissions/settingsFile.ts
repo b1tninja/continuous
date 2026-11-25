@@ -6,6 +6,9 @@ import {
   BUILTIN_RULES,
   DEFAULT_POLICY_LEVELS,
   normalizePolicy,
+  isRetiredTopLevel,
+  levelsOfArea,
+  parseWebLevel,
   parsePolicyLevel,
   POLICY_AREAS,
   POLICY_PRESETS,
@@ -80,11 +83,11 @@ export interface PolicyFileSettings extends PolicySettings {
  * that reads permissions.yaml accepts `levels` and reads only the five area
  * names inside it, so an older build ignores this entry instead of treating
  * the whole file as broken (an unknown top-level key does that; see the CLI's
- * permissionsYamlProblem). Never holds IDGAF, which is for one session only.
+ * permissionsYamlProblem).
  */
 export interface StoredCustomSet {
   /** The preset the set was made from; absent when it was made from another custom set */
-  from?: Exclude<PolicyPresetName, "idgaf">;
+  from?: PolicyPresetName;
   levels: PolicyLevels;
 }
 
@@ -144,16 +147,9 @@ export function parsePolicyFile(text: string | undefined): PolicyFileRead {
     }
   }
 
-  // IDGAF is never read from disk; `yolo` is its old spelling
+  // `idgaf` and `yolo` are old spellings of Permissive (Questions: Automatic);
+  // the switches in the file say what is checked
   const levelsIn: Record<string, unknown> = { ...(raw.levels ?? {}) };
-  for (const area of POLICY_AREAS) {
-    if (parsePolicyLevel(levelsIn[area]) === "idgaf") {
-      delete levelsIn[area];
-      notices.push(
-        `levels.${area}: idgaf is for one session only, so ${DEFAULT_POLICY_LEVELS[area]} applies.`,
-      );
-    }
-  }
   // Web (WB45): absent follows Tool use; IDGAF or an unknown value does too
   if (levelsIn.web !== undefined) {
     const web = storedWebLevel(levelsIn.web);
@@ -278,7 +274,7 @@ export function readCustomSet(value: unknown): StoredCustomSet | undefined {
   const out: Partial<PolicyLevels> = {};
   for (const area of POLICY_AREAS) {
     const level = parsePolicyLevel((levels as Record<string, unknown>)[area]);
-    if (!level || level === "idgaf") return undefined;
+    if (!level || !levelsOfArea(area).includes(level)) return undefined;
     out[area] = level;
   }
   if (from !== undefined && !isStorablePreset(from)) return undefined;
@@ -288,12 +284,9 @@ export function readCustomSet(value: unknown): StoredCustomSet | undefined {
   };
 }
 
-function isStorablePreset(
-  value: unknown,
-): value is Exclude<PolicyPresetName, "idgaf"> {
+function isStorablePreset(value: unknown): value is PolicyPresetName {
   return (
     typeof value === "string" &&
-    value !== "idgaf" &&
     Object.prototype.hasOwnProperty.call(POLICY_PRESETS, value)
   );
 }
@@ -355,7 +348,7 @@ export function policyUpdateProblem(
     const kept = Object.keys(parseTimerSettings(update.timer));
     const bad = given.filter((k) => !kept.includes(k));
     if (bad.length > 0) {
-      return `levels.timer: ${bad.join(", ")} cannot be set. Use manual, cautious, automatic or permissive, with 5, 10, 15 or 30 seconds (IDGAF has no timer).`;
+      return `levels.timer: ${bad.join(", ")} cannot be set. Use manual, cautious, permissive or automatic, with 5, 10, 15 or 30 seconds.`;
     }
   }
   if (update.headsUp) {
@@ -363,7 +356,7 @@ export function policyUpdateProblem(
     const kept = Object.keys(parseTimerSettings(update.headsUp, "headsUp"));
     const bad = given.filter((k) => !kept.includes(k));
     if (bad.length > 0) {
-      return `levels.headsUp: ${bad.join(", ")} cannot be set. Use manual, cautious, automatic, permissive or idgaf, with 5 or 10 seconds.`;
+      return `levels.headsUp: ${bad.join(", ")} cannot be set. Use manual, cautious, permissive, automatic or delegate, with 5 or 10 seconds.`;
     }
   }
   return undefined;
@@ -423,9 +416,34 @@ function dropEmptyMap(doc: YAML.Document, key: string): void {
   if (YAML.isMap(node) && node.items.length === 0) doc.delete(key);
 }
 
+/** The levels of an update, always in their current spelling. */
+function writeLevels(
+  doc: YAML.Document,
+  levels: NonNullable<PolicyFileUpdate["levels"]>,
+): void {
+  for (const area of POLICY_AREAS as readonly PolicyArea[]) {
+    // Always the current spelling: a retired `idgaf` or `yolo` is never written
+    const raw = levels[area];
+    const level =
+      area === "questions" && isRetiredTopLevel(raw)
+        ? "delegate"
+        : (parsePolicyLevel(raw) ?? raw);
+    doc.setIn(["levels", area], level);
+  }
+  // Web: written when given; given as undefined it follows Tool use again;
+  // left out, the file keeps what it has.
+  if (!Object.hasOwn(levels, "web")) return;
+  const web = levels.web;
+  if (web === undefined) {
+    if (doc.hasIn(["levels", "web"])) doc.deleteIn(["levels", "web"]);
+  } else {
+    doc.setIn(["levels", "web"], parseWebLevel(web) ?? web);
+  }
+}
+
 /**
  * The file's text with the update applied, keeping every other key and
- * comment. Levels at IDGAF are not written: the area keeps what the file had.
+ * comment. A retired `idgaf` or `yolo` is written as its current level.
  */
 export function applyPolicyUpdate(
   text: string | undefined,
@@ -434,23 +452,7 @@ export function applyPolicyUpdate(
   const doc = YAML.parseDocument(text?.trim() ? text : "{}");
   if (!YAML.isMap(doc.contents)) doc.contents = doc.createNode({}) as any;
 
-  if (update.levels) {
-    for (const area of POLICY_AREAS as readonly PolicyArea[]) {
-      const level = update.levels[area];
-      if (parsePolicyLevel(level) === "idgaf") continue;
-      doc.setIn(["levels", area], level);
-    }
-    // Web: written when given; given as undefined it follows Tool use again;
-    // left out, the file keeps what it has. IDGAF is never written.
-    if (Object.hasOwn(update.levels, "web")) {
-      const web = update.levels.web;
-      if (web === undefined) {
-        if (doc.hasIn(["levels", "web"])) doc.deleteIn(["levels", "web"]);
-      } else if (web !== "idgaf") {
-        doc.setIn(["levels", "web"], web);
-      }
-    }
-  }
+  if (update.levels) writeLevels(doc, update.levels);
   if (update.maxNewPlanItems !== undefined) {
     doc.setIn(["plan", "maxNewItems"], update.maxNewPlanItems);
   }

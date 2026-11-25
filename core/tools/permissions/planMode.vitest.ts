@@ -10,10 +10,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { autoReviewToolCall } from "./auto/handler";
 import { AutoReviewSessions } from "./auto/state";
-import { factOfDecision, proposalLine, propose } from "./decisionTimer";
 import { evaluateToolPolicyWithRules } from "./evaluate";
 import { onlyReads, PLAN_MODE_HOLD_REASON, planModeVerdict } from "./planMode";
 import { DEFAULT_POLICY_LEVELS, type PolicyLevels } from "./policy";
+import { builtinForPreset } from "./safetyDegrees";
 
 const ASK = "allowedWithPermission" as const;
 const ALLOW = "allowedWithoutPermission" as const;
@@ -69,11 +69,19 @@ describe("planModeVerdict: the verdict outside Plan mode, then Plan mode's", () 
     expect(planModeVerdict(deny, { readOnly: true })).toBe(deny);
   });
 
-  it("IDGAF runs it: that level runs every call in every mode", () => {
-    const verdict = { policy: ALLOW, source: "idgaf" };
-    expect(
-      planModeVerdict(verdict, { readOnly: false, levelRunsHeld: true }),
-    ).toBe(verdict);
+  it("with hold-plan-mode off, Plan mode holds nothing", () => {
+    const verdict = { policy: ALLOW, source: "permissive" };
+    expect(planModeVerdict(verdict, { readOnly: false, off: true })).toBe(
+      verdict,
+    );
+  });
+
+  it("no level lifts it: only its own switch does", () => {
+    const verdict = { policy: ALLOW, source: "permissive" };
+    expect(planModeVerdict(verdict, { readOnly: false })).not.toBe(verdict);
+    expect(planModeVerdict(verdict, { readOnly: false, off: false })).not.toBe(
+      verdict,
+    );
   });
 });
 
@@ -188,7 +196,12 @@ const CALLS: Record<string, Call> = {
 function evaluate(
   name: keyof typeof CALLS,
   level: Level,
-  opts: { rule?: boolean; planMode?: boolean; base?: ToolPolicy } = {},
+  opts: {
+    rule?: boolean;
+    planMode?: boolean;
+    base?: ToolPolicy;
+    builtin?: Record<string, boolean>;
+  } = {},
 ) {
   const call = CALLS[name];
   const levels = {
@@ -204,7 +217,7 @@ function evaluate(
     basePolicy: opts.base ?? (call.tool.readonly ? ALLOW : ASK),
     parsedArgs: call.parsedArgs,
     permissions: opts.rule ? { allow: [call.rule] } : undefined,
-    approval: { levels },
+    approval: { levels, ...(opts.builtin ? { builtin: opts.builtin } : {}) },
     cwd: repo,
     shell: "bash",
     planMode: opts.planMode ?? true,
@@ -313,25 +326,30 @@ describe("the engine in Plan mode: the truth table", () => {
     ).toEqual(outside);
   });
 
-  it("IDGAF runs it, and the decision says Plan mode would have asked", () => {
+  it("holds at every level, and only its own switch lifts it", () => {
     for (const name of ["touch x", "MCP tool, no read-only hint"] as const) {
-      const ran = evaluate(name, "idgaf");
-      expect(ran).toMatchObject({ policy: ALLOW, source: "idgaf" });
-      expect(ran.idgafOverride).toBeDefined();
+      for (const level of ["cautious", "permissive"] as const) {
+        const held = evaluate(name, level, { rule: level === "cautious" });
+        expect(held, `${name} ${level}`).toMatchObject({
+          policy: ASK,
+          source: "plan-mode",
+        });
+        const lifted = evaluate(name, level, {
+          rule: level === "cautious",
+          builtin: { "hold-plan-mode": false },
+        });
+        expect(lifted.policy, `${name} ${level}`).toBe(ALLOW);
+        expect(lifted.source).not.toBe("plan-mode");
+      }
     }
-    // Nothing else objected, so Plan mode is the objection on record
-    const ran = evaluate("MCP tool, no read-only hint", "idgaf", {
-      base: ALLOW,
+  });
+
+  it("the IDGAF preset's switches lift it, and record nothing", () => {
+    const ran = evaluate("touch x", "permissive", {
+      builtin: builtinForPreset("idgaf"),
     });
     expect(ran.policy).toBe(ALLOW);
-    expect(ran.idgafOverride).toEqual({
-      policy: ASK,
-      source: "plan-mode",
-      reason: PLAN_MODE_HOLD_REASON,
-    });
-    expect(ran.reason).toContain(
-      `Below IDGAF this call would have been asked: ${PLAN_MODE_HOLD_REASON}`,
-    );
+    expect(ran).not.toHaveProperty("idgafOverride");
   });
 
   it("changes nothing when the turn is not a Plan turn", () => {
@@ -402,113 +420,5 @@ describe("the reviewer in Plan mode", () => {
     const reply = await review("MCP tool, no read-only hint", false);
     expect(reply.by).not.toBe("rules");
     expect(asked).toBe(1);
-  });
-});
-
-describe("IDGAF with a heads-up window: what it ran past is shown first", () => {
-  const at = (seconds?: 5 | 10, attended = true) => ({
-    attended,
-    level: "idgaf" as const,
-    settings: {},
-    headsUp: seconds ? { idgaf: seconds } : undefined,
-    now: 0,
-  });
-  const proposalFor = (
-    name: keyof typeof CALLS,
-    seconds?: 5 | 10,
-    opts: Parameters<typeof evaluate>[2] = {},
-  ) => propose(factOfDecision(evaluate(name, "idgaf", opts)), at(seconds));
-
-  it("in Plan mode, a command that changes things is proposed, with Plan mode's reason", () => {
-    const p = proposalFor("mkdir x", 5);
-    expect(p).toMatchObject({ proposed: "allow", seconds: 5 });
-    expect(p?.decision.override).toEqual({
-      policy: ASK,
-      source: "plan-mode",
-      reason: PLAN_MODE_HOLD_REASON,
-    });
-    expect(proposalLine("allow", 5, p?.decision.override)).toBe(
-      `Runs in 5 s unless you answer. Below IDGAF this call would have been asked: ${PLAN_MODE_HOLD_REASON}`,
-    );
-  });
-
-  it("with the window at 0, the default, nothing is proposed: it runs at once", () => {
-    for (const name of Object.keys(CALLS)) {
-      expect(proposalFor(name), name).toBeUndefined();
-    }
-  });
-
-  it("a command that only reads would run below IDGAF too, so it is not delayed", () => {
-    for (const name of ["git log", "read-only tool"] as const) {
-      const ran = evaluate(name, "idgaf");
-      expect(ran.policy).toBe(ALLOW);
-      expect(ran.idgafOverride).toBeUndefined();
-      expect(proposalFor(name, 5)).toBeUndefined();
-    }
-  });
-
-  it("outside Plan mode, a call nothing would have stopped is not delayed", () => {
-    expect(proposalFor("mkdir x", 5, { planMode: false })).toBeUndefined();
-  });
-
-  it("nobody at the keyboard: no window", () => {
-    expect(
-      propose(factOfDecision(evaluate("mkdir x", "idgaf")), at(5, false)),
-    ).toBeUndefined();
-  });
-
-  it("outside Plan mode, a call an ask rule or a locked path would have stopped gets the window", () => {
-    const levels = {
-      ...DEFAULT_POLICY_LEVELS,
-      context: "idgaf",
-      tools: "idgaf",
-      edits: "idgaf",
-    } as PolicyLevels;
-    const write = (filepath: string, ask?: string) =>
-      evaluateToolPolicyWithRules({
-        tool: {
-          group: "Built-In",
-          evaluateToolCallPolicy: (base: ToolPolicy) => base,
-        } as any,
-        toolName: "create_new_file",
-        basePolicy: ALLOW,
-        parsedArgs: { filepath, contents: "x" },
-        processedArgs: {
-          resolvedPath: {
-            uri: `file://${filepath}`,
-            isWithinWorkspace: filepath.startsWith("/w/"),
-          },
-        },
-        permissions: ask ? { ask: [ask] } : undefined,
-        approval: { levels },
-      });
-
-    // An ask rule on a path: below IDGAF it would have asked
-    const asked = write("/w/secret/a.ts", "writeFile(**/secret/**)");
-    expect(asked.idgafOverride).toMatchObject({
-      policy: ASK,
-      source: "ask-rule",
-    });
-    expect(propose(factOfDecision(asked), at(5))).toMatchObject({
-      proposed: "allow",
-      seconds: 5,
-    });
-
-    // The policy file: below IDGAF it would have been refused
-    const locked = write("/home/me/.continue/permissions.yaml");
-    expect(locked.idgafOverride).toMatchObject({
-      policy: OFF,
-      protection: "config",
-    });
-    const p = propose(factOfDecision(locked), at(10));
-    expect(p).toMatchObject({ proposed: "allow", seconds: 10 });
-    expect(proposalLine("allow", 10, p?.decision.override)).toContain(
-      "Below IDGAF this call would have been refused: ",
-    );
-
-    // A plain file: nothing would have stopped it
-    expect(
-      propose(factOfDecision(write("/w/src/a.ts")), at(5)),
-    ).toBeUndefined();
   });
 });

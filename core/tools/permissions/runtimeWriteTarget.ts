@@ -372,14 +372,25 @@ function escapesThroughLink(path: string, root: string): boolean {
   }
 }
 
-/** Is a path that was worked out inside the workspace, with no `..` leaving it? */
-function insideWorkspace(path: string, cwd: string | undefined): boolean {
+/**
+ * Is a path that was worked out inside the workspace, with no `..` leaving it?
+ * The workspace is every folder the window opened and every folder the person
+ * added; a relative path is read from `cwd`, the first.
+ */
+function insideWorkspace(
+  path: string,
+  cwd: string | undefined,
+  roots: readonly string[] = [],
+): boolean {
   if (cwd === undefined) return false;
-  const root = norm(cwd);
+  const base = norm(cwd);
   const full = /^(?:[A-Za-z]:)?\//.test(path.replace(/\\/g, "/"))
     ? norm(path)
-    : norm(`${root}/${path}`);
-  return full === root || full.startsWith(`${root}/`);
+    : norm(`${base}/${path}`);
+  return [cwd, ...roots].some((r) => {
+    const root = norm(r);
+    return full === root || full.startsWith(`${root}/`);
+  });
 }
 
 /** Does a path, spelled out, name a file the product loads as config, code, rules or hooks? */
@@ -413,6 +424,8 @@ export function runtimeWriteTarget(
   where: {
     env?: Record<string, string | undefined>;
     platform?: string;
+    /** Every workspace folder, opened and added, as paths */
+    roots?: readonly string[];
   } = {},
 ): string | undefined {
   let homeCd = false;
@@ -449,7 +462,7 @@ export function runtimeWriteTarget(
         tempRoot !== undefined &&
         within(norm(path), norm(tempRoot)) &&
         !escapesThroughLink(path, tempRoot);
-      if (!inTemp && !insideWorkspace(path, cwd)) {
+      if (!inTemp && !insideWorkspace(path, cwd, where.roots)) {
         return `a write to ${short(typed)}, which is outside the workspace and the temp folder once its variable is read`;
       }
       if (namesPolicyFile(path, shell, cwd)) {

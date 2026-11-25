@@ -1,5 +1,5 @@
 import type { ChatHistoryItem } from "core/index.js";
-import type { ChatCompletionTool } from "openai/resources.mjs";
+import type { ChatCompletionFunctionTool } from "openai/resources.mjs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -16,11 +16,14 @@ import {
   withoutReasoningBefore,
 } from "./toolListHold.js";
 
-const tool = (name: string, description = name): ChatCompletionTool => ({
+const tool = (
+  name: string,
+  description = name,
+): ChatCompletionFunctionTool => ({
   type: "function",
   function: { name, description, parameters: { type: "object" } },
 });
-const names = (tools: ChatCompletionTool[]) =>
+const names = (tools: ChatCompletionFunctionTool[]) =>
   tools.map((t) => t.function.name);
 
 const MODEL = "claude-sonnet-4-6";
@@ -50,7 +53,7 @@ function firstRequest(tokens = 366_000, model = MODEL) {
 }
 
 const next = (
-  live: ChatCompletionTool[],
+  live: ChatCompletionFunctionTool[],
   at: number,
   model = MODEL,
   historyLength = 4,

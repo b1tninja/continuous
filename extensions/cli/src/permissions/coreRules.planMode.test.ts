@@ -42,7 +42,7 @@ const READS = { planMode: true as const, readOnlyTool: true };
 
 type Over = Partial<Parameters<typeof evaluateWithCoreRules>[0]>;
 
-const levels = (tools: "cautious" | "permissive" | "idgaf") => ({
+const levels = (tools: "cautious" | "permissive") => ({
   approval: { levels: { ...DEFAULT_POLICY_LEVELS, tools } },
 });
 
@@ -149,11 +149,21 @@ describe("Plan mode in the CLI, decided by the engine", () => {
     expect(await bash("mkdir x", levels("cautious"))).toEqual(outside);
   });
 
-  it("IDGAF runs it: that level runs every call", async () => {
-    expect(await bash("mkdir x", levels("idgaf"))).toMatchObject({
-      decision: "allow",
-      source: "idgaf",
+  it("Plan mode holds what would run, at Permissive, and only its own switch lifts it", async () => {
+    // At Cautious the call asks on its own, so there is nothing left to hold
+    expect((await bash("mkdir x", levels("cautious")))?.decision).toBe("ask");
+    expect(await bash("mkdir x", levels("permissive"))).toMatchObject({
+      decision: "ask",
+      source: "plan-mode",
     });
+    const lifted = await bash("mkdir x", {
+      ...levels("permissive"),
+      approval: {
+        levels: { ...DEFAULT_POLICY_LEVELS, tools: "permissive" },
+        builtin: { "hold-plan-mode": false },
+      },
+    });
+    expect(lifted?.decision).toBe("allow");
   });
 
   it("with the reviewer on, the call stays with the person", async () => {

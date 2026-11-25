@@ -175,32 +175,6 @@ function matchMcp(rules: ParsedRule[], name: string): RuleMatch | undefined {
  */
 export function decideToolCall(input: DecideInput): ToolDecision {
   const { base, evaluated } = input;
-  if (input.loosening?.absolute && base !== "disabled") {
-    // IDGAF ignores every rule, but not a safety check that is on: a block
-    // from the safety floor or a protected path exists only because its check
-    // is on (a check that is off was skipped), so it stands. After the IDGAF
-    // preset no check is on, which is why nothing stands then.
-    if (evaluated === "disabled") {
-      return {
-        policy: "disabled",
-        source: "safety-floor",
-        reason: "This command is refused by the built-in safety check.",
-      };
-    }
-    if (input.protectedHit) {
-      return {
-        policy: "allowedWithPermission",
-        source: "protected-path",
-        protection: input.protectedHit.kind,
-        reason: protectedReason(input.protectedHit),
-      };
-    }
-    return {
-      policy: "allowedWithoutPermission",
-      source: input.loosening.source,
-      reason: input.loosening.reason,
-    };
-  }
   const match = findRuleMatch(input);
 
   if (match?.decision === "deny") {

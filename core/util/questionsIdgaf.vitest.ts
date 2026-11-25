@@ -52,11 +52,11 @@ const ask = (
 
 const open = (loop: LoopState) => loop.questions.filter((q) => !q.answerId);
 
-describe("Questions IDGAF: a question is answered, never held", () => {
+describe("Questions Delegate: a question is answered, never held", () => {
   test.each(["blocking", "assumption"] as const)(
     "%s: the labelled option wins, label stripped, by the system",
     (kind) => {
-      const result = ask(loopAt({ questions: "idgaf" }), {
+      const result = ask(loopAt({ questions: "delegate" }), {
         kind,
         assumption: "sqlite",
         options: ["sqlite", "Postgres (recommended)", "mysql"],
@@ -67,27 +67,27 @@ describe("Questions IDGAF: a question is answered, never held", () => {
         autoAnswer: {
           text: "Postgres",
           by: "system",
-          source: "Questions: IDGAF",
+          source: "Questions: Delegate",
         },
       });
       expect(result.loop.autoDecisions?.at(-1)).toMatchObject({
         kind: "question",
         by: "system",
-        source: "Questions: IDGAF",
+        source: "Questions: Delegate",
         text: "Auto-answered: Which database? -> Postgres",
       });
       expect(holdQuestionResult(result.question, false)).toContain(
-        "Answered automatically (Questions: IDGAF): Postgres",
+        "Answered automatically (Questions: Delegate): Postgres",
       );
     },
   );
 
   test("else the first option, else the best-judgment line", () => {
-    const first = ask(loopAt({ questions: "idgaf" }), {
+    const first = ask(loopAt({ questions: "delegate" }), {
       options: ["alpha", "beta"],
     });
     expect(first.ok && first.question.autoAnswer?.text).toBe("alpha");
-    const none = ask(loopAt({ questions: "idgaf" }), {});
+    const none = ask(loopAt({ questions: "delegate" }), {});
     expect(none.ok && none.question.autoAnswer?.text).toBe(NO_ONE_AVAILABLE);
   });
 
@@ -106,21 +106,21 @@ describe("Questions IDGAF: a question is answered, never held", () => {
         question: "q",
         options: ["a", "b"],
         pick: "b",
-        source: "Questions: IDGAF",
+        source: "Questions: Delegate",
       }),
     ).toMatchObject({
       text: "b",
       line: "Auto-answered: q -> b",
-      source: "Questions: IDGAF",
+      source: "Questions: Delegate",
     });
   });
 
   test("the person's own you-decide list does not apply at IDGAF", () => {
-    const loop = loopAt({ questions: "idgaf" });
+    const loop = loopAt({ questions: "delegate" });
     const result = ask(
       {
         ...loop,
-        policy: { ...loop.policy!, questions: "idgaf" },
+        policy: { ...loop.policy!, questions: "delegate" },
       } as LoopState,
       { type: "irreversible" },
     );
@@ -137,7 +137,7 @@ describe("Questions IDGAF: a question is answered, never held", () => {
   });
 });
 
-describe("Questions IDGAF: an approval is not held", () => {
+describe("Questions Delegate: an approval is not held", () => {
   const approval = {
     toolName: "run_terminal_command",
     summary: "rm -rf build",
@@ -145,7 +145,7 @@ describe("Questions IDGAF: an approval is not held", () => {
   };
 
   test("refused by the system, nothing left open, the model is told", () => {
-    const r = ask(loopAt({ questions: "idgaf" }), {
+    const r = ask(loopAt({ questions: "delegate" }), {
       kind: "approval",
       question: "Allow this call? rm -rf build",
       approval,
@@ -156,7 +156,7 @@ describe("Questions IDGAF: an approval is not held", () => {
     expect(open(r.loop)).toHaveLength(0);
     expect(r.loop.autoDecisions?.at(-1)).toMatchObject({
       by: "system",
-      source: "Questions: IDGAF",
+      source: "Questions: Delegate",
     });
     expect(approvalHeldResult(r.question)).toContain("nobody was asked");
     expect(approvalHeldResult(r.question)).not.toContain("inbox");
@@ -175,7 +175,7 @@ describe("Questions IDGAF: an approval is not held", () => {
   });
 });
 
-describe("Questions IDGAF: what was already held is answered", () => {
+describe("Questions Delegate: what was already held is answered", () => {
   test("moving a loop to IDGAF answers the inbox, and refuses an approval", () => {
     const q1 = ask(loopAt({ questions: "cautious" }), {
       question: "Which one?",
@@ -196,7 +196,7 @@ describe("Questions IDGAF: what was already held is answered", () => {
 
     const moved = setLoopPolicy(q2.loop, {
       plan: "cautious",
-      questions: "idgaf",
+      questions: "delegate",
     });
     expect(open(moved)).toHaveLength(0);
     const lines = (moved.autoDecisions ?? []).map((d) => d.text);
@@ -216,7 +216,7 @@ describe("Questions IDGAF: what was already held is answered", () => {
   });
 });
 
-describe("Questions IDGAF: an item over its limit is not asked about", () => {
+describe("Questions Delegate: an item over its limit is not asked about", () => {
   const breach = { which: "tokens" as const, used: 11_000, limit: 10_000 };
   function overBudget(policy: Partial<LoopPolicy>): LoopState {
     let loop: LoopState = {
@@ -249,7 +249,7 @@ describe("Questions IDGAF: an item over its limit is not asked about", () => {
 
   test("Suggest is decided by the review rule at IDGAF", () => {
     const decision = applyLimitPolicy(
-      overBudget({ questions: "idgaf" }),
+      overBudget({ questions: "delegate" }),
       item,
       {
         now: T0,

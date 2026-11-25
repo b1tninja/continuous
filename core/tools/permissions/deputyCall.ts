@@ -37,11 +37,14 @@ export interface DeputyCallInput {
 
 /**
  * The confused-deputy check for one tool call (deputyPaths.ts): the built-in
- * file, list and search tools and the path arguments of MCP tools. Switchable by the person's own `builtin` settings and by
- * nothing else: `ask-outside-paths` for a path outside the workspace or in
- * another account's home, `protect-network-paths` for a UNC path. A device
- * path, an alternate data stream and the global configuration folder have no
- * switch.
+ * file, list and search tools and the path arguments of MCP tools. Every kind
+ * of hit has a switch, and the person's own `builtin` settings are the only
+ * thing that reaches past it:
+ * - `ask-outside-paths`: a path outside the workspace, or in another account's home
+ * - `protect-network-paths`: a UNC path or a file URI on another host
+ * - `ask-odd-paths`: a device name, an alternate data stream, a trailing dot
+ *   or space, an 8.3 short name
+ * - `protect-policy-files`: the global configuration folder
  */
 export function deputyCallHit(
   input: DeputyCallInput,
@@ -92,6 +95,10 @@ export function deputyCallHit(
       });
     if (!hit) continue;
     if (hit.why === "network" && !on("protect-network-paths")) continue;
+    if ((hit.why === "device" || hit.why === "alias") && !on("ask-odd-paths")) {
+      continue;
+    }
+    if (hit.why === "own-config" && !on("protect-policy-files")) continue;
     if (
       (hit.why === "outside-workspace" || hit.why === "other-account") &&
       !on("ask-outside-paths")

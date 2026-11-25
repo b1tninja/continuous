@@ -2,7 +2,13 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 
-import { DEFAULT_POLICY_LEVELS } from "core/tools/permissions/policy.js";
+import {
+  DEFAULT_POLICY_LEVELS,
+  POLICY_PRESETS,
+  presetOf,
+} from "core/tools/permissions/policy.js";
+import { noChecksOn } from "core/tools/permissions/safetyDegrees.js";
+import { readPolicyFile } from "core/tools/permissions/settingsFile.js";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { handleSlashCommands } from "../slashCommands.js";
@@ -22,9 +28,17 @@ import {
   YOLO_DEPRECATION_NOTE,
   resetPolicyLevels,
   savePolicyFile,
+  setPolicyBuiltin,
   setPolicyLevels,
   toolLevelsAreDefault,
 } from "./policyLevels.js";
+
+const withFile = (text: string) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cn-policy-"));
+  const file = path.join(dir, "permissions.yaml");
+  fs.writeFileSync(file, text);
+  return { dir, file };
+};
 
 afterEach(() => {
   resetPolicyLevels();
@@ -32,11 +46,18 @@ afterEach(() => {
 });
 
 describe("parsePolicySpec", () => {
-  it("takes a preset by name, in any case", () => {
+  it("takes a preset by name, in any case, with its levels and its switches", () => {
     const r = parsePolicySpec("IDGAF");
-    expect(r.ok && Object.values(r.levels)).toEqual(Array(5).fill("idgaf"));
+    expect(r.ok && r.levels).toEqual(POLICY_PRESETS.idgaf.levels);
+    expect(r.ok && noChecksOn(r.builtin)).toBe(true);
     const careful = parsePolicySpec("careful");
     expect(careful.ok && careful.levels).toEqual(DEFAULT_POLICY_LEVELS);
+    expect(careful.ok && noChecksOn(careful.builtin)).toBe(false);
+  });
+
+  it("levels given one by one carry no switches: the file's are left as they are", () => {
+    const r = parsePolicySpec("tools=permissive");
+    expect(r.ok && r.builtin).toBeUndefined();
   });
 
   it("takes area=level pairs on top of the current levels", () => {
@@ -48,23 +69,34 @@ describe("parsePolicySpec", () => {
     });
   });
 
-  it("yolo, any case, still works as idgaf and says so", () => {
+  it("yolo, any case, still works as the idgaf preset and says so", () => {
     for (const spec of ["yolo", "YOLO"]) {
       const r = parsePolicySpec(spec);
-      expect(r.ok && Object.values(r.levels)).toEqual(Array(5).fill("idgaf"));
+      expect(r.ok && r.levels).toEqual(POLICY_PRESETS.idgaf.levels);
+      expect(r.ok && noChecksOn(r.builtin)).toBe(true);
       expect(r.ok && r.deprecated).toBe(YOLO_DEPRECATION_NOTE);
     }
+    // as a level the old word is read as Permissive
     const pair = parsePolicySpec("tools=yolo,plan=manual");
-    expect(pair.ok && pair.levels.tools).toBe("idgaf");
+    expect(pair.ok && pair.levels.tools).toBe("permissive");
     expect(pair.ok && pair.deprecated).toBe(YOLO_DEPRECATION_NOTE);
     // the new name carries no note, and the note never repeats the profanity
     expect(parsePolicySpec("idgaf")).not.toHaveProperty("deprecated");
     expect(YOLO_DEPRECATION_NOTE).not.toContain("\n");
   });
 
-  it("a bare level sets every area, and idgaf is idgaf", () => {
-    const r = parsePolicySpec("idgaf");
-    expect(r.ok && Object.values(r.levels)).toEqual(Array(5).fill("idgaf"));
+  it("a bare level sets every area, and idgaf is a preset, not a level", () => {
+    const r = parsePolicySpec("permissive");
+    expect(r.ok && Object.values(r.levels)).toEqual(
+      Array(5).fill("permissive"),
+    );
+    const idgaf = parsePolicySpec("idgaf");
+    expect(idgaf.ok && idgaf.levels.tools).toBe("permissive");
+    // Delegate is a Questions level only
+    expect(parsePolicySpec("delegate")).toMatchObject({ ok: false });
+    expect(parsePolicySpec("tools=delegate")).toMatchObject({ ok: false });
+    const q = parsePolicySpec("questions=delegate");
+    expect(q.ok && q.levels.questions).toBe("delegate");
   });
 
   it("refuses what it cannot read, naming it", () => {
@@ -84,10 +116,31 @@ describe("effectiveLevels", () => {
     expect(effectiveLevels("normal").tools).toBe("manual");
   });
 
-  it("--auto is IDGAF on the tool areas and a plan that goes on", () => {
+  it("--auto is Permissive on the tool areas and a plan that goes on", () => {
     const l = effectiveLevels("auto");
-    expect([l.context, l.tools, l.edits]).toEqual(["idgaf", "idgaf", "idgaf"]);
+    expect([l.context, l.tools, l.edits]).toEqual([
+      "permissive",
+      "permissive",
+      "permissive",
+    ]);
     expect(l.plan).toBe("permissive");
+  });
+
+  it("--auto has no check on, for the run only: the file's switches are not changed", () => {
+    expect(noChecksOn(approvalExtras("auto").builtin)).toBe(true);
+    expect(noChecksOn(approvalExtras("normal").builtin)).toBe(false);
+    // asking again for the normal mode gives the file's switches back
+    expect(approvalExtras("normal").builtin).toBeUndefined();
+  });
+
+  it("--auto keeps the file's own floor and its other settings", () => {
+    const { dir, file } = withFile("floor:\n  - Bash(rm -rf *)\n");
+    try {
+      loadPolicyFile(file);
+      expect(approvalExtras("auto").floor).toEqual(["Bash(rm -rf *)"]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("--auto-review makes Cautious Automatic, and keeps a level set higher", () => {
@@ -114,7 +167,7 @@ describe("levelsForAutonomy", () => {
     });
     expect(levelsForAutonomy("idgaf")).toEqual({
       plan: "permissive",
-      questions: "idgaf",
+      questions: "delegate",
     });
   });
 });
@@ -139,8 +192,7 @@ describe("the levels reach core's engine", () => {
     ).toMatchObject({ decision: "allow", by: "rules" });
   });
 
-  it("IDGAF runs it, and Manual still asks", async () => {
-    expect((await run({ tools: "idgaf" }, "git push"))?.decision).toBe("allow");
+  it("Manual still asks", async () => {
     expect((await run({ tools: "manual" }, "git push"))?.decision).toBe("ask");
   });
 
@@ -191,7 +243,9 @@ describe("/policy", () => {
 
   it("describePolicy names a custom mix", () => {
     expect(
-      describePolicy({ ...DEFAULT_POLICY_LEVELS, tools: "idgaf" }).join("\n"),
+      describePolicy({ ...DEFAULT_POLICY_LEVELS, tools: "permissive" }).join(
+        "\n",
+      ),
     ).toContain("Custom");
   });
 
@@ -204,24 +258,17 @@ describe("/policy", () => {
 });
 
 describe("the shared settings file", () => {
-  const withFile = (text: string) => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cn-policy-"));
-    const file = path.join(dir, "permissions.yaml");
-    fs.writeFileSync(file, text);
-    return { dir, file };
-  };
-
   it("loads levels, switches and the floor, and reports what it cannot use", () => {
     const { dir, file } = withFile(
-      "allow:\n  - Bash(ls)\nlevels:\n  tools: permissive\n  plan: idgaf\nbuiltin:\n  protect-network-paths: off\nfloor:\n  - Bash(rm -rf *)\n",
+      "allow:\n  - Bash(ls)\nlevels:\n  tools: permissive\n  plan: delegate\nbuiltin:\n  protect-network-paths: off\nfloor:\n  - Bash(rm -rf *)\n",
     );
     try {
       const notices = loadPolicyFile(file);
       expect(getPolicyLevels().tools).toBe("permissive");
-      // idgaf is for one session only
+      // Delegate is a Questions level only: reported, and the default applies
       expect(getPolicyLevels().plan).toBe(DEFAULT_POLICY_LEVELS.plan);
-      expect(notices.join("\n")).toContain("levels.plan: idgaf");
-      expect(approvalExtras()).toEqual({
+      expect(notices.join("\n")).toContain("delegate");
+      expect(approvalExtras("normal")).toEqual({
         builtin: { "protect-network-paths": false },
         floor: ["Bash(rm -rf *)"],
       });
@@ -242,19 +289,22 @@ describe("the shared settings file", () => {
     }
   });
 
-  it("saving keeps the CLI's own lists and never writes IDGAF", () => {
+  it("saving keeps the CLI's own lists, and a preset's switches are saved with its levels", () => {
     const { dir, file } = withFile("allow:\n  - Bash(ls)\n");
     try {
-      setPolicyLevels({
-        ...DEFAULT_POLICY_LEVELS,
-        tools: "idgaf",
-        edits: "permissive",
-      });
+      const preset = parsePolicySpec("idgaf");
+      if (!preset.ok) throw new Error(preset.error);
+      setPolicyLevels(preset.levels);
+      setPolicyBuiltin(preset.builtin);
       savePolicyFile(file);
       const text = fs.readFileSync(file, "utf-8");
       expect(text).toContain("Bash(ls)");
       expect(text).not.toContain("idgaf");
-      expect(text).toContain("edits: permissive");
+      expect(text).toContain("tools: permissive");
+      // the switches are in the file: reading it back is the same preset
+      const back = readPolicyFile(file).settings;
+      expect(presetOf(back.levels, back.builtin)).toBe("idgaf");
+      expect(noChecksOn(back.builtin)).toBe(true);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

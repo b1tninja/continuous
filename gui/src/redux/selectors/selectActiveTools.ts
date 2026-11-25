@@ -3,6 +3,7 @@ import { Tool } from "core";
 import { BUILT_IN_GROUP_NAME, BuiltInToolNames } from "core/tools/builtIn";
 import { ideToolRef } from "core/tools/roleToolRefs";
 import { filterToolsForRole, roleForMode } from "core/tools/roleTools";
+import { builtinIsOn } from "core/tools/permissions/policy";
 import { stableToolOrder as orderTools } from "core/tools/stableToolOrder";
 import { DEFAULT_TOOL_SETTING } from "../slices/uiSlice";
 import { RootState } from "../store";
@@ -36,8 +37,10 @@ export const selectActiveTools = createSelector(
     (store: RootState) => store.ui.policyExtras.trustedMcpServers,
     // MCP tools a background run may use (`background.mcpTools`, TR25)
     (store: RootState) => store.ui.policyExtras.backgroundMcpTools,
-    // IDGAF on Tool use offers MCP tools that wait for approval (TR4)
-    (store: RootState) => store.ui.policyLevels.tools === "idgaf",
+    // With "Ask before using an MCP tool you have not approved" off, an MCP
+    // tool that would wait for approval is offered (TR4)
+    (store: RootState) =>
+      !builtinIsOn(store.ui.policyExtras.builtin, "approve-mcp-tools"),
   ],
   (
     mode,

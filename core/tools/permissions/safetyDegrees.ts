@@ -8,6 +8,7 @@
 import {
   BUILTIN_RULES,
   POLICY_PRESETS,
+  PRESET_FREE_RULES,
   type BuiltinRuleId,
   type PolicyLevels,
   type PolicyPresetName,
@@ -15,14 +16,19 @@ import {
 
 export type SafetyDegree = "all" | "some" | "few" | "none";
 
-/** Credentials, config that runs later, network paths, dangerous commands, run-a-download, shell syntax. */
+/** Credentials, config that runs later, network paths, dangerous commands, run-a-download. */
 export const HARD_PROTECTIONS: readonly BuiltinRuleId[] = [
   "protect-secrets",
   "protect-config",
   "protect-network-paths",
   "refuse-dangerous-commands",
   "no-fetch-and-run",
-  "check-shell-commands",
+  "protect-policy-files",
+  "apply-rules",
+  "hold-plan-mode",
+  "ask-odd-paths",
+  "refuse-unsafe-urls",
+  "approve-mcp-tools",
 ];
 
 /** Asked about before work is lost, a dependency changes or a new host is contacted. */
@@ -32,7 +38,11 @@ const COMMON_ASKS: readonly BuiltinRuleId[] = [
   "ask-unknown-host",
 ];
 
-const ALL_CHECKS: readonly BuiltinRuleId[] = BUILTIN_RULES.map((r) => r.id);
+// The checks a preset sets. A rule no preset sets (policy.ts) is the person's
+// own choice and no preset turns it on or off.
+const ALL_CHECKS: readonly BuiltinRuleId[] = BUILTIN_RULES.filter(
+  (r) => !PRESET_FREE_RULES.has(r.id),
+).map((r) => r.id);
 
 /** The checks each degree leaves on. */
 export const CHECKS_ON: Record<SafetyDegree, readonly BuiltinRuleId[]> = {
@@ -123,28 +133,4 @@ export function approvalOfPreset(preset: PolicyPresetName): {
     levels: { ...POLICY_PRESETS[preset].levels },
     builtin: builtinForPreset(preset),
   };
-}
-
-/**
- * The switches a host sends with the levels it has in force. IDGAF lasts for
- * a session and is never written to the file, so the checks it turns off are
- * not in the file either: when the levels are the IDGAF preset (or the host
- * runs unattended with every tool area at IDGAF, as `--auto` does), no check
- * is on; otherwise it is what the file says. A check the file names as `on`
- * (`builtin: protect-secrets: on`) stays on: that is how to ask for a check
- * back under IDGAF. Used by hosts that read levels from a flag and the
- * switches from the file (the CLI).
- */
-export function switchesInForce(
-  levels: PolicyLevels,
-  fromFile: Partial<Record<BuiltinRuleId, boolean>> | undefined,
-): Partial<Record<BuiltinRuleId, boolean>> | undefined {
-  const toolAreas = ["context", "tools", "edits"] as const;
-  const unattended = toolAreas.every((a) => levels[a] === "idgaf");
-  if (!unattended) return fromFile;
-  const off = builtinForPreset("idgaf");
-  for (const id of Object.keys(off) as BuiltinRuleId[]) {
-    if (fromFile?.[id] === true) delete off[id];
-  }
-  return off;
 }

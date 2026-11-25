@@ -5,7 +5,7 @@ import {
 } from "core/llm/promptSegments.js";
 import type {
   ChatCompletionCreateParamsStreaming,
-  ChatCompletionTool,
+  ChatCompletionFunctionTool,
 } from "openai/resources.mjs";
 
 import { environmentContextBlock } from "../environmentContext.js";
@@ -25,7 +25,7 @@ const dump = promptSegmentsEnabled(process.env.CONTINUE_PROMPT_SEGMENTS)
 export function dumpPromptSegments(args: {
   body: ChatCompletionCreateParamsStreaming;
   systemMessage: string;
-  tools?: ChatCompletionTool[];
+  tools?: ChatCompletionFunctionTool[];
   taskListBlock?: string;
   turnTail?: string;
   isCompacting?: boolean;
