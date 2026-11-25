@@ -10,11 +10,11 @@ import { createHistoryItem } from "core/util/messageConversion.js";
 import {
   isAutoReviewEnabled,
   liftAtIdgaf,
-  runsAtIdgaf,
+  ownRulesAreOff,
 } from "src/permissions/coreRules.js";
 import { headlessLegacyAllow } from "src/permissions/headlessPolicy.js";
 import { checkToolPermission } from "src/permissions/permissionChecker.js";
-import { effectiveLevels } from "src/permissions/policyLevels.js";
+import { approvalExtras } from "src/permissions/policyLevels.js";
 import { withReadOnlyMcp } from "src/permissions/readOnlyMcp.js";
 
 import { cliAuditSession, cliAuditTrail } from "../audit/cliAudit.js";
@@ -484,16 +484,10 @@ export async function handleToolCalls(
   return false;
 }
 
-function safeRunsAtIdgaf(
-  levels: ReturnType<typeof effectiveLevels>,
-  mode: Parameters<typeof runsAtIdgaf>[1],
-  tool: Tool,
-): boolean {
+/** The CLI's own ask and exclude lists are not read in this mode; never throws. */
+function safeOwnRulesOff(mode: Parameters<typeof ownRulesAreOff>[0]): boolean {
   try {
-    return runsAtIdgaf(levels, mode, {
-      name: tool.name,
-      readonly: tool.readonly,
-    });
+    return ownRulesAreOff(mode, approvalExtras(mode).builtin);
   } catch {
     return false;
   }
@@ -513,11 +507,11 @@ export async function getRequestTools(isHeadless: boolean) {
     );
 
   const mode = permissionsState.currentMode;
-  const levels = effectiveLevels(mode);
   const allowedTools: Tool[] = [];
   for (const tool of availableTools) {
-    // IDGAF: a tool the CLI's own policy asks about or excludes is offered,
-    // headless too, and runs (runsAtIdgaf); a structural limit stays
+    // With the CLI's own rules not read (apply-rules off), a tool its policy
+    // asks about or excludes is offered, headless too, and runs; a structural
+    // limit stays
     const result = liftAtIdgaf(
       withReadOnlyMcp(
         checkToolPermission(
@@ -526,7 +520,7 @@ export async function getRequestTools(isHeadless: boolean) {
         ),
         tool,
       ),
-      safeRunsAtIdgaf(levels, mode, tool),
+      safeOwnRulesOff(mode),
     );
 
     // An "ask" tool is offered headless too (CO2): the levels and the rules

@@ -52,14 +52,14 @@ function replanning(policy: Partial<LoopPolicy>): LoopState {
 }
 
 describe("Plan edits: a re-plan goes on without a card when the person opted out", () => {
-  for (const level of ["automatic", "permissive", "idgaf"] as const) {
+  for (const level of ["automatic", "permissive"] as const) {
     test(`${level}: accepted, noted, and the next round starts`, () => {
       const ended = endReplan(replanning({ plan: level }), REPLANNED);
       expect(ended.accept).toBe(true);
       const note = ended.loop.autoDecisions?.at(-1);
       expect(note).toMatchObject({ kind: "plan", by: "system" });
       expect(note?.source).toBe(
-        `Plan edits: ${level === "idgaf" ? "IDGAF" : level[0].toUpperCase() + level.slice(1)}`,
+        `Plan edits: ${level[0].toUpperCase() + level.slice(1)}`,
       );
       expect(note?.text).toBe(
         "Plan updated: 2 kept, 1 added, 0 dropped; check of item 1 replaced",
@@ -125,7 +125,7 @@ describe("Questions: a permissive level answers by itself", () => {
     return held;
   };
 
-  for (const level of ["automatic", "permissive", "idgaf"] as const) {
+  for (const level of ["automatic", "permissive", "delegate"] as const) {
     test(`${level}: the recommended option is chosen, by system, even for irreversible`, () => {
       const held = ask(running({ questions: level }), {
         options: ["Keep it", "Drop it (recommended)", "Archive it"],
@@ -136,7 +136,7 @@ describe("Questions: a permissive level answers by itself", () => {
         by: "system",
       });
       expect(held.question.autoAnswer?.source).toBe(
-        `Questions: ${level === "idgaf" ? "IDGAF" : level[0].toUpperCase() + level.slice(1)}`,
+        `Questions: ${level[0].toUpperCase() + level.slice(1)}`,
       );
       expect(held.loop.autoDecisions?.at(-1)).toMatchObject({
         kind: "question",
@@ -181,13 +181,15 @@ describe("Questions: a permissive level answers by itself", () => {
     expect(held.question.answerId).toBeUndefined();
   });
 
-  test("a call the engine held for approval is never answered; at IDGAF nobody is asked, so it is refused", () => {
+  test("a call the engine held for approval is never answered; at Delegate nobody is asked, so it is refused", () => {
     const held = ask(running({ questions: "permissive" }), {
       kind: "approval",
     });
     expect(held.question.answerId).toBeUndefined();
     expect(held.question.autoAnswer).toBeUndefined();
-    const refused = ask(running({ questions: "idgaf" }), { kind: "approval" });
+    const refused = ask(running({ questions: "delegate" }), {
+      kind: "approval",
+    });
     expect(refused.question.autoAnswer?.text).toMatch(/^Refused/);
   });
 });

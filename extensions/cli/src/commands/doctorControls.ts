@@ -24,6 +24,7 @@ import {
   type PolicyLevels,
   builtinIsOn,
 } from "core/tools/permissions/policy.js";
+import { builtinForPreset } from "core/tools/permissions/safetyDegrees.js";
 import { readTaintedSessionRule } from "core/tools/permissions/taint/taintSetting.js";
 import {
   getTerminalEnvironmentStatus,
@@ -51,12 +52,14 @@ import {
   setAutoReviewEnabled,
 } from "../permissions/coreRules.js";
 import {
+  approvalExtras,
   effectiveLevels,
   getPolicyExtras,
   getPolicyLevels,
   loadPolicyFile,
   parsePolicySpec,
   resetPolicyLevels,
+  setPolicyBuiltin,
   setPolicyLevels,
 } from "../permissions/policyLevels.js";
 
@@ -125,6 +128,8 @@ const AREA_WORDS: Record<string, PolicyArea> = {
   question: "questions",
 };
 
+const TOOL_AREA_LIST: readonly PolicyArea[] = ["context", "tools", "edits"];
+
 /** The areas a `--policy` spec names: all of them for a preset or a bare level. */
 export function areasNamed(spec: string): PolicyArea[] {
   const named = new Set<PolicyArea>();
@@ -153,6 +158,11 @@ function levelSource(
   area: PolicyArea,
   inputs: LevelInputs,
 ): Source {
+  // --auto is the IDGAF preset for the run: it sets the three tool areas, and the
+  // safety checks, whatever the file already said
+  if (ctx.flags.auto && TOOL_AREA_LIST.includes(area)) {
+    return from("flag", "--auto");
+  }
   if (inputs.levels[area] !== inputs.chosen[area]) {
     return from("flag", ctx.flags.auto ? "--auto" : "--auto-review");
   }
@@ -198,6 +208,7 @@ function levelControls(ctx: ControlContext): ControlReport[] {
       inputs.chosen = parsed.levels;
       inputs.policyAreas = areasNamed(ctx.flags.policy);
       setPolicyLevels(parsed.levels);
+      if (parsed.builtin) setPolicyBuiltin(parsed.builtin);
     }
   }
   setAutoReviewEnabled(ctx.flags.autoReview === true);
@@ -272,7 +283,15 @@ function ruleControls(ctx: ControlContext): ControlReport[] {
 }
 
 function protectionControls(ctx: ControlContext): ControlReport[] {
-  const builtin = getPolicyExtras().builtin ?? {};
+  // The checks in force: the file's, a `--policy` preset's, and `--auto`'s (none on)
+  const builtin =
+    approvalExtras(ctx.flags.auto ? "auto" : "normal").builtin ?? {};
+  const fromPreset = ctx.flags.policy
+    ? parsePolicySpec(ctx.flags.policy)
+    : undefined;
+  const presetSwitches =
+    fromPreset && fromPreset.ok ? (fromPreset.builtin ?? {}) : {};
+  const autoSwitches = ctx.flags.auto ? builtinForPreset("idgaf") : {};
   const controls: ControlReport[] = BUILTIN_RULES.map((rule) => {
     const set = builtin[rule.id];
     return {
@@ -280,9 +299,13 @@ function protectionControls(ctx: ControlContext): ControlReport[] {
       group: "Protections",
       label: rule.label,
       value: builtinIsOn(builtin, rule.id) ? "on" : "off",
-      ...(set === undefined
-        ? from("default")
-        : from("user-file", ctx.permissionsFile)),
+      ...(Object.hasOwn(autoSwitches, rule.id)
+        ? from("flag", "--auto")
+        : Object.hasOwn(presetSwitches, rule.id)
+          ? from("flag", "--policy")
+          : set === undefined
+            ? from("default")
+            : from("user-file", ctx.permissionsFile)),
     };
   });
   const taint = readTaintedSessionRule(ctx.userConfigFile);

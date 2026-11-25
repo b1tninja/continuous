@@ -112,15 +112,16 @@ describe("a profile write: refused at Automatic, asked elsewhere", () => {
   });
 
   it("the IDGAF preset has protect-config off, so it just runs", () => {
-    const r = write(PROFILE, "idgaf", builtinForPreset("idgaf"));
+    const r = write(PROFILE, "permissive", builtinForPreset("idgaf"));
     expect(r.policy).toBe(ALLOW);
-    expect(r.source).toBe("idgaf");
+    expect(r.protection).toBeUndefined();
   });
 
-  it("IDGAF with protect-config left on still refuses it, as at Automatic", () => {
-    const r = write(PROFILE, "idgaf");
-    expect(r.policy).toBe(OFF);
-    expect(r.reason).toContain(PROFILE_WRITE_REASON);
+  it("Permissive with protect-config left on asks, and refuses only at Automatic", () => {
+    const r = write(PROFILE, "permissive");
+    expect(r.policy).toBe(ASK);
+    expect(r.protection).toBe("config");
+    expect(write(PROFILE, "automatic").reason).toContain(PROFILE_WRITE_REASON);
   });
 
   it("another config file still asks at Automatic and is not refused", () => {

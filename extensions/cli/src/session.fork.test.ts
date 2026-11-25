@@ -204,13 +204,13 @@ describe("forking a session in the CLI", () => {
     expect(copied(getCurrentSession())).toEqual(viaFlag);
   });
 
-  it("/fork keeps this run's permission levels, IDGAF included", async () => {
+  it("/fork keeps this run's permission levels", async () => {
     loadOrCreateSessionById("parent-id");
-    setPolicyLevels({ ...getPolicyLevels(), tools: "idgaf" });
+    setPolicyLevels({ ...getPolicyLevels(), tools: "permissive" });
     const before = getPolicyLevels();
     await handleSlashCommands("/fork", {} as any);
     expect(getPolicyLevels()).toEqual(before);
-    expect(getPolicyLevels().tools).toBe("idgaf");
+    expect(getPolicyLevels().tools).toBe("permissive");
   });
 
   it("/fork says so and does nothing before the first message", async () => {

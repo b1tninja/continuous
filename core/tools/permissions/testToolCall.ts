@@ -37,8 +37,9 @@ import {
   DEFAULT_POLICY_LEVELS,
   POLICY_AREA_LABELS,
   type PolicyArea,
-  type WebLevel,
+  type PolicyLevel,
   type PolicyLevels,
+  type WebLevel,
 } from "./policy";
 import type { ProtectedKind } from "./protected";
 import type { Sink } from "./taint/taintSinks";
@@ -668,7 +669,10 @@ export function testToolCall(input: TestToolCallInput): ToolCallTestResult {
     ? levelOfCall(approval, toolName, tool as never, callContext)
     : undefined;
   const area = found?.area ?? areaOfTool(toolName, tool as never, callContext);
-  const level = found?.level ?? (area ? levels[area] : undefined);
+  // A tool call is never in the Questions area, so its level is never `delegate`
+  const level: WebLevel | undefined =
+    found?.level ??
+    (area ? (levels[area] as Exclude<PolicyLevel, "delegate">) : undefined);
   const matches = findMatches(
     report.rules,
     call,

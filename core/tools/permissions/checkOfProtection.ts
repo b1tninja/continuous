@@ -20,7 +20,7 @@ export const CHECK_OF_PROTECTION: Record<ProtectedKind, BuiltinRuleId> = {
   "file-deputy": "ask-outside-paths",
   "hidden-command": "refuse-dangerous-commands",
   "env-assignment": "refuse-dangerous-commands",
-  "mcp-definition-changed": "protect-config",
+  "mcp-definition-changed": "approve-mcp-tools",
 };
 
 /** The check behind a protection kind, when the kind is one this table knows. */

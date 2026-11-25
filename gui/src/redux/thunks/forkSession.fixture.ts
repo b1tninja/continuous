@@ -183,6 +183,6 @@ export function setupForkStore() {
   const store = setupStore({ ideMessenger });
   store.dispatch(newSession(structuredClone(parent)));
   applyForkState(store);
-  store.dispatch(setPolicyLevel({ area: "tools", level: "idgaf" }));
+  store.dispatch(setPolicyLevel({ area: "tools", level: "permissive" }));
   return { store, ideMessenger, saves };
 }

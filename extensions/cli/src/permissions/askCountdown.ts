@@ -2,7 +2,6 @@ import { EventEmitter } from "node:events";
 
 import { levelOfCall } from "core/tools/permissions/approval.js";
 import {
-  factOfDecision,
   propose,
   type LowerDecision,
   type Proposal,
@@ -130,78 +129,6 @@ export function forgetRequest(requestId: string): void {
   keepWaitingListeners.delete(requestId);
   headsUps.delete(requestId);
   clearCountdown(requestId);
-}
-
-/** The level in force for a call's area, or undefined when it cannot be told. */
-function levelOfCliCall(
-  call: {
-    name: string;
-    arguments: Record<string, unknown>;
-    readonly?: boolean;
-  },
-  mode: "normal" | "plan" | "auto" | undefined,
-) {
-  const levels = effectiveLevels(mode ?? "normal");
-  const core = toCoreCall(call.name, call.arguments);
-  return levelOfCall(
-    { levels },
-    core?.toolName ?? call.name,
-    { readonly: !!call.readonly },
-    {
-      parsedArgs: core?.parsedArgs ?? call.arguments,
-      cwd: process.cwd(),
-      shell: resolveShell().kind,
-    },
-  )?.level;
-}
-
-/**
- * The heads-up for a call that runs only because of its level: the top level,
- * IDGAF, ran it past an ask or a refusal (`ranPast`), and a window is set for
- * that level in `levels.headsUp`. Undefined, so the call runs at once, when no
- * window is set (the default), nothing would have stopped the call, there is
- * no screen to draw a countdown on, or this turn has no time left to hold.
- *
- * This is the only heads-up the CLI shows: a window set for a lower level
- * does not hold the calls that level allows here.
- */
-export function proposalForRanPast(
-  call: {
-    name: string;
-    arguments: Record<string, unknown>;
-    readonly?: boolean;
-  },
-  mode: "normal" | "plan" | "auto" | undefined,
-  ranPast: LowerDecision | undefined,
-  now: number = Date.now(),
-): Proposal | undefined {
-  if (!available || !ranPast) return undefined;
-  try {
-    const level = levelOfCliCall(call, mode);
-    if (!level) return undefined;
-    const proposal = propose(
-      factOfDecision({
-        policy: "allowedWithoutPermission",
-        source: "idgaf",
-        idgafOverride: ranPast,
-      }),
-      {
-        attended: true,
-        // The Web area has its own level names; the windows are set per level
-        level: level as keyof NonNullable<
-          ReturnType<typeof getPolicyExtras>["headsUp"]
-        >,
-        settings: {},
-        headsUp: getPolicyExtras().headsUp,
-        now,
-      },
-    );
-    if (!proposal) return undefined;
-    const seconds = budget.grant(proposal.seconds);
-    return seconds > 0 ? { ...proposal, seconds } : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 /**

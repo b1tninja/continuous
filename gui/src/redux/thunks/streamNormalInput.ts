@@ -1,3 +1,4 @@
+import { builtinIsOn } from "core/tools/permissions/policy";
 import { createAsyncThunk, unwrapResult } from "@reduxjs/toolkit";
 import { LLMFullCompletionOptions, Usage } from "core";
 import {
@@ -777,7 +778,10 @@ export const streamNormalInput = createAsyncThunk<
       planMcpTools: state1.ui.policyExtras.planMcpTools,
       trustedMcpServers: state1.ui.policyExtras.trustedMcpServers,
       backgroundMcpTools: state1.ui.policyExtras.backgroundMcpTools,
-      approvalWaived: state1.ui.policyLevels.tools === "idgaf",
+      approvalWaived: !builtinIsOn(
+        state1.ui.policyExtras.builtin,
+        "approve-mcp-tools",
+      ),
     });
 
     // A tool turned off while the cache was warm is still offered; a call to

@@ -31,7 +31,6 @@ import {
   exemptionsFor,
   trustedFetchAllow,
 } from "./evaluateExtras";
-import { levelRunsHeld, wouldHaveSentence } from "./levelText";
 import { parsePermissions, uriToPath } from "./names";
 import { outsideTargetReason } from "./outsideEdits";
 import { onlyReads, planModeVerdict } from "./planMode";
@@ -245,7 +244,7 @@ export interface EvaluateInput extends TaintedSessionInput, WebEvaluateInput {
 export function evaluateToolPolicyWithRules(
   input: EvaluateInput,
 ): ToolPolicyResult {
-  const result = idgafRunsEverything(
+  const result = applyWebArea(
     input,
     applyTaintedSessionRule(
       input,
@@ -265,14 +264,7 @@ export function evaluateToolPolicyWithRules(
     input,
     applyShellHints(
       input,
-      annotateExemptions(
-        input,
-        applySecretEgressRule(
-          input,
-          result,
-          () => callLevel(input) === "idgaf",
-        ),
-      ),
+      annotateExemptions(input, applySecretEgressRule(input, result)),
     ),
   );
 }
@@ -290,6 +282,7 @@ function holdInPlanMode(
   if (!input.planMode || result.policy !== "allowedWithoutPermission") {
     return result;
   }
+  if (!builtinRuleOn(input.approval, "hold-plan-mode")) return result;
   const call = {
     parsedArgs: input.parsedArgs,
     cwd: input.cwd,
@@ -298,19 +291,7 @@ function holdInPlanMode(
   if (input.readOnlyTool || onlyReads(input.toolName, input.tool, call)) {
     return result;
   }
-  const held = planModeVerdict(result, { readOnly: false });
-  if (!levelRunsHeld(callLevel(input))) return held;
-  // Another objection is already on record: that one says more
-  if (result.idgafOverride) return result;
-  return {
-    ...result,
-    reason: withWouldHave(result.reason, held),
-    idgafOverride: overrideOf({
-      policy: held.policy,
-      source: held.source,
-      reason: held.reason,
-    }),
-  };
+  return planModeVerdict(result, { readOnly: false });
 }
 
 /**
@@ -340,7 +321,7 @@ function applyShellHints(
       reason: found.reason,
     };
   }
-  if (result.policy === "disabled" || result.source === "idgaf") return result;
+  if (result.policy === "disabled") return result;
   const shown =
     result.source === "protected-path" ||
     result.source === "tainted-session" ||
@@ -369,72 +350,6 @@ function protectionsToSkip(input: EvaluateInput): ProtectedKind[] {
   return protectionsWithCheckOff(input.approval);
 }
 
-/** Says what IDGAF let through, for the decision chip, the transcript and the audit trail. */
-export const IDGAF_OVERRIDE_NOTE =
-  "IDGAF runs every call: no rule, guard or safety check is applied.";
-
-const AREA_LABEL = {
-  context: "Context use",
-  tools: "Tool use",
-  edits: "File edits",
-} as const;
-
-/**
- * IDGAF: no tool call is refused or held by the permission layer. Deny rules,
- * floor rules, protected paths and secret files, the safety floor, a command
- * that hides what it runs, the policy-file lock, the tainted-session rule and
- * every built-in ask are all decided first, as at any level, so the decision
- * still says what they would have done, and then the call runs. Only a tool
- * the person switched off (its own setting, which also keeps it out of the
- * model's tool list) stays off: that is whether the tool exists, not a check.
- *
- * What would have stopped the call stays in the reason and the audit trail,
- * and output and secret masking are unchanged.
- */
-function idgafRunsEverything(
-  input: EvaluateInput,
-  result: ToolPolicyResult,
-): ToolPolicyResult {
-  // WB45: the Web area decides last, so its hard checks and Off bind at IDGAF
-  return applyWebArea(input, idgafRunsPast(input, result));
-}
-
-function idgafRunsPast(
-  input: EvaluateInput,
-  result: ToolPolicyResult,
-): ToolPolicyResult {
-  if (result.policy === "allowedWithoutPermission") return result;
-  if (input.basePolicy === "disabled") return result;
-  const found = levelOfCall(input.approval, input.toolName, input.tool, {
-    parsedArgs: input.parsedArgs,
-    cwd: input.cwd,
-    shell: input.shell,
-  });
-  if (found?.level !== "idgaf") return result;
-  // A block that exists here comes from a check that is on (a protection
-  // whose check is off was skipped), so it stands. IDGAF as a preset turns
-  // every check off, which is why nothing stands after picking it.
-  if (
-    result.source &&
-    (result.source === "safety-floor" || result.source === "protected-path")
-  ) {
-    // IDGAF did not override it, so it carries no record that it did
-    const { idgafOverride: _none, ...stands } = result;
-    return stands;
-  }
-  const { protection, rule, ...rest } = result;
-  return {
-    ...rest,
-    policy: "allowedWithoutPermission",
-    source: "idgaf",
-    reason: withWouldHave(
-      `Allowed: ${areaLabelOf(found.area)} is set to IDGAF. ${IDGAF_OVERRIDE_NOTE}`,
-      result,
-    ),
-    idgafOverride: overrideOf({ ...result, protection, rule }),
-  };
-}
-
 /**
  * ROADMAP B31. The path guards read a path as it is written, so a terminal
  * command whose write target is built when it runs (`$d`, a wildcard, a
@@ -460,13 +375,13 @@ function lockRuntimeWrites(
   ) {
     return result;
   }
-  const level = levelOfCall(input.approval, toolName, tool, {
-    parsedArgs,
-    cwd: input.cwd,
-    shell: input.shell,
-  })?.level;
-  if (level !== "idgaf") return result;
-  const why = runtimeWriteTarget(command, input.shell, input.cwd);
+  // Opt-in: it asks only when the person turned it on, at any level that
+  // would otherwise run the call (a level that asks has already asked)
+  if (!builtinRuleOn(input.approval, "ask-runtime-writes")) return result;
+  // Every folder of the workspace counts, the ones the person added too
+  const why = runtimeWriteTarget(command, input.shell, input.cwd, {
+    roots: input.workspaceDirs,
+  });
   if (!why) return result;
   return {
     ...result,
@@ -490,6 +405,7 @@ function lockPolicyFiles(
 ): ToolPolicyResult {
   const { tool, toolName } = input;
   if (!tool || result.policy === "disabled") return result;
+  if (!builtinRuleOn(input.approval, "protect-policy-files")) return result;
   const resolved = input.processedArgs?.resolvedPath as
     ResolvedPath | null | undefined;
   const isMcp = !!tool.uri?.startsWith("mcp:") && !!tool.originalFunctionName;
@@ -508,8 +424,8 @@ function lockPolicyFiles(
     shell: input.shell,
   })?.level;
   // A scan that gave up cannot say the call is a write: it asks, never refuses.
-  // IDGAF is decided as Automatic here and then run (idgafRunsEverything).
-  const refuse = (level === "automatic" || level === "idgaf") && !hit.capped;
+  // Nobody is there to say yes at Automatic
+  const refuse = level === "automatic" && !hit.capped;
   if (!refuse && result.policy === "allowedWithPermission") return result;
   return {
     ...result,
@@ -539,7 +455,7 @@ function refuseProfileWrites(
   if (!tool || result.policy === "disabled") return result;
   if (protectionsToSkip(input).includes("config")) return result;
   const level = callLevel(input);
-  if (level !== "automatic" && level !== "idgaf") return result;
+  if (level !== "automatic") return result;
   const resolved = input.processedArgs?.resolvedPath as
     ResolvedPath | null | undefined;
   const isMcp = !!tool.uri?.startsWith("mcp:") && !!tool.originalFunctionName;
@@ -642,7 +558,12 @@ function deputyInputOf(
   };
 }
 
-/** The decision's reason; at IDGAF on File edits it also names a target outside the workspace. */
+/**
+ * The decision's reason; for an allowed File edits call it also names a target
+ * outside the workspace. That only happens when the outside-paths check is off
+ * (otherwise the call asked), and the audit trail and the transcript then say
+ * where the file landed.
+ */
 function reasonWithOutsideTarget(
   input: EvaluateInput,
   decision: { source?: DecisionSource; policy: ToolPolicy; reason?: string },
@@ -650,11 +571,7 @@ function reasonWithOutsideTarget(
   resolved: ResolvedPath | null | undefined,
   resolvedPath: string | undefined,
 ): string | undefined {
-  if (
-    decision.source !== "idgaf" ||
-    decision.policy !== "allowedWithoutPermission" ||
-    area !== "edits"
-  ) {
+  if (decision.policy !== "allowedWithoutPermission" || area !== "edits") {
     return decision.reason;
   }
   const note = outsideTargetNote(input, resolved, resolvedPath);
@@ -662,9 +579,9 @@ function reasonWithOutsideTarget(
 }
 
 /**
- * The absolute path a File edits call reaches outside the workspace, when
- * IDGAF lets it through: said in the decision, so the audit trail and the
- * transcript name the place. The built-in rule is not consulted for the
+ * The absolute path a File edits call reaches outside the workspace, when it
+ * is let through: said in the decision, so the audit trail and the transcript
+ * name the place. The built-in rule is not consulted for the
  * judgement (it may be switched off, and the fact stays true).
  */
 function outsideTargetNote(
@@ -786,7 +703,10 @@ function evaluateRules(input: EvaluateInput): ToolPolicyResult {
   });
 
   // The floor: deny rules the person wrote to bind even at IDGAF
-  const floorRules = parsePermissions({ deny: input.approval?.floor }, "floor");
+  const rulesOn = builtinRuleOn(input.approval, "apply-rules");
+  const floorRules = rulesOn
+    ? parsePermissions({ deny: input.approval?.floor }, "floor")
+    : [];
   if (floorRules.length) {
     const isMcpCall =
       !!tool.uri?.startsWith("mcp:") && !!tool.originalFunctionName;
@@ -813,22 +733,24 @@ function evaluateRules(input: EvaluateInput): ToolPolicyResult {
     }
   }
 
-  const rules = input.permissionSources
+  const allRules = input.permissionSources
     ? Object.entries(input.permissionSources).flatMap(([origin, perms]) =>
         parsePermissions(perms, origin as RuleSource),
       )
     : parsePermissions(input.permissions);
+  // With "Apply my deny, ask and floor rules" off, only Always rules are read
+  const rules = rulesOn
+    ? allRules
+    : allRules.filter((r) => r.decision === "allow");
   const call = { parsedArgs, cwd: input.cwd, shell: input.shell };
   const found = levelOfCall(input.approval, toolName, tool, call);
-  // A hidden command is not loosened by a level here; IDGAF runs it later
-  // (idgafRunsEverything) and records why it would have stopped. Otherwise
-  // IDGAF reaches past a refusal, a rule and a protected path, and Permissive
-  // acts only on a call that would otherwise ask.
+  // A hidden command is not loosened by a level here. Permissive acts only on
+  // a call that would otherwise ask; nothing here reads a preset name.
   const hidden =
     floorOn && hidesTheCommand(commandText, input.shell, input.envNames);
   const loosening = hidden
     ? undefined
-    : found?.level === "idgaf" || evaluated === "allowedWithPermission"
+    : evaluated === "allowedWithPermission"
       ? approvalLoosening({
           approval: input.approval,
           tool,
@@ -877,78 +799,14 @@ function evaluateRules(input: EvaluateInput): ToolPolicyResult {
     resolved,
     resolvedPath,
   );
-  const idgaf = idgafRecord(reason, objectionUnderIdgaf(decideInput));
   return {
     policy: decision.policy,
     displayValue,
     source: decision.source,
-    ...(idgaf.reason ? { reason: idgaf.reason } : {}),
+    ...(reason ? { reason } : {}),
     ...(decision.protection ? { protection: decision.protection } : {}),
     ...(decision.rule ? { rule: decision.rule } : {}),
     ...(found?.readOnly ? { readOnly: found.readOnly } : {}),
-    ...(idgaf.idgafOverride ? { idgafOverride: idgaf.idgafOverride } : {}),
-  };
-}
-
-/**
- * IDGAF decided the call outright: what it would have met without IDGAF, when
- * a rule or a guard objects, for the record (idgafRunsEverything carries the
- * calls that stopped even at IDGAF).
- */
-function objectionUnderIdgaf(input: DecideInput): ToolDecision | undefined {
-  if (!input.loosening?.absolute) return undefined;
-  const without = decideToolCall({ ...input, loosening: undefined });
-  return objects(without) ? without : undefined;
-}
-
-/** The reason and the record for a call IDGAF ran past an objection. */
-function idgafRecord(
-  reason: string | undefined,
-  recorded: ToolDecision | undefined,
-): { reason?: string; idgafOverride?: IdgafOverride } {
-  if (!recorded) return { reason };
-  return {
-    reason: withWouldHave(reason, recorded),
-    idgafOverride: overrideOf(recorded),
-  };
-}
-
-/**
- * A rule or a guard would have refused or held the call. The tool's own
- * setting asking (no rule involved) is not counted: at IDGAF that is every
- * call, and the count is of what something would have objected to.
- */
-function objects(d: { policy: ToolPolicy; source?: DecisionSource }): boolean {
-  if (d.policy === "allowedWithoutPermission") return false;
-  return (
-    d.source !== undefined &&
-    d.source !== "tool-setting" &&
-    d.source !== "default" &&
-    d.source !== "manual"
-  );
-}
-
-/** The reason, with what would have stopped the call below IDGAF. */
-function withWouldHave(
-  reason: string | undefined,
-  d: { policy: ToolPolicy; reason?: string },
-): string {
-  return `${reason ?? "Allowed at IDGAF."} ${wouldHaveSentence(d)}`;
-}
-
-function overrideOf(d: {
-  policy: ToolPolicy;
-  source?: DecisionSource;
-  reason?: string;
-  protection?: ProtectedKind;
-  rule?: string;
-}): IdgafOverride {
-  return {
-    policy: d.policy as IdgafOverride["policy"],
-    ...(d.source ? { source: d.source } : {}),
-    ...(d.reason ? { reason: d.reason } : {}),
-    ...(d.protection ? { protection: d.protection } : {}),
-    ...(d.rule ? { rule: d.rule } : {}),
   };
 }
 

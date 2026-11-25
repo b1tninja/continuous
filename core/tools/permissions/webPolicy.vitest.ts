@@ -6,7 +6,7 @@ import { evaluateToolPolicyWithRules, type EvaluateInput } from "./evaluate";
 import {
   normalizePolicy,
   POLICY_AREAS,
-  POLICY_LEVELS,
+  levelsOfArea,
   POLICY_PRESET_ORDER,
   POLICY_PRESET_WEB,
   POLICY_PRESETS,
@@ -138,16 +138,6 @@ const TABLE: Record<WebLevel, Record<Situation, WebOutcome>> = {
     "confusable host": "ask",
     "reputation hit": "ask",
   },
-  idgaf: {
-    "allowed host": "run",
-    "other host": "run",
-    "granted host": "run",
-    "URL in message": "run",
-    "robots disallow": "run",
-    "private start": "run",
-    "confusable host": "run",
-    "reputation hit": "run",
-  },
 };
 
 describe("the Web level table (8.2)", () => {
@@ -162,15 +152,6 @@ describe("the Web level table (8.2)", () => {
     }
   }
 
-  it("IDGAF records what it ran past", () => {
-    const d = decideWebCall({
-      level: "idgaf",
-      host: "docs.example",
-      ...SITUATIONS["robots disallow"],
-    });
-    expect(d.recorded).toContain("robots.txt disallows");
-  });
-
   it("Listed says why and that retrying unchanged will not help", () => {
     const d = decideWebCall({ level: "listed", host: "new.example" });
     expect(d.reason).toContain("new.example");
@@ -178,13 +159,12 @@ describe("the Web level table (8.2)", () => {
     expect(d.reason).toContain("Do not retry it unchanged");
   });
 
-  it("a deny rule and a session block refuse below IDGAF, and IDGAF runs past them", () => {
+  it("a deny rule and a session block refuse at every level", () => {
     for (const level of WEB_LEVELS.filter((l) => l !== "off")) {
       const denied = decideWebCall({ level, denied: "Blocked by host:x." });
       const blocked = decideWebCall({ level, sessionBlock: true });
-      const want = level === "idgaf" ? "run" : "refused";
-      expect(denied.outcome).toBe(want);
-      expect(blocked.outcome).toBe(want);
+      expect(denied.outcome, level).toBe("refused");
+      expect(blocked.outcome, level).toBe("refused");
     }
   });
 
@@ -195,8 +175,7 @@ describe("the Web level table (8.2)", () => {
         askRule: "Your rule asks.",
         hostAllowed: { reason: "allowed" },
       });
-      const want =
-        level === "idgaf" ? "run" : level === "listed" ? "refused" : "ask";
+      const want = level === "listed" ? "refused" : "ask";
       expect(d.outcome).toBe(want);
     }
   });
@@ -221,7 +200,6 @@ describe("redirect to an unseen host, by level", () => {
       listed: "refused",
       automatic: "review",
       permissive: "follow-labelled",
-      idgaf: "follow-labelled",
     };
     for (const level of WEB_LEVELS) {
       expect(decideWebRedirect(level, { hostSeen: false })).toBe(want[level]);
@@ -239,10 +217,10 @@ describe("redirect to an unseen host, by level", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Hard checks: bind at every level, IDGAF included (8.6)
+// Hard checks: bind at every level (8.6), each while its own switch is on
 
-describe("hard checks at IDGAF", () => {
-  it("the fetch's own refusal, a floor rule and robots respect bind at IDGAF", () => {
+describe("hard checks at every level", () => {
+  it("the fetch's own refusal, a floor rule and robots respect bind at every level", () => {
     for (const level of WEB_LEVELS.filter((l) => l !== "off")) {
       expect(decideWebCall({ level, hardRefusal: "Refused: x." }).outcome).toBe(
         "refused",
@@ -273,7 +251,7 @@ describe("hard checks at IDGAF", () => {
 
   const idgaf = POLICY_PRESETS.idgaf.levels;
 
-  it("cloud metadata addresses are refused at IDGAF, in every spelling", () => {
+  it("cloud metadata addresses are refused at the IDGAF levels, in every spelling", () => {
     for (const url of [
       "http://169.254.169.254/latest/meta-data/",
       "http://[::ffff:169.254.169.254]/",
@@ -288,11 +266,27 @@ describe("hard checks at IDGAF", () => {
       expect(r.policy, url).toBe("disabled");
       expect(r.source, url).toBe("safety-floor");
       expect(r.reason, url).toContain("cloud metadata");
-      expect(r.idgafOverride, url).toBeUndefined();
     }
   });
 
-  it("a credential in the URL, userinfo and a non-http scheme are refused at IDGAF", () => {
+  it("with refuse-unsafe-urls off, which the IDGAF preset does, a fetch is judged by the rest", () => {
+    const approval = { levels: idgaf, builtin: builtinForPreset("idgaf") };
+    // a credential in the URL: the URL check is off, and nothing else objects
+    const key = secretCases().find((c) => c.ruleId === "github-pat")!.value;
+    const r = fetchAt(`https://example.com/?k=${key}`, idgaf, { approval });
+    expect(r.policy).toBe("allowedWithoutPermission");
+    expect(r.source).not.toBe("safety-floor");
+    // and the switch is the only thing that did it
+    const on = fetchAt(`https://example.com/?k=${key}`, idgaf, {
+      approval: {
+        levels: idgaf,
+        builtin: { ...builtinForPreset("idgaf"), "refuse-unsafe-urls": true },
+      },
+    });
+    expect(on.policy).toBe("disabled");
+  });
+
+  it("a credential in the URL, userinfo and a non-http scheme are refused at the IDGAF levels", () => {
     const key = secretCases().find((c) => c.ruleId === "github-pat")!.value;
     expect(fetchAt(`https://example.com/?k=${key}`, idgaf).policy).toBe(
       "disabled",
@@ -303,13 +297,18 @@ describe("hard checks at IDGAF", () => {
     expect(fetchAt("ftp://example.com/x", idgaf).policy).toBe("disabled");
   });
 
-  it("the person's floor rule binds at IDGAF on Web", () => {
+  it("the person's floor rule binds on Web while apply-rules is on, and is not read when it is off", () => {
+    const floor = ["fetchUrl(https://evil.example/*)"];
     const r = fetchAt("https://evil.example/", idgaf, {
-      approval: { levels: idgaf, floor: ["fetchUrl(https://evil.example/*)"] },
+      approval: { levels: idgaf, floor },
     });
     expect(r.policy).toBe("disabled");
     expect(r.source).toBe("floor");
     expect(r.reason).toContain("floor rule");
+    const off = fetchAt("https://evil.example/", idgaf, {
+      approval: { levels: idgaf, floor, builtin: builtinForPreset("idgaf") },
+    });
+    expect(off.policy).toBe("allowedWithoutPermission");
   });
 
   it("a private start URL runs under the IDGAF preset, which turns protect-secrets off", () => {
@@ -317,15 +316,19 @@ describe("hard checks at IDGAF", () => {
       approval: { levels: idgaf, builtin: builtinForPreset("idgaf") },
     });
     expect(r.policy).toBe("allowedWithoutPermission");
-    expect(r.idgafOverride).toBeUndefined();
+    expect(r).not.toHaveProperty("idgafOverride");
   });
 
-  it("a deny rule is ignored at IDGAF on Web (it is recorded)", () => {
+  it("a deny rule binds on Web at the IDGAF levels, and is not read under the preset's switches", () => {
+    const permissions = { deny: ["fetchUrl(https://blocked.example/*)"] };
+    expect(
+      fetchAt("https://blocked.example/", idgaf, { permissions }).policy,
+    ).toBe("disabled");
     const r = fetchAt("https://blocked.example/", idgaf, {
-      permissions: { deny: ["fetchUrl(https://blocked.example/*)"] },
+      permissions,
+      approval: { levels: idgaf, builtin: builtinForPreset("idgaf") },
     });
     expect(r.policy).toBe("allowedWithoutPermission");
-    expect(r.idgafOverride?.policy).toBe("disabled");
   });
 
   it("metadata is refused at every level, not asked as a private address", () => {
@@ -352,13 +355,13 @@ describe("hard checks at IDGAF", () => {
 // Presets, Custom and the fallback to Tool use
 
 describe("presets set Web", () => {
-  it("Careful and Accept edits are Cautious, Hands off Permissive, Reviewer Automatic, IDGAF IDGAF", () => {
+  it("Careful and Accept edits are Cautious, Hands off and IDGAF Permissive, Reviewer Automatic", () => {
     expect(POLICY_PRESET_WEB).toEqual({
       careful: "cautious",
       acceptEdits: "cautious",
       handsOff: "permissive",
       reviewer: "automatic",
-      idgaf: "idgaf",
+      idgaf: "permissive",
     });
   });
 
@@ -393,7 +396,7 @@ describe("presets set Web", () => {
 
 describe("unset Web follows Tool use", () => {
   it("for every shared level", () => {
-    for (const tools of POLICY_LEVELS) {
+    for (const tools of levelsOfArea("tools")) {
       const w = effectiveWebLevel({ ...careful, tools });
       expect(w).toEqual({ level: tools, source: "tools" });
     }
@@ -457,7 +460,6 @@ describe("unset Web follows Tool use", () => {
 
   it("--safe caps Web at Cautious and keeps the tighter levels", () => {
     expect(capWebAtDefault("permissive")).toBe("cautious");
-    expect(capWebAtDefault("idgaf")).toBe("cautious");
     expect(capWebAtDefault("automatic")).toBe("cautious");
     for (const l of ["off", "listed", "manual", "cautious"] as const) {
       expect(capWebAtDefault(l)).toBe(l);
@@ -468,7 +470,9 @@ describe("unset Web follows Tool use", () => {
   it("web.policy, WB27's placeholder, is read as levels.web with a notice", () => {
     expect(webPolicyAlias("listed").level).toBe("listed");
     expect(webPolicyAlias("listed").notice).toContain("deprecated");
-    expect(webPolicyAlias("idgaf").level).toBeUndefined();
+    // a retired spelling is read as the level it means
+    expect(webPolicyAlias("idgaf").level).toBe("permissive");
+    expect(webPolicyAlias("delegate").level).toBeUndefined();
     expect(webPolicyAlias({ mode: "x" }).notice).toContain("ignored");
     expect(effectiveWebLevel(careful, { policyAlias: "listed" })).toEqual({
       level: "listed",
@@ -497,7 +501,7 @@ describe("off switches", () => {
     });
 
   it("levels.web: off refuses a web call that still arrives, at every Tool use level", () => {
-    for (const tools of POLICY_LEVELS) {
+    for (const tools of levelsOfArea("tools")) {
       const r = fetch({ ...careful, tools, web: "off" });
       expect(r.policy, tools).toBe("disabled");
       expect(r.reason).toContain("Web is Off");
@@ -539,7 +543,7 @@ describe("off switches", () => {
   });
 
   it("a tool the person switched off stays as it is", () => {
-    const r = fetch(withWeb("idgaf"), { basePolicy: "disabled" });
+    const r = fetch(withWeb("permissive"), { basePolicy: "disabled" });
     expect(r.policy).toBe("disabled");
   });
 
@@ -586,7 +590,6 @@ describe("the level table through evaluate", () => {
     expect(evaluate("listed", url)).toBe(RUN);
     expect(evaluate("automatic", url)).toBe(RUN);
     expect(evaluate("permissive", url)).toBe(RUN);
-    expect(evaluate("idgaf", url)).toBe(RUN);
     expect(evaluate("off", url)).toBe(NO);
   });
 
@@ -598,7 +601,6 @@ describe("the level table through evaluate", () => {
     // Automatic hands the open call to the reviewer, which the caller asks
     expect(evaluate("automatic", url)).toBe(ASK);
     expect(evaluate("permissive", url)).toBe(RUN);
-    expect(evaluate("idgaf", url)).toBe(RUN);
   });
 
   it("granted host: Cautious runs it, Listed does not", () => {
@@ -629,17 +631,25 @@ describe("the level table through evaluate", () => {
     ).toBe(ASK);
   });
 
-  it("private start asks below IDGAF and is refused at Listed", () => {
+  it("private start asks at every level that asks, runs under the IDGAF preset, and is refused at Listed", () => {
     const url = "http://10.0.0.5/";
     const allowAll = { permissions: { allow: ["fetchUrl"] } };
     expect(evaluate("cautious", url, allowAll)).toBe(ASK);
     expect(evaluate("permissive", url, allowAll)).toBe(ASK);
     expect(evaluate("automatic", url, allowAll)).toBe(ASK);
     expect(evaluate("listed", url, allowAll)).toBe(NO);
-    expect(evaluate("idgaf", url, allowAll)).toBe(RUN);
+    expect(
+      evaluate("permissive", url, {
+        ...allowAll,
+        approval: {
+          levels: withWeb("permissive"),
+          builtin: builtinForPreset("idgaf"),
+        },
+      }),
+    ).toBe(RUN);
   });
 
-  it("a session block refuses below IDGAF", () => {
+  it("a session block is the person's own act: it refuses at every level, whatever the switches", () => {
     const grants = new WebGrantStore();
     grants.blockOnce("allowed.example");
     const url = "https://allowed.example/page";
@@ -652,7 +662,16 @@ describe("the level table through evaluate", () => {
     ] as const) {
       expect(evaluate(level, url, { web: { grants } }), level).toBe(NO);
     }
-    expect(evaluate("idgaf", url, { web: { grants } })).toBe(RUN);
+    // no switch lifts a block the person made this session
+    expect(
+      evaluate("permissive", url, {
+        web: { grants },
+        approval: {
+          levels: withWeb("permissive"),
+          builtin: builtinForPreset("idgaf"),
+        },
+      }),
+    ).toBe(NO);
   });
 
   it("trustedDomains stands in for host: allow rules until WB21, at Cautious too", () => {
@@ -855,16 +874,16 @@ describe("levels.web in permissions.yaml", () => {
     expect(notices).toEqual([]);
   });
 
-  it("IDGAF is never read from disk, and an unknown value is reported", () => {
+  it("a saved idgaf is read as Permissive, and an unknown value is reported", () => {
     const idgaf = parsePolicyFile("levels:\n  web: idgaf\n");
-    expect(idgaf.settings.levels.web).toBeUndefined();
-    expect(idgaf.notices[0]).toContain("one session only");
+    expect(idgaf.settings.levels.web).toBe("permissive");
+    expect(idgaf.notices).toEqual([]);
     const odd = parsePolicyFile("levels:\n  web: sometimes\n");
     expect(odd.settings.levels.web).toBeUndefined();
     expect(odd.notices[0]).toContain("follows Tool use");
   });
 
-  it("is written, never as IDGAF, and cleared by undefined; left out it is kept", () => {
+  it("is written, cleared by undefined, and kept when left out", () => {
     const written = applyPolicyUpdate("", { levels: withWeb("listed") });
     expect(parsePolicyFile(written).settings.levels.web).toBe("listed");
     const kept = applyPolicyUpdate(written, { levels: { ...careful } });
@@ -873,8 +892,12 @@ describe("levels.web in permissions.yaml", () => {
       levels: { ...careful, web: undefined },
     });
     expect(parsePolicyFile(cleared).settings.levels.web).toBeUndefined();
-    const idgaf = applyPolicyUpdate(written, { levels: withWeb("idgaf") });
-    expect(parsePolicyFile(idgaf).settings.levels.web).toBe("listed");
+    // a retired spelling is written as the level it means
+    const idgaf = applyPolicyUpdate(written, {
+      levels: withWeb("idgaf" as never),
+    });
+    expect(parsePolicyFile(idgaf).settings.levels.web).toBe("permissive");
+    expect(idgaf).not.toContain("idgaf");
   });
 
   it("the five areas keep their own levels whatever Web is", () => {

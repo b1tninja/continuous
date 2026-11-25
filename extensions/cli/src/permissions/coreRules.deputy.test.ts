@@ -26,19 +26,23 @@ fs.writeFileSync(path.join(ws, "a.ts"), "x");
 const link = tryLink(outside, path.join(ws, "link"));
 afterAll(() => removeTestTempDir(base));
 
-const levels = (l: PolicyLevel) => ({
-  context: l,
-  tools: l,
-  edits: l,
-  plan: l,
-  questions: l,
+/** "idgaf" in this file is the preset: Permissive, with the safety checks off */
+type Level = PolicyLevel | "idgaf";
+const real = (l: Level): PolicyLevel => (l === "idgaf" ? "permissive" : l);
+
+const levels = (l: Level) => ({
+  context: real(l),
+  tools: real(l),
+  edits: real(l),
+  plan: real(l),
+  questions: real(l),
 });
 
 const decide = (
   cliToolName: string,
   args: Record<string, unknown>,
   over: {
-    level?: PolicyLevel;
+    level?: Level;
     builtin?: ApprovalSettings["builtin"];
     mcp?: { serverName: string; toolName: string };
     mcpSchema?: Record<string, unknown>;
@@ -145,7 +149,7 @@ describe("the confused-deputy rule through the CLI", () => {
     );
   });
 
-  it("asks below IDGAF and not at IDGAF", async () => {
+  it("asks at every level, and not under the IDGAF preset", async () => {
     const args = { filepath: path.join(outside, "new.txt") };
     for (const level of ["cautious", "permissive", "automatic"] as const) {
       expect((await decide("Write", args, { level }))?.decision, level).toBe(
@@ -242,15 +246,15 @@ describe("an MCP tool's path argument, from its schema, through the CLI", () => 
 });
 
 describe("File edits outside the working folder, by level, through the CLI", () => {
-  const editLevels = (edits: PolicyLevel): ApprovalSettings => ({
-    levels: { ...levels("cautious"), edits },
+  const editLevels = (edits: Level): ApprovalSettings => ({
+    levels: { ...levels("cautious"), edits: real(edits) },
     // The IDGAF preset leaves no safety check on
     ...(edits === "idgaf" ? { builtin: builtinForPreset("idgaf") } : {}),
   });
   const run = (
     tool: string,
     args: Record<string, unknown>,
-    edits: PolicyLevel,
+    edits: Level,
     over: { headless?: boolean; deny?: string[] } = {},
   ) =>
     evaluateWithCoreRules({
@@ -268,35 +272,51 @@ describe("File edits outside the working folder, by level, through the CLI", () 
     ["MultiEdit", { file_path: path.join(outside, "target.txt") }],
   ] as const;
 
-  it("IDGAF allows each, headless too, by the rules, and names the path", async () => {
+  it("the IDGAF preset allows each, headless too, by the rules, and names the path", async () => {
     for (const [tool, args] of targets) {
       for (const headless of [false, true]) {
         const v = await run(tool, args, "idgaf", { headless });
         expect(v?.decision, `${tool} headless=${headless}`).toBe("allow");
         expect(v?.by).toBe("rules");
-        expect(v?.source).toBe("idgaf");
-        expect(v?.reason).toContain("File edits is set to IDGAF");
+        expect(v?.source).toBe("permissive");
+        expect(v?.reason).toContain("File edits is Permissive");
         expect(v?.reason).toContain("The target is outside the workspace: ");
       }
     }
   });
 
-  it("IDGAF ignores a Never rule on the path", async () => {
+  it("the IDGAF preset does not read a Never rule on the path", async () => {
     const v = await run("Write", targets[0][1], "idgaf", {
       deny: ["writeFile(**)"],
     });
     expect(v?.decision).toBe("allow");
   });
 
-  it("IDGAF writes the product's own policy files too, and says it would have refused", async () => {
-    const v = await run(
-      "Write",
-      { filepath: path.join(os.homedir(), ".continuous", "permissions.yaml") },
-      "idgaf",
-    );
+  it("the IDGAF preset writes the product's own policy files too: its lock is off", async () => {
+    const policyFile = {
+      filepath: path.join(os.homedir(), ".continuous", "permissions.yaml"),
+    };
+    const v = await run("Write", policyFile, "idgaf");
     expect(v?.decision).toBe("allow");
-    expect(v?.source).toBe("idgaf");
-    expect(v?.reason).toContain("would have been refused");
+    expect(v?.source).toBe("permissive");
+  });
+
+  it("with only the lock's switch back on, the same write asks", async () => {
+    const v = await evaluateWithCoreRules({
+      cliToolName: "Write",
+      args: {
+        filepath: path.join(os.homedir(), ".continuous", "permissions.yaml"),
+      },
+      cliPermission: "ask",
+      assistantPermissions: undefined,
+      approval: {
+        levels: { ...levels("cautious"), edits: "permissive" },
+        builtin: { ...builtinForPreset("idgaf"), "protect-policy-files": true },
+      },
+      isHeadless: false,
+      cwd: ws,
+    });
+    expect(v?.decision).toBe("ask");
   });
 
   it("Manual, Cautious, Automatic and Permissive hold each of them", async () => {

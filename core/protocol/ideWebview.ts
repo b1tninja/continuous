@@ -17,11 +17,6 @@ import type { EditNotAppliedReason } from "../edit/editFailure";
 
 export type ToIdeFromWebviewProtocol = ToIdeFromWebviewOrCoreProtocol & {
   /**
-   * The areas at IDGAF for this editor session: `areas` given sets them, none
-   * reads them. A host without it answers with an error, read as none.
-   */
-  "policy/sessionIdgaf": [{ areas?: string[] }, { areas: string[] }];
-  /**
    * What the last config load did with instruction files (hidden characters,
    * secrets, the cap, an `AGENTS.md` withheld in Restricted Mode). `load`
    * reads the withheld agent files for this window's session and reloads. A

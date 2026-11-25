@@ -1,12 +1,12 @@
 import * as fs from "fs";
 import * as path from "path";
 
-import { POLICY_PRESETS } from "core/tools/permissions/policy.js";
 import { writeFileAtomicSync } from "core/util/atomicWrite.js";
 import { ContinueError } from "core/util/errors.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  applyPolicyPreset,
   getPolicyLevels,
   resetPolicyLevels,
   setPolicyLevels,
@@ -144,11 +144,9 @@ describe("writeFileTool outside the working directory at each File edits level",
   const withEdits = (
     edits: "manual" | "cautious" | "automatic" | "permissive" | "idgaf",
   ) =>
-    setPolicyLevels(
-      edits === "idgaf"
-        ? { ...getPolicyLevels(), ...POLICY_PRESETS.idgaf.levels }
-        : { ...getPolicyLevels(), edits },
-    );
+    edits === "idgaf"
+      ? applyPolicyPreset("idgaf")
+      : setPolicyLevels({ ...getPolicyLevels(), edits });
 
   it("File edits IDGAF: a headless write outside is prepared, not refused", async () => {
     withEdits("idgaf");
@@ -202,10 +200,10 @@ describe("writeFileTool outside the working directory at each File edits level",
     },
   );
 
-  it("Tool use at IDGAF alone does not free a file write", async () => {
+  it("Tool use at Permissive alone does not free a file write", async () => {
     setPolicyLevels({
       ...getPolicyLevels(),
-      tools: "idgaf",
+      tools: "permissive",
       edits: "cautious",
     });
     const error = await writeFileTool.preprocess!({

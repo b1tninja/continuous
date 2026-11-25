@@ -12,7 +12,6 @@ import {
 import { coerceStringArgsToSchema } from "core/tools/parseArgs.js";
 import {
   modelNote,
-  type LowerDecision,
   type Proposal,
   type Resolved,
 } from "core/tools/permissions/decisionTimer.js";
@@ -25,6 +24,7 @@ import {
   recordRefusal,
   refusalSteer,
 } from "core/tools/permissions/repeatGuard.js";
+import { noChecksOn } from "core/tools/permissions/safetyDegrees.js";
 import { builtinSwitchOff } from "core/tools/permissions/secretSwitch.js";
 import { hostAllowRules } from "core/tools/permissions/webHostRules.js";
 import { effectiveWebLevel } from "core/tools/permissions/webPolicy.js";
@@ -40,7 +40,6 @@ import type { ModelServiceState } from "src/services/types.js";
 import { takeBashEnd } from "../audit/bashExit.js";
 import {
   cliAuditSession,
-  idgafWouldHave,
   recordCliDecision,
   recordCliOutcome,
   type ApprovalTrace,
@@ -59,7 +58,6 @@ import {
   markHeadsUp,
   onKeepWaiting,
   proposalForAsk,
-  proposalForRanPast,
   publishCountdown,
   spendTurnBudget,
 } from "../permissions/askCountdown.js";
@@ -72,7 +70,7 @@ import {
   getReviewer,
   isAutoReviewEnabled,
   liftAtIdgaf,
-  runsAtIdgaf,
+  ownRulesAreOff,
   type CoreVerdict,
 } from "../permissions/coreRules.js";
 import { explainAsk } from "../permissions/explainAsk.js";
@@ -97,11 +95,7 @@ import {
   serviceContainer,
   services,
 } from "../services/index.js";
-import {
-  getCurrentSession,
-  getSessionLoop,
-  trackSessionUsage,
-} from "../session.js";
+import { getCurrentSession, trackSessionUsage } from "../session.js";
 import { telemetryService } from "../telemetry/telemetryService.js";
 import {
   executeToolCall,
@@ -559,7 +553,7 @@ export function announceIdgafAtTurnStart(): void {
     } catch {
       session = undefined;
     }
-    announceIdgaf(effectiveLevels(currentPermissionMode()), session);
+    announceIdgaf(approvalExtras(currentPermissionMode()).builtin, session);
   } catch (e) {
     logger.debug("IDGAF line not shown", { error: e });
   }
@@ -663,8 +657,8 @@ async function coreRulesVerdict(
     // in headless runs whose own policy would allow the call.
     const mode = currentPermissionMode();
     const levels = effectiveLevels(mode);
-    const approval = { levels, ...approvalExtras(levels) };
-    const defaultsOnly = policyIsDefault(levels);
+    const approval = { levels, ...approvalExtras(mode) };
+    const defaultsOnly = policyIsDefault(levels, mode);
     const mcpServer = toolCall.tool?.mcpServer;
     const verdict = await evaluateWithCoreRules({
       cliToolName: toolCall.name,
@@ -721,13 +715,14 @@ async function coreRulesVerdict(
     });
   } catch (e) {
     logger.warn("Could not apply toolPermissions rules", { error: e });
-    // IDGAF has nothing for the engine to decide: the call runs
-    if (callRunsAtIdgaf(toolCall, currentPermissionMode())) {
+    // With no check on (the IDGAF preset, --auto) there is nothing for the
+    // engine to decide: the call runs
+    if (noCheckIsOn(currentPermissionMode())) {
       return {
         decision: "allow",
         by: "system",
-        source: "idgaf",
-        reason: `${ENGINE_ERROR_REASON} The level is IDGAF, so it runs anyway.`,
+        source: "permissive",
+        reason: `${ENGINE_ERROR_REASON} No safety check is on, so it runs anyway.`,
       };
     }
     // Fail closed, at the default levels too: the engine also holds the
@@ -739,17 +734,19 @@ async function coreRulesVerdict(
   }
 }
 
-/** True when the call's area is IDGAF (and the mode is not Plan); never throws. */
-function callRunsAtIdgaf(
-  toolCall: PreprocessedToolCall,
-  mode: "normal" | "plan" | "auto" | undefined,
-): boolean {
+/** True when no safety check is on (and the mode is not Plan); never throws. */
+function noCheckIsOn(mode: "normal" | "plan" | "auto" | undefined): boolean {
   try {
-    return runsAtIdgaf(effectiveLevels(mode ?? "normal"), mode, {
-      name: toolCall.name,
-      arguments: toolCall.arguments,
-      readonly: toolCall.tool?.readonly,
-    });
+    return mode !== "plan" && noChecksOn(approvalExtras(mode).builtin);
+  } catch {
+    return false;
+  }
+}
+
+/** True when the CLI's own ask and exclude lists are not read (apply-rules off); never throws. */
+function ownRulesOff(mode: "normal" | "plan" | "auto" | undefined): boolean {
+  try {
+    return ownRulesAreOff(mode, approvalExtras(mode).builtin);
   } catch {
     return false;
   }
@@ -784,20 +781,6 @@ export function askResult(
     };
   }
   return { approved: false, denialReason: "user" };
-}
-
-/**
- * What a lower level would have done with a call the top level ran: the
- * audit trail's own record (the engine's, or a Never entry of the CLI's lists).
- */
-function ranPastOf(trace: ApprovalTrace): LowerDecision | undefined {
-  const would = idgafWouldHave(trace);
-  if (!would) return undefined;
-  return {
-    policy: would.policy === "deny" ? "disabled" : "allowedWithPermission",
-    ...(would.source ? { source: would.source } : {}),
-    ...(would.reason ? { reason: would.reason } : {}),
-  };
 }
 
 /** What the person, the model and the audit trail are told when the rule check itself failed. */
@@ -887,33 +870,13 @@ async function decideToolApproval(
     };
     return { approved: false, denialReason: "policy", denialMessage: withheld };
   }
-  // IDGAF: the CLI's own ask and exclude do not stop the call (runsAtIdgaf)
-  const idgaf = callRunsAtIdgaf(toolCall, mode);
-  // A call that is allowed runs. One the level ran past an ask or a refusal
-  // is shown first when that level has a heads-up window (0 unless set), and
-  // only where a person is looking: not headless, not while a Loop step runs
-  const run = async (): Promise<ReturnType<typeof askResult>> => {
-    if (isHeadless || !callbacks?.onToolPermissionRequest) {
-      return { approved: true };
-    }
-    if (getSessionLoop()?.current) return { approved: true };
-    const proposal = proposalForRanPast(
-      {
-        name: toolCall.name,
-        arguments: toolCall.arguments,
-        readonly: toolCall.tool?.readonly,
-      },
-      mode,
-      ranPastOf(trace),
-    );
-    if (!proposal) return { approved: true };
-    trace.headsUp = true;
-    return askResult(
-      toolCall,
-      await requestHeadsUp(toolCall, callbacks, proposal),
-      trace,
-    );
-  };
+  // With "Apply my deny, ask and floor rules" off the CLI's own ask and
+  // exclude lists are not read (ownRulesAreOff)
+  const idgaf = ownRulesOff(mode);
+  // A call that is allowed runs
+  const run = async (): Promise<ReturnType<typeof askResult>> => ({
+    approved: true,
+  });
   const permissionCheck = liftAtIdgaf(
     withReadOnlyMcp(checkToolPermission(toolCall, permissions), toolCall.tool),
     idgaf,

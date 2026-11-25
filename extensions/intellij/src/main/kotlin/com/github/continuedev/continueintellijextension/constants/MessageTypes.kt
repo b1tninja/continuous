@@ -49,8 +49,7 @@ class MessageTypes {
             "copyText",
             "jetbrains/isOSREnabled",
             "jetbrains/getColors",
-            "jetbrains/onLoad",
-            "policy/sessionIdgaf"
+            "jetbrains/onLoad"
         )
 
         // Note: If updating these values, make a corresponding update in

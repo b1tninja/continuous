@@ -6,7 +6,7 @@ import {
   PRESET_FREE_RULES,
   POLICY_AREA_LABELS,
   POLICY_AREAS,
-  POLICY_LEVELS,
+  levelRank,
   parsePolicyLevel,
   policyLevelLabel,
 } from "./policy.js";
@@ -36,12 +36,12 @@ export interface PolicyLoosening {
 
 const rank = (level: unknown): number => {
   const parsed = parsePolicyLevel(level);
-  return parsed ? POLICY_LEVELS.indexOf(parsed) : -1;
+  return parsed ? levelRank(parsed) : -1;
 };
 
 /**
  * What the update loosens against the file as it is: an area's level raised
- * (IDGAF counts, though it is never written: it is the session's), a built-in
+ * (Permissive and Automatic rank the same), a built-in
  * rule switched off, a `floor:` rule removed, an MCP server trusted, an entry
  * added to `plan.mcpTools`, the terminal offered in Plan mode. A tightening,
  * a key the update leaves out, and `levels.custom` (provenance only) are not.
@@ -59,7 +59,7 @@ export function policySaveLoosenings(
       const level = parsePolicyLevel(after)!;
       out.push({
         key: `levels.${area}`,
-        text: `${POLICY_AREA_LABELS[area]}: ${policyLevelLabel(area, was)} → ${policyLevelLabel(area, level)}${level === "idgaf" ? " (this session only; nothing is refused or asked, locked rules included)" : ""}`,
+        text: `${POLICY_AREA_LABELS[area]}: ${policyLevelLabel(area, was)} → ${policyLevelLabel(area, level)}`,
       });
     }
   }

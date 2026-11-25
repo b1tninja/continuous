@@ -1,3 +1,7 @@
+import {
+  BUILTIN_RULES,
+  PRESET_FREE_RULES,
+} from "core/tools/permissions/policy";
 import { describe, expect, it } from "vitest";
 import {
   builtinRulesSummary,
@@ -7,18 +11,23 @@ import {
   whoDecidesCounts,
 } from "./policySummaries";
 
+// How many checks a preset sets: derived, so adding a switch does not break these
+const N = BUILTIN_RULES.filter((r) => !PRESET_FREE_RULES.has(r.id)).length;
+
 describe("the one-line state of each folded permission group", () => {
   it("built-in rules: all on and not set, then set, then which are off", () => {
-    expect(builtinRulesSummary({})).toEqual({ text: "Not set: 11 of 11 on" });
+    expect(builtinRulesSummary({})).toEqual({
+      text: `Not set: ${N} of ${N} on`,
+    });
     expect(
       builtinRulesSummary({ builtin: { "protect-secrets": true } }),
-    ).toEqual({ text: "Set by you: 11 of 11 on" });
+    ).toEqual({ text: `Set by you: ${N} of ${N} on` });
     expect(
       builtinRulesSummary({
         builtin: { "protect-secrets": false, "ask-large-change": false },
       }),
     ).toEqual({
-      text: "Set by you: 9 of 11 on. Off: Ask before touching credentials; Ask before a large change",
+      text: `Set by you: ${N - 2} of ${N} on. Off: Ask before touching credentials; Ask before a large change`,
       warning: true,
     });
   });

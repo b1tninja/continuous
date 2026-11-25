@@ -3,11 +3,18 @@ import { BuiltInToolNames } from "../builtIn";
 import type { ShellKind } from "../../util/shell";
 import { canonicalRuleName } from "./names";
 import { classifyReadOnly, type ReadOnlyClaim } from "./readOnlyCommand";
-import { parsePolicyLevel, POLICY_LEVELS, type PolicyLevel } from "./levelText";
+import {
+  isRetiredTopLevel,
+  parsePolicyLevel,
+  POLICY_LEVELS,
+  type PolicyLevel,
+} from "./levelText";
 
 export {
   DEPRECATED_LEVEL_ALIASES,
   isDeprecatedLevelSpelling,
+  isRetiredTopLevel,
+  levelRank,
   modernizeLevelText,
   parsePolicyLevel,
   POLICY_LEVELS,
@@ -34,7 +41,8 @@ export const POLICY_AREAS: readonly PolicyArea[] = [
  * `off` offers no agent web tool; `listed` runs allowed domains and refuses
  * the rest without asking.
  */
-export type WebLevel = PolicyLevel | "off" | "listed";
+/** Web has no `delegate`: that is a Questions level. */
+export type WebLevel = Exclude<PolicyLevel, "delegate"> | "off" | "listed";
 
 /** Top to bottom by how few decisions reach you, as the dropdown lists them; Off is set apart. */
 export const WEB_LEVELS: readonly WebLevel[] = [
@@ -43,7 +51,6 @@ export const WEB_LEVELS: readonly WebLevel[] = [
   "listed",
   "automatic",
   "permissive",
-  "idgaf",
   "off",
 ];
 
@@ -56,12 +63,20 @@ export type PolicyLevels = Record<PolicyArea, PolicyLevel> & {
   web?: WebLevel;
 };
 
+/** The levels an area offers: `delegate` is Questions' alone. */
+export function levelsOfArea(area: PolicyArea): readonly PolicyLevel[] {
+  return area === "questions"
+    ? POLICY_LEVELS
+    : POLICY_LEVELS.filter((l) => l !== "delegate");
+}
+
 /** A Web level from stored or typed text: any case, `yolo` read as `idgaf`. */
 export function parseWebLevel(value: unknown): WebLevel | undefined {
   if (typeof value !== "string") return undefined;
   const word = value.trim().toLowerCase();
   if (word === "off" || word === "listed") return word;
-  return parsePolicyLevel(word);
+  const level = parsePolicyLevel(word);
+  return level === "delegate" ? undefined : level;
 }
 
 /** What a question is about. The agent names it when it asks. */
@@ -102,7 +117,14 @@ export type BuiltinRuleId =
   | "ask-outside-paths"
   | "check-shell-commands"
   | "steer-repeated-calls"
-  | "plan-keeps-checks";
+  | "plan-keeps-checks"
+  | "apply-rules"
+  | "protect-policy-files"
+  | "hold-plan-mode"
+  | "ask-odd-paths"
+  | "refuse-unsafe-urls"
+  | "approve-mcp-tools"
+  | "ask-runtime-writes";
 
 export const BUILTIN_RULES: readonly {
   id: BuiltinRuleId;
@@ -180,29 +202,64 @@ export const BUILTIN_RULES: readonly {
   },
   {
     id: "plan-keeps-checks",
-    label: "Stop a re-plan that weakens a check",
+    label: "Hold a re-plan that weakens a check or adds many to-dos",
     description:
-      "A re-plan that changes a failing check or drops a finished item waits for you.",
+      "In Loop, a re-plan that adds more new to-dos than the Plan edits limit waits for you, and at Cautious so does one that changes a failing check or drops a finished item. Off, no re-plan waits for either.",
   },
-];
-
-/**
- * Rules that cannot be switched off by config or by a level below IDGAF. They
- * are listed beside the built-in rules, without a switch. IDGAF runs past
- * them and records it (evaluate.ts, idgafRunsEverything).
- */
-export const LOCKED_FLOOR_RULES: readonly {
-  id: "protect-policy-files";
-  label: string;
-  description: string;
-}[] = [
+  {
+    id: "apply-rules",
+    label: "Apply my deny, ask and floor rules",
+    description:
+      "Your Never, Ask and floor rules decide a call, at every level. Off, they are not read. Always rules still work.",
+  },
   {
     id: "protect-policy-files",
     label: "Never change the permission files",
     description:
-      "Every file the product loads as config, code, rules or hooks: the global folder, a project's .continue and .continuous folders, .claude settings, agents and skills, and .continuerc. A write or delete that names the path asks, and is refused at Automatic. At IDGAF it runs, and the decision records that this rule would have refused it. A sandbox that denies writes to these folders is what holds for certain.",
+      "Every file the product loads as config, code, rules or hooks: the global folder, a project's .continue and .continuous folders, .claude settings, agents and skills, and .continuerc. A write or delete that names the path asks, and is refused at Automatic. A command that writes to a path built when it runs asks too. Off, none of that is checked.",
+  },
+  {
+    id: "hold-plan-mode",
+    label: "Hold changes in Plan mode",
+    description:
+      "In a Plan turn a call that would change files or state waits for you unless it only reads. Off, Plan mode holds nothing.",
+  },
+  {
+    id: "ask-odd-paths",
+    label: "Ask before an oddly spelled file name",
+    description:
+      "A file named in a way that is not the file it looks like: a Windows device name (NUL, COM1), an alternate data stream (a.txt:x), a trailing dot or space, or an 8.3 short name (JUSTIN~1, PROGRA~1). Off, the call is judged by the folder it reaches, as any other path.",
+  },
+  {
+    id: "refuse-unsafe-urls",
+    label: "Refuse unsafe fetch targets",
+    description:
+      "A fetch of a URL that carries a login or a credential, points at a cloud metadata address, or uses a scheme other than http and https. Off, the fetch goes ahead and only the other web checks decide.",
+  },
+  {
+    id: "approve-mcp-tools",
+    label: "Ask before using an MCP tool you have not approved",
+    description:
+      "A tool of an MCP server you have not approved, or whose definition changed since you did, waits for your approval before it is offered to the model or run. Off, it is offered and runs like any other tool.",
+  },
+  {
+    id: "ask-runtime-writes",
+    label: "Ask before a command writes to a path built when it runs",
+    description:
+      "Off unless you turn it on. On, a command that writes or deletes at a path only known when it runs (`$dir`, a wildcard, a path after `cd` into the home folder) asks, because the path guards cannot read it. Off, it runs as the level allows.",
   },
 ];
+
+/**
+ * Rules with no switch. None remain: the permission-file lock is the
+ * `protect-policy-files` switch, so no level and no preset can override a
+ * choice the person made on a switch. Kept so callers that list them compile.
+ */
+export const LOCKED_FLOOR_RULES: readonly {
+  id: string;
+  label: string;
+  description: string;
+}[] = [];
 
 export interface PolicySettings {
   levels: PolicyLevels;
@@ -292,11 +349,12 @@ export const POLICY_PRESETS: Record<
       "Everything runs, nothing asks and no safety check is on. Turn checks back on one by one if you want them.",
     safety: "none",
     levels: {
-      context: "idgaf",
-      tools: "idgaf",
-      edits: "idgaf",
-      plan: "idgaf",
-      questions: "idgaf",
+      context: "permissive",
+      tools: "permissive",
+      edits: "permissive",
+      plan: "permissive",
+      // Not a safety check: delegating every decision is Delegate, never part of IDGAF
+      questions: DEFAULT_POLICY_LEVELS.questions,
     },
   },
 };
@@ -316,18 +374,43 @@ export const POLICY_PRESET_WEB: Record<PolicyPresetName, WebLevel> = {
   acceptEdits: "cautious",
   handsOff: "permissive",
   reviewer: "automatic",
-  idgaf: "idgaf",
+  idgaf: "permissive",
 };
 
 /**
  * The preset the levels are, or undefined (Custom). An absent `web` matches,
  * since it follows Tool use; Off or Listed on Web makes it Custom.
+ *
+ * IDGAF is Permissive with no safety check on, so given the switches it is
+ * the preset only while none is on: turn one back on and it is Custom.
  */
-export function presetOf(levels: PolicyLevels): PolicyPresetName | undefined {
-  return POLICY_PRESET_ORDER.find(
+export function presetOf(
+  levels: PolicyLevels,
+  builtin?: Partial<Record<BuiltinRuleId, boolean>>,
+): PolicyPresetName | undefined {
+  const matches = POLICY_PRESET_ORDER.filter(
     (name) =>
       POLICY_AREAS.every((a) => POLICY_PRESETS[name].levels[a] === levels[a]) &&
       (levels.web === undefined || levels.web === POLICY_PRESET_WEB[name]),
+  );
+  const name = matches[0];
+  if (
+    name &&
+    builtin !== undefined &&
+    POLICY_PRESETS[name].safety === "none" &&
+    !noCheckIsOn(builtin)
+  ) {
+    return undefined;
+  }
+  return name;
+}
+
+/** True when every check a preset sets is switched off in `builtin`. */
+function noCheckIsOn(
+  builtin: Partial<Record<BuiltinRuleId, boolean>>,
+): boolean {
+  return BUILTIN_RULES.filter((r) => !PRESET_FREE_RULES.has(r.id)).every(
+    (r) => builtin[r.id] === false,
   );
 }
 
@@ -340,14 +423,13 @@ export const POLICY_AREA_LABELS: Record<PolicyArea, string> = {
 };
 
 export function policyLevelLabel(area: PolicyArea, level: PolicyLevel): string {
-  if (level === "idgaf") return "IDGAF";
   return level.charAt(0).toUpperCase() + level.slice(1);
 }
 
 /** One line per level for the dropdown; the tooltip uses the same sentence. */
 export const POLICY_LEVEL_DESCRIPTIONS: Record<
   PolicyArea,
-  Record<PolicyLevel, string>
+  Partial<Record<PolicyLevel, string>>
 > = {
   context: {
     manual: "Asks before each read.",
@@ -355,7 +437,6 @@ export const POLICY_LEVEL_DESCRIPTIONS: Record<
       "Reads what your Always rules and tool settings cover, asks otherwise.",
     automatic: "As Cautious, and a reviewer model decides what is left.",
     permissive: "Reads anything no rule stops.",
-    idgaf: "Reads anything. Every rule is ignored, locked rules included.",
   },
   tools: {
     manual: "Asks before each command and tool.",
@@ -363,29 +444,29 @@ export const POLICY_LEVEL_DESCRIPTIONS: Record<
       "Runs what your Always rules and tool settings cover, asks otherwise.",
     automatic: "As Cautious, and a reviewer model decides what is left.",
     permissive: "Runs anything no rule stops.",
-    idgaf: "Runs anything. Every rule is ignored, locked rules included.",
   },
   edits: {
     manual: "You review each diff.",
     cautious: "Accepts what your Always rules cover, you review the rest.",
     automatic: "A reviewer model accepts, refuses or sends it to you.",
     permissive: "Accepts anything no rule stops.",
-    idgaf: "Accepts everything. Every rule is ignored, locked rules included.",
   },
   plan: {
     manual: "In Loop, every plan and re-plan waits for you.",
-    cautious: "In Loop, re-plans that add no to-do go on. A first plan waits.",
-    automatic:
-      "In Loop, as Permissive until a plan reviewer exists: plans go on, a re-plan may add a few to-dos.",
-    permissive: "In Loop, plans go on. A re-plan may add a few to-dos.",
-    idgaf: "In Loop, every plan goes on. Nothing is checked.",
+    cautious:
+      "In Loop, the first plan waits. A re-plan goes on unless the re-plan switch holds it.",
+    automatic: "In Loop, as Permissive until a plan reviewer exists.",
+    permissive:
+      "In Loop, plans go on. A re-plan goes on unless the re-plan switch holds it.",
   },
   questions: {
     manual: "You decide every question.",
     cautious: "You decide, except types a rule gives the agent.",
-    automatic: "A second model decides, or sends it to you if unsure.",
     permissive: "The agent decides, except types a rule gives you.",
-    idgaf: "The agent decides everything and never asks.",
+    automatic:
+      "A second model reviews the agent's answers and sends you the ones it is unsure about. Not built yet: works as Permissive.",
+    delegate:
+      "The agent decides every question for you and your list is ignored.",
   },
 };
 
@@ -414,8 +495,15 @@ export function normalizePolicy(raw: unknown): NormalizedPolicy {
   for (const area of POLICY_AREAS) {
     const value = given[area];
     if (value === undefined) continue;
-    const level = parsePolicyLevel(value);
-    if (level) levels[area] = level;
+    // Questions never had a safety check to switch off: its old IDGAF was
+    // "the agent decides everything", which is Delegate
+    const level =
+      area === "questions" && isRetiredTopLevel(value)
+        ? "delegate"
+        : parsePolicyLevel(value);
+    if (level === "delegate" && area !== "questions") {
+      problems.push(`${area}: "delegate" is a Questions level only`);
+    } else if (level) levels[area] = level;
     else problems.push(`${area}: "${String(value)}" is not a level`);
   }
   // Web: absent follows Tool use; an unknown value is reported and follows too
@@ -459,6 +547,7 @@ export function normalizePolicy(raw: unknown): NormalizedPolicy {
  */
 export const OPT_IN_RULES: ReadonlySet<BuiltinRuleId> = new Set([
   "check-shell-commands",
+  "ask-runtime-writes",
 ]);
 
 /**
@@ -640,12 +729,14 @@ export function questionDecider(
   type: unknown,
 ): QuestionDecider {
   const level = policy.levels.questions;
-  if (level === "idgaf") return "agent";
   if (level === "manual") return "person";
+  // Delegate: the person's own list does not apply
+  if (level === "delegate") return "agent";
   const known = QUESTION_TYPES.includes(type as QuestionType)
     ? (type as QuestionType)
     : undefined;
-  if (level === "automatic" || level === "permissive") {
+  // Automatic is review and no reviewer for questions is built: as Permissive
+  if (level === "permissive" || level === "automatic") {
     // The person opted out of being asked: the agent's choice stands, whatever
     // the question's type. Only a type the person put on their own "you
     // decide" list (not the default list) still reaches them.
@@ -695,46 +786,39 @@ const count = (n: number) => `${n} new to-do${n === 1 ? "" : "s"}`;
 export function planHandoff(input: PlanHandoffInput): PlanHandoff {
   const { policy, first, added, concern } = input;
   const level = policy.levels.plan;
-  if (level === "idgaf") {
-    return { decision: "go", reason: "Plan edits is set to IDGAF." };
+  const holdsReplans = builtinRuleOn(policy, "plan-keeps-checks");
+  if (level === "manual") {
+    return concern && holdsReplans
+      ? { decision: "wait", reason: concern }
+      : { decision: "wait", reason: "Every plan waits for you." };
   }
-  switch (level) {
-    case "manual":
-      return concern && builtinRuleOn(policy, "plan-keeps-checks")
-        ? { decision: "wait", reason: concern }
-        : { decision: "wait", reason: "Every plan waits for you." };
-    case "cautious":
-      if (concern && builtinRuleOn(policy, "plan-keeps-checks")) {
-        return { decision: "wait", reason: concern };
-      }
-      return added === 0 && !first
-        ? { decision: "go", reason: "The re-plan adds no new to-dos." }
-        : {
-            decision: "wait",
-            reason: first
-              ? "The first plan waits for you."
-              : `The re-plan adds ${count(added)}.`,
-          };
-    case "automatic":
-    case "permissive": {
-      // The person opted out of plan cards: a re-plan goes on, even one that
-      // changed a check (the loop's notice says so). A reviewer model for
-      // plans is not built, so Automatic works as Permissive (UJ10): only the
-      // cap on new to-dos (the Plan edits setting) holds a re-plan back.
-      const name = policyLevelLabel("plan", level);
-      if (first) return { decision: "go", reason: `Plan edits is ${name}.` };
-      const max = policy.maxNewPlanItems ?? DEFAULT_MAX_NEW_PLAN_ITEMS;
-      return added > max
-        ? {
-            decision: "wait",
-            reason: `The re-plan adds ${count(added)}, more than ${max}.`,
-          }
-        : {
-            decision: "go",
-            reason: `Plan edits is ${name}: the re-plan goes on.`,
-          };
+  // Two controls, not a ladder: does the first plan wait (Cautious does), and
+  // does a re-plan that weakens a check or adds many to-dos wait (one switch).
+  // A re-plan after a finished or impossible task is ordinary work, so it goes on.
+  const name = policyLevelLabel("plan", level);
+  if (first) {
+    return level === "cautious"
+      ? { decision: "wait", reason: "The first plan waits for you." }
+      : { decision: "go", reason: `Plan edits is ${name}.` };
+  }
+  if (holdsReplans) {
+    // A re-plan that changes a failing check or drops a finished item waits at
+    // Cautious. At Permissive and Automatic the person opted out of plan cards,
+    // so only its size holds it back.
+    if (concern && level === "cautious") {
+      return { decision: "wait", reason: concern };
+    }
+    const max = policy.maxNewPlanItems ?? DEFAULT_MAX_NEW_PLAN_ITEMS;
+    if (added > max) {
+      return {
+        decision: "wait",
+        reason: `The re-plan adds ${count(added)}, more than ${max}.`,
+      };
     }
   }
+  return added === 0
+    ? { decision: "go", reason: "The re-plan adds no new to-dos." }
+    : { decision: "go", reason: `Plan edits is ${name}: the re-plan goes on.` };
 }
 
 /**
@@ -742,14 +826,17 @@ export function planHandoff(input: PlanHandoffInput): PlanHandoff {
  * agent (see core/util/autoAnswer.ts). The loop's own gates use this one test.
  */
 export function questionsAutoAnswer(level: PolicyLevel): boolean {
-  return level === "automatic" || level === "permissive" || level === "idgaf";
+  return (
+    level === "automatic" || level === "permissive" || level === "delegate"
+  );
 }
 
 /**
- * Questions is IDGAF (a saved `yolo`, its old name, reads as IDGAF): nothing asks, in a loop or outside one, on any
- * surface. The person's own "you decide" list does not apply, and a question
- * is answered for the agent (core/util/autoAnswer.ts) rather than shown.
+ * Questions is Delegate (every decision is the agent's; a stored `idgaf` or
+ * `yolo`, which meant the same, is migrated to it): nothing asks, in a loop or outside one, on
+ * any surface. The person's own "you decide" list does not apply, and a
+ * question is answered for the agent (core/util/autoAnswer.ts) rather than shown.
  */
 export function questionsNeverAsk(level: PolicyLevel | undefined): boolean {
-  return typeof level === "string" && parsePolicyLevel(level) === "idgaf";
+  return typeof level === "string" && parsePolicyLevel(level) === "delegate";
 }

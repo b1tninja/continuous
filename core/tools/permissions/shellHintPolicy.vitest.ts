@@ -13,9 +13,9 @@ const OFF = "disabled" as const;
 const IDGAF: ApprovalSettings = {
   levels: {
     ...DEFAULT_POLICY_LEVELS,
-    context: "idgaf",
-    tools: "idgaf",
-    edits: "idgaf",
+    context: "permissive",
+    tools: "permissive",
+    edits: "permissive",
   },
   // The IDGAF preset leaves no safety check on
   builtin: builtinForPreset("idgaf"),

@@ -126,14 +126,16 @@ describe("ask-destructive-commands", () => {
   it("is reached past only by the IDGAF preset, which turns the check off", () => {
     expect(
       cmd("git reset --hard", {
-        level: "idgaf",
+        level: "permissive",
         sources: { builtin: builtinForPreset("idgaf") },
       }).decision,
     ).toBe("allow");
   });
 
-  it("still asks at IDGAF levels while the check is on", () => {
-    expect(cmd("git reset --hard", { level: "idgaf" }).decision).toBe("ask");
+  it("still asks at Permissive while the check is on", () => {
+    expect(cmd("git reset --hard", { level: "permissive" }).decision).toBe(
+      "ask",
+    );
   });
 });
 

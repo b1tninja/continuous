@@ -12,9 +12,8 @@ import { userTextForReview } from "core/tools/permissions/auto/history";
 import type { ReviewHistory } from "core/tools/permissions/auto/prompt";
 import { isFlaggedOutput } from "core/tools/permissions/injection";
 import type { DecisionSource } from "core/tools/permissions/decide";
-import type { IdgafOverride } from "core/tools/permissions/evaluate";
-import { levelRunsHeld } from "core/tools/permissions/levelText";
 import { planModeVerdict } from "core/tools/permissions/planMode";
+import { builtinIsOn } from "core/tools/permissions/policy";
 import { refusalText } from "core/tools/refusalText";
 import { IIdeMessenger } from "../../context/IdeMessenger";
 import { isEditTool } from "../../util/toolCallState";
@@ -58,7 +57,6 @@ export interface EvaluatedPolicy {
   /** The protection that decided, when source is protected-path. */
   protection?: string;
   /** The level ran the call past an ask or a refusal: what it ran past (core) */
-  idgafOverride?: IdgafOverride;
   toolCallState: ToolCallState;
 }
 
@@ -101,11 +99,8 @@ export function holdInPlanMode(
   return planModeVerdict(result, {
     // The flag on the tool, or a command the parser vouched as only reading
     readOnly: !!tool?.readonly || !!result.readOnly,
-    // The call's arguments matter: a vouched read-only command is Context use
-    levelRunsHeld: levelRunsHeld(
-      levelOfCall(approval, name, tool, callContextFor(result.toolCallState))
-        ?.level,
-    ),
+    // With "Hold changes in Plan mode" off, Plan mode holds nothing
+    off: !builtinIsOn(approval?.builtin, "hold-plan-mode"),
   });
 }
 
@@ -135,8 +130,8 @@ export async function evaluateToolPolicy(
     history,
     mode === "plan",
   );
-  // Plan mode changes nothing until the plan is accepted, at every level
-  // below IDGAF
+  // Plan mode changes nothing until the plan is accepted, at every level,
+  // while its switch is on
   return mode === "plan"
     ? holdInPlanMode(result, activeTools, approval)
     : result;
@@ -189,18 +184,6 @@ async function evaluateBasePolicy(
         }
         if (source === "protected-path" || source === "plan-mode") {
           return { ...result.content, toolCallState };
-        }
-        // The level ran the edit past an ask or a refusal: the record is
-        // kept, so a heads-up window set for that level can show it first
-        if (
-          policy === "allowedWithoutPermission" &&
-          result.content.idgafOverride
-        ) {
-          return {
-            policy,
-            idgafOverride: result.content.idgafOverride,
-            toolCallState,
-          };
         }
       } else {
         // Core could not decide. Waiting is the closed failure: a deny rule,
@@ -256,8 +239,7 @@ async function evaluateBasePolicy(
     // call no rule, protected path or safety check has settled.
     details.source !== "allow-rule" &&
     details.source !== "permissive" &&
-    details.source !== "trusted-host" &&
-    details.source !== "idgaf"
+    details.source !== "trusted-host"
   ) {
     return { ...details, policy: "allowedWithPermission", toolCallState }; // Cannot make more lenient
   }
@@ -543,8 +525,7 @@ export async function evaluateToolPolicies(
         source === "auto" ||
         source === "once" ||
         source === "permissive" ||
-        source === "trusted-host" ||
-        source === "idgaf")
+        source === "trusted-host")
     ) {
       dispatch(
         setToolCallDecision({

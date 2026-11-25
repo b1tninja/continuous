@@ -52,8 +52,11 @@ import {
 
 export type RuleState = "effective" | "ignored";
 
-/** Why a rule is ignored: `trust` (the source may not loosen), `level`, or `unreadable`. */
-export type IgnoredCause = "trust" | "level" | "unreadable";
+/**
+ * Why a rule is ignored: `trust` (the source may not loosen), `level`, `switch`
+ * (the "Apply my deny, ask and floor rules" check is off), or `unreadable`.
+ */
+export type IgnoredCause = "trust" | "level" | "switch" | "unreadable";
 
 export interface EffectiveRule {
   /** Stable within one report: `source:decision:index` */
@@ -234,6 +237,13 @@ const BUILTIN_AREAS: Record<BuiltinRuleId, PolicyArea[]> = {
   "ask-unknown-host": ["tools"],
   "ask-outside-paths": ["context", "edits"],
   "plan-keeps-checks": ["plan"],
+  "apply-rules": ["context", "tools", "edits"],
+  "protect-policy-files": ["tools", "edits"],
+  "hold-plan-mode": ["tools", "edits"],
+  "ask-odd-paths": ["context", "tools", "edits"],
+  "refuse-unsafe-urls": ["tools"],
+  "approve-mcp-tools": ["tools"],
+  "ask-runtime-writes": ["tools"],
 };
 
 /** The area a rule's tool name belongs to, or undefined for session-only tools. */
@@ -302,9 +312,6 @@ function levelIgnore(
   if (!area) return undefined;
   const level = levels[area];
   const name = POLICY_AREA_LABELS[area];
-  if (level === "idgaf") {
-    return `${name} is set to ${policyLevelLabel(area, level)}, which ignores every rule except the floor.`;
-  }
   // File edits are excluded: their check is the diff the person reviews
   if (level === "manual" && decision === "allow" && area !== "edits") {
     return `${name} is Manual, so allow rules are not consulted. Deny and ask rules still apply.`;
@@ -369,6 +376,7 @@ function toRule(
   index: number,
   levels: PolicyLevels,
   assistantAllow: "effective" | "ignored",
+  rulesApplied = true,
 ): EffectiveRule {
   const id = `${p.source}:${p.decision}:${index}`;
   const base = {
@@ -409,7 +417,12 @@ function toRule(
   };
   let reason: string | undefined;
   let cause: IgnoredCause | undefined;
-  if (p.source === "folder" && p.decision === "allow") {
+  if (!rulesApplied && p.decision !== "allow") {
+    // Its own switch, not a level: deny, ask and floor rules are not read at all
+    reason =
+      'The "Apply my deny, ask and floor rules" check is off, so this rule is not read at any level. Always rules still work.';
+    cause = "switch";
+  } else if (p.source === "folder" && p.decision === "allow") {
     reason = FOLDER_ALLOW_REASON;
     cause = "trust";
   } else if (
@@ -469,7 +482,7 @@ function areaReport(
     label: POLICY_AREA_LABELS[area],
     level,
     levelLabel: policyLevelLabel(area, level),
-    levelDescription: POLICY_LEVEL_DESCRIPTIONS[area][level],
+    levelDescription: POLICY_LEVEL_DESCRIPTIONS[area][level] ?? "",
     rules: rules.filter((r) => r.area === area).sort(sortRules),
     builtins,
   };
@@ -502,7 +515,13 @@ export function listEffectiveRules(
   const levels = input.levels ?? DEFAULT_POLICY_LEVELS;
   const assistantAllow = input.assistantAllow ?? "effective";
   const rules = gather(input).map((p, i) =>
-    toRule(p, i, levels, assistantAllow),
+    toRule(
+      p,
+      i,
+      levels,
+      assistantAllow,
+      builtinIsOn(input.builtin, "apply-rules"),
+    ),
   );
   const exemptions = listExemptions({
     "user-config": input.user,

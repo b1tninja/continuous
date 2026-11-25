@@ -1,10 +1,10 @@
 import { createAsyncThunk } from "@reduxjs/toolkit";
 import {
-  parsePolicyLevel,
   type PolicyArea,
   type PolicyLevel,
   type PolicyLevels,
 } from "core/tools/permissions/policy";
+import type { PolicyPresetName } from "core/tools/permissions/policy";
 import type {
   PolicyFileUpdate,
   StoredCustomSet,
@@ -16,17 +16,13 @@ import {
   type PolicyExtras,
 } from "../slices/uiSlice";
 import { ThunkApiType } from "../store";
-import { afterApplying, afterLoading, builtinToSave } from "./presetChecks";
+import { settingsOfPreset } from "./presetChecks";
 
 /**
  * The levels and settings live in the file the CLI shares
- * (~/.continuous/permissions.yaml); core reads and writes it, and never writes
- * IDGAF there. At startup the file replaces what the webview remembered,
- * except the areas the host says are at IDGAF in this editor session
- * (`policy/sessionIdgaf`): a webview reload or an extension host restart must
- * not drop IDGAF in the middle of an unattended run, and a new editor session
- * starts at the saved levels. The CLI has no such state: its levels last for
- * the process.
+ * (~/.continuous/permissions.yaml); core reads and writes it. IDGAF is a
+ * preset: its levels and its switches are saved like any other preset's, and
+ * nothing here treats it as a mode that lasts for a session.
  */
 export const loadPolicySettings = createAsyncThunk<void, void, ThunkApiType>(
   "policy/load",
@@ -35,11 +31,7 @@ export const loadPolicySettings = createAsyncThunk<void, void, ThunkApiType>(
       const res = await extra.ideMessenger.request("policy/load", undefined);
       if (res.status !== "success") return;
       const { settings, notices } = res.content;
-      const session = await sessionIdgafAreas(extra.ideMessenger);
-      const levels = keepIdgaf(session, settings.levels);
-      // Levels restored as the IDGAF preset bring its checks back off
-      const checks = afterLoading(levels, settings.builtin);
-      dispatch(setPolicyLevels(levels));
+      dispatch(setPolicyLevels(settings.levels));
       dispatch(
         setPolicyExtras({
           maxNewPlanItems: settings.maxNewPlanItems,
@@ -47,8 +39,7 @@ export const loadPolicySettings = createAsyncThunk<void, void, ThunkApiType>(
             youDecide: settings.questions?.youDecide,
             agentDecides: settings.questions?.agentDecides,
           },
-          builtin: checks.builtin,
-          savedBuiltin: checks.savedBuiltin,
+          builtin: settings.builtin,
           floor: settings.floor ?? [],
           planMcpTools: settings.planMcpTools ?? [],
           backgroundMcpTools: settings.backgroundMcpTools ?? [],
@@ -70,41 +61,7 @@ export const loadPolicySettings = createAsyncThunk<void, void, ThunkApiType>(
   },
 );
 
-/** The file's levels, with every area the webview remembered at IDGAF kept there. */
-export function keepIdgaf(
-  sessionAreas: readonly string[],
-  fromFile: PolicyLevels,
-): PolicyLevels {
-  const out = { ...fromFile };
-  for (const area of Object.keys(out) as PolicyArea[]) {
-    if (sessionAreas.includes(area)) out[area] = "idgaf";
-  }
-  return out;
-}
-
-type Messenger = ThunkApiType["extra"]["ideMessenger"];
-
-/** The host's IDGAF areas for this editor session; none when it has none or cannot say. */
-async function sessionIdgafAreas(messenger: Messenger): Promise<string[]> {
-  try {
-    const res = await messenger.request("policy/sessionIdgaf", {});
-    return res.status === "success" ? res.content.areas : [];
-  } catch {
-    return [];
-  }
-}
-
-/** Tells the host which areas are at IDGAF now, for the rest of the editor session. */
-function rememberSessionIdgaf(messenger: Messenger, levels: PolicyLevels) {
-  const areas = (Object.keys(levels) as PolicyArea[]).filter(
-    (a) => parsePolicyLevel(levels[a]) === "idgaf",
-  );
-  void messenger
-    .request("policy/sessionIdgaf", { areas })
-    .catch(() => undefined);
-}
-
-/** Writes the levels (never IDGAF) and the settings a person can change. */
+/** Writes the levels and the settings a person can change. */
 export const savePolicySettings = createAsyncThunk<void, void, ThunkApiType>(
   "policy/save",
   async (_, { getState, extra }) => {
@@ -122,9 +79,7 @@ export const savePolicySettings = createAsyncThunk<void, void, ThunkApiType>(
           ? { agentDecides: policyExtras.questions.agentDecides }
           : {}),
       },
-      // While the IDGAF preset is in force the file keeps what it had: IDGAF
-      // and the checks it turned off last for this session only
-      builtin: builtinToSave(policyExtras.builtin, policyExtras.savedBuiltin),
+      builtin: policyExtras.builtin,
       // The decision timer is sent only once there is something to send: a save
       // made before the file loaded must not remove what the file has. An empty
       // object, which the person chose by turning every window off, removes it.
@@ -233,7 +188,7 @@ export const changePolicyLevel = createAsyncThunk<
   void,
   { area: PolicyArea; level: PolicyLevel },
   ThunkApiType
->("policy/changeLevel", async (change, { dispatch, getState, extra }) => {
+>("policy/changeLevel", async (change, { dispatch, getState }) => {
   const previous = getState().ui.policyLevels;
   // One area changes; the safety checks are their own knobs and stay as they are
   dispatch(setPolicyLevel(change));
@@ -241,39 +196,42 @@ export const changePolicyLevel = createAsyncThunk<
   if (savePolicySettings.rejected.match(saved)) {
     dispatch(setPolicyLevels(previous));
   }
-  rememberSessionIdgaf(extra.ideMessenger, getState().ui.policyLevels);
 });
 
+/**
+ * A preset sets every knob: the five levels and its safety checks together.
+ * It is given by name, because levels alone cannot say which one it is
+ * (Hands off and IDGAF set the same levels and differ in their switches).
+ */
 export const applyPolicyPreset = createAsyncThunk<
   void,
-  PolicyLevels,
+  PolicyPresetName,
   ThunkApiType
->("policy/applyPreset", async (levels, { dispatch, getState, extra }) => {
+>("policy/applyPreset", async (name, { dispatch, getState }) => {
   const previous = getState().ui.policyLevels;
   const previousExtras = getState().ui.policyExtras;
-  dispatch(setPolicyLevels(levels));
-  // A preset sets every knob: the five levels and its safety checks together
-  const checks = afterApplying(levels, {
-    builtin: previousExtras.builtin,
-    savedBuiltin: previousExtras.savedBuiltin,
-  });
-  dispatch(
-    setPolicyExtras({
-      builtin: checks.builtin,
-      savedBuiltin: checks.savedBuiltin,
-    }),
-  );
+  const next = settingsOfPreset(name);
+  dispatch(setPolicyLevels(next.levels));
+  dispatch(setPolicyExtras({ builtin: next.builtin }));
   const saved = await dispatch(savePolicySettings());
   if (savePolicySettings.rejected.match(saved)) {
     dispatch(setPolicyLevels(previous));
-    dispatch(
-      setPolicyExtras({
-        builtin: previousExtras.builtin,
-        savedBuiltin: previousExtras.savedBuiltin,
-      }),
-    );
+    dispatch(setPolicyExtras({ builtin: previousExtras.builtin }));
   }
-  rememberSessionIdgaf(extra.ideMessenger, getState().ui.policyLevels);
+});
+
+/** Applies levels with no preset name (a recalled custom set); the switches stay. */
+export const applyPolicyLevels = createAsyncThunk<
+  void,
+  PolicyLevels,
+  ThunkApiType
+>("policy/applyLevels", async (levels, { dispatch, getState }) => {
+  const previous = getState().ui.policyLevels;
+  dispatch(setPolicyLevels(levels));
+  const saved = await dispatch(savePolicySettings());
+  if (savePolicySettings.rejected.match(saved)) {
+    dispatch(setPolicyLevels(previous));
+  }
 });
 
 export const changePolicyExtras = createAsyncThunk<

@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import { BUILTIN_RULES } from "core/tools/permissions/policy.js";
 import { DEFAULT_POLICY_LEVELS } from "core/tools/permissions/policy.js";
 import { writePolicyFile } from "core/tools/permissions/settingsFile.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -382,7 +383,7 @@ describe("doctor config", () => {
 
     const auto = collect({ flags: { auto: true } });
     expect(control(auto, "level.tools")).toMatchObject({
-      value: "idgaf",
+      value: "permissive",
       source: "flag",
       sourceDetail: "--auto",
     });
@@ -502,19 +503,7 @@ describe("doctor config", () => {
       "rules.exclude",
       "rules.ask",
       "rules.allow",
-      "protection.protect-secrets",
-      "protection.protect-config",
-      "protection.protect-network-paths",
-      "protection.refuse-dangerous-commands",
-      "protection.no-fetch-and-run",
-      "protection.ask-destructive-commands",
-      "protection.ask-large-change",
-      "protection.ask-dependency-change",
-      "protection.ask-unknown-host",
-      "protection.ask-outside-paths",
-      "protection.check-shell-commands",
-      "protection.steer-repeated-calls",
-      "protection.plan-keeps-checks",
+      ...BUILTIN_RULES.map((r) => `protection.${r.id}`),
       "taintedSessionRule",
       "hooks.user",
       "hooks.project",
