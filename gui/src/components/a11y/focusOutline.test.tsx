@@ -316,7 +316,8 @@ describe("text fields in a bordered wrapper show focus on the wrapper", () => {
           ),
       );
     expect(focusRules).toHaveLength(1);
-    expect(focusRules[0].cssText).toMatch(/outline:\s*none/);
+    // Read the longhand: jsdom 31 serialises `outline: none` as "outline: medium" in cssText
+    expect(focusRules[0].style.getPropertyValue("outline-style")).toBe("none");
     expect(focusRules[0].cssText).toMatch(
       /border-color:\s*var\(--vscode-focusBorder/,
     );

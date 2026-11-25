@@ -126,7 +126,7 @@ describe("Advanced (YAML) tab", () => {
     await user.click(screen.getByTestId("model-config-review"));
     expect(preview).not.toHaveBeenCalled();
     expect(
-      screen.getByRole("tab", { name: "Advanced (YAML) (has errors)" }),
+      screen.getByRole("tab", { name: /^Advanced \(YAML\) ?\(has errors\)$/ }),
     ).toHaveAttribute("aria-selected", "true");
   });
 
@@ -152,7 +152,7 @@ describe("Advanced (YAML) tab", () => {
     await user.click(screen.getByTestId("model-config-review"));
     expect(await screen.findByText("pricing.output: Required")).toBeTruthy();
     expect(
-      screen.getByRole("tab", { name: "Advanced (YAML) (has errors)" }),
+      screen.getByRole("tab", { name: /^Advanced \(YAML\) ?\(has errors\)$/ }),
     ).toHaveAttribute("aria-selected", "true");
   });
 

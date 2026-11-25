@@ -177,9 +177,10 @@ describe("ModelConfigDialog", () => {
     await user.type(screen.getByLabelText("Max output tokens"), "100");
     await user.click(screen.getByTestId("model-config-review"));
     expect(await screen.findByText("Model id is required.")).toBeTruthy();
-    // the tab says it has errors, to a screen reader too
+    // the tab says it has errors, to a screen reader too. The space before "(has errors)" is optional
+    // because dom-accessibility-api trims each element's text, and jsdom 31 reports a span as inline.
     expect(
-      screen.getByRole("tab", { name: "Connection (has errors)" }),
+      screen.getByRole("tab", { name: /^Connection ?\(has errors\)$/ }),
     ).toHaveAttribute("aria-selected", "true");
   });
 
