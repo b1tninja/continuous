@@ -14,14 +14,14 @@
   "type": "commonjs",
   "devDependencies": {
     "@types/node": "^24.19.2",
-    "mintlify": "^4.3.23",
+    "mintlify": "^4.3.89",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "@c15t/react": "^3.2.2",
     "axios": "^1.13.6",
     "sharp": "^0.35.5",
-    "tar-fs": "^3.1.2"
+    "tar-fs": "^3.1.4"
   },
   "overrides": {
     "express": "^4.21.2",
