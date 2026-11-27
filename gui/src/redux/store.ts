@@ -23,7 +23,10 @@ import { profilesReducer } from "./slices/profilesSlice";
 import sessionReducer from "./slices/sessionSlice";
 import tabsReducer from "./slices/tabsSlice";
 import uiReducer from "./slices/uiSlice";
-import { migrateApproval } from "core/tools/permissions/policy";
+import {
+  migrateApproval,
+  normalizeLevels,
+} from "core/tools/permissions/policy";
 import { chatDebugMiddleware } from "./chatDebugMiddleware";
 import { keptOpenStateMiddleware } from "./keptOpenStateMiddleware";
 
@@ -77,7 +80,8 @@ const saveSubsetFilters = [
   createFilter("profiles", ["preferencesByProfileId", "selectedProfileId"]),
 ];
 
-const migrations: MigrationManifest = {
+/** Exported so a test can feed it the state an older build saved. */
+export const migrations: MigrationManifest = {
   "0": (state) => {
     const oldState = state as any;
 
@@ -119,10 +123,22 @@ const migrations: MigrationManifest = {
       },
     };
   },
+  // The retired IDGAF level (and yolo) was saved as a level. It is now a preset,
+  // so a saved one is read the way a settings file reads it: Permissive, and
+  // Delegate on Questions. Without this the saved value reaches the level
+  // chips, which have no entry for it, and the page cannot be shown.
+  "3": (state) => {
+    const ui = (state as any)?.ui;
+    if (!ui?.policyLevels) return state as any;
+    return {
+      ...(state as any),
+      ui: { ...ui, policyLevels: normalizeLevels(ui.policyLevels).levels },
+    };
+  },
 };
 
 const persistConfig = {
-  version: 2,
+  version: 3,
   key: "root",
   storage,
   transforms: [...saveSubsetFilters],

@@ -1,18 +1,24 @@
 import { act, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import { MockIdeMessenger } from "../../context/MockIdeMessenger";
-import { EMPTY_CONFIG, updateConfig } from "../../redux/slices/configSlice";
-import { setPolicyExtras, setPolicyLevel } from "../../redux/slices/uiSlice";
-import { setupStore } from "../../redux/store";
-import { loadPolicySettings } from "../../redux/thunks/policySettings";
+import type { PolicyLevel } from "core/tools/permissions/policy";
 import { POLICY_PRESETS } from "core/tools/permissions/policy";
 import { builtinForPreset } from "core/tools/permissions/safetyDegrees";
-import { renderWithProviders } from "../../util/test/render";
+import { describe, expect, it } from "vitest";
+import { MockIdeMessenger } from "../../context/MockIdeMessenger";
 import { ProtectionsView } from "../../pages/config/sections/permissions/ProtectionsView";
 import { answerProtectionsReads } from "../../pages/config/sections/permissions/protectionsTestHost";
+import { EMPTY_CONFIG, updateConfig } from "../../redux/slices/configSlice";
+import {
+  setPolicyExtras,
+  setPolicyLevel,
+  setPolicyLevels,
+} from "../../redux/slices/uiSlice";
+import { migrations, setupStore } from "../../redux/store";
+import { loadPolicySettings } from "../../redux/thunks/policySettings";
+import { renderWithProviders } from "../../util/test/render";
 import { BuiltinRulesCard } from "./BuiltinRulesCard";
 import { PolicyCard } from "./PolicyCard";
-import { PolicyControls, IdgafChip } from "./PolicyControls";
+import { IdgafChip, PolicyControls } from "./PolicyControls";
+import { glyphOf, LEVEL_GLYPHS, LEVEL_TONES, toneOf } from "./levelStyle";
 
 async function setup(experimental = false) {
   const ideMessenger = new MockIdeMessenger();
@@ -422,5 +428,127 @@ describe("the settings beside the levels", () => {
     expect(store.getState().ui.policyExtras.builtin).toEqual(
       builtinForPreset("idgaf"),
     );
+  });
+});
+
+// 2.38.11 crashed ("Cannot read properties of undefined (reading 'chip')") for
+// anyone whose webview had saved the old IDGAF level: it was persisted as a
+// level, rehydrated unchanged, and the level chips had no entry for it.
+describe("a level saved by an older build", () => {
+  const saved = (levels: Record<string, unknown>) => ({
+    ui: { policyLevels: levels, toolSettings: {} },
+    _persist: { version: 2, rehydrated: true },
+  });
+
+  it("the migration reads a saved idgaf as Permissive, and Delegate on Questions", () => {
+    const state = migrations["3"](
+      saved({
+        context: "idgaf",
+        tools: "idgaf",
+        edits: "idgaf",
+        plan: "idgaf",
+        questions: "idgaf",
+      }) as never,
+    ) as any;
+    expect(state.ui.policyLevels).toEqual({
+      context: "permissive",
+      tools: "permissive",
+      edits: "permissive",
+      plan: "permissive",
+      questions: "delegate",
+    });
+    expect(state.ui.toolSettings).toEqual({});
+  });
+
+  it("the migration reads yolo the same way, in any case, and keeps the levels it knows", () => {
+    const state = migrations["3"](
+      saved({
+        context: "YOLO",
+        tools: "manual",
+        edits: "automatic",
+        plan: "cautious",
+        questions: "permissive",
+      }) as never,
+    ) as any;
+    expect(state.ui.policyLevels).toEqual({
+      context: "permissive",
+      tools: "manual",
+      edits: "automatic",
+      plan: "cautious",
+      questions: "permissive",
+    });
+  });
+
+  it("the migration replaces a value it cannot read with the area's default, and Delegate on a tool area too", () => {
+    const state = migrations["3"](
+      saved({
+        context: "sometimes",
+        tools: "delegate",
+        edits: 5,
+        plan: "cautious",
+        questions: "delegate",
+      }) as never,
+    ) as any;
+    expect(state.ui.policyLevels).toMatchObject({
+      context: "permissive",
+      tools: "cautious",
+      edits: "manual",
+      plan: "cautious",
+      questions: "delegate",
+    });
+  });
+
+  it("the migration leaves a state with no saved levels alone", () => {
+    const empty = { ui: {}, _persist: { version: 2, rehydrated: true } };
+    expect(migrations["3"](empty as never)).toEqual(empty);
+    const none = { _persist: { version: 2, rehydrated: true } };
+    expect(migrations["3"](none as never)).toEqual(none);
+  });
+
+  it("the reducers read a message from an older host the same way", async () => {
+    const { store } = await setup();
+    await act(async () => {
+      store.dispatch(
+        setPolicyLevel({ area: "tools", level: "idgaf" as never }),
+      );
+      store.dispatch(
+        setPolicyLevel({ area: "questions", level: "idgaf" as never }),
+      );
+    });
+    expect(store.getState().ui.policyLevels.tools).toBe("permissive");
+    expect(store.getState().ui.policyLevels.questions).toBe("delegate");
+    await act(async () => {
+      store.dispatch(
+        setPolicyLevels({
+          context: "yolo",
+          tools: "nonsense",
+          edits: "manual",
+          plan: "manual",
+          questions: "manual",
+        } as never),
+      );
+    });
+    expect(store.getState().ui.policyLevels).toMatchObject({
+      context: "permissive",
+      tools: "cautious",
+      edits: "manual",
+    });
+  });
+
+  it("a level this build does not know gets the Cautious glyph and tint, not a crash", () => {
+    // The chips look a level up by name; a value from saved state or another
+    // host that is not one of the five used to be undefined, and .chip threw
+    for (const level of ["idgaf", "yolo", "somethingnew", "", "constructor"]) {
+      expect(toneOf(level)).toBe(LEVEL_TONES.cautious);
+      expect(glyphOf(level)).toBe(LEVEL_GLYPHS.cautious);
+    }
+  });
+
+  it("every real level keeps its own glyph and tint", () => {
+    for (const level of Object.keys(LEVEL_TONES) as PolicyLevel[]) {
+      expect(toneOf(level)).toBe(LEVEL_TONES[level]);
+      expect(glyphOf(level)).toBe(LEVEL_GLYPHS[level]);
+    }
+    expect(toneOf("permissive")).not.toBe(toneOf("manual"));
   });
 });

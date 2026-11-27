@@ -33,7 +33,7 @@ import {
 } from "../../redux/thunks/policySettings";
 import { customPolicyRoute } from "../../util/navigation";
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from "../ui";
-import { CHIP, IDGAF_SENTENCE, IDGAF_TONE, LEVEL_TONES } from "./levelStyle";
+import { CHIP, IDGAF_SENTENCE, IDGAF_TONE, toneOf } from "./levelStyle";
 
 type Glyph = typeof BoltIcon;
 
@@ -91,7 +91,7 @@ export function presetTone(
       level: undefined,
     };
   }
-  return { ...LEVEL_TONES[loosest], level: loosest };
+  return { ...toneOf(loosest), level: loosest };
 }
 
 /** "Cautious: Tool use, Plan edits. Manual: File edits." for one set of levels. */

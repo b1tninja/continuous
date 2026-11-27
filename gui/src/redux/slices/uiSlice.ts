@@ -6,7 +6,6 @@ import { ToolPolicy } from "@continuedev/terminal-security";
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { MessageModes, RuleWithSource, Tool } from "core";
 import { BUILT_IN_GROUP_NAME } from "core/tools/builtIn";
-import { parsePolicyLevel } from "core/tools/permissions/levelText";
 import {
   DEFAULT_POLICY_LEVELS,
   type BuiltinRuleId,
@@ -14,6 +13,7 @@ import {
   type PolicyLevel,
   type PolicyLevels,
   type QuestionType,
+  normalizeLevels,
 } from "core/tools/permissions/policy";
 import {
   defaultOnboardingCardState,
@@ -293,13 +293,14 @@ export const uiSlice = createSlice({
       state.policyLevels = {
         ...state.policyLevels,
         // a message from an older host may still say "yolo"
-        [payload.area]: parsePolicyLevel(payload.level) ?? payload.level,
+        [payload.area]: normalizeLevels({ [payload.area]: payload.level })
+          .levels[payload.area],
       };
     },
     setPolicyLevels: (state, { payload }: PayloadAction<PolicyLevels>) => {
-      state.policyLevels = Object.fromEntries(
-        Object.entries(payload).map(([a, l]) => [a, parsePolicyLevel(l) ?? l]),
-      ) as PolicyLevels;
+      // read like a settings file: a retired idgaf is Permissive, and a value this
+      // build does not know is the area's default, not stored as it came
+      state.policyLevels = normalizeLevels(payload).levels;
     },
     setPolicyExtras: (
       state,

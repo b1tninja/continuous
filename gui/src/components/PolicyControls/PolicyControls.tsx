@@ -38,8 +38,8 @@ import {
   CHIP,
   IDGAF_SENTENCE,
   IDGAF_TONE,
-  LEVEL_GLYPHS,
-  LEVEL_TONES,
+  glyphOf,
+  toneOf,
 } from "./levelStyle";
 import { PresetSelect } from "./PresetSelect";
 
@@ -92,8 +92,8 @@ export function AreaLevelSelect({ area, variant }: AreaLevelSelectProps) {
   const label = `${POLICY_AREA_LABELS[area]}: ${policyLevelLabel(area, saved)}`;
   // A saved Automatic that cannot run is in force as Cautious, so say so
   const shown: PolicyLevel = saved === "automatic" ? effective : saved;
-  const LevelGlyph = LEVEL_GLYPHS[shown];
-  const tone = LEVEL_TONES[shown];
+  const LevelGlyph = glyphOf(shown);
+  const tone = toneOf(shown);
 
   return (
     <Listbox
@@ -167,10 +167,10 @@ export function AreaLevelSelect({ area, variant }: AreaLevelSelectProps) {
                 className="items-start gap-1"
               >
                 {(() => {
-                  const OptionGlyph = LEVEL_GLYPHS[level];
+                  const OptionGlyph = glyphOf(level);
                   return (
                     <OptionGlyph
-                      className={`mt-0.5 h-3 w-3 shrink-0 ${LEVEL_TONES[level].icon}`}
+                      className={`mt-0.5 h-3 w-3 shrink-0 ${toneOf(level).icon}`}
                       aria-hidden="true"
                     />
                   );

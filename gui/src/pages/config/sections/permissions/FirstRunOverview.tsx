@@ -9,8 +9,8 @@ import {
   type PolicyArea,
 } from "core/tools/permissions/policy";
 import {
-  LEVEL_GLYPHS,
-  LEVEL_TONES,
+  glyphOf,
+  toneOf,
 } from "../../../../components/PolicyControls/levelStyle";
 import {
   PRESET_GLYPHS,
@@ -78,8 +78,8 @@ export function FirstRunOverview({ onDismiss }: { onDismiss: () => void }) {
         data-testid="permissions-intro-levels"
       >
         {levelsOfArea("tools").map((level) => {
-          const Glyph = LEVEL_GLYPHS[level];
-          const tone = LEVEL_TONES[level];
+          const Glyph = glyphOf(level);
+          const tone = toneOf(level);
           return (
             <span
               key={level}

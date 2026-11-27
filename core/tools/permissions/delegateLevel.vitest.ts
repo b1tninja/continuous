@@ -3,6 +3,7 @@ import {
   DEFAULT_POLICY_LEVELS,
   levelRank,
   levelsOfArea,
+  normalizeLevels,
   normalizePolicy,
   parsePolicyLevel,
   parseWebLevel,
@@ -210,5 +211,128 @@ describe("the IDGAF preset leaves Questions alone", () => {
       "permissive",
       "permissive",
     ]);
+  });
+});
+
+describe("normalizeLevels: levels from saved or typed text", () => {
+  it("keeps every level an area has, in any case", () => {
+    const { levels, problems } = normalizeLevels({
+      context: "Manual",
+      tools: " CAUTIOUS ",
+      edits: "permissive",
+      plan: "automatic",
+      questions: "delegate",
+    });
+    expect(levels).toEqual({
+      context: "manual",
+      tools: "cautious",
+      edits: "permissive",
+      plan: "automatic",
+      questions: "delegate",
+    });
+    expect(problems).toEqual([]);
+  });
+
+  it("reads the retired idgaf and yolo as the level they became", () => {
+    for (const word of ["idgaf", "IDGAF", "yolo", " Yolo "]) {
+      const { levels, problems } = normalizeLevels({
+        context: word,
+        tools: word,
+        edits: word,
+        plan: word,
+        questions: word,
+      });
+      // Permissive on the areas that had a safety check, Delegate on Questions
+      expect(levels.context, word).toBe("permissive");
+      expect(levels.tools, word).toBe("permissive");
+      expect(levels.edits, word).toBe("permissive");
+      expect(levels.plan, word).toBe("permissive");
+      expect(levels.questions, word).toBe("delegate");
+      expect(problems, word).toEqual([]);
+    }
+  });
+
+  it("refuses Delegate on any area but Questions, and says which", () => {
+    const { levels, problems } = normalizeLevels({
+      tools: "delegate",
+      plan: "delegate",
+      questions: "delegate",
+    });
+    expect(levels.tools).toBe(DEFAULT_POLICY_LEVELS.tools);
+    expect(levels.plan).toBe(DEFAULT_POLICY_LEVELS.plan);
+    expect(levels.questions).toBe("delegate");
+    expect(problems).toEqual([
+      'tools: "delegate" is a Questions level only',
+      'plan: "delegate" is a Questions level only',
+    ]);
+  });
+
+  it("falls back to the area's default for a value it cannot read, and reports it", () => {
+    for (const bad of ["sometimes", "", 5, null, {}, ["manual"], true]) {
+      const { levels, problems } = normalizeLevels({ edits: bad });
+      expect(levels.edits, String(bad)).toBe(DEFAULT_POLICY_LEVELS.edits);
+      expect(problems, String(bad)).toHaveLength(1);
+    }
+  });
+
+  it("takes nothing from the prototype", () => {
+    for (const word of ["constructor", "__proto__", "toString"]) {
+      const { levels, problems } = normalizeLevels({ tools: word });
+      expect(levels.tools, word).toBe(DEFAULT_POLICY_LEVELS.tools);
+      expect(problems, word).toHaveLength(1);
+    }
+  });
+
+  it("leaves an area it was not given at its default, silently", () => {
+    for (const raw of [undefined, null, {}, "text", 3, []]) {
+      const { levels, problems } = normalizeLevels(raw);
+      expect(levels, JSON.stringify(raw)).toEqual(DEFAULT_POLICY_LEVELS);
+      expect(problems).toEqual([]);
+    }
+  });
+
+  it("ignores a key that is not an area", () => {
+    const { levels, problems } = normalizeLevels({
+      colour: "manual",
+      tools: "manual",
+    });
+    expect(levels.tools).toBe("manual");
+    expect(levels).not.toHaveProperty("colour");
+    expect(problems).toEqual([]);
+  });
+
+  it("reads Web, and falls back to following Tool use when it cannot", () => {
+    expect(normalizeLevels({ web: "listed" }).levels.web).toBe("listed");
+    expect(normalizeLevels({ web: "off" }).levels.web).toBe("off");
+    expect(normalizeLevels({ web: "idgaf" }).levels.web).toBe("permissive");
+    const bad = normalizeLevels({ web: "nonsense" });
+    expect(bad.levels.web).toBeUndefined();
+    expect(bad.problems).toHaveLength(1);
+    expect(normalizeLevels({}).levels.web).toBeUndefined();
+  });
+
+  it("does not change what it was given, and does not share the defaults", () => {
+    const given = { tools: "idgaf", questions: "idgaf" };
+    const copy = { ...given };
+    const a = normalizeLevels(given).levels;
+    expect(given).toEqual(copy);
+    a.tools = "manual";
+    expect(normalizeLevels({}).levels.tools).toBe(DEFAULT_POLICY_LEVELS.tools);
+    expect(DEFAULT_POLICY_LEVELS.tools).not.toBe("manual");
+  });
+
+  it("agrees with normalizePolicy, which now uses it", () => {
+    const raw = {
+      tools: "yolo",
+      questions: "idgaf",
+      plan: "delegate",
+      web: "x",
+    };
+    expect(normalizePolicy({ levels: raw }).policy.levels).toEqual(
+      normalizeLevels(raw).levels,
+    );
+    expect(normalizePolicy({ levels: raw }).problems).toEqual(
+      normalizeLevels(raw).problems,
+    );
   });
 });
