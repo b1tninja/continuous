@@ -44,6 +44,20 @@ export const LEVEL_TONES: Record<PolicyLevel, { chip: string; icon: string }> =
   };
 
 /**
+ * The glyph and tint of a level, or Cautious's when the value is not one. A
+ * level comes from saved state and from messages of other hosts, and a value
+ * this build does not know must not stop the page being drawn.
+ */
+export const glyphOf = (level: string): typeof EyeIcon =>
+  Object.hasOwn(LEVEL_GLYPHS, level)
+    ? LEVEL_GLYPHS[level as PolicyLevel]
+    : LEVEL_GLYPHS.cautious;
+export const toneOf = (level: string): { chip: string; icon: string } =>
+  Object.hasOwn(LEVEL_TONES, level)
+    ? LEVEL_TONES[level as PolicyLevel]
+    : LEVEL_TONES.cautious;
+
+/**
  * The IDGAF preset is not a level, so it has no entry above; its chip is red
  * because no safety check is on.
  */

@@ -484,12 +484,17 @@ export interface NormalizedPolicy {
 }
 
 /**
- * Saved or written settings made safe to use. An unknown level falls back to
- * that area's default and is reported, so nothing silently does nothing.
+ * Levels from saved or typed text, made safe to use: the retired `idgaf` and
+ * `yolo` are read as the level they became, Delegate is kept for Questions
+ * only, and anything else falls back to that area's default and is reported.
+ * Settings files, the webview's saved state and messages from an older host
+ * all come through here, so they cannot disagree.
  */
-export function normalizePolicy(raw: unknown): NormalizedPolicy {
-  const input = (raw ?? {}) as Partial<PolicySettings>;
-  const given = (input.levels ?? {}) as Partial<Record<string, unknown>>;
+export function normalizeLevels(raw: unknown): {
+  levels: PolicyLevels;
+  problems: string[];
+} {
+  const given = (raw ?? {}) as Partial<Record<string, unknown>>;
   const problems: string[] = [];
   const levels = { ...DEFAULT_POLICY_LEVELS };
   for (const area of POLICY_AREAS) {
@@ -516,6 +521,16 @@ export function normalizePolicy(raw: unknown): NormalizedPolicy {
       );
     }
   }
+  return { levels, problems };
+}
+
+/**
+ * Saved or written settings made safe to use. An unknown level falls back to
+ * that area's default and is reported, so nothing silently does nothing.
+ */
+export function normalizePolicy(raw: unknown): NormalizedPolicy {
+  const input = (raw ?? {}) as Partial<PolicySettings>;
+  const { levels, problems } = normalizeLevels(input.levels);
   const delivery = input.questions?.delivery;
   if (delivery !== undefined && delivery !== "inbox" && delivery !== "wait") {
     problems.push(`questions.delivery: "${String(delivery)}" is not valid`);
