@@ -4,6 +4,10 @@ import {
   ThunkDispatch,
   UnknownAction,
 } from "@reduxjs/toolkit";
+import {
+  migrateApproval,
+  normalizeLevels,
+} from "core/tools/permissions/policy";
 import { createLogger } from "redux-logger";
 import {
   createMigrate,
@@ -15,6 +19,8 @@ import { createFilter } from "redux-persist-transform-filter";
 import autoMergeLevel2 from "redux-persist/es/stateReconciler/autoMergeLevel2";
 import storage from "redux-persist/es/storage";
 import { IdeMessenger, IIdeMessenger } from "../context/IdeMessenger";
+import { chatDebugMiddleware } from "./chatDebugMiddleware";
+import { keptOpenStateMiddleware } from "./keptOpenStateMiddleware";
 import blockedCallsReducer from "./slices/blockedCallsSlice";
 import configReducer from "./slices/configSlice";
 import editModeStateReducer from "./slices/editState";
@@ -23,12 +29,6 @@ import { profilesReducer } from "./slices/profilesSlice";
 import sessionReducer from "./slices/sessionSlice";
 import tabsReducer from "./slices/tabsSlice";
 import uiReducer from "./slices/uiSlice";
-import {
-  migrateApproval,
-  normalizeLevels,
-} from "core/tools/permissions/policy";
-import { chatDebugMiddleware } from "./chatDebugMiddleware";
-import { keptOpenStateMiddleware } from "./keptOpenStateMiddleware";
 
 const rootReducer = combineReducers({
   session: sessionReducer,
@@ -123,8 +123,9 @@ export const migrations: MigrationManifest = {
       },
     };
   },
-  // The retired IDGAF level (and yolo) was saved as a level. It is now a preset,
-  // so a saved one is read the way a settings file reads it: Permissive, and
+  // The retired IDGAF level (and its older spelling) was saved as a level. It is
+  // now a preset, so a saved one is read the way a settings file reads it:
+  // Permissive, and
   // Delegate on Questions. Without this the saved value reaches the level
   // chips, which have no entry for it, and the page cannot be shown.
   "3": (state) => {
